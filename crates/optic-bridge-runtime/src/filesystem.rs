@@ -230,18 +230,18 @@ impl BoundedFileSystem {
                     });
                 }
 
-                let version = match ContentVersion::from_reader_bounded(
-                    &mut file,
-                    self.max_mutation_bytes,
-                ) {
-                    Ok(version) => version,
-                    Err(ContentVersionReadError::LimitExceeded) => {
-                        return Err(MutationError::TargetTooLarge {
-                            limit: self.max_mutation_bytes,
-                        });
-                    }
-                    Err(ContentVersionReadError::Io(error)) => return Err(MutationError::Io(error)),
-                };
+                let version =
+                    match ContentVersion::from_reader_bounded(&mut file, self.max_mutation_bytes) {
+                        Ok(version) => version,
+                        Err(ContentVersionReadError::LimitExceeded) => {
+                            return Err(MutationError::TargetTooLarge {
+                                limit: self.max_mutation_bytes,
+                            });
+                        }
+                        Err(ContentVersionReadError::Io(error)) => {
+                            return Err(MutationError::Io(error));
+                        }
+                    };
 
                 Ok(MutationObservation {
                     canonical_path,
