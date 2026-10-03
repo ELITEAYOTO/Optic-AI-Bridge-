@@ -8,6 +8,7 @@
 
 mod clock;
 mod filesystem;
+mod mutation;
 mod process;
 mod session_registry;
 mod task_lease_registry;
@@ -17,6 +18,10 @@ pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation,
+};
+pub use mutation::{
+    AtomicMutationError, AtomicMutationService, CommitVerification, MutationCommit,
+    PreparedMutation,
 };
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,
