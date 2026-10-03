@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2C2 implemented on PR #18, final gate pending  
+**Lifecycle:** pre-alpha / Phase 2C3 transactional file services  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented on PR #18: the real Windows mutation commit is journal-wrapped, one ActionId owns journal + staging identity, process-crash recovery is exercised at four durable lifecycle boundaries, and recovery preserves journal evidence until operation-owned staging has been validated/cleaned. Clean code head `461a61ba` contains the recovery-evidence/staging hardening with the normal read-only CI workflow restored; the remaining work in this tranche is the full Ubuntu/Windows/dependency-policy gate on the complete code + documentation head before merge. Public MCP file mutation remains intentionally disabled.
+Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Optic now has a journal-wrapped Windows mutation commit with deterministic process-crash recovery and recovery-evidence-preserving staging cleanup. The current implementation tranche is Phase 2C3: build transactional runtime file write/patch/delete services on that boundary, with exact capability/task-lease/path/precondition checks and negative recovery tests. Public MCP file mutation remains intentionally disabled until those runtime/policy gates pass.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -95,10 +95,9 @@ Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented 
 - Recovery is deterministic and bounded: exact intended state = committed, exact prior state = not committed, third state/canonical mismatch = unresolved conflict retained fail-closed.
 - `verified` is terminal and is not reinterpreted from later external edits.
 - Well-formed unpublished `*.prepared.tmp` records are removable because namespace commit is forbidden before durable `committing` under the protocol.
-- Scope boundary: 2C1 proves the recovery state machine, not the journal-wrapped real commit, forced crash behavior or power-loss/ACID durability.
 
-### Phase 2C2 — implemented / under review
-- PR #18 wires `MutationRecoveryJournal` around the actual Phase 2B Windows commit; no public MCP mutation tool is added.
+### Phase 2C2 — merged
+- PR #18 merged to `main` as `0297406c`; exact final head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
 - One opaque operation `ActionId` owns both the durable journal and deterministic same-directory `.optic-<ActionId>.staged` artifact.
 - `prepared` is durable first; `committing` is appended and synced before the atomic mutation service may be called.
 - Atomic errors after durable `committing` become recovery-required and are best-effort marked `ambiguous`; blind retry is not treated as safe.
@@ -110,9 +109,10 @@ Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented 
 - No power-loss/ACID durability claim is made; the tested model is process termination/restart.
 
 ### Current / next implementation
-- Finish PR #18 only after its complete code + documentation head passes Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
-- After merge, Phase 2C3 builds policy-gated transactional runtime file write/patch/delete services on the journal-wrapped boundary.
-- Public MCP mutation remains deferred until the 2C3 service/policy/recovery negative gates pass.
+- Phase 2C3: build policy-gated transactional runtime file write/patch/delete services on the journal-wrapped boundary.
+- Preserve exact `ExpectedState`, canonical/reparse containment, mutation byte ceilings, session ownership, task-lease workspace scope and capability checks.
+- Add negative tests for stale writes, missing/wrong leases, cross-session access, scope escape, recovery-required outcomes and bounded patch/write/delete inputs.
+- Public MCP mutation remains deferred until the 2C3 runtime/policy/recovery gates pass.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
@@ -133,7 +133,7 @@ Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented 
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`) and Phase 2C1 (`85aec4c6`). Phase 2C2 is implemented on PR #18 but remains unmerged until the final documentation head passes all gates.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`) and Phase 2C2 (`0297406c`). Phase 2C3 is the current implementation tranche.
 
 ## Health rule
 
