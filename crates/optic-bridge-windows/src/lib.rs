@@ -16,6 +16,5 @@ mod mutation;
 pub use job::LimitedJobObject;
 #[cfg(windows)]
 pub use mutation::{
-    HandleValidatedDirectory, HandleValidatedFile, WindowsFileIdentity,
-    WindowsMutationHandleError,
+    HandleValidatedDirectory, HandleValidatedFile, WindowsFileIdentity, WindowsMutationHandleError,
 };
