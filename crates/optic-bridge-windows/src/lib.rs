@@ -14,8 +14,9 @@ mod job;
 
 #[cfg(windows)]
 pub use file::{
-    OpenedWindowsFile, WindowsFileError, WindowsFileIdentity, WindowsPathIdentity,
-    inspect_directory_no_reparse, open_file_no_reparse, replace_file_atomically,
+    OpenedWindowsDeleteFile, OpenedWindowsFile, WindowsFileError, WindowsFileIdentity,
+    WindowsPathIdentity, inspect_directory_no_reparse, open_file_for_delete_no_reparse,
+    open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
 pub use job::LimitedJobObject;
