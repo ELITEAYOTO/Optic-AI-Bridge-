@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath};
+use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
 use thiserror::Error;
 
 use crate::{
@@ -52,6 +52,20 @@ impl TransactionalFileService {
         Ok(self.mutations.commit_write(&plan, content)?)
     }
 
+    pub fn write_for_action(
+        &self,
+        action_id: &ActionId,
+        path: &WorkspacePath,
+        expected: ExpectedState,
+        content: &[u8],
+    ) -> Result<JournaledMutationCommit, TransactionalFileError> {
+        self.ensure_content_fits(content.len())?;
+        let plan = self.mutations.prepare_write(path, expected)?;
+        Ok(self
+            .mutations
+            .commit_write_for_action(action_id, &plan, content)?)
+    }
+
     pub fn delete(
         &self,
         path: &WorkspacePath,
@@ -59,6 +73,16 @@ impl TransactionalFileService {
     ) -> Result<JournaledDeleteCommit, TransactionalFileError> {
         let plan = self.mutations.prepare_delete(path, expected)?;
         Ok(self.mutations.commit_delete(&plan)?)
+    }
+
+    pub fn delete_for_action(
+        &self,
+        action_id: &ActionId,
+        path: &WorkspacePath,
+        expected: ContentVersion,
+    ) -> Result<JournaledDeleteCommit, TransactionalFileError> {
+        let plan = self.mutations.prepare_delete(path, expected)?;
+        Ok(self.mutations.commit_delete_for_action(action_id, &plan)?)
     }
 
     pub fn apply_patch(
@@ -72,6 +96,22 @@ impl TransactionalFileService {
         let base = self.read_exact_snapshot(plan.canonical_path(), expected)?;
         let content = apply_byte_patch(&base, patch, self.max_mutation_bytes)?;
         Ok(self.mutations.commit_write(&plan, &content)?)
+    }
+
+    pub fn apply_patch_for_action(
+        &self,
+        action_id: &ActionId,
+        path: &WorkspacePath,
+        expected: ContentVersion,
+        patch: &BytePatch,
+    ) -> Result<JournaledMutationCommit, TransactionalFileError> {
+        let expected_state = ExpectedState::Content(expected);
+        let plan = self.mutations.prepare_write(path, expected_state)?;
+        let base = self.read_exact_snapshot(plan.canonical_path(), expected)?;
+        let content = apply_byte_patch(&base, patch, self.max_mutation_bytes)?;
+        Ok(self
+            .mutations
+            .commit_write_for_action(action_id, &plan, &content)?)
     }
 
     fn read_exact_snapshot(

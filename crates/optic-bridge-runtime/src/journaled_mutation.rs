@@ -82,7 +82,26 @@ impl JournaledMutationService {
         #[cfg(windows)]
         {
             let mut ignore_boundary = |_| {};
-            self.commit_write_with_observer(plan, content, &mut ignore_boundary)
+            self.commit_write_with_observer(None, plan, content, &mut ignore_boundary)
+        }
+    }
+
+    pub fn commit_write_for_action(
+        &self,
+        action_id: &ActionId,
+        plan: &PreparedMutation,
+        content: &[u8],
+    ) -> Result<JournaledMutationCommit, JournaledMutationError> {
+        #[cfg(not(windows))]
+        {
+            let _ = (action_id, plan, content);
+            Err(JournaledMutationError::UnsupportedPlatform)
+        }
+
+        #[cfg(windows)]
+        {
+            let mut ignore_boundary = |_| {};
+            self.commit_write_with_observer(Some(action_id), plan, content, &mut ignore_boundary)
         }
     }
 
@@ -99,7 +118,25 @@ impl JournaledMutationService {
         #[cfg(windows)]
         {
             let mut ignore_boundary = |_| {};
-            self.commit_delete_with_observer(plan, &mut ignore_boundary)
+            self.commit_delete_with_observer(None, plan, &mut ignore_boundary)
+        }
+    }
+
+    pub fn commit_delete_for_action(
+        &self,
+        action_id: &ActionId,
+        plan: &PreparedDelete,
+    ) -> Result<JournaledDeleteCommit, JournaledMutationError> {
+        #[cfg(not(windows))]
+        {
+            let _ = (action_id, plan);
+            Err(JournaledMutationError::UnsupportedPlatform)
+        }
+
+        #[cfg(windows)]
+        {
+            let mut ignore_boundary = |_| {};
+            self.commit_delete_with_observer(Some(action_id), plan, &mut ignore_boundary)
         }
     }
 
@@ -126,12 +163,16 @@ impl JournaledMutationService {
     #[cfg(windows)]
     fn commit_write_with_observer(
         &self,
+        action_id: Option<&ActionId>,
         plan: &PreparedMutation,
         content: &[u8],
         on_boundary: &mut dyn FnMut(JournalCommitBoundary),
     ) -> Result<JournaledMutationCommit, JournaledMutationError> {
         let intended = ExpectedState::Content(ContentVersion::from_bytes(content));
-        let ticket = self.journal.begin(plan, intended)?;
+        let ticket = match action_id {
+            Some(action_id) => self.journal.begin_for_action(action_id, plan, intended)?,
+            None => self.journal.begin(plan, intended)?,
+        };
         on_boundary(JournalCommitBoundary::PreparedDurable);
 
         self.journal.mark_committing(&ticket)?;
@@ -185,11 +226,18 @@ impl JournaledMutationService {
     #[cfg(windows)]
     fn commit_delete_with_observer(
         &self,
+        action_id: Option<&ActionId>,
         plan: &PreparedDelete,
         on_boundary: &mut dyn FnMut(JournalCommitBoundary),
     ) -> Result<JournaledDeleteCommit, JournaledMutationError> {
         let journal_plan = plan.journal_plan();
-        let ticket = self.journal.begin(&journal_plan, ExpectedState::Absent)?;
+        let ticket = match action_id {
+            Some(action_id) => {
+                self.journal
+                    .begin_for_action(action_id, &journal_plan, ExpectedState::Absent)?
+            }
+            None => self.journal.begin(&journal_plan, ExpectedState::Absent)?,
+        };
         on_boundary(JournalCommitBoundary::PreparedDurable);
 
         self.journal.mark_committing(&ticket)?;
@@ -689,7 +737,7 @@ mod tests {
             }
         };
 
-        let result = service.commit_write_with_observer(&plan, b"new", &mut observer);
+        let result = service.commit_write_with_observer(None, &plan, b"new", &mut observer);
         panic!("child reached end without forced crash: {result:?}");
     }
 
@@ -781,7 +829,7 @@ mod tests {
             }
         };
 
-        let result = service.commit_delete_with_observer(&plan, &mut observer);
+        let result = service.commit_delete_with_observer(None, &plan, &mut observer);
         panic!("delete child reached end without forced crash: {result:?}");
     }
 

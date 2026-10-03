@@ -72,10 +72,21 @@ impl MutationRecoveryJournal {
         plan: &PreparedMutation,
         intended: ExpectedState,
     ) -> Result<JournalTicket, RecoveryJournalError> {
-        self.ensure_record_capacity()?;
         let action_id = ActionId::generate()?;
+        self.begin_for_action(&action_id, plan, intended)
+    }
+
+    pub fn begin_for_action(
+        &self,
+        action_id: &ActionId,
+        plan: &PreparedMutation,
+        intended: ExpectedState,
+    ) -> Result<JournalTicket, RecoveryJournalError> {
+        self.ensure_action_path_absent(&self.prepared_temp_path(action_id), action_id)?;
+        self.ensure_action_path_absent(&self.journal_path(action_id), action_id)?;
+        self.ensure_record_capacity()?;
         let ticket = JournalTicket {
-            action_id,
+            action_id: action_id.clone(),
             canonical_path: plan.canonical_path().clone(),
             previous: plan.expected_state(),
             intended,
@@ -87,13 +98,25 @@ impl MutationRecoveryJournal {
         let journal_path = self.journal_path(&ticket.action_id);
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
-        let mut file = options.open(&temp_path)?;
+        let mut file = options.open(&temp_path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                RecoveryJournalError::ActionAlreadyActive {
+                    action_id: ticket.action_id.clone(),
+                }
+            } else {
+                RecoveryJournalError::Io(error)
+            }
+        })?;
         if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
             let _ = fs::remove_file(&temp_path);
             return Err(RecoveryJournalError::Io(error));
         }
         drop(file);
 
+        if let Err(error) = self.ensure_action_path_absent(&journal_path, &ticket.action_id) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(error);
+        }
         if let Err(error) = fs::rename(&temp_path, &journal_path) {
             let _ = fs::remove_file(&temp_path);
             return Err(RecoveryJournalError::Io(error));
@@ -198,6 +221,20 @@ impl MutationRecoveryJournal {
 
     pub(crate) fn retire_action(&self, action_id: &ActionId) -> Result<(), RecoveryJournalError> {
         self.remove_regular_file(&self.journal_path(action_id))
+    }
+
+    fn ensure_action_path_absent(
+        &self,
+        path: &Path,
+        action_id: &ActionId,
+    ) -> Result<(), RecoveryJournalError> {
+        match fs::symlink_metadata(path) {
+            Ok(_) => Err(RecoveryJournalError::ActionAlreadyActive {
+                action_id: action_id.clone(),
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(RecoveryJournalError::Io(error)),
+        }
     }
 
     fn append(
@@ -575,6 +612,8 @@ pub enum RecoveryJournalError {
     InvalidLimits,
     #[error("mutation recovery state directory must be outside the workspace")]
     StateDirectoryInsideWorkspace,
+    #[error("mutation recovery already has active state for operation {action_id:?}")]
+    ActionAlreadyActive { action_id: ActionId },
     #[error("mutation recovery journal contains an unexpected entry")]
     UnexpectedJournalEntry,
     #[error("mutation recovery journal is corrupt or incomplete before its first durable state")]
@@ -722,6 +761,31 @@ mod tests {
         let entry = serde_json::from_slice::<JournalEntryV2>(first).expect("v2 entry");
         assert_eq!(entry.version, JOURNAL_VERSION_V2);
         assert_eq!(entry.intended.to_expected().expect("intended"), intended);
+
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn caller_supplied_action_id_is_the_journal_key_and_active_reuse_fails_closed() {
+        let (workspace, state) = fixture("caller-action-id");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("new.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let intended = ExpectedState::Content(ContentVersion::from_bytes(b"new"));
+        let action_id = ActionId::generate().expect("action entropy");
+
+        let ticket = journal
+            .begin_for_action(&action_id, &plan, intended)
+            .expect("begin for action");
+        assert_eq!(ticket.action_id(), &action_id);
+        assert!(journal.journal_path(&action_id).is_file());
+        assert!(matches!(
+            journal.begin_for_action(&action_id, &plan, intended),
+            Err(RecoveryJournalError::ActionAlreadyActive { .. })
+        ));
 
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
