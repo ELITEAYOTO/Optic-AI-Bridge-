@@ -70,12 +70,14 @@ Finish Phase 1D documentation and merge only while the native Windows resource-c
 - Kernel Job Object flags enforce kill-on-close, active-process count and total job-memory ceilings.
 - Each process job owns its own Job Object; the job itself remains owned by exactly one application session.
 - `try_wait`/`wait` do not treat the job as terminal while descendants remain active.
+- Removing/unwrapping the containment wrapper is fail-closed: the whole job is terminated, the root child receives a fallback kill request, and the Job Object handle is closed rather than leaked.
 - Native Windows tests prove:
   - `process_count = 1` blocks descendant creation;
   - a 128 MiB job-memory ceiling prevents a fixture from reaching a 384 MiB allocation target;
   - timeout terminates the descendant tree before a delayed survival marker can be written;
-  - dropping the live Job Object wrapper triggers kill-on-close cleanup.
-- Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` are green on the implementation head after correcting the test helper to respect the existing 64 KiB per-call process-read ceiling.
+  - dropping the live Job Object wrapper triggers kill-on-close cleanup;
+  - explicitly unwrapping the containment wrapper does not allow the child to survive.
+- Ubuntu format/Clippy/tests and Windows Clippy/tests are green on the fail-closed implementation head; the dependency-policy gate is unchanged and remains required on the final documentation head.
 
 ### Current / next implementation
 - Finalize PR #7 documentation and merge only while the final documentation head remains green.
@@ -98,7 +100,7 @@ Finish Phase 1D documentation and merge only while the native Windows resource-c
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`) and Phase 1C (`adf2e772`). Phase 1D is under review in PR #7 and has passed its native Windows implementation gates; the documentation head must remain green before merge.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`) and Phase 1C (`adf2e772`). Phase 1D is under review in PR #7 and has passed its native Windows implementation gates; the final documentation head must remain green before merge.
 
 ## Health rule
 
