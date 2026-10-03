@@ -64,7 +64,7 @@ Gate passed: direct negative handler tests, bounded read/list outputs, intended 
 
 ### Phase 1C — structured process lifecycle
 
-Status: **implemented on PR #6 branch; merge only with final gates green**.
+Status: **merged** in PR #6 (`adf2e772`).
 
 - opaque session-owned `JobId` with no arbitrary PID operation;
 - revocable application-owned `TaskLeaseRegistry`;
@@ -74,34 +74,39 @@ Status: **implemented on PR #6 branch; merge only with final gates green**.
 - MCP never creates capabilities or task leases;
 - `process_start`, cursor-based bounded `process_read`, `process_stop`, `process_result` and `session_cancel`;
 - `process_start` normalizes to `Effect::ProcessRun` and is authorized by both the application session and exact executable task lease;
-- network remains unavailable in the Phase 1C runtime and `network=true` fails closed;
+- network remains unavailable in the Phase 1 runtime and `network=true` fails closed;
 - stdout/stderr capture, active jobs, retained records, output reads and timeout are hard bounded;
 - cancellation propagates session → job → owned child tree;
-- Windows lifecycle already uses Job Object assignment plus kill-on-drop; Unix development builds use process-group lifecycle containment;
+- Windows lifecycle already used Job Object assignment for tree ownership; Unix development builds use process-group lifecycle containment;
 - Windows CI found and closed a fast-exit/output-overflow status race.
 
-Acceptance:
-
-- cross-session job access rejected;
-- timeout/cancel/output-overflow deterministic and tested on native Windows and Linux;
-- no arbitrary PID operation;
-- operator allowlist required before ProcessRun appears in the session;
-- Linux/Windows formatting/lint/tests and dependency policy green before merge.
-
-Important boundary: Phase 1C validates requested `memory_bytes` and `process_count` against hard/lease ceilings, but does **not** claim Windows-kernel enforcement for those two values.
+Gate passed: cross-session rejection, timeout/cancel/output-overflow determinism, no arbitrary PID operation, explicit operator allowlist requirement, Linux/Windows lint/tests and dependency policy.
 
 ### Phase 1D — Windows Job Object enforcement and Phase 1 gate
 
-Status: **next after Phase 1C merge**.
+Status: **implemented on PR #7 branch; merge only while final docs + CI remain green**.
 
-- implement a narrow audited Windows containment adapter using Job Objects;
-- keep the suspended spawn → configured Job Object → assign → resume ordering so intended child trees do not escape lifecycle ownership;
-- configure kill-on-close plus kernel-enforced active-process and memory ceilings derived from the authorized ResourceBudget;
-- close/terminate handles deterministically on normal completion, cancellation, timeout and bridge shutdown;
-- retain non-Windows compile/test support without pretending it proves Windows containment;
-- keep timeout/output bounds independently enforced even when Job Object limits exist.
+- dedicated `optic-bridge-windows` crate contains the narrow Win32 `unsafe` boundary;
+- cross-platform core/policy/MCP/runtime remain unsafe-free;
+- custom `LimitedJobObject` derives Windows containment limits from the already-authorized `ResourceBudget`;
+- force temporary suspended child creation;
+- create/configure Job Object before assignment;
+- enable `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` and `JOB_OBJECT_LIMIT_JOB_MEMORY`;
+- assign the child before resuming its threads;
+- retain Job Object ownership until the complete child tree is terminal;
+- timeout/explicit stop/output overflow terminate the owned Job Object tree through the wrapped child;
+- non-Windows builds retain process-group behavior and make no Windows enforcement claim.
 
-Phase 1 gate: native Windows integration tests prove owned child-tree cleanup plus memory/process/output/time resource behavior. Transport/session limits remain enforceable independently of MCP SDK defaults.
+Native Windows gate passed on PR #7 implementation head:
+
+- `process_count = 1` blocks descendant creation;
+- a 128 MiB job-memory limit prevents a fixture from reaching a 384 MiB allocation target;
+- timeout kills a spawned descendant before it can write a delayed survival marker;
+- dropping the live wrapper proves kill-on-close cleanup;
+- all existing Phase 1C timeout/stop/output-overflow tests remain green;
+- Windows Clippy/tests, Ubuntu format/Clippy/tests and `cargo-deny` all pass.
+
+Phase 1 gate is considered satisfied once the final documentation head passes the same CI and PR #7 is merged. Job Objects provide lifecycle/resource containment, not a complete security sandbox.
 
 ## Phase 2 — safe mutation/Git
 
