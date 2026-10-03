@@ -7,7 +7,7 @@
 
 ## Current focus
 
-Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Optic now has a journal-wrapped Windows mutation commit with deterministic process-crash recovery and recovery-evidence-preserving staging cleanup. The current implementation tranche is Phase 2C3: build transactional runtime file write/patch/delete services on that boundary, with exact capability/task-lease/path/precondition checks and negative recovery tests. Public MCP file mutation remains intentionally disabled until those runtime/policy gates pass.
+Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Optic now has a journal-wrapped Windows mutation commit with deterministic process-crash recovery and recovery-evidence-preserving staging cleanup. Phase 2C3 is current. PR #20 implements the first narrow runtime slice: transactional whole-file write plus a bounded deterministic single-range patch, both reusing the Phase 2C2 journaled commit. Delete is deliberately deferred until the recovery journal can represent an intended final `ExpectedState::Absent`. Public MCP file mutation remains intentionally disabled.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -108,11 +108,22 @@ Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `f
 - Important precision: the post-commit crash hook is after `AtomicMutationService` returns (namespace effect and its post-commit verification have completed), not an instrumentation point between the raw `ReplaceFileW`/hard-link instruction and verification.
 - No power-loss/ACID durability claim is made; the tested model is process termination/restart.
 
+### Phase 2C3A — transactional write + patch under review
+- PR #20 adds `TransactionalFileService` above the proven `JournaledMutationService`; no direct OS mutation path is introduced.
+- Whole-file write requires explicit `ExpectedState::{Absent, Content}` and enforces the mutation byte ceiling before journaled commit.
+- Patch is intentionally a deterministic single byte range (`offset`, `remove_bytes`, `insert`) rather than a new authorization effect; it uses the existing `FileWrite` authority model.
+- Patch planning requires an exact base `ContentVersion`. The canonical target is read in bounded chunks, the assembled snapshot remains under `max_fs_mutation_bytes`, and its BLAKE3 must still equal the expected base before the patch result is built.
+- The patched result is byte-bounded and commits through the same Phase 2C2 journaled Windows path, which performs its own final expected-state and identity revalidation.
+- Non-Windows durable mutation remains fail-closed as unsupported.
+- Delete is intentionally not implemented in this slice: the current journal represents intended success as a content version, so it cannot yet classify `ExpectedState::Absent` as a committed intended state after a crash.
+- Public MCP write/patch/delete tools remain disabled.
+
 ### Current / next implementation
-- Phase 2C3: build policy-gated transactional runtime file write/patch/delete services on the journal-wrapped boundary.
-- Preserve exact `ExpectedState`, canonical/reparse containment, mutation byte ceilings, session ownership, task-lease workspace scope and capability checks.
-- Add negative tests for stale writes, missing/wrong leases, cross-session access, scope escape, recovery-required outcomes and bounded patch/write/delete inputs.
-- Public MCP mutation remains deferred until the 2C3 runtime/policy/recovery gates pass.
+- Finish PR #20 only after its complete code + documentation head passes Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- Generalize the recovery journal's intended result from content-only to an explicit intended state (`Absent` or `Content`) while preserving compatibility with existing write-journal records; only then add journaled delete.
+- Preserve exact `ExpectedState`, canonical/reparse containment, mutation byte ceilings, session ownership, task-lease workspace scope and capability checks at the policy/adapter boundary.
+- Add negative tests for stale writes, missing/wrong leases, cross-session access, scope escape, recovery-required outcomes and bounded mutation inputs before any public mutation adapter is enabled.
+- Public MCP mutation remains deferred until the full 2C3 runtime/policy/recovery gates pass.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
@@ -122,7 +133,8 @@ Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `f
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Transactional runtime file write/patch/delete services and public filesystem mutation MCP services.
+- Transactional delete and public filesystem mutation MCP services.
+- Generalized intended-absent recovery state for delete.
 - Git execution services.
 - Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
@@ -133,7 +145,7 @@ Phase 2C2 is merged on `main` via PR #18 (`0297406c`) after the complete head `f
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`) and Phase 2C2 (`0297406c`). Phase 2C3 is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`) and Phase 2C2 (`0297406c`). Phase 2C3 is the current implementation tranche; PR #20 is the first unmerged 2C3 slice.
 
 ## Health rule
 

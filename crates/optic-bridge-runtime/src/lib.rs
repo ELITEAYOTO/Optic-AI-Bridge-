@@ -15,6 +15,7 @@ mod process;
 mod recovery;
 mod session_registry;
 mod task_lease_registry;
+mod transactional_file;
 mod transport;
 
 pub use clock::{Clock, StdClock};
@@ -39,4 +40,5 @@ pub use recovery::{
 };
 pub use session_registry::{SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
+pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};
