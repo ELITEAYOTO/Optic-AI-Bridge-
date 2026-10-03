@@ -1,13 +1,13 @@
 # Project Status
 
-**Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2C3B transactional delete  
+**Last updated:** 2026-10-04  
+**Lifecycle:** pre-alpha / Phase 2C3B2 transactional delete under review  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C3B1 is merged on `main` via PR #22 (`f5eafc3a`) after the exact final head `fe025f46` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The recovery journal now writes schema v2 with explicit intended `ExpectedState::{Absent, Content}` while continuing to parse surviving v1 content journals strictly and fail closed on mixed/corrupt records. Recovery can therefore classify an absent intended final state deterministically. The current implementation tranche is Phase 2C3B2: add the Windows delete primitive, wrap it in the same durable journal lifecycle and prove forced process-crash recovery before exposing delete above runtime. Public MCP file mutation remains intentionally disabled.
+Phase 2C3B2 is implemented in PR #24. The exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The runtime now has a Windows handle-based transactional delete requiring an exact existing `ContentVersion`, durable journal intent `ExpectedState::Absent`, recovery-required semantics after durable `committing`, and native forced-process-crash recovery gates. `TransactionalFileService::delete` routes only through that proven journaled boundary. Public MCP file mutation remains intentionally disabled; after #24 merges, the next implementation tranche is Phase 2C3C authorization/adapter gating.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -126,16 +126,26 @@ Phase 2C3B1 is merged on `main` via PR #22 (`f5eafc3a`) after the exact final he
 - Recovery records now carry explicit intended state and classify `committing|ambiguous` against exact intended state first, then exact prior state.
 - Tests prove both delete-shaped outcomes before delete exists: observed `Absent` is committed; unchanged exact prior content is not committed.
 - Write staging cleanup accepts only `intended = Content`; a surviving write staging artifact associated with `intended = Absent` fails closed.
-- This tranche adds no Windows delete primitive and no MCP mutation surface.
+
+### Phase 2C3B2 — Windows transactional delete under review
+- PR #24 implements the complete runtime delete slice; exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before documentation alignment.
+- `optic-bridge-windows` adds a distinct delete-capable no-reparse file handle opened with read + `DELETE` access and captures final path + `FILE_ID_INFO` before mutation.
+- The exact handle whose identity and bounded BLAKE3 content are validated receives `SetFileInformationByHandle(..., FileDispositionInfo, ...)`; delete is not reissued by path.
+- `PreparedDelete` requires an exact existing `ContentVersion`. Stale bytes and same-path/same-content file recreation fail closed before deletion.
+- The handle closes before the atomic primitive returns, and the runtime explicitly verifies the final canonical target is `ExpectedState::Absent`; an unverifiable effect remains recovery-required.
+- Journaled delete writes `intended = ExpectedState::Absent`, uses no write-staging artifact, persists `committing` before delete, and preserves the same verified/ambiguous recovery semantics as write.
+- Native Windows forced-process-crash tests cover durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement. Restart reconciliation produces the expected committed/not-committed/terminal classifications and the second recovery is empty.
+- `TransactionalFileService::delete(path, expected_content_version)` reuses the journaled service; no second OS mutation path exists.
+- Non-Windows durable delete remains fail-closed as unsupported.
+- Public MCP write/patch/delete remains disabled.
 
 ### Current / next implementation
-- Phase 2C3B2 is current: add a Windows handle-first delete primitive with no-reparse/final-path/`FILE_ID_INFO` revalidation and exact content precondition.
-- Wrap delete in the Phase 2C durable journal lifecycle with `intended = ExpectedState::Absent`; errors after durable `committing` remain recovery-required rather than safe retry signals.
-- Add native Windows forced-process-crash delete gates for prepared, committing-before-delete, post-delete-service return and terminal-before-retirement boundaries.
-- Preserve exact `ExpectedState`, canonical/reparse containment, session ownership, task-lease workspace scope and capability checks at the policy/adapter boundary.
-- Add negative tests for stale writes/deletes, missing/wrong leases, cross-session access, scope escape and recovery-required outcomes before any public mutation adapter is enabled.
-- Public MCP mutation remains deferred until the full 2C3 runtime/policy/recovery gates pass.
-- Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
+- Finalize PR #24 documentation and require the complete documentation-aligned head to pass Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
+- After #24 merges, Phase 2C3C becomes current: authorize canonical `FileWrite`/`FileDelete` through existing session capability + exact task lease + structural workspace scope policy.
+- Add negative tests for missing/wrong leases, cross-session access, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes.
+- Keep patch normalized to `FileWrite` authority and keep MCP `fs_write`/patch/delete disabled until those runtime/policy/recovery gates pass.
+- Expose MCP mutation only as a thin adapter over the proven application/runtime contract once 2C3C is green.
+- Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual write/replace external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
 - Phase 2C hardening: Windows oplock / handle-based rename experiment for the remaining path-based final-commit race.
@@ -144,7 +154,7 @@ Phase 2C3B1 is merged on `main` via PR #22 (`f5eafc3a`) after the exact final he
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Transactional delete and public filesystem mutation MCP services.
+- Public filesystem mutation MCP services and their Phase 2C3C authorization/adapter negative gates.
 - Git execution services.
 - Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
@@ -155,7 +165,7 @@ Phase 2C3B1 is merged on `main` via PR #22 (`f5eafc3a`) after the exact final he
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`) and Phase 2C3B1 (`f5eafc3a`). Phase 2C3B2 is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`) and Phase 2C3B1 (`f5eafc3a`). Phase 2C3B2 is under review in PR #24 and is not yet part of `main`.
 
 ## Health rule
 

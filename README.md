@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2C2 merged, Phase 2C3 transactional file services in progress  
+**Status:** pre-alpha — Phase 2C3B2 transactional delete implemented in PR #24; authorization/adapter gate next  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1 and Phase 2C2 are merged. Phase 2C3 is the current implementation tranche. Public durable file mutation is still intentionally not exposed through MCP.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A and Phase 2C3B1 are merged. Phase 2C3B2 is implemented in PR #24 and its exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Public durable file mutation is still intentionally not exposed through MCP; Phase 2C3C policy/adapter gates come next.
 
 ## Implemented Phase 1 surface
 
@@ -72,9 +72,19 @@ Merged in PR #18 (`0297406c`), with public MCP mutation still disabled:
 
 The crash model is deliberately narrow: the post-commit hook is after the atomic service returns (effect + its verification), not between the raw namespace syscall and verification. The project does **not** claim sudden-power-loss ACID durability.
 
-### Phase 2C3 — current gate
+### Phase 2C3 — transactional runtime services
 
-The current tranche builds transactional runtime write/patch/delete services on the journal-wrapped boundary. Those services must preserve exact expected-state checks, path/reparse containment, byte ceilings, session ownership, task-lease scope and capabilities, with negative recovery/policy tests. MCP mutation tools remain disabled until this gate passes.
+Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 generalized recovery intent to exact `ExpectedState::{Absent, Content}` with strict v1 journal compatibility. Phase 2C3B2 is implemented in PR #24:
+
+- `TransactionalFileService::delete` requires the exact existing `ContentVersion`; there is no blind-delete/absent-plan input;
+- Windows opens a dedicated no-reparse read+DELETE handle, captures final path and `FILE_ID_INFO`, re-hashes the exact target on that same handle and performs `FileDispositionInfo` on that handle rather than deleting by path;
+- stale content and same-content delete/recreate identity changes fail closed;
+- delete uses the existing durable journal with `intended = ExpectedState::Absent`, no write-staging artifact, and recovery-required semantics after durable `committing`;
+- native Windows child-process gates cover durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement, with deterministic restart reconciliation and an empty second recovery;
+- non-Windows durable delete remains fail-closed as unsupported;
+- exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+
+The next gate is Phase 2C3C: authorize `FileWrite`/`FileDelete` through the existing session capability + exact task lease + canonical workspace scope model, add the negative policy/recovery tests, and only then expose MCP mutation as a thin adapter. MCP `fs_write`/patch/delete remain disabled today.
 
 The implementation remains pre-alpha. Installer/tunnel integration, public mutation/Git tools, multi-session orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 

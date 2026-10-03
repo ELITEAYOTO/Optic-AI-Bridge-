@@ -3,21 +3,20 @@ use std::path::Path;
 #[cfg(windows)]
 use std::fs::{self, File};
 
-#[cfg(windows)]
-use optic_bridge_core::ContentVersion;
 use optic_bridge_core::{
-    ActionId, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
+    ActionId, ContentVersion, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
 };
 use thiserror::Error;
 
 #[cfg(windows)]
 use crate::mutation::staging_path_for;
 use crate::{
-    AtomicMutationError, AtomicMutationService, MutationCommit, MutationRecoveryJournal,
-    PreparedMutation, RecoveryJournalError, RecoveryReport,
+    AtomicMutationError, AtomicMutationService, DeleteCommit, MutationCommit,
+    MutationRecoveryJournal, PreparedDelete, PreparedMutation, RecoveryJournalError,
+    RecoveryReport,
 };
 #[cfg(windows)]
-use crate::{CommitVerification, RecoveryOutcome};
+use crate::{CommitVerification, DeleteVerification, RecoveryOutcome};
 
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +60,14 @@ impl JournaledMutationService {
         Ok(self.atomic.prepare_write(path, expected)?)
     }
 
+    pub fn prepare_delete(
+        &self,
+        path: &WorkspacePath,
+        expected: ContentVersion,
+    ) -> Result<PreparedDelete, JournaledMutationError> {
+        Ok(self.atomic.prepare_delete(path, expected)?)
+    }
+
     pub fn commit_write(
         &self,
         plan: &PreparedMutation,
@@ -76,6 +83,23 @@ impl JournaledMutationService {
         {
             let mut ignore_boundary = |_| {};
             self.commit_write_with_observer(plan, content, &mut ignore_boundary)
+        }
+    }
+
+    pub fn commit_delete(
+        &self,
+        plan: &PreparedDelete,
+    ) -> Result<JournaledDeleteCommit, JournaledMutationError> {
+        #[cfg(not(windows))]
+        {
+            let _ = plan;
+            Err(JournaledMutationError::UnsupportedPlatform)
+        }
+
+        #[cfg(windows)]
+        {
+            let mut ignore_boundary = |_| {};
+            self.commit_delete_with_observer(plan, &mut ignore_boundary)
         }
     }
 
@@ -150,6 +174,61 @@ impl JournaledMutationService {
                 })
             }
             CommitVerification::CommittedButUnverified => {
+                if self.journal.mark_ambiguous(&ticket).is_ok() {
+                    on_boundary(JournalCommitBoundary::TerminalDurable);
+                }
+                Err(JournaledMutationError::CommittedButNeedsRecovery { action_id })
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn commit_delete_with_observer(
+        &self,
+        plan: &PreparedDelete,
+        on_boundary: &mut dyn FnMut(JournalCommitBoundary),
+    ) -> Result<JournaledDeleteCommit, JournaledMutationError> {
+        let journal_plan = plan.journal_plan();
+        let ticket = self.journal.begin(&journal_plan, ExpectedState::Absent)?;
+        on_boundary(JournalCommitBoundary::PreparedDurable);
+
+        self.journal.mark_committing(&ticket)?;
+        on_boundary(JournalCommitBoundary::CommittingDurable);
+
+        let action_id = ticket.action_id().clone();
+        let commit = match self.atomic.commit_delete(plan) {
+            Ok(commit) => {
+                on_boundary(JournalCommitBoundary::AtomicCommitReturned);
+                commit
+            }
+            Err(source) => {
+                if self.journal.mark_ambiguous(&ticket).is_ok() {
+                    on_boundary(JournalCommitBoundary::TerminalDurable);
+                }
+                return Err(JournaledMutationError::RecoveryRequiredAfterAtomicError {
+                    action_id,
+                    source,
+                });
+            }
+        };
+
+        match commit.verification {
+            DeleteVerification::VerifiedAbsent => {
+                if let Err(source) = self.journal.mark_verified(&ticket) {
+                    return Err(JournaledMutationError::RecoveryRequiredAfterJournalError {
+                        action_id,
+                        source,
+                    });
+                }
+                on_boundary(JournalCommitBoundary::TerminalDurable);
+                let journal_retired = self.journal.retire(&ticket).is_ok();
+                Ok(JournaledDeleteCommit {
+                    action_id,
+                    commit,
+                    journal_retired,
+                })
+            }
+            DeleteVerification::CommittedButUnverified => {
                 if self.journal.mark_ambiguous(&ticket).is_ok() {
                     on_boundary(JournalCommitBoundary::TerminalDurable);
                 }
@@ -243,6 +322,13 @@ pub struct JournaledMutationCommit {
     pub journal_retired: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JournaledDeleteCommit {
+    pub action_id: ActionId,
+    pub commit: DeleteCommit,
+    pub journal_retired: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum JournaledMutationError {
     #[error("atomic mutation setup or pre-commit operation failed: {0}")]
@@ -311,6 +397,10 @@ mod tests {
     #[cfg(windows)]
     const CRASH_BASE_ENV: &str = "OPTIC_TEST_CRASH_BASE";
     #[cfg(windows)]
+    const DELETE_CRASH_BOUNDARY_ENV: &str = "OPTIC_TEST_DELETE_CRASH_BOUNDARY";
+    #[cfg(windows)]
+    const DELETE_CRASH_BASE_ENV: &str = "OPTIC_TEST_DELETE_CRASH_BASE";
+    #[cfg(windows)]
     const CRASH_EXIT_CODE: i32 = 86;
 
     fn fixture(label: &str) -> (PathBuf, PathBuf) {
@@ -355,6 +445,31 @@ mod tests {
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_delete_fails_before_creating_a_journal() {
+        let (workspace, state) = fixture("unsupported-delete");
+        fs::write(workspace.join("target.txt"), b"old").expect("fixture");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"old"))
+            .expect("plan");
+
+        assert!(matches!(
+            service.commit_delete(&plan),
+            Err(JournaledMutationError::UnsupportedPlatform)
+        ));
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("target"),
+            b"old"
+        );
+        assert!(service.recover().expect("recover").is_empty());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
     #[cfg(windows)]
     #[test]
     fn verified_windows_commit_retires_its_journal() {
@@ -381,6 +496,30 @@ mod tests {
             fs::read(workspace.join("target.txt")).expect("target"),
             b"new"
         );
+        assert!(service.recover().expect("recover").is_empty());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_windows_delete_retires_its_journal() {
+        let (workspace, state) = fixture("verified-delete");
+        fs::write(workspace.join("target.txt"), b"old").expect("old");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"old"))
+            .expect("plan");
+
+        let result = service.commit_delete(&plan).expect("delete");
+        assert_eq!(
+            result.commit.verification,
+            DeleteVerification::VerifiedAbsent
+        );
+        assert!(result.journal_retired);
+        assert!(!workspace.join("target.txt").exists());
         assert!(service.recover().expect("recover").is_empty());
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
@@ -616,6 +755,104 @@ mod tests {
             );
             assert!(service.recover().expect("second recovery").is_empty());
             fs::remove_dir_all(&base).expect("cleanup crash fixture");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn forced_delete_crash_child_entrypoint() {
+        let Some(boundary_name) = env::var_os(DELETE_CRASH_BOUNDARY_ENV) else {
+            return;
+        };
+        let base = PathBuf::from(env::var_os(DELETE_CRASH_BASE_ENV).expect("delete crash base"));
+        let workspace = base.join("workspace");
+        let state = base.join("state");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"old"))
+            .expect("delete plan");
+        let boundary_name = boundary_name.to_string_lossy().into_owned();
+        let mut observer = |boundary: JournalCommitBoundary| {
+            if boundary.test_name() == boundary_name {
+                std::process::exit(CRASH_EXIT_CODE);
+            }
+        };
+
+        let result = service.commit_delete_with_observer(&plan, &mut observer);
+        panic!("delete child reached end without forced crash: {result:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn forced_delete_process_crashes_reconcile_all_documented_boundaries() {
+        let cases = [
+            (
+                JournalCommitBoundary::PreparedDurable,
+                RecoveryOutcome::PreparedNotCommitted,
+                true,
+            ),
+            (
+                JournalCommitBoundary::CommittingDurable,
+                RecoveryOutcome::ObservedNotCommitted,
+                true,
+            ),
+            (
+                JournalCommitBoundary::AtomicCommitReturned,
+                RecoveryOutcome::ObservedCommitted,
+                false,
+            ),
+            (
+                JournalCommitBoundary::TerminalDurable,
+                RecoveryOutcome::VerifiedTerminal,
+                false,
+            ),
+        ];
+
+        for (boundary, expected_outcome, expected_target) in cases {
+            let (workspace, state) = fixture(&format!("delete-{}", boundary.test_name()));
+            fs::write(workspace.join("target.txt"), b"old").expect("delete crash fixture");
+            let base = workspace.parent().expect("base").to_path_buf();
+            let status = Command::new(env::current_exe().expect("current test executable"))
+                .arg("forced_delete_crash_child_entrypoint")
+                .arg("--nocapture")
+                .arg("--test-threads=1")
+                .env(DELETE_CRASH_BOUNDARY_ENV, boundary.test_name())
+                .env(DELETE_CRASH_BASE_ENV, &base)
+                .status()
+                .expect("spawn delete crash child");
+            assert_eq!(
+                status.code(),
+                Some(CRASH_EXIT_CODE),
+                "unexpected delete child status for {boundary:?}: {status:?}"
+            );
+
+            let service = JournaledMutationService::from_hard_limits(
+                &workspace,
+                &state,
+                HardLimits::default(),
+            )
+            .expect("reopen delete service");
+            let report = service.recover().expect("recover after delete crash");
+            assert_eq!(report.records.len(), 1, "delete boundary {boundary:?}");
+            assert_eq!(
+                report.records[0].outcome, expected_outcome,
+                "delete boundary {boundary:?}"
+            );
+            assert_eq!(
+                workspace.join("target.txt").exists(),
+                expected_target,
+                "delete boundary {boundary:?}"
+            );
+            assert!(
+                service
+                    .recover()
+                    .expect("second delete recovery")
+                    .is_empty()
+            );
+            fs::remove_dir_all(&base).expect("cleanup delete crash fixture");
         }
     }
 }

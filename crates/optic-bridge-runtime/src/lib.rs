@@ -24,11 +24,12 @@ pub use filesystem::{
     MutationError, MutationObservation,
 };
 pub use journaled_mutation::{
-    JournaledMutationCommit, JournaledMutationError, JournaledMutationService,
+    JournaledDeleteCommit, JournaledMutationCommit, JournaledMutationError,
+    JournaledMutationService,
 };
 pub use mutation::{
-    AtomicMutationError, AtomicMutationService, CommitVerification, MutationCommit,
-    PreparedMutation,
+    AtomicMutationError, AtomicMutationService, CommitVerification, DeleteCommit,
+    DeleteVerification, MutationCommit, PreparedDelete, PreparedMutation,
 };
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,

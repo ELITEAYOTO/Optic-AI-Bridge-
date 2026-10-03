@@ -67,11 +67,16 @@ All notable project changes are recorded here.
 - Phase 2C3B1 recovery journal schema v2 with explicit intended `ExpectedState::{Absent, Content}` while retaining strict compatibility with surviving v1 content journals.
 - Strict persisted `ContentVersion` hex parsing plus fail-closed mixed-schema, unknown-field and invalid-hash recovery handling.
 - Intended-absent recovery tests proving exact committed/not-committed classification before the Windows delete primitive is introduced.
+- Phase 2C3B2 dedicated Windows delete-capable no-reparse handle with read + `DELETE`, final-path containment, `FILE_ID_INFO` identity and handle-based `FileDispositionInfo` deletion.
+- `PreparedDelete` / `DeleteCommit` runtime primitives requiring an exact existing `ContentVersion`, rejecting stale bytes and same-content file recreation by identity, and explicitly verifying final absence.
+- Journal-wrapped transactional delete with `intended = ExpectedState::Absent`, no write-staging artifact and recovery-required semantics after durable `committing`.
+- Native Windows forced-process-crash delete fixtures covering durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement, with deterministic restart reconciliation and idempotent second recovery.
+- `TransactionalFileService::delete` layered over the same journaled mutation service, plus non-Windows fail-closed coverage.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`) and Phase 2C3B1 intended-state recovery (`f5eafc3a`); Phase 2C3B2 transactional delete is now current.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`) and Phase 2C3B1 intended-state recovery (`f5eafc3a`); Phase 2C3B2 transactional delete is implemented in PR #24 and Phase 2C3C authorization/adapter gating is next after merge.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
@@ -83,7 +88,7 @@ All notable project changes are recorded here.
 - Production Phase 2C2 recovery now separates journal inspection from retirement so operation evidence survives until staging validation/cleanup completes.
 - Phase 2C3 patch is modeled as a deterministic transformation under existing `FileWrite` authority rather than introducing a broader patch-specific capability.
 - Recovery intent is no longer content-only: new v2 records encode explicit `Absent|Content`, while surviving v1 content journals remain readable under strict validation.
-- Transactional delete remains deferred only until the Windows delete primitive and forced-crash delete gates are implemented; its absent intended recovery state is now represented and tested.
+- Transactional delete now uses the absent-intent recovery representation through the same durable lifecycle; public mutation remains deferred to the Phase 2C3C authorization/adapter gate.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -113,4 +118,6 @@ All notable project changes are recorded here.
 - Phase 2C3A patch refuses a mixed/changed bounded snapshot unless its complete BLAKE3 still equals the exact expected base; the eventual commit then performs the Phase 2C2 expected-state and Windows identity revalidation again.
 - Phase 2C3B1 rejects mixed journal schemas and invalid persisted hashes, keeps the recovery directory stable for upgrade compatibility, and compares observed state against exact intended/prior state without blind retry.
 - A surviving write-staging artifact associated with `intended = Absent` fails closed instead of being silently removed.
-- Public MCP file mutation remains disabled until transactional runtime services and policy/recovery negative gates pass.
+- Phase 2C3B2 delete requires exact content and exact Windows identity, validates and deletes through the same no-reparse handle, and never falls back to a path-based delete after validation.
+- Phase 2C3B2 forced-crash gates prove restart classification at the documented delete service boundaries; they do not expand the project’s durability claim to sudden power loss.
+- Public MCP file mutation remains disabled until Phase 2C3C policy/recovery negative gates pass.
