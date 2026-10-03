@@ -221,13 +221,40 @@ Claim boundary: the forced-crash suite proves process termination/restart semant
 
 ##### Phase 2C3C — authorization/adapter gate
 
+Status: **in progress**; internal authorization + ActionId binding are merged, application-owned authority provisioning is current. Public MCP mutation remains disabled.
+
+###### Phase 2C3C1 — authorized runtime boundary + ActionId binding
+
+Status: **merged** through PR #26 (`ac381002`) and PR #27 (`1b5a3393`). Exact final heads `fcd1a6aa` and `ae05d6a2` each passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+
+1. `AuthorizedFileMutationService` resolves the active application session and the exact active task lease from application-owned registries before policy evaluation;
+2. normalized `FileWrite` / `FileDelete` effects pass through `PolicyEngine`; primitive/effect mismatch is rejected before mutation;
+3. write and patch share `FileWrite` authority while delete requires distinct `FileDelete`; structural workspace scopes and resource ceilings remain enforced by existing policy;
+4. negative tests cover missing lease, cross-session lease, missing capability, stale policy epoch, scope escape, effect mismatch, stale expected state, symlink escape and mutation byte ceilings;
+5. success reaches only `TransactionalFileService`; no second OS mutation route and no MCP mutation adapter are introduced;
+6. the normalized `ActionEnvelope.action_id` becomes the same operation identity used by the recovery journal, deterministic write staging, returned commit metadata and restart recovery;
+7. an already-active `.prepared.tmp` or journal slot for the same `ActionId` fails closed; this prevents concurrent/recovery collision without pretending to be the Phase 3 replay/idempotency ledger.
+
+###### Phase 2C3C2 — application-owned mutation authority provisioning
+
 Status: **current**.
 
-1. authorize canonical `FileWrite`/`FileDelete` effects through existing session capability + exact task lease + structural workspace scope policy;
-2. add negative tests for missing/wrong/cross-session leases, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes;
-3. keep patch normalized to `FileWrite` authority;
-4. keep MCP `fs_write`/patch/delete disabled until all runtime/policy/recovery gates pass;
-5. expose MCP mutation only as a thin adapter over the proven application/runtime contract.
+1. define application/operator-owned configuration for mutation authority without allowing MCP to create or widen it;
+2. add `FileWrite` and/or `FileDelete` to a session only when corresponding mutation authority is explicitly provisioned;
+3. mint exact task leases with explicit workspace scope (`WorkspaceAll` or structural `WorkspacePrefix`), resource ceiling, expiry and policy epoch;
+4. keep the authoritative lease mapping application-owned so an MCP caller cannot submit or freely select an arbitrary lease id;
+5. add negative tests for no configured authority, wrong capability, revoked/expired/cross-session lease, stale policy epoch, scope escape and FileWrite/FileDelete separation;
+6. keep MCP `fs_write`/patch/delete disabled through this gate.
+
+###### Phase 2C3C3 — thin MCP mutation adapter
+
+Planned only after C2 is green:
+
+1. normalize raw MCP parameters into typed `Effect::FileWrite` / `Effect::FileDelete` plus exact expected state;
+2. generate the `ActionId` server-side and resolve application-owned mutation authority internally rather than trusting caller-provided authorization material;
+3. invoke only `AuthorizedFileMutationService`; the adapter performs no independent authorization or filesystem mutation;
+4. map bounded/recovery-required outcomes without converting ambiguity into success or blind retry;
+5. expose MCP mutation only after adapter-level negative tests prove the internal security contract is not bypassable.
 
 Design constraints across Phase 2C:
 

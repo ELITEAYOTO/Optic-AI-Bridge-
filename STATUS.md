@@ -1,13 +1,13 @@
 # Project Status
 
-**Last updated:** 2026-10-04  
-**Lifecycle:** pre-alpha / Phase 2C3C authorization/adapter gate  
-**Release:** none  
+**Last updated:** 2026-10-04
+**Lifecycle:** pre-alpha / Phase 2C3C2 application-owned mutation authority provisioning
+**Release:** none
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C3B2 is merged on `main` via PR #24 (`b346a7d9`) after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The runtime now has a Windows handle-based transactional delete requiring an exact existing `ContentVersion`, durable journal intent `ExpectedState::Absent`, recovery-required semantics after durable `committing`, native forced-process-crash recovery gates and `TransactionalFileService::delete` routed only through that proven journaled boundary. The current implementation tranche is Phase 2C3C: authorize canonical `FileWrite` / `FileDelete` effects through the existing session capability + exact task lease + structural workspace scope model and prove the negative policy/recovery gates before any MCP mutation surface is enabled.
+Phase 2C3C1 is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`) added `AuthorizedFileMutationService`, which resolves the active application-owned session and exact active task lease, applies deterministic `PolicyEngine` authorization to normalized `FileWrite` / `FileDelete` effects, enforces primitive/effect agreement, and routes success only through `TransactionalFileService`; its negative tests cover missing/cross-session leases, missing capabilities, stale policy epoch, scope escape, stale expected state, size limits and symlink containment. PR #27 (`1b5a3393`, exact final head `ae05d6a2`) binds the authorized `ActionEnvelope.action_id` to the same durable journal/staging/commit/recovery operation and rejects already-active ActionId journal state. Both final heads passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Public MCP mutation is still disabled. The current tranche is Phase 2C3C2: provision mutation capabilities and exact workspace-scoped task leases from application/operator-owned configuration so MCP cannot mint, widen or freely select mutation authority.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -139,11 +139,21 @@ Phase 2C3B2 is merged on `main` via PR #24 (`b346a7d9`) after exact final head `
 - Non-Windows durable delete remains fail-closed as unsupported.
 - Public MCP write/patch/delete remains disabled.
 
+### Phase 2C3C1 — internal mutation authorization + ActionId binding merged
+- PR #26 merged to `main` as `ac381002`; exact final head `fcd1a6aa` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- `AuthorizedFileMutationService` is transport-agnostic and resolves the application-owned `SessionRegistry` + exact `TaskLeaseRegistry` entry before deterministic policy evaluation.
+- Authorized write/patch/delete can reach only `TransactionalFileService`; patch remains normalized to `FileWrite` and delete requires distinct `FileDelete` authority.
+- Negative coverage proves missing lease, cross-session lease, missing capability, stale policy epoch, workspace scope escape, effect mismatch, stale expected state, oversized mutation and symlink containment fail closed.
+- PR #27 merged to `main` as `1b5a3393`; exact final head `ae05d6a2` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- The normalized `ActionEnvelope.action_id` now owns the durable transaction end-to-end: journal key, deterministic write staging, commit result and recovery operation identity.
+- A still-active journal/temp path for the same `ActionId` fails closed. This is collision/recovery safety, not a general replay ledger; bounded replay/idempotency remains Phase 3.
+- No MCP file mutation tool or application mutation-lease provisioning is introduced by C1.
+
 ### Current / next implementation
-- Phase 2C3C is current: authorize canonical `FileWrite`/`FileDelete` through existing session capability + exact task lease + structural workspace scope policy.
-- Add negative tests for missing/wrong leases, cross-session access, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes.
-- Keep patch normalized to `FileWrite` authority and keep MCP `fs_write`/patch/delete disabled until those runtime/policy/recovery gates pass.
-- Expose MCP mutation only as a thin adapter over the proven application/runtime contract once 2C3C is green.
+- Phase 2C3C2 is current: define application/operator-owned mutation authority provisioning and mint only exact, bounded `FileWrite` / `FileDelete` task leases for configured workspace scopes.
+- Session mutation capabilities must exist only when corresponding authority was provisioned; MCP must not be able to mint, widen, cross sessions, or freely select an arbitrary lease.
+- Add negative gates for absent configuration, wrong capability, revoked/expired/cross-session lease, stale policy epoch, scope escape and FileWrite/FileDelete separation.
+- Keep MCP `fs_write`/patch/delete disabled through C2. After C2 is green, add mutation only as a thin adapter that normalizes arguments, uses a server-generated `ActionId`, resolves application-owned authority internally and invokes the proven authorized runtime service.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual write/replace external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
@@ -164,7 +174,7 @@ Phase 2C3B2 is merged on `main` via PR #24 (`b346a7d9`) after exact final head `
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`), Phase 2C3B1 (`f5eafc3a`) and Phase 2C3B2 (`b346a7d9`). Phase 2C3C is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`), Phase 2C3B1 (`f5eafc3a`), Phase 2C3B2 (`b346a7d9`), Phase 2C3C1 authorization (`ac381002`) and Phase 2C3C1 ActionId binding (`1b5a3393`). Phase 2C3C2 application-owned mutation authority provisioning is the current implementation tranche.
 
 ## Health rule
 

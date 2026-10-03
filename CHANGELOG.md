@@ -72,12 +72,17 @@ All notable project changes are recorded here.
 - Journal-wrapped transactional delete with `intended = ExpectedState::Absent`, no write-staging artifact and recovery-required semantics after durable `committing`.
 - Native Windows forced-process-crash delete fixtures covering durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement, with deterministic restart reconciliation and idempotent second recovery.
 - `TransactionalFileService::delete` layered over the same journaled mutation service, plus non-Windows fail-closed coverage.
+- Phase 2C3C1 `AuthorizedFileMutationService` as a transport-agnostic authorization boundary: active application session + exact active task lease + deterministic `PolicyEngine` decision before `TransactionalFileService` may execute.
+- Phase 2C3C1 negative mutation authorization coverage for missing/cross-session leases, missing capabilities, stale policy epoch, workspace scope escape, primitive/effect mismatch, stale expected state, mutation size bounds and symlink containment.
+- Caller-bound recovery-journal operation IDs so an authorized `ActionEnvelope.action_id` can own the same journal, deterministic write staging, commit result and recovery identity end-to-end.
+- Active `ActionId` collision protection for recovery journal/temp paths, failing closed instead of reusing live operation state.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`) and Phase 2C3B2 transactional delete (`b346a7d9`); Phase 2C3C authorization/adapter gating is current.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`), Phase 2C3B2 transactional delete (`b346a7d9`) and Phase 2C3C1 internal mutation authorization/ActionId binding (`ac381002`, `1b5a3393`); Phase 2C3C2 application-owned mutation authority provisioning is current.
 - Phase 2C3B2 merged through PR #24 after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- Phase 2C3C1 authorization merged through PR #26 as `ac381002` after exact final head `fcd1a6aa` passed the full Ubuntu/Windows/`cargo-deny` gate; ActionId binding merged through PR #27 as `1b5a3393` after exact final head `ae05d6a2` passed the same gate.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
@@ -121,4 +126,6 @@ All notable project changes are recorded here.
 - A surviving write-staging artifact associated with `intended = Absent` fails closed instead of being silently removed.
 - Phase 2C3B2 delete requires exact content and exact Windows identity, validates and deletes through the same no-reparse handle, and never falls back to a path-based delete after validation.
 - Phase 2C3B2 forced-crash gates prove restart classification at the documented delete service boundaries; they do not expand the project’s durability claim to sudden power loss.
-- Public MCP file mutation remains disabled until Phase 2C3C policy/recovery negative gates pass.
+- Phase 2C3C1 keeps authorization outside the MCP adapter: mutation requires application-owned session + exact lease resolution and deterministic policy before the transactional runtime is reachable.
+- The authorized envelope ActionId is now the durable transaction/recovery identity; active operation-id reuse fails closed, while a general retained replay/idempotency ledger remains deferred to Phase 3.
+- Public MCP file mutation remains disabled while Phase 2C3C2 application-owned mutation authority provisioning and its negative gates are incomplete.
