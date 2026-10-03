@@ -207,9 +207,7 @@ impl ChildWrapper for LimitedJobChild {
     }
 
     fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
-        let LimitedJobChild {
-            mut inner, job, ..
-        } = *self;
+        let LimitedJobChild { mut inner, job, .. } = *self;
         // Removing the containment wrapper must not silently detach a live process tree.
         // Fail closed: terminate the whole job, ask the root child to terminate as a
         // fallback, then drop the owned Job Object handle instead of leaking it.
@@ -353,7 +351,11 @@ mod tests {
 
     async fn spawn_delayed_marker_fixture(
         label: &str,
-    ) -> (std::path::PathBuf, std::path::PathBuf, Box<dyn ChildWrapper>) {
+    ) -> (
+        std::path::PathBuf,
+        std::path::PathBuf,
+        Box<dyn ChildWrapper>,
+    ) {
         use process_wrap::tokio::CommandWrap;
         use std::time::{SystemTime, UNIX_EPOCH};
 
