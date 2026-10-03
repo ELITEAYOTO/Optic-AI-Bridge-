@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,43 +48,3 @@ jobs:
         run: cargo install --locked cargo-deny --version 0.20.2
       - name: Check advisories, licenses, bans and sources
         run: cargo deny check
-
-  canonical-runtime:
-    name: Temporary Phase 1C canonical runtime
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: phase-1/process-lifecycle
-      - name: Install pinned Rust toolchain
-        run: |
-          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
-          rustup default 1.99.0
-      - name: Fix overflow terminal classification and format
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('crates/optic-bridge-runtime/src/process.rs')
-          text = path.read_text()
-          old = '''    let _ = stdout_task.await;\n    let _ = stderr_task.await;\n    if let Ok(mut state) = record.state.lock() {\n        *state = JobState { status, exit_code };\n    }\n'''
-          new = '''    let _ = stdout_task.await;\n    let _ = stderr_task.await;\n    let status = if status == ProcessStatus::Exited\n        && record.output_overflow.load(Ordering::Acquire)\n    {\n        ProcessStatus::OutputLimitExceeded\n    } else {\n        status\n    };\n    if let Ok(mut state) = record.state.lock() {\n        *state = JobState { status, exit_code };\n    }\n'''
-          if old not in text:
-              raise SystemExit('expected monitor snippet not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
-          cargo fmt --all
-          cargo generate-lockfile
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock \
-            crates/optic-bridge-core/src/ids.rs \
-            crates/optic-bridge-core/src/limits.rs \
-            crates/optic-bridge-runtime/src/process.rs \
-            crates/optic-bridge-runtime/src/task_lease_registry.rs
-          if git diff --cached --quiet; then
-            echo "Canonical runtime files already committed."
-          else
-            git commit -m "fix: finalize bounded process lifecycle runtime"
-            git push origin HEAD:phase-1/process-lifecycle
-          fi
