@@ -65,11 +65,6 @@ impl TransactionalFileService {
         Ok(self.mutations.commit_write(&plan, &content)?)
     }
 
-    #[must_use]
-    pub fn journaled_mutations(&self) -> &JournaledMutationService {
-        &self.mutations
-    }
-
     fn read_exact_snapshot(
         &self,
         path: &WorkspacePath,
@@ -79,28 +74,27 @@ impl TransactionalFileService {
         let mut offset = 0_u64;
 
         loop {
-            let chunk = self
-                .mutations
-                .atomic()
-                .filesystem()
-                .read(path, offset, Some(self.read_chunk_bytes))?;
+            let chunk = self.mutations.atomic().filesystem().read(
+                path,
+                offset,
+                Some(self.read_chunk_bytes),
+            )?;
             if chunk.bytes.is_empty() && !chunk.eof {
                 return Err(TransactionalFileError::SnapshotDidNotProgress);
             }
 
-            let resulting_len = bytes
-                .len()
-                .checked_add(chunk.bytes.len())
-                .ok_or(TransactionalFileError::NewContentTooLarge {
+            let resulting_len = bytes.len().checked_add(chunk.bytes.len()).ok_or(
+                TransactionalFileError::SnapshotTooLarge {
                     limit: self.max_mutation_bytes,
-                })?;
-            if u64::try_from(resulting_len)
-                .map_err(|_| TransactionalFileError::NewContentTooLarge {
+                },
+            )?;
+            if u64::try_from(resulting_len).map_err(|_| {
+                TransactionalFileError::SnapshotTooLarge {
                     limit: self.max_mutation_bytes,
-                })?
-                > self.max_mutation_bytes
+                }
+            })? > self.max_mutation_bytes
             {
-                return Err(TransactionalFileError::NewContentTooLarge {
+                return Err(TransactionalFileError::SnapshotTooLarge {
                     limit: self.max_mutation_bytes,
                 });
             }
@@ -136,9 +130,10 @@ fn apply_byte_patch(
     patch: &BytePatch,
     max_mutation_bytes: u64,
 ) -> Result<Vec<u8>, TransactionalFileError> {
-    let offset = usize::try_from(patch.offset).map_err(|_| TransactionalFileError::PatchOutOfRange)?;
-    let remove_bytes = usize::try_from(patch.remove_bytes)
-        .map_err(|_| TransactionalFileError::PatchOutOfRange)?;
+    let offset =
+        usize::try_from(patch.offset).map_err(|_| TransactionalFileError::PatchOutOfRange)?;
+    let remove_bytes =
+        usize::try_from(patch.remove_bytes).map_err(|_| TransactionalFileError::PatchOutOfRange)?;
     let end = offset
         .checked_add(remove_bytes)
         .ok_or(TransactionalFileError::PatchOutOfRange)?;
@@ -153,11 +148,9 @@ fn apply_byte_patch(
         .ok_or(TransactionalFileError::NewContentTooLarge {
             limit: max_mutation_bytes,
         })?;
-    if u64::try_from(resulting_len)
-        .map_err(|_| TransactionalFileError::NewContentTooLarge {
-            limit: max_mutation_bytes,
-        })?
-        > max_mutation_bytes
+    if u64::try_from(resulting_len).map_err(|_| TransactionalFileError::NewContentTooLarge {
+        limit: max_mutation_bytes,
+    })? > max_mutation_bytes
     {
         return Err(TransactionalFileError::NewContentTooLarge {
             limit: max_mutation_bytes,
@@ -179,6 +172,8 @@ pub enum TransactionalFileError {
     FileSystem(#[from] FileSystemError),
     #[error("new mutation content exceeds hard byte ceiling {limit}")]
     NewContentTooLarge { limit: u64 },
+    #[error("patch base snapshot exceeds hard byte ceiling {limit}")]
+    SnapshotTooLarge { limit: u64 },
     #[error("patch range is outside the exact expected base content")]
     PatchOutOfRange,
     #[error("patch base changed while the bounded snapshot was being read")]
@@ -246,18 +241,18 @@ mod tests {
     #[test]
     fn transactional_write_and_patch_reuse_journaled_commit() {
         let (base, workspace, state) = fixture("write-patch");
-        let service = TransactionalFileService::from_hard_limits(
-            &workspace,
-            &state,
-            HardLimits::default(),
-        )
-        .expect("service");
+        let service =
+            TransactionalFileService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
         let path = WorkspacePath::parse("target.txt").expect("path");
 
         service
             .write(&path, ExpectedState::Absent, b"alpha")
             .expect("write");
-        assert_eq!(fs::read(workspace.join("target.txt")).expect("read"), b"alpha");
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("read"),
+            b"alpha"
+        );
 
         let expected = ContentVersion::from_bytes(b"alpha");
         service
@@ -284,12 +279,9 @@ mod tests {
     #[test]
     fn transactional_write_remains_fail_closed_without_platform_commit() {
         let (base, workspace, state) = fixture("unsupported");
-        let service = TransactionalFileService::from_hard_limits(
-            &workspace,
-            &state,
-            HardLimits::default(),
-        )
-        .expect("service");
+        let service =
+            TransactionalFileService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
         let path = WorkspacePath::parse("target.txt").expect("path");
 
         assert!(matches!(
