@@ -39,18 +39,21 @@ All notable project changes are recorded here.
 - Phase 1C MCP tools `process_start`, `process_read`, `process_stop`, `process_result` and `session_cancel`.
 - Bounded active process jobs, retained job history, output RAM, process output reads and execution timeout.
 - Session-owned cursor-readable stdout/stderr capture with opaque JobIds instead of arbitrary PIDs.
-- Windows process-tree lifecycle through Job Objects plus kill-on-drop, with Unix process-group fallback for cross-platform development tests.
 - Native Windows regression coverage for process output, cross-session rejection, timeout, explicit stop and output overflow.
+- Phase 1D `optic-bridge-windows` crate as the narrow Win32/unsafe containment boundary.
+- Custom Windows `LimitedJobObject` with suspended creation, configure-before-resume ordering, kill-on-close, active-process and total job-memory limits.
+- Native Windows Phase 1D fixtures proving process-count enforcement, memory enforcement, descendant-tree timeout cleanup and kill-on-close behavior.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1 and Phase 1A/1B, with Phase 1C under review.
-- Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1C runtime itself still refuses network-enabled process starts.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1 and the complete Phase 1A–1D vertical-slice implementation under review.
+- Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
 - A session receives `ProcessRun` only when the bridge operator explicitly authorizes at least one executable at startup.
 - Process output overflow is classified after stdout/stderr drains complete, closing a Windows race where a fast child could exit before the overflow flag was observed.
+- Windows process lifecycle no longer relies on the generic process-wrap Job Object wrapper for Phase 1D resource claims; the runtime uses the Optic-owned Windows adapter so authorized memory/process-count budgets become explicit kernel Job Object limits.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -64,4 +67,5 @@ All notable project changes are recorded here.
 - MCP cannot create process capabilities or leases; `process_start` must match an exact canonical executable lease created from operator startup configuration.
 - Process environment is empty by default and can inherit only names explicitly allowlisted by the operator.
 - Process control is by opaque session-owned JobId; no arbitrary PID kill API exists.
-- `memory_bytes` and `process_count` are authorized/bounded requests in Phase 1C but are not yet claimed as Windows kernel-enforced limits; that enforcement is reserved for Phase 1D.
+- On Windows, authorized `memory_bytes` and `process_count` now map to Job Object `JOB_OBJECT_LIMIT_JOB_MEMORY` and `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`; native CI proves both limits are enforced.
+- Each process job owns its own kill-on-close Job Object and is owned by exactly one application session; Job Objects are containment, not a complete sandbox.
