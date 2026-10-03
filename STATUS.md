@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 0.1 contract hardening  
+**Lifecycle:** pre-alpha / Phase 1 preparation  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Close the remaining security/domain contract gaps before adding MCP or OS effects.
+Start the Phase 1 vertical slice without weakening the Phase 0/0.1 security contracts: TransportGuard, session registry/revocation, bounded filesystem reads and supervised Windows process execution.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -23,20 +23,28 @@ Close the remaining security/domain contract gaps before adding MCP or OS effect
 - Typed ActionEnvelope, SessionGrant and TaskLease domain model.
 - Initial deterministic PolicyEngine and negative security tests.
 - Windows/Linux CI plus dependency-policy workflow.
+- Phase 0.1 contract hardening merged to `main` via PR #2.
+- Typed `Effect` variants replacing independently combinable action/target fields.
+- Explicit file `ExpectedState` and Git target-head preconditions.
+- Scope-bearing task leases for workspace, repository, executable and network boundaries.
+- Segment-aware workspace scope checks.
+- Dual session + task-lease authorization for process network access.
+- Monotonic runtime authorization deadline values.
+- Regression tests for scope escape and missing network authorization.
+- ADR-0009 for typed effects/scoped leases.
+- Research pass on handle-first filesystem I/O, Windows file identity, USN-assisted invalidation, ActionId idempotency, RMCP cache freshness, Job Objects and AppContainer/LPAC.
 
-### In progress — Phase 0.1
-- Replace independently combinable action kind/target fields with typed `Effect` variants.
-- Make file creation/update preconditions explicit through `ExpectedState`.
-- Add scope-bearing task leases for workspace, repository, executable and network boundaries.
-- Require network capability and network scope at both session and task-lease level.
-- Use monotonic deadline values for runtime lease/session expiry checks.
-- Expand executable security-invariant tests for scope/network failures.
-- Research file identity, handle-first filesystem operations, event-driven invalidation and idempotent action execution before deciding their implementation phase.
-
-### Next
+### Current / next implementation
 - TransportGuard contracts and tests.
-- Session registry/revocation lifecycle.
-- Phase 1 vertical slice: MCP stdio -> one session -> bounded file read/list -> policy -> supervised process lifecycle.
+- Session registry/revocation lifecycle and real monotonic Clock adapter.
+- Phase 1 vertical slice: MCP stdio -> one session -> bounded fs_list/fs_read -> policy -> process_start/read/stop -> Windows Job Object -> bounded output.
+- Explicit RMCP cache/freshness configuration so stale protocol cache never satisfies mutation/security preconditions.
+
+### Later validated research candidates
+- Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
+- Phase 3: bounded ActionId idempotency ledger integrated with recovery state.
+- Phase 4: worktree resource lifecycle and USN/notification-assisted invalidation with mandatory commit-time revalidation.
+- Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
 - MCP server/adapter.
@@ -46,9 +54,9 @@ Close the remaining security/domain contract gaps before adding MCP or OS effect
 - Installer/tunnel integration.
 - Public release.
 
-## Current branch / PR
+## Main baseline
 
-`hardening/phase-0-1-contracts` — Phase 0.1 contract hardening.
+`main` includes the Phase 0.1 squash merge from PR #2 (`487bb3c`).
 
 ## Health rule
 
