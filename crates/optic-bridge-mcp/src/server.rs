@@ -7,9 +7,9 @@ use optic_bridge_core::{
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
-    BoundedFileSystem, Clock, EntryKind, FileSystemError, ProcessError, ProcessManager,
-    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard,
-    TransportLimits,
+    AuthorizedFileMutationService, BoundedFileSystem, Clock, EntryKind, FileSystemError,
+    MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry, SessionRegistryError,
+    TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -38,6 +38,8 @@ pub struct ReadonlyMcpServer {
     pub(crate) processes: Arc<ProcessManager>,
     pub(crate) task_leases: Arc<TaskLeaseRegistry>,
     pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
+    pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+    pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -77,15 +79,54 @@ impl ReadonlyMcpServer {
         task_leases: Arc<TaskLeaseRegistry>,
         process_leases: BTreeMap<String, TaskLeaseId>,
     ) -> Result<Self, ServerBuildError> {
+        Self::new_with_mutation_runtime(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            process_leases,
+            None,
+            MutationAuthoritySet::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_mutation_runtime(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+        mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+        mutation_authorities: MutationAuthoritySet,
+    ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
             return Err(ServerBuildError::ResponseLimitTooSmall);
         }
+        if (mutation_authorities.has_write() || mutation_authorities.has_delete())
+            && mutation_service.is_none()
+        {
+            return Err(ServerBuildError::MutationRuntimeMissing);
+        }
+
         let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);
         let transport_guard = TransportGuard::new(TransportLimits::from(limits))?;
         let mut tool_router = Self::readonly_tool_router();
         tool_router.merge(Self::process_tool_router());
+        if mutation_authorities.has_write() {
+            tool_router.merge(Self::mutation_write_tool_router());
+        }
+        if mutation_authorities.has_delete() {
+            tool_router.merge(Self::mutation_delete_tool_router());
+        }
 
         Ok(Self {
             tool_router,
@@ -99,6 +140,8 @@ impl ReadonlyMcpServer {
             processes,
             task_leases,
             process_leases: Arc::new(process_leases),
+            mutation_service,
+            mutation_authorities: Arc::new(mutation_authorities),
         })
     }
 
@@ -408,6 +451,8 @@ pub enum ServerBuildError {
     Transport(#[from] TransportError),
     #[error("process runtime initialization failed: {0}")]
     Process(#[from] ProcessError),
+    #[error("mutation authority requires an initialized authorized mutation runtime")]
+    MutationRuntimeMissing,
     #[error("response hard limit is too small for the MCP envelope reserve")]
     ResponseLimitTooSmall,
 }
