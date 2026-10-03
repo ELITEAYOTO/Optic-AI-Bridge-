@@ -9,4 +9,6 @@ publish.workspace = true
 
 [dependencies]
 optic-bridge-core = { path = "../optic-bridge-core" }
+process-wrap.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
