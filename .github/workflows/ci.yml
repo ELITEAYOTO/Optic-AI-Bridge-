@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,3 +48,29 @@ jobs:
         run: cargo install --locked cargo-deny --version 0.20.2
       - name: Check advisories, licenses, bans and sources
         run: cargo deny check
+
+  format-branch:
+    name: Canonical rustfmt (temporary)
+    if: github.event_name == 'pull_request' && github.head_ref == 'phase-2/atomic-mutation-commit'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-2/atomic-mutation-commit
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Apply canonical formatting
+        run: cargo fmt --all
+      - name: Commit formatting only when needed
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/optic-bridge-runtime/src/mutation.rs crates/optic-bridge-windows/src/file.rs
+          git commit -m "chore: apply canonical rustfmt for Phase 2B"
+          git push origin HEAD:phase-2/atomic-mutation-commit
