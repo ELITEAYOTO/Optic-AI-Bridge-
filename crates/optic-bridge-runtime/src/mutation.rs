@@ -1,10 +1,17 @@
+use std::path::Path;
+
+#[cfg(windows)]
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
+#[cfg(all(test, not(windows)))]
+use std::path::PathBuf;
 
-use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
+use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath};
+#[cfg(windows)]
+use optic_bridge_core::ActionId;
 use thiserror::Error;
 
 use crate::{BoundedFileSystem, FileSystemError, MutationError};
@@ -258,6 +265,7 @@ impl AtomicMutationService {
         }
     }
 
+    #[cfg(windows)]
     fn absolute_path(&self, path: &WorkspacePath) -> PathBuf {
         let mut absolute = self.filesystem.root().to_path_buf();
         for segment in path.as_str().split('/') {
@@ -312,11 +320,13 @@ pub enum CommitVerification {
     CommittedButUnverified,
 }
 
+#[cfg(windows)]
 struct StagedFile {
     path: PathBuf,
     armed: bool,
 }
 
+#[cfg(windows)]
 impl StagedFile {
     fn create(parent: &Path, content: &[u8]) -> Result<Self, AtomicMutationError> {
         for _ in 0..16 {
@@ -348,6 +358,7 @@ impl StagedFile {
     }
 }
 
+#[cfg(windows)]
 impl Drop for StagedFile {
     fn drop(&mut self) {
         if self.armed {
