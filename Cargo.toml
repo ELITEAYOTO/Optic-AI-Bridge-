@@ -4,6 +4,7 @@ members = [
     "crates/optic-bridge-core",
     "crates/optic-bridge-policy",
     "crates/optic-bridge-runtime",
+    "crates/optic-bridge-windows",
     "crates/optic-bridge-mcp",
     "crates/optic-bridge-app",
 ]
@@ -21,7 +22,7 @@ base64 = "0.23"
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 futures = "0.3"
 getrandom = { version = "0.4.3", features = ["std"] }
-process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "job-object", "kill-on-drop", "process-group"] }
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "kill-on-drop", "process-group"] }
 rmcp = { version = "=3.4.0", default-features = false, features = ["server", "macros", "schemars", "transport-async-rw"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
@@ -29,6 +30,13 @@ serde_json = "1"
 thiserror = "2.0.21"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "process", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["codec"] }
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [profile.release]
 lto = "thin"

@@ -1,0 +1,13 @@
+[package]
+name = "optic-bridge-windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+process-wrap.workspace = true
+tokio.workspace = true
+windows.workspace = true
