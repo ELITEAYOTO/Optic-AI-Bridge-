@@ -1,6 +1,26 @@
-use std::{collections::BTreeSet, time::SystemTime};
+use std::collections::BTreeSet;
 
-use crate::{Capability, ResourceBudget, SessionHandle, TaskLeaseId};
+use crate::{Capability, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MonotonicTime(u64);
+
+impl MonotonicTime {
+    #[must_use]
+    pub const fn from_millis(value: u64) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn as_millis(self) -> u64 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn saturating_add_millis(self, value: u64) -> Self {
+        Self(self.0.saturating_add(value))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PrincipalId(String);
@@ -32,20 +52,30 @@ impl ProjectId {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LeaseScope {
+    WorkspaceAll,
+    WorkspacePrefix(WorkspacePath),
+    Repository,
+    ProcessExecutable(String),
+    NetworkAny,
+    NetworkEndpoint(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct SessionGrant {
     pub handle: SessionHandle,
     pub principal: PrincipalId,
     pub project: ProjectId,
     pub capabilities: BTreeSet<Capability>,
-    pub expires_at: SystemTime,
+    pub expires_at: MonotonicTime,
     pub policy_epoch: u64,
 }
 
 impl SessionGrant {
     #[must_use]
-    pub fn is_expired_at(&self, now: SystemTime) -> bool {
-        now >= self.expires_at
+    pub const fn is_expired_at(&self, now: MonotonicTime) -> bool {
+        now.0 >= self.expires_at.0
     }
 
     #[must_use]
@@ -59,19 +89,38 @@ pub struct TaskLease {
     pub id: TaskLeaseId,
     pub session: SessionHandle,
     pub capabilities: BTreeSet<Capability>,
+    pub scopes: BTreeSet<LeaseScope>,
     pub resource_ceiling: ResourceBudget,
-    pub expires_at: SystemTime,
+    pub expires_at: MonotonicTime,
     pub policy_epoch: u64,
 }
 
 impl TaskLease {
     #[must_use]
-    pub fn is_expired_at(&self, now: SystemTime) -> bool {
-        now >= self.expires_at
+    pub const fn is_expired_at(&self, now: MonotonicTime) -> bool {
+        now.0 >= self.expires_at.0
     }
 
     #[must_use]
     pub fn allows(&self, capability: Capability) -> bool {
         self.capabilities.contains(&capability)
+    }
+
+    #[must_use]
+    pub fn has_scope(&self, scope: &LeaseScope) -> bool {
+        self.scopes.contains(scope)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monotonic_deadlines_compare_without_wall_clock_semantics() {
+        let issued = MonotonicTime::from_millis(1_000);
+        let expires = issued.saturating_add_millis(500);
+        assert!(MonotonicTime::from_millis(1_499) < expires);
+        assert!(MonotonicTime::from_millis(1_500) >= expires);
     }
 }

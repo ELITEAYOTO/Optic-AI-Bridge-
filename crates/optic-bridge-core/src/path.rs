@@ -54,6 +54,15 @@ impl WorkspacePath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[must_use]
+    pub fn is_within(&self, prefix: &Self) -> bool {
+        self == prefix
+            || self
+                .0
+                .strip_prefix(&prefix.0)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    }
 }
 
 #[cfg(test)]
@@ -82,5 +91,14 @@ mod tests {
                 "candidate should be rejected: {candidate}"
             );
         }
+    }
+
+    #[test]
+    fn prefix_matching_is_segment_aware() {
+        let prefix = WorkspacePath::parse("src").expect("safe prefix");
+        let nested = WorkspacePath::parse("src/core/lib.rs").expect("safe nested path");
+        let sibling = WorkspacePath::parse("src2/lib.rs").expect("safe sibling path");
+        assert!(nested.is_within(&prefix));
+        assert!(!sibling.is_within(&prefix));
     }
 }

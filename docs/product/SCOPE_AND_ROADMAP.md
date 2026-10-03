@@ -2,7 +2,7 @@
 
 Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
 
-## Phase 0 — Architecture freeze (CURRENT)
+## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
 - Cargo workspace and stable internal interfaces.
 - Explicit application SessionHandle independent of MCP transport sessions.
@@ -13,16 +13,29 @@ Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
 - Source/sink containment model.
 - Maintenance, status, changelog and release-security lifecycle.
 
-**Gate:** no unresolved contradiction between tool contracts, policy, session ownership and resource bounds.
+Baseline merged through PR #1 on 2026-10-03.
+
+## Phase 0.1 — Contract hardening (CURRENT)
+
+- Typed `Effect` variants instead of independently combinable action/target fields.
+- Explicit file `ExpectedState` and Git target-head preconditions.
+- Scope-bearing task leases for workspace/repository/executable/network boundaries.
+- Segment-aware workspace scope checks.
+- Dual session + task-lease authorization for process network access.
+- Monotonic runtime authorization deadlines.
+- Regression tests for scope/network failures.
+- Research pass on filesystem identity, handle-first I/O, stale-context invalidation, retry/idempotency and Windows isolation profiles.
+
+**Gate:** CI green and no unresolved contradiction between tool contracts, policy, session ownership, lease scope, mutation preconditions and resource bounds.
 
 ## V1 essential
 
-- MCP adapter using the maintained Rust MCP SDK behind TransportGuard.
+- MCP adapter using the maintained Rust MCP SDK behind TransportGuard with explicit stale-cache/freshness policy.
 - Session identity, scoped project grant and revocable task/capability leases.
-- Filesystem list/read/search plus transactional patch/write with expected versions.
+- Filesystem list/read/search plus transactional patch/write with expected state/version.
 - Git status/diff/log and worktree lifecycle.
 - Structured process start/read/stop/result.
-- Per-session process ownership and Windows Job Object cleanup.
+- Per-session process ownership and Windows Job Object cleanup/resource enforcement.
 - Deterministic deny-by-default policy.
 - Bounded output, pagination, disk spool quotas and TTL.
 - Crash recovery journal.
@@ -33,13 +46,16 @@ Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
 ## V1.5 candidates
 
 - Deterministic coordinator for same-repo integration.
-- Event-driven stale-context invalidation: TargetHeadChanged/FileVersionChanged/LeaseRevoked.
+- Event-driven stale-context invalidation: TargetHeadChanged/FileVersionChanged/LeaseRevoked, with mandatory commit-time revalidation.
+- Bounded ActionId idempotency ledger if retry/recovery tests justify it.
 - Richer CLI session/task/resource dashboard.
-- Restricted-token execution profile after compatibility testing.
+- Restricted-token and AppContainer/LPAC execution profiles after compatibility testing.
 - Signed installer/update path and release provenance.
 
 ## Later / experimental
 
+- FILE_ID_INFO-backed durable file identity if Phase 2 adversarial tests show material benefit.
+- USN-assisted invalidation if benchmarks justify recovery/fallback complexity.
 - Content-addressed dedup if benchmarks justify it.
 - WASM/WASI extension boundary only after a concrete extension requirement.
 - VM/Windows Sandbox hard-isolation mode for untrusted workloads.
@@ -47,7 +63,7 @@ Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
 
 ## Reject unless evidence changes
 
-Embedded AI security reviewer as authorization dependency; generic shell as core primitive; probabilistic “risk score” controlling permissions; microservice/plugin-per-tool architecture; Electron dashboard; unbounded configurable limits; automatic trust of MCP tool annotations; broad remote-desktop scope.
+Embedded AI security reviewer as authorization dependency; generic shell as core primitive; probabilistic “risk score” controlling permissions; microservice/plugin-per-tool architecture; Electron dashboard; unbounded configurable limits; automatic trust of MCP tool annotations; filesystem watcher/USN silence as freshness authority; stale protocol cache as mutation authority; broad remote-desktop scope.
 
 ## Maintenance rule
 

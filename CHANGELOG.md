@@ -19,13 +19,22 @@ All notable project changes are recorded here.
 - Typed ActionEnvelope, SessionGrant and TaskLease.
 - Initial deterministic PolicyEngine with negative security tests.
 - Windows/Linux CI and cargo-deny dependency policy.
+- Phase 0.1 typed `Effect` model so target/precondition/reversibility semantics are derived from one valid variant rather than independently combinable fields.
+- Explicit `ExpectedState::{Absent, Content}` mutation preconditions and validated Git object ids for integration preconditions.
+- Scope-bearing task leases for workspace prefixes, repositories, process executables and network destinations.
+- Monotonic runtime deadline primitive for session/task expiry checks.
+- Security tests for lease-scope escape and process-network authorization.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only to executable Phase 0 foundation.
+- Project lifecycle advanced from documentation-only to executable Phase 0 foundation and then Phase 0.1 contract hardening.
+- Process network access now requires NetworkAccess at both session and task-lease level plus an explicit network lease scope.
+- Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
 - Transport limits must be enforced by Optic AI Bridge even when an upstream SDK also has limits.
 - Initial policy rejects cross-session leases, missing leases for mutating/process actions, stale policy epochs, resource-budget overflow, normal policy mutation and privilege elevation.
+- Task leases now deny mutations/process/network operations outside their explicit scope.
+- Network permission is no longer inherited from a broad session capability alone for leased process execution.
