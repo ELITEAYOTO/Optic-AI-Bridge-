@@ -122,7 +122,10 @@ fn provision_capability(
 
 fn validate_workspace_scopes(scopes: &BTreeSet<LeaseScope>) -> Result<(), MutationAuthorityError> {
     for scope in scopes {
-        if !matches!(scope, LeaseScope::WorkspaceAll | LeaseScope::WorkspacePrefix(_)) {
+        if !matches!(
+            scope,
+            LeaseScope::WorkspaceAll | LeaseScope::WorkspacePrefix(_)
+        ) {
             return Err(MutationAuthorityError::NonWorkspaceScope);
         }
     }
@@ -192,15 +195,9 @@ mod tests {
             delete_scopes: BTreeSet::from([prefix("generated")]),
         };
         let expires_at = MonotonicTime::from_millis(100);
-        let authority = MutationAuthoritySet::provision(
-            &registry,
-            &session,
-            &spec,
-            budget(),
-            expires_at,
-            7,
-        )
-        .expect("authority");
+        let authority =
+            MutationAuthoritySet::provision(&registry, &session, &spec, budget(), expires_at, 7)
+                .expect("authority");
 
         let write_id = authority
             .lease_for(Capability::FileWrite)
@@ -233,7 +230,9 @@ mod tests {
             delete_scopes: BTreeSet::new(),
         };
         assert_eq!(
-            non_workspace.validate().expect_err("must reject repository scope"),
+            non_workspace
+                .validate()
+                .expect_err("must reject repository scope"),
             MutationAuthorityError::NonWorkspaceScope
         );
 
@@ -242,7 +241,9 @@ mod tests {
             delete_scopes: BTreeSet::new(),
         };
         assert_eq!(
-            redundant.validate().expect_err("must reject redundant broad scope"),
+            redundant
+                .validate()
+                .expect_err("must reject redundant broad scope"),
             MutationAuthorityError::RedundantWorkspaceAll
         );
     }
