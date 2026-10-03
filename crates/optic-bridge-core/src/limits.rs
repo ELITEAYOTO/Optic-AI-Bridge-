@@ -40,7 +40,7 @@ pub struct HardLimits {
 impl Default for HardLimits {
     fn default() -> Self {
         Self {
-            max_request_bytes: 1 * 1024 * 1024,
+            max_request_bytes: 1024 * 1024,
             max_response_bytes: 256 * 1024,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
             max_process_budget: ResourceBudget {
