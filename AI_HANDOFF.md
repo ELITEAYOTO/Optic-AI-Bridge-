@@ -3,16 +3,47 @@
 Read this file before changing architecture or implementing features.
 
 ## Non-negotiable invariant
-**The AI decides. The bridge executes. Policy authorizes. Isolation contains.**
+
+**The AI decides what it wants to attempt. The bridge executes only authorized effects. Policy authorizes. Isolation contains.**
 
 ## MUST
-Preserve transport/core separation; enforce session ownership on every resource; use typed actions; bound all long-lived state; use expected hashes/preconditions for mutations; keep same-repo sessions in separate worktrees; make policy deterministic and deny-by-default; test Windows process cleanup/security boundaries natively; document changed invariants in ADRs.
+
+- Preserve transport/core separation and the TransportGuard.
+- Treat MCP 2026-07-28 transport as stateless; use Optic-owned application SessionHandles for stateful resources.
+- Route every executable effect through a typed ActionEnvelope.
+- Enforce session/task ownership on every resource.
+- Keep capabilities narrow, expiring and revocable.
+- Bound every long-lived collection, protocol body, queue, output and spool.
+- Use expected hashes/version preconditions for mutations.
+- Keep same-repo write sessions in separate worktrees.
+- Treat repository/log/network content as untrusted sources.
+- Gate sensitive sinks (network, secrets, external writes, policy/privilege) deterministically.
+- Test Windows process cleanup/security boundaries natively.
+- Add/update an ADR when an architectural/security invariant changes.
 
 ## MUST NOT
-Add Electron; require Node/Python/Docker for core; embed a required LLM; let AI grant/approve permissions; expose arbitrary PID kill; use opaque shell strings as the fundamental process API; allow unbounded output/history/queues/caches/responses; call Job Objects a full sandbox; silently overwrite stale files; share mutable cwd/environment across sessions; let normal tools mutate policy; couple core execution to one ChatGPT/OpenAI transport; import OpticCode Java/RAG/editor layers for convenience; expand scope without Product Charter/ADR updates.
+
+- Add Electron or require Node/Python/Docker for core.
+- Embed a required LLM.
+- Let AI grant/approve permissions or use AI risk scores as authorization.
+- Trust a client-supplied session ID merely because it is syntactically valid.
+- Expose arbitrary PID kill.
+- Use opaque shell strings as the fundamental process API.
+- Allow unbounded request bodies, stdout/stderr, histories, queues, caches or responses.
+- Call Job Objects a full sandbox.
+- Silently overwrite stale files.
+- Share mutable cwd/environment across sessions.
+- Give child processes ambient secrets/network without explicit capability.
+- Let normal tools mutate security policy.
+- Couple core execution to one ChatGPT/OpenAI transport.
+- Assume upstream SDK limits are sufficient.
+- Import OpticCode Java/RAG/editor layers for convenience.
+- Expand scope without Product Charter/ADR updates.
 
 ## Before coding
-Identify the canonical doc, security boundary, session ownership, resource bounds, cancellation/cleanup, crash recovery, tests and ADR requirement.
+
+Identify canonical doc, security invariants touched, ActionEnvelope shape, session/task ownership, resource ceilings, cancellation/cleanup, crash recovery, tests and ADR requirement.
 
 ## Definition of done
-Formatting/lint/tests pass; relevant security tests exist; no unbounded state was introduced; docs/contracts match code; Windows-specific behavior is tested on Windows; benchmark claims remain TARGET until measured.
+
+Formatting/lint/tests pass; security regression tests exist; no unbounded state was introduced; docs/contracts match code; Windows-specific behavior is tested on Windows; STATUS/CHANGELOG are accurate; benchmark claims remain TARGET until measured.
