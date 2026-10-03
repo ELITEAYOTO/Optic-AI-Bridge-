@@ -4,8 +4,8 @@ use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath
 use thiserror::Error;
 
 use crate::{
-    FileSystemError, JournaledMutationCommit, JournaledMutationError, JournaledMutationService,
-    RecoveryReport,
+    FileSystemError, JournaledDeleteCommit, JournaledMutationCommit, JournaledMutationError,
+    JournaledMutationService, RecoveryReport,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,6 +50,15 @@ impl TransactionalFileService {
         self.ensure_content_fits(content.len())?;
         let plan = self.mutations.prepare_write(path, expected)?;
         Ok(self.mutations.commit_write(&plan, content)?)
+    }
+
+    pub fn delete(
+        &self,
+        path: &WorkspacePath,
+        expected: ContentVersion,
+    ) -> Result<JournaledDeleteCommit, TransactionalFileError> {
+        let plan = self.mutations.prepare_delete(path, expected)?;
+        Ok(self.mutations.commit_delete(&plan)?)
     }
 
     pub fn apply_patch(
@@ -277,6 +286,26 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn transactional_delete_reuses_journaled_commit() {
+        let (base, workspace, state) = fixture("delete");
+        fs::write(workspace.join("target.txt"), b"alpha").expect("fixture");
+        let service =
+            TransactionalFileService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+
+        let result = service
+            .delete(&path, ContentVersion::from_bytes(b"alpha"))
+            .expect("delete");
+        assert!(result.journal_retired);
+        assert!(!workspace.join("target.txt").exists());
+        assert!(service.recover().expect("recovery").is_empty());
+
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn patch_reads_and_verifies_base_across_multiple_chunks() {
         let (base, workspace, state) = fixture("chunked-patch");
         fs::write(workspace.join("target.txt"), b"abcdef").expect("fixture");
@@ -356,6 +385,31 @@ mod tests {
             ))
         ));
         assert!(!workspace.join("target.txt").exists());
+        assert!(service.recover().expect("recovery").is_empty());
+
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn transactional_delete_remains_fail_closed_without_platform_commit() {
+        let (base, workspace, state) = fixture("unsupported-delete");
+        fs::write(workspace.join("target.txt"), b"alpha").expect("fixture");
+        let service =
+            TransactionalFileService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+
+        assert!(matches!(
+            service.delete(&path, ContentVersion::from_bytes(b"alpha")),
+            Err(TransactionalFileError::Mutation(
+                JournaledMutationError::UnsupportedPlatform
+            ))
+        ));
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("target"),
+            b"alpha"
+        );
         assert!(service.recover().expect("recovery").is_empty());
 
         fs::remove_dir_all(base).expect("cleanup");
