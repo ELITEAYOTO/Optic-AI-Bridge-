@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2C3B intended-state recovery and delete  
+**Lifecycle:** pre-alpha / Phase 2C3B transactional delete  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C3A is merged on `main` via PR #20 (`4415a65c`) after the exact final head `531f0e38` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Optic now has a `TransactionalFileService` for explicit-state whole-file writes plus bounded deterministic single-range patches, both reusing the Phase 2C2 journaled Windows commit. The current implementation tranche is Phase 2C3B: generalize recovery intent from content-only to explicit `ExpectedState::{Absent, Content}` with backward-compatible journal parsing, then add a Windows delete primitive and forced-crash delete recovery gates. Public MCP file mutation remains intentionally disabled.
+Phase 2C3B1 is merged on `main` via PR #22 (`f5eafc3a`) after the exact final head `fe025f46` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The recovery journal now writes schema v2 with explicit intended `ExpectedState::{Absent, Content}` while continuing to parse surviving v1 content journals strictly and fail closed on mixed/corrupt records. Recovery can therefore classify an absent intended final state deterministically. The current implementation tranche is Phase 2C3B2: add the Windows delete primitive, wrap it in the same durable journal lifecycle and prove forced process-crash recovery before exposing delete above runtime. Public MCP file mutation remains intentionally disabled.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -119,11 +119,21 @@ Phase 2C3A is merged on `main` via PR #20 (`4415a65c`) after the exact final hea
 - Non-Windows durable mutation remains fail-closed as unsupported.
 - Public MCP write/patch/delete tools remain disabled.
 
+### Phase 2C3B1 — intended-state journal merged
+- PR #22 merged to `main` as `f5eafc3a`; exact final head `fe025f46` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- New journal records use schema v2 with explicit intended `ExpectedState::{Absent, Content}` while the storage directory remains stable so surviving v1 journals are still discovered.
+- V1 content journals are parsed and normalized strictly; mixed v1/v2 transitions, unknown fields, invalid persisted content hashes and immutable-field changes fail closed while retaining evidence.
+- Recovery records now carry explicit intended state and classify `committing|ambiguous` against exact intended state first, then exact prior state.
+- Tests prove both delete-shaped outcomes before delete exists: observed `Absent` is committed; unchanged exact prior content is not committed.
+- Write staging cleanup accepts only `intended = Content`; a surviving write staging artifact associated with `intended = Absent` fails closed.
+- This tranche adds no Windows delete primitive and no MCP mutation surface.
+
 ### Current / next implementation
-- Phase 2C3B is current: first evolve the recovery journal from content-only intended success to explicit intended `ExpectedState::{Absent, Content}` while preserving deterministic compatibility with existing v1 write journals.
-- After that compatibility gate, add a Windows delete primitive with the same canonical/no-reparse/file-identity revalidation discipline and forced process-crash recovery tests.
-- Preserve exact `ExpectedState`, canonical/reparse containment, mutation byte ceilings, session ownership, task-lease workspace scope and capability checks at the policy/adapter boundary.
-- Add negative tests for stale writes/deletes, missing/wrong leases, cross-session access, scope escape, recovery-required outcomes and bounded mutation inputs before any public mutation adapter is enabled.
+- Phase 2C3B2 is current: add a Windows handle-first delete primitive with no-reparse/final-path/`FILE_ID_INFO` revalidation and exact content precondition.
+- Wrap delete in the Phase 2C durable journal lifecycle with `intended = ExpectedState::Absent`; errors after durable `committing` remain recovery-required rather than safe retry signals.
+- Add native Windows forced-process-crash delete gates for prepared, committing-before-delete, post-delete-service return and terminal-before-retirement boundaries.
+- Preserve exact `ExpectedState`, canonical/reparse containment, session ownership, task-lease workspace scope and capability checks at the policy/adapter boundary.
+- Add negative tests for stale writes/deletes, missing/wrong leases, cross-session access, scope escape and recovery-required outcomes before any public mutation adapter is enabled.
 - Public MCP mutation remains deferred until the full 2C3 runtime/policy/recovery gates pass.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
@@ -135,7 +145,6 @@ Phase 2C3A is merged on `main` via PR #20 (`4415a65c`) after the exact final hea
 
 ### Not implemented yet
 - Transactional delete and public filesystem mutation MCP services.
-- Generalized intended-absent recovery state for delete.
 - Git execution services.
 - Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
@@ -146,7 +155,7 @@ Phase 2C3A is merged on `main` via PR #20 (`4415a65c`) after the exact final hea
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`) and Phase 2C3A (`4415a65c`). Phase 2C3B is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`) and Phase 2C3B1 (`f5eafc3a`). Phase 2C3B2 is the current implementation tranche.
 
 ## Health rule
 

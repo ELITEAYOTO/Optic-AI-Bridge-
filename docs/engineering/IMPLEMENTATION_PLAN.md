@@ -183,19 +183,35 @@ Status: **merged** in PR #20 (`4415a65c`). Exact final head `531f0e38` passed Ub
 8. native Windows coverage includes real write+patch, multi-chunk base reads and stale-base rejection without modification;
 9. no MCP mutation tool is exposed.
 
-##### Phase 2C3B — intended-state journal generalization + delete
+##### Phase 2C3B — intended-state recovery + delete
+
+Status: **current**, split into B1/B2.
+
+###### Phase 2C3B1 — intended-state journal compatibility
+
+Status: **merged** in PR #22 (`f5eafc3a`). Exact final head `fe025f46` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+
+1. journal record schema v2 represents intended `ExpectedState::{Absent, Content}` explicitly;
+2. the stable journal storage directory is unchanged so surviving v1 records remain discoverable;
+3. v1 content journals are strictly normalized to explicit content intent;
+4. mixed schemas, unknown fields, invalid persisted content hashes and immutable-field changes fail closed while retaining evidence;
+5. `committing|ambiguous` recovery compares the observed canonical state against exact intended state first, then exact prior state;
+6. tests prove intended-absent committed and not-committed classifications without pretending delete exists yet;
+7. write staging cleanup refuses a staging artifact associated with intended `Absent`;
+8. no Windows delete primitive or MCP mutation surface is added here.
+
+###### Phase 2C3B2 — Windows transactional delete
 
 Status: **current**.
 
 Required before delete can be called transactional/recoverable:
 
-1. evolve the journal contract from content-only intended success to explicit intended `ExpectedState::{Absent, Content}`;
-2. preserve deterministic parsing/recovery of already-written v1 content journals or provide a strictly validated compatible migration path;
-3. classify a post-delete crash as committed when the exact intended final state is `Absent` and as not committed when the exact prior content remains;
-4. add the Windows delete primitive with the same canonical/no-reparse/file-identity revalidation discipline as write;
-5. add forced-crash delete recovery gates before exposing delete above runtime.
-
-Prefer splitting 2C3B into a compatibility-only journal tranche followed by the Windows delete tranche if that keeps failures attributable.
+1. add a Windows handle-first delete primitive with final-component no-reparse denial, final-path workspace containment and exact `FILE_ID_INFO` binding;
+2. require exact current `ContentVersion` for delete and revalidate state + identity immediately before the delete effect;
+3. wrap delete in the Phase 2C journal lifecycle with intended `ExpectedState::Absent` and no write-staging artifact;
+4. treat any failure after durable `committing` as recovery-required until exact observed state reconciles it;
+5. add native Windows forced-process-crash gates for durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement boundaries;
+6. retain non-Windows fail-closed behavior and expose no MCP delete tool in this tranche.
 
 ##### Phase 2C3C — authorization/adapter gate
 
