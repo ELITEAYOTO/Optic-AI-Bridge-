@@ -24,7 +24,8 @@ pub use filesystem::{
     MutationError, MutationObservation,
 };
 pub use journaled_mutation::{
-    JournaledMutationCommit, JournaledMutationError, JournaledMutationService,
+    JournaledDeleteCommit, JournaledMutationCommit, JournaledMutationError,
+    JournaledMutationService,
 };
 pub use mutation::{
     AtomicMutationError, AtomicMutationService, CommitVerification, DeleteCommit,
