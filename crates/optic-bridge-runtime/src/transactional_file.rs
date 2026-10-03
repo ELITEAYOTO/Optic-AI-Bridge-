@@ -275,6 +275,71 @@ mod tests {
         fs::remove_dir_all(base).expect("cleanup");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn patch_reads_and_verifies_base_across_multiple_chunks() {
+        let (base, workspace, state) = fixture("chunked-patch");
+        fs::write(workspace.join("target.txt"), b"abcdef").expect("fixture");
+        let limits = HardLimits {
+            max_fs_read_bytes: 2,
+            ..HardLimits::default()
+        };
+        let service = TransactionalFileService::from_hard_limits(&workspace, &state, limits)
+            .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+
+        service
+            .apply_patch(
+                &path,
+                ContentVersion::from_bytes(b"abcdef"),
+                &BytePatch {
+                    offset: 2,
+                    remove_bytes: 2,
+                    insert: b"XY".to_vec(),
+                },
+            )
+            .expect("chunked patch");
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("read patched"),
+            b"abXYef"
+        );
+        assert!(service.recover().expect("recovery").is_empty());
+
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stale_patch_base_is_rejected_without_modifying_target() {
+        let (base, workspace, state) = fixture("stale-patch");
+        fs::write(workspace.join("target.txt"), b"alpha").expect("fixture");
+        let service =
+            TransactionalFileService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+
+        assert!(
+            service
+                .apply_patch(
+                    &path,
+                    ContentVersion::from_bytes(b"stale"),
+                    &BytePatch {
+                        offset: 0,
+                        remove_bytes: 1,
+                        insert: b"A".to_vec(),
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("read unchanged"),
+            b"alpha"
+        );
+        assert!(service.recover().expect("recovery").is_empty());
+
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn transactional_write_remains_fail_closed_without_platform_commit() {
