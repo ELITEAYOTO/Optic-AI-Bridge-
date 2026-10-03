@@ -31,7 +31,8 @@ impl MutationRecoveryJournal {
         workspace_root: &Path,
         limits: HardLimits,
     ) -> Result<Self, RecoveryJournalError> {
-        if limits.max_mutation_journal_file_bytes == 0 || limits.max_mutation_recovery_records == 0 {
+        if limits.max_mutation_journal_file_bytes == 0 || limits.max_mutation_recovery_records == 0
+        {
             return Err(RecoveryJournalError::InvalidLimits);
         }
 
@@ -221,7 +222,9 @@ impl MutationRecoveryJournal {
             .checked_add(1)
             .ok_or(RecoveryJournalError::InvalidLimits)?;
         let mut bytes = Vec::new();
-        file.by_ref().take(read_limit).read_to_end(&mut bytes)?;
+        std::io::Read::by_ref(&mut file)
+            .take(read_limit)
+            .read_to_end(&mut bytes)?;
         if u64::try_from(bytes.len()).map_err(|_| RecoveryJournalError::InvalidLimits)?
             > self.max_file_bytes
         {
@@ -254,11 +257,11 @@ impl MutationRecoveryJournal {
     ) -> Result<(), RecoveryJournalError> {
         let additional_bytes =
             u64::try_from(additional_bytes).map_err(|_| RecoveryJournalError::InvalidLimits)?;
-        let resulting = current_bytes
-            .checked_add(additional_bytes)
-            .ok_or(RecoveryJournalError::JournalFileTooLarge {
+        let resulting = current_bytes.checked_add(additional_bytes).ok_or(
+            RecoveryJournalError::JournalFileTooLarge {
                 limit: self.max_file_bytes,
-            })?;
+            },
+        )?;
         if resulting > self.max_file_bytes {
             return Err(RecoveryJournalError::JournalFileTooLarge {
                 limit: self.max_file_bytes,
@@ -384,7 +387,7 @@ impl JournalExpectedState {
         match (self, observed) {
             (Self::Absent, ExpectedState::Absent) => true,
             (Self::Content { version_hex }, ExpectedState::Content(version)) => {
-                version.to_hex() == *version_hex
+                version.to_hex() == version_hex.as_str()
             }
             _ => false,
         }
@@ -435,7 +438,9 @@ fn parse_journal(
         entries.push(serde_json::from_slice::<JournalEntry>(chunk)?);
     }
 
-    let first = entries.first().ok_or(RecoveryJournalError::CorruptJournal)?;
+    let first = entries
+        .first()
+        .ok_or(RecoveryJournalError::CorruptJournal)?;
     if first.version != JOURNAL_VERSION
         || first.state != JournalState::Prepared
         || first.action_id != expected_action_id.to_token()
@@ -471,7 +476,12 @@ fn parse_journal(
         if entry.state != expected_state {
             return Err(RecoveryJournalError::InvalidStateTransition);
         }
-        if index == 2 && !matches!(entry.state, JournalState::Verified | JournalState::Ambiguous) {
+        if index == 2
+            && !matches!(
+                entry.state,
+                JournalState::Verified | JournalState::Ambiguous
+            )
+        {
             return Err(RecoveryJournalError::InvalidStateTransition);
         }
         latest = entry.state;
@@ -548,13 +558,15 @@ mod tests {
         let (workspace, state) = fixture("inside-state");
         let inside = workspace.join("state");
         fs::create_dir_all(&inside).expect("inside state");
-        let atomic = crate::AtomicMutationService::from_hard_limits(
-            &workspace,
-            HardLimits::default(),
-        )
-        .expect("atomic");
+        let atomic =
+            crate::AtomicMutationService::from_hard_limits(&workspace, HardLimits::default())
+                .expect("atomic");
         assert!(matches!(
-            MutationRecoveryJournal::open(&inside, atomic.filesystem().root(), HardLimits::default()),
+            MutationRecoveryJournal::open(
+                &inside,
+                atomic.filesystem().root(),
+                HardLimits::default()
+            ),
             Err(RecoveryJournalError::StateDirectoryInsideWorkspace)
         ));
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
@@ -580,7 +592,12 @@ mod tests {
             report.records[0].outcome,
             RecoveryOutcome::PreparedNotCommitted
         );
-        assert!(fs::read_dir(journal.root()).expect("journal dir").next().is_none());
+        assert!(
+            fs::read_dir(journal.root())
+                .expect("journal dir")
+                .next()
+                .is_none()
+        );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
@@ -604,7 +621,10 @@ mod tests {
         fs::write(workspace.join("target.txt"), b"new").expect("new");
 
         let report = journal.reconcile(atomic.filesystem()).expect("reconcile");
-        assert_eq!(report.records[0].outcome, RecoveryOutcome::ObservedCommitted);
+        assert_eq!(
+            report.records[0].outcome,
+            RecoveryOutcome::ObservedCommitted
+        );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
