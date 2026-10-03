@@ -7,7 +7,7 @@
 
 ## Current focus
 
-Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented on PR #18: the real Windows mutation commit is journal-wrapped, one ActionId owns journal + staging identity, process-crash recovery is exercised at four durable lifecycle boundaries, and recovery preserves journal evidence until operation-owned staging has been validated/cleaned. Public MCP file mutation remains intentionally disabled. The remaining work in this tranche is final living-doc alignment and a clean Ubuntu/Windows/dependency-policy gate on the complete PR head before merge.
+Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented on PR #18: the real Windows mutation commit is journal-wrapped, one ActionId owns journal + staging identity, process-crash recovery is exercised at four durable lifecycle boundaries, and recovery preserves journal evidence until operation-owned staging has been validated/cleaned. Clean code head `461a61ba` contains the recovery-evidence/staging hardening with the normal read-only CI workflow restored; the remaining work in this tranche is the full Ubuntu/Windows/dependency-policy gate on the complete code + documentation head before merge. Public MCP file mutation remains intentionally disabled.
 
 ### Completed
 - Documentation ownership and living governance.
