@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 1 complete, Phase 2 in preparation  
+**Status:** pre-alpha — Phase 2A merged, Phase 2B next  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D are merged. The current baseline includes bounded MCP filesystem reads, structured lease-gated processes, and native Windows Job Object containment with process-count, job-memory and child-tree cleanup gates.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D and Phase 2A are merged. The current baseline includes bounded MCP filesystem reads, structured lease-gated processes, native Windows Job Object containment, and a bounded canonical mutation-observation/expected-state foundation. Durable file mutation is intentionally not exposed yet.
 
 ## Implemented Phase 1 surface
 
@@ -23,7 +23,16 @@ The repository started documentation-first and now contains an executable Rust i
 - Windows kill-on-close, active-process and total job-memory limits derived from the authorized `ResourceBudget`;
 - native Windows gates for process count, memory, descendant-tree timeout cleanup, kill-on-close and fail-closed containment unwrap.
 
-The implementation remains pre-alpha. Phase 2 will add safe filesystem mutation and Git execution with explicit stale-state and crash-recovery gates. Installer/tunnel integration and stronger restricted-token/AppContainer-style hardening are also not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+## Implemented Phase 2A foundation
+
+- streaming BLAKE3 content observation without loading whole targets into RAM;
+- hard mutation-observation byte ceiling through `HardLimits::max_fs_mutation_bytes`;
+- canonical mutation target observation for existing and absent targets;
+- exact `ExpectedState::Absent` / `ExpectedState::Content(version)` conflict checks;
+- leaf-symlink rejection and parent-canonicalization/workspace containment checks;
+- no durable write/delete/patch operation and no MCP mutation tool yet.
+
+The implementation remains pre-alpha. Phase 2B is the next gate: Windows handle-first reparse/final-target validation, mutation-time revalidation and a bounded atomic commit primitive. Durable crash-recovery journaling and public mutation tools come only after that boundary is proven. Installer/tunnel integration and stronger restricted-token/AppContainer-style hardening are also not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 

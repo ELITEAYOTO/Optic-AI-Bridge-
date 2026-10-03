@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2A mutation foundation  
+**Lifecycle:** pre-alpha / Phase 2B mutation-time containment next  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 1 is complete on `main`. Phase 2A is under review in PR #9 and deliberately stops at bounded canonical mutation observation plus exact expected-state validation. It does **not** expose durable filesystem mutation or new MCP write tools yet.
+Phase 2A is merged on `main` via PR #9 (`71bdf082`). The next implementation tranche is Phase 2B: mutation-time OS containment/revalidation and a narrow atomic commit primitive. Durable filesystem mutation remains intentionally unavailable to MCP until the Windows handle/reparse boundary and later recovery journal gates are proven.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -80,7 +80,8 @@ Phase 1 is complete on `main`. Phase 2A is under review in PR #9 and deliberatel
   - explicitly unwrapping the containment wrapper does not allow the child to survive.
 - Final PR #7 head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
 
-### Phase 2A — under review in PR #9
+### Phase 2A — merged
+- PR #9 merged to `main` as `71bdf082`.
 - Adds bounded streaming BLAKE3 content observation without loading whole files into RAM.
 - Adds `HardLimits::max_fs_mutation_bytes` (default 8 MiB) so precondition hashing is bounded in bytes as well as memory.
 - Adds `MutationObservation` and isolated `MutationError` runtime types without changing the existing read-only MCP error surface.
@@ -89,14 +90,17 @@ Phase 1 is complete on `main`. Phase 2A is under review in PR #9 and deliberatel
 - Canonical targets must remain inside the canonical workspace root.
 - `ExpectedState::Absent` and exact `ExpectedState::Content(version)` are checked explicitly; stale/blind-overwrite attempts fail closed.
 - Unix regression tests cover leaf symlink denial, canonicalized in-workspace parent symlinks and parent escape denial.
+- Oversized mutation targets fail closed at the hard observation ceiling.
 - This tranche performs no durable mutation and exposes no MCP write/delete/patch tools.
-- It also does not claim final race-free Windows mutation containment: handle-first reparse/final-path/file-identity revalidation remains required at commit time in the next tranche.
+- It does not claim final race-free Windows mutation containment: handle-first reparse/final-path/file-identity revalidation remains required at commit time.
+- The exact final tree was validated green on Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; a temporary CI-only PR #10 was used because PR #9's Actions concurrency group had a cancelled intermediate Ubuntu job stuck without steps.
 
 ### Current / next implementation
-- Merge PR #9 only after its final documentation head passes Ubuntu, Windows and dependency-policy CI.
 - Phase 2B should introduce mutation-time OS containment/revalidation, including Windows handle-first reparse/final-target checks and a `FILE_ID_INFO` identity PoC where it materially closes delete/recreate races.
-- Only after that boundary is proven should the runtime add same-directory temporary writes/atomic replacement plus a bounded durable recovery journal.
-- MCP `fs_write` / patch / delete surfaces remain deferred until stale-write, path/reparse and forced-crash gates exist.
+- Revalidate the exact expected state immediately before the durable commit point.
+- Add a bounded same-directory temporary write plus atomic create/replace primitive only after the target handle boundary is proven.
+- Keep MCP `fs_write` / patch / delete surfaces deferred.
+- Phase 2C then adds the durable recovery journal and forced-crash gates before public mutation services.
 
 ### Later validated research candidates
 - Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
@@ -115,7 +119,7 @@ Phase 1 is complete on `main`. Phase 2A is under review in PR #9 and deliberatel
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`) and Phase 1D (`69af07a`). Phase 1 is complete at the current pre-alpha scope. Phase 2A is under review in PR #9 and is not part of `main` until its final gates pass.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`) and Phase 2A (`71bdf082`). Phase 2B is the next implementation tranche.
 
 ## Health rule
 
