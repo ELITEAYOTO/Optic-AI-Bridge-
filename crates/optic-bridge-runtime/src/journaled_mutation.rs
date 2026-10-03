@@ -106,7 +106,7 @@ impl JournaledMutationService {
         content: &[u8],
         on_boundary: &mut dyn FnMut(JournalCommitBoundary),
     ) -> Result<JournaledMutationCommit, JournaledMutationError> {
-        let intended = ContentVersion::from_bytes(content);
+        let intended = ExpectedState::Content(ContentVersion::from_bytes(content));
         let ticket = self.journal.begin(plan, intended)?;
         on_boundary(JournalCommitBoundary::PreparedDurable);
 
@@ -190,6 +190,16 @@ impl JournaledMutationService {
                     action_id: record.action_id.clone(),
                 });
             }
+            let intended_version = match record.intended {
+                ExpectedState::Content(version) => version,
+                ExpectedState::Absent => {
+                    return Err(
+                        JournaledMutationError::UnexpectedAbsentIntentStagingArtifact {
+                            action_id: record.action_id.clone(),
+                        },
+                    );
+                }
+            };
             if metadata.len() > self.max_mutation_bytes {
                 return Err(JournaledMutationError::StagingArtifactTooLarge {
                     action_id: record.action_id.clone(),
@@ -208,7 +218,7 @@ impl JournaledMutationService {
                     action_id: record.action_id.clone(),
                     source,
                 })?;
-            if observed.to_hex() != record.intended_version_hex {
+            if observed != intended_version {
                 return Err(JournaledMutationError::StagingContentMismatch {
                     action_id: record.action_id.clone(),
                 });
@@ -265,6 +275,10 @@ pub enum JournaledMutationError {
         "operation {action_id:?} has a staging artifact even though only prepared state was durable"
     )]
     UnexpectedPreparedStagingArtifact { action_id: ActionId },
+    #[error(
+        "operation {action_id:?} has a write staging artifact for an intended absent final state"
+    )]
+    UnexpectedAbsentIntentStagingArtifact { action_id: ActionId },
     #[error("operation {action_id:?} staging artifact exceeds hard byte ceiling {limit}")]
     StagingArtifactTooLarge { action_id: ActionId, limit: u64 },
     #[error("operation {action_id:?} staging content observation failed: {source}")]
@@ -420,7 +434,10 @@ mod tests {
 
         let ticket = service
             .journal()
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         service
             .journal()
@@ -449,7 +466,10 @@ mod tests {
             .expect("plan");
         let ticket = service
             .journal()
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         service
             .journal()
@@ -485,7 +505,10 @@ mod tests {
             .expect("plan");
         let ticket = service
             .journal()
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         service
             .journal()
