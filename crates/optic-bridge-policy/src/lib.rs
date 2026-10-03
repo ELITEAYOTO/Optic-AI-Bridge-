@@ -162,11 +162,7 @@ mod tests {
         }
     }
 
-    fn lease(
-        session: &SessionGrant,
-        now: SystemTime,
-        capabilities: &[Capability],
-    ) -> TaskLease {
+    fn lease(session: &SessionGrant, now: SystemTime, capabilities: &[Capability]) -> TaskLease {
         TaskLease {
             id: TaskLeaseId::generate().expect("test entropy"),
             session: session.handle.clone(),
