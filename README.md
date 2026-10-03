@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2C3B2 transactional delete implemented in PR #24; authorization/adapter gate next  
+**Status:** pre-alpha — Phase 2C3B2 merged in PR #24 (`b346a7d9`); Phase 2C3C authorization/adapter gate current  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A and Phase 2C3B1 are merged. Phase 2C3B2 is implemented in PR #24 and its exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Public durable file mutation is still intentionally not exposed through MCP; Phase 2C3C policy/adapter gates come next.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. PR #24 merged Phase 2C3B2 as `b346a7d9` after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Public durable file mutation is still intentionally not exposed through MCP; Phase 2C3C policy/adapter gating is current.
 
 ## Implemented Phase 1 surface
 
@@ -74,7 +74,7 @@ The crash model is deliberately narrow: the post-commit hook is after the atomic
 
 ### Phase 2C3 — transactional runtime services
 
-Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 generalized recovery intent to exact `ExpectedState::{Absent, Content}` with strict v1 journal compatibility. Phase 2C3B2 is implemented in PR #24:
+Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 generalized recovery intent to exact `ExpectedState::{Absent, Content}` with strict v1 journal compatibility. Phase 2C3B2 merged in PR #24 (`b346a7d9`):
 
 - `TransactionalFileService::delete` requires the exact existing `ContentVersion`; there is no blind-delete/absent-plan input;
 - Windows opens a dedicated no-reparse read+DELETE handle, captures final path and `FILE_ID_INFO`, re-hashes the exact target on that same handle and performs `FileDispositionInfo` on that handle rather than deleting by path;
@@ -82,9 +82,9 @@ Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 ge
 - delete uses the existing durable journal with `intended = ExpectedState::Absent`, no write-staging artifact, and recovery-required semantics after durable `committing`;
 - native Windows child-process gates cover durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement, with deterministic restart reconciliation and an empty second recovery;
 - non-Windows durable delete remains fail-closed as unsupported;
-- exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
 
-The next gate is Phase 2C3C: authorize `FileWrite`/`FileDelete` through the existing session capability + exact task lease + canonical workspace scope model, add the negative policy/recovery tests, and only then expose MCP mutation as a thin adapter. MCP `fs_write`/patch/delete remain disabled today.
+Phase 2C3C is current: authorize `FileWrite`/`FileDelete` through the existing session capability + exact task lease + canonical workspace scope model, add the negative policy/recovery tests, and only then expose MCP mutation as a thin adapter. MCP `fs_write`/patch/delete remain disabled today.
 
 The implementation remains pre-alpha. Installer/tunnel integration, public mutation/Git tools, multi-session orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
