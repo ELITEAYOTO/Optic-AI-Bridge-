@@ -1,6 +1,4 @@
-use crate::{
-    ActionId, ContentVersion, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath,
-};
+use crate::{ActionId, ContentVersion, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Capability {
