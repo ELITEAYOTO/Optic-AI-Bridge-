@@ -15,8 +15,8 @@ use crate::{BoundedFileSystem, FileSystemError, MutationError};
 
 #[cfg(windows)]
 use optic_bridge_windows::{
-    WindowsFileError, WindowsFileIdentity, inspect_directory_no_reparse, open_file_no_reparse,
-    replace_file_atomically,
+    WindowsFileError, WindowsFileIdentity, inspect_directory_no_reparse,
+    open_file_for_delete_no_reparse, open_file_no_reparse, replace_file_atomically,
 };
 
 #[cfg(windows)]
@@ -70,6 +70,34 @@ impl AtomicMutationService {
         })
     }
 
+    pub fn prepare_delete(
+        &self,
+        path: &WorkspacePath,
+        expected: ContentVersion,
+    ) -> Result<PreparedDelete, AtomicMutationError> {
+        let expected_state = ExpectedState::Content(expected);
+        let observation = self
+            .filesystem
+            .require_expected_state(path, expected_state)?;
+
+        #[cfg(windows)]
+        let windows_identity = match self
+            .prepare_windows_guard(&observation.canonical_path, expected_state)?
+        {
+            WindowsMutationGuard::Existing { identity } => identity,
+            WindowsMutationGuard::Absent { .. } => {
+                return Err(AtomicMutationError::InvalidPreparedMutation);
+            }
+        };
+
+        Ok(PreparedDelete {
+            canonical_path: observation.canonical_path,
+            expected,
+            #[cfg(windows)]
+            windows_identity,
+        })
+    }
+
     pub fn commit_write(
         &self,
         plan: &PreparedMutation,
@@ -113,6 +141,22 @@ impl AtomicMutationService {
         #[cfg(not(windows))]
         {
             let _ = (plan, content, action_id);
+            Err(AtomicMutationError::UnsupportedPlatform)
+        }
+    }
+
+    pub fn commit_delete(
+        &self,
+        plan: &PreparedDelete,
+    ) -> Result<DeleteCommit, AtomicMutationError> {
+        #[cfg(windows)]
+        {
+            self.commit_delete_windows(plan)
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = plan;
             Err(AtomicMutationError::UnsupportedPlatform)
         }
     }
@@ -227,6 +271,65 @@ impl AtomicMutationService {
     }
 
     #[cfg(windows)]
+    fn commit_delete_windows(
+        &self,
+        plan: &PreparedDelete,
+    ) -> Result<DeleteCommit, AtomicMutationError> {
+        let expected_state = ExpectedState::Content(plan.expected);
+        let observation = self
+            .filesystem
+            .require_expected_state(&plan.canonical_path, expected_state)?;
+        if observation.canonical_path != plan.canonical_path {
+            return Err(AtomicMutationError::CanonicalTargetChanged);
+        }
+
+        let absolute = self.absolute_path(&plan.canonical_path);
+        let mut opened = open_file_for_delete_no_reparse(&absolute)?;
+        self.ensure_windows_final_path(opened.final_path())?;
+        if opened.identity() != plan.windows_identity {
+            return Err(AtomicMutationError::TargetIdentityChanged);
+        }
+        let observed =
+            ContentVersion::from_reader_bounded(opened.file_mut(), self.max_mutation_bytes)
+                .map_err(|error| match error {
+                    optic_bridge_core::ContentVersionReadError::LimitExceeded => {
+                        AtomicMutationError::NewContentTooLarge {
+                            limit: self.max_mutation_bytes,
+                        }
+                    }
+                    optic_bridge_core::ContentVersionReadError::Io(error) => {
+                        AtomicMutationError::Io(error)
+                    }
+                })?;
+        if observed != plan.expected {
+            return Err(AtomicMutationError::StrongPreconditionMismatch);
+        }
+
+        // The same no-reparse handle whose final path, identity and bytes were
+        // validated above performs the delete. No path-based delete is issued.
+        opened.delete()?;
+
+        let verification = match self
+            .filesystem
+            .observe_mutation_target(&plan.canonical_path)
+        {
+            Ok(observation)
+                if observation.state == ExpectedState::Absent
+                    && observation.canonical_path == plan.canonical_path =>
+            {
+                DeleteVerification::VerifiedAbsent
+            }
+            _ => DeleteVerification::CommittedButUnverified,
+        };
+
+        Ok(DeleteCommit {
+            canonical_path: plan.canonical_path.clone(),
+            previous_version: plan.expected,
+            verification,
+        })
+    }
+
+    #[cfg(windows)]
     fn revalidate_plan(&self, plan: &PreparedMutation) -> Result<(), AtomicMutationError> {
         let observation = self
             .filesystem
@@ -314,6 +417,31 @@ impl PreparedMutation {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreparedDelete {
+    canonical_path: WorkspacePath,
+    expected: ContentVersion,
+    #[cfg(windows)]
+    windows_identity: WindowsFileIdentity,
+}
+
+impl PreparedDelete {
+    #[must_use]
+    pub fn canonical_path(&self) -> &WorkspacePath {
+        &self.canonical_path
+    }
+
+    #[must_use]
+    pub const fn expected_version(&self) -> ContentVersion {
+        self.expected
+    }
+
+    #[must_use]
+    pub const fn previous_state(&self) -> ExpectedState {
+        ExpectedState::Content(self.expected)
+    }
+}
+
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowsMutationGuard {
@@ -336,6 +464,19 @@ pub struct MutationCommit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommitVerification {
     Verified(ContentVersion),
+    CommittedButUnverified,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteCommit {
+    pub canonical_path: WorkspacePath,
+    pub previous_version: ContentVersion,
+    pub verification: DeleteVerification,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeleteVerification {
+    VerifiedAbsent,
     CommittedButUnverified,
 }
 
@@ -502,6 +643,26 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn durable_delete_fails_closed_on_unsupported_platforms() {
+        let root = workspace("unsupported-delete");
+        fs::write(root.join("target.txt"), b"alpha").expect("fixture");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"alpha"))
+            .expect("plan");
+
+        assert!(matches!(
+            service.commit_delete(&plan),
+            Err(AtomicMutationError::UnsupportedPlatform)
+        ));
+        assert_eq!(fs::read(root.join("target.txt")).expect("target"), b"alpha");
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
     #[cfg(windows)]
     #[test]
     fn windows_existing_write_is_revalidated_and_replaced() {
@@ -523,6 +684,70 @@ mod tests {
             commit.verification,
             CommitVerification::Verified(ContentVersion::from_bytes(b"beta"))
         );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_delete_uses_exact_prepared_identity_and_content() {
+        let root = workspace("windows-delete");
+        fs::write(root.join("target.txt"), b"alpha").expect("write fixture");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let expected = ContentVersion::from_bytes(b"alpha");
+        let plan = service.prepare_delete(&path, expected).expect("plan");
+
+        let commit = service.commit_delete(&plan).expect("delete");
+        assert!(!root.join("target.txt").exists());
+        assert_eq!(commit.previous_version, expected);
+        assert_eq!(commit.verification, DeleteVerification::VerifiedAbsent);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_delete_rejects_stale_content_without_removing_target() {
+        let root = workspace("windows-delete-stale");
+        fs::write(root.join("target.txt"), b"alpha").expect("write fixture");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"alpha"))
+            .expect("plan");
+        fs::write(root.join("target.txt"), b"changed").expect("external change");
+
+        assert!(service.commit_delete(&plan).is_err());
+        assert_eq!(
+            fs::read(root.join("target.txt")).expect("target"),
+            b"changed"
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_delete_rejects_same_content_recreation_by_identity() {
+        let root = workspace("windows-delete-identity");
+        let target = root.join("target.txt");
+        let backup = root.join("old-target.txt");
+        fs::write(&target, b"alpha").expect("write fixture");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_delete(&path, ContentVersion::from_bytes(b"alpha"))
+            .expect("plan");
+
+        fs::rename(&target, &backup).expect("preserve original identity");
+        fs::write(&target, b"alpha").expect("recreate same bytes");
+
+        assert!(matches!(
+            service.commit_delete(&plan),
+            Err(AtomicMutationError::TargetIdentityChanged)
+        ));
+        assert_eq!(fs::read(&target).expect("recreated target"), b"alpha");
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
