@@ -118,7 +118,7 @@ Start narrow rather than exposing all write/Git tools at once.
 
 ### Phase 2A — mutation observation and expected-state foundation
 
-Status: **under review in PR #9**.
+Status: **merged** in PR #9 (`71bdf082`).
 
 - streaming BLAKE3 `ContentVersion` observation for readers;
 - observation is byte-bounded by `HardLimits::max_fs_mutation_bytes` as well as memory-bounded;
@@ -133,9 +133,11 @@ Status: **under review in PR #9**.
 
 Important boundary: Phase 2A is a planning/revalidation foundation, **not** the final race-free mutation commit path. Windows mutation execution must still converge on validated handles/reparse/final-target checks and revalidate immediately before commit/replace.
 
-Gate: Ubuntu format/Clippy/tests, Windows Clippy/tests and dependency policy green on the final documentation head.
+Gate passed: the exact final tree `c5bba2be` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. A temporary CI-only PR #10 validated that exact SHA because PR #9's Actions concurrency group had a cancelled intermediate Ubuntu matrix job stuck without steps; PR #10 was closed without merge before PR #9 was squash-merged.
 
 ### Phase 2B — mutation-time OS containment and atomic commit
+
+Status: **next**.
 
 Planned next:
 
