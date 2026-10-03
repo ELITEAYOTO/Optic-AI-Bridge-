@@ -13,11 +13,11 @@ use std::{
 use optic_bridge_core::{
     HardLimits, JobId, LimitError, ResourceBudget, SessionHandle, WorkspacePath,
 };
-use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 #[cfg(windows)]
 use process_wrap::tokio::JobObject;
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
+use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -185,7 +185,10 @@ impl ProcessManager {
         });
 
         {
-            let mut store = self.jobs.lock().map_err(|_| ProcessError::StateUnavailable)?;
+            let mut store = self
+                .jobs
+                .lock()
+                .map_err(|_| ProcessError::StateUnavailable)?;
             self.prepare_store_for_start(&mut store, resources.output_bytes)?;
             store.jobs.insert(job_id.clone(), Arc::clone(&record));
         }
@@ -262,7 +265,10 @@ impl ProcessManager {
             return Err(ProcessError::ReadLimitExceeded);
         }
         let record = self.owned_job(session, job_id)?;
-        let output = record.output.lock().map_err(|_| ProcessError::StateUnavailable)?;
+        let output = record
+            .output
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
         let (bytes, closed) = match stream {
             ProcessStream::Stdout => (&output.stdout, output.stdout_closed),
             ProcessStream::Stderr => (&output.stderr, output.stderr_closed),
@@ -283,11 +289,7 @@ impl ProcessManager {
         })
     }
 
-    pub fn stop(
-        &self,
-        session: &SessionHandle,
-        job_id: &JobId,
-    ) -> Result<bool, ProcessError> {
+    pub fn stop(&self, session: &SessionHandle, job_id: &JobId) -> Result<bool, ProcessError> {
         let record = self.owned_job(session, job_id)?;
         let running = record
             .state
@@ -319,7 +321,10 @@ impl ProcessManager {
     }
 
     pub fn cancel_session(&self, session: &SessionHandle) -> Result<usize, ProcessError> {
-        let store = self.jobs.lock().map_err(|_| ProcessError::StateUnavailable)?;
+        let store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
         let mut changed = 0;
         for record in store.jobs.values() {
             if &record.owner == session {
@@ -402,7 +407,10 @@ impl ProcessManager {
         session: &SessionHandle,
         job_id: &JobId,
     ) -> Result<Arc<JobRecord>, ProcessError> {
-        let store = self.jobs.lock().map_err(|_| ProcessError::StateUnavailable)?;
+        let store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
         let record = store.jobs.get(job_id).ok_or(ProcessError::UnknownJob)?;
         if &record.owner != session {
             return Err(ProcessError::UnknownJob);
@@ -424,8 +432,7 @@ impl ProcessManager {
             let record_limit_reached = store.jobs.len()
                 >= usize::try_from(self.limits.max_process_records)
                     .map_err(|_| ProcessError::InvalidLimits(LimitError::InvalidRelationship))?;
-            let output_limit_reached = reserved
-                .saturating_add(requested_output_bytes)
+            let output_limit_reached = reserved.saturating_add(requested_output_bytes)
                 > self.limits.max_active_output_ram_bytes;
             if !record_limit_reached && !output_limit_reached {
                 return Ok(());
@@ -476,10 +483,9 @@ fn active_job_count(store: &JobStore) -> Result<u32, ProcessError> {
 }
 
 fn reserved_output_bytes(store: &JobStore) -> u64 {
-    store
-        .jobs
-        .values()
-        .fold(0_u64, |sum, record| sum.saturating_add(record.reserved_output_bytes))
+    store.jobs.values().fold(0_u64, |sum, record| {
+        sum.saturating_add(record.reserved_output_bytes)
+    })
 }
 
 fn oldest_terminal_job(store: &JobStore) -> Result<Option<JobId>, ProcessError> {
@@ -578,6 +584,12 @@ async fn monitor_child(
 
     let _ = stdout_task.await;
     let _ = stderr_task.await;
+    let status =
+        if status == ProcessStatus::Exited && record.output_overflow.load(Ordering::Acquire) {
+            ProcessStatus::OutputLimitExceeded
+        } else {
+            status
+        };
     if let Ok(mut state) = record.state.lock() {
         *state = JobState { status, exit_code };
     }
@@ -707,8 +719,8 @@ mod tests {
     async fn process_output_is_cursor_readable_and_owned() {
         let root = workspace("output");
         fs::write(root.join("fixture-output"), b"1").expect("write fixture mode");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let owner = SessionHandle::generate().expect("owner session");
         let other = SessionHandle::generate().expect("other session");
         let job = manager
@@ -735,8 +747,8 @@ mod tests {
     async fn timeout_terminates_owned_process() {
         let root = workspace("timeout");
         fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let owner = SessionHandle::generate().expect("owner session");
         let job = manager
             .start(spec(&root, owner.clone(), budget(100, 64 * 1024)))
@@ -750,8 +762,8 @@ mod tests {
     async fn explicit_stop_terminates_owned_process() {
         let root = workspace("stop");
         fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let owner = SessionHandle::generate().expect("owner session");
         let job = manager
             .start(spec(&root, owner.clone(), budget(5000, 64 * 1024)))
@@ -767,8 +779,8 @@ mod tests {
     async fn output_overflow_is_bounded_and_terminates_process() {
         let root = workspace("overflow");
         fs::write(root.join("fixture-flood"), b"1").expect("write fixture mode");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let owner = SessionHandle::generate().expect("owner session");
         let job = manager
             .start(spec(&root, owner.clone(), budget(5000, 1024)))

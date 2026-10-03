@@ -127,7 +127,10 @@ mod tests {
     fn job_ids_are_opaque_and_round_trip() {
         let job = JobId::generate().expect("OS entropy should be available in tests");
         let token = job.to_token();
-        assert_eq!(JobId::from_token(&token).expect("job token must parse"), job);
+        assert_eq!(
+            JobId::from_token(&token).expect("job token must parse"),
+            job
+        );
         assert_eq!(format!("{job:?}"), "JobId(REDACTED)");
     }
 }

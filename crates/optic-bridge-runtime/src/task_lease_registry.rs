@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-};
+use std::{collections::HashMap, sync::Mutex};
 
 use optic_bridge_core::{MonotonicTime, SessionHandle, TaskLease, TaskLeaseId};
 use thiserror::Error;
@@ -77,10 +74,7 @@ impl TaskLeaseRegistry {
         Ok(changed)
     }
 
-    pub fn revoke_session(
-        &self,
-        session: &SessionHandle,
-    ) -> Result<usize, TaskLeaseRegistryError> {
+    pub fn revoke_session(&self, session: &SessionHandle) -> Result<usize, TaskLeaseRegistryError> {
         let mut leases = self
             .leases
             .lock()

@@ -141,7 +141,9 @@ mod tests {
             ..HardLimits::default()
         };
         assert_eq!(
-            limits.validate_nonzero().expect_err("relationship must fail"),
+            limits
+                .validate_nonzero()
+                .expect_err("relationship must fail"),
             LimitError::InvalidRelationship
         );
     }
