@@ -95,7 +95,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     sessions.register(grant)?;
 
     let mutation_service = if let Some(state_root) = &args.mutation_state_dir {
-        let recovery = TransactionalFileService::from_hard_limits(&args.workspace, state_root, limits)?;
+        let recovery =
+            TransactionalFileService::from_hard_limits(&args.workspace, state_root, limits)?;
         let report = recovery.recover()?;
         if !report.is_empty() {
             eprintln!(
@@ -374,8 +375,7 @@ mod tests {
     #[test]
     fn mutation_scope_without_state_dir_fails_closed() {
         assert!(
-            AppArgs::parse_from(args(&["--allow-write-scope=prefix:src", "workspace"]))
-                .is_err()
+            AppArgs::parse_from(args(&["--allow-write-scope=prefix:src", "workspace"])).is_err()
         );
     }
 
