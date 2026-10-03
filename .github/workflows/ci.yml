@@ -27,7 +27,24 @@ jobs:
           rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
           rustup default 1.99.0
       - name: Apply checked hardening patch
-        run: python scripts/_phase2c2_hardening.py
+        run: |
+          python scripts/_phase2c2_hardening.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/optic-bridge-runtime/src/journaled_mutation.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''use optic_bridge_core::{ActionId, ExpectedState, HardLimits, WorkspacePath};
+          #[cfg(windows)]
+          use optic_bridge_core::{ContentVersion, ContentVersionReadError};'''
+          new = '''use optic_bridge_core::{
+              ActionId, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
+          };
+          #[cfg(windows)]
+          use optic_bridge_core::ContentVersion;'''
+          if old not in text:
+              raise SystemExit('expected journaled mutation import block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Format and check cross-platform core
         run: |
           cargo fmt --all
