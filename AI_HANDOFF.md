@@ -10,11 +10,15 @@ Read this file before changing architecture or implementing features.
 
 - Preserve transport/core separation and the TransportGuard.
 - Treat MCP 2026-07-28 transport as stateless; use Optic-owned application SessionHandles for stateful resources.
-- Route every executable effect through a typed ActionEnvelope.
+- Route every executable effect through a typed ActionEnvelope carrying one typed `Effect` variant.
+- Derive target/precondition/reversibility semantics from the `Effect`; do not reintroduce independently combinable action/target fields.
 - Enforce session/task ownership on every resource.
 - Keep capabilities narrow, expiring and revocable.
+- Keep task leases explicitly scoped to the workspace/repository/executable/network boundary they authorize.
+- Evaluate active authorization TTLs/deadlines using a monotonic time source at runtime.
+- Require both session and task-lease NetworkAccess plus explicit network scope for leased process egress.
 - Bound every long-lived collection, protocol body, queue, output and spool.
-- Use expected hashes/version preconditions for mutations.
+- Use explicit expected state/hash/version preconditions for mutations; create intent must explicitly require absence.
 - Keep same-repo write sessions in separate worktrees.
 - Treat repository/log/network content as untrusted sources.
 - Gate sensitive sinks (network, secrets, external writes, policy/privilege) deterministically.
@@ -31,18 +35,20 @@ Read this file before changing architecture or implementing features.
 - Use opaque shell strings as the fundamental process API.
 - Allow unbounded request bodies, stdout/stderr, histories, queues, caches or responses.
 - Call Job Objects a full sandbox.
-- Silently overwrite stale files.
+- Silently overwrite stale files or interpret a missing mutation precondition as overwrite permission.
+- Authorize a path by naive string-prefix comparison.
 - Share mutable cwd/environment across sessions.
-- Give child processes ambient secrets/network without explicit capability.
+- Give child processes ambient secrets/network without explicit capability and scope.
 - Let normal tools mutate security policy.
 - Couple core execution to one ChatGPT/OpenAI transport.
 - Assume upstream SDK limits are sufficient.
 - Import OpticCode Java/RAG/editor layers for convenience.
 - Expand scope without Product Charter/ADR updates.
+- Implement research candidates early just because they sound useful; add them at the service boundary that can prove their value.
 
 ## Before coding
 
-Identify canonical doc, security invariants touched, ActionEnvelope shape, session/task ownership, resource ceilings, cancellation/cleanup, crash recovery, tests and ADR requirement.
+Identify canonical doc, security invariants touched, Effect/ActionEnvelope shape, session/task ownership, lease scopes, resource ceilings, cancellation/cleanup, crash recovery, tests and ADR requirement.
 
 ## Definition of done
 
