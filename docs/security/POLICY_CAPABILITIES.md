@@ -2,30 +2,40 @@
 
 Status: DECIDED direction.
 
-Policy is deny-by-default and target/capability based, not a giant command blacklist.
+Policy is deny-by-default and target/capability based, not a command blacklist.
 
 ## Decision
 
 Allow | RequireApproval | Deny
 
-## Typed action examples
+## ActionEnvelope
 
-FileRead, FileSearch, FileWrite, FileDelete, GitRead, GitIntegrate, ProcessRun, NetworkAccess, PolicyChange, PrivilegeElevation.
+Every executable effect contains typed action, canonical target, SessionHandle/TaskLease identity, project grant, expected hashes/base revision, requested resources/network, reversibility class and policy epoch.
 
-Each action includes canonical target, session, project grant, relevant hashes/preconditions and resource request.
+## Capability and task leases
 
-## Capability grants
+A session receives narrow server-side leases with scope, ceilings, expiry and revocation. The AI may request a lease but cannot mint, widen, renew or approve one itself.
 
-A session receives only capabilities needed for its granted project/task. PROPOSED capability leases include expiry, scope and revocation. Capabilities are not bearer strings that bypass policy; possession is one input to authorization.
+Possession of an opaque handle never bypasses caller/project/policy validation.
 
 ## Hard denials
 
-Policy/security modification by an AI session, privilege elevation, arbitrary process/PID control, escape from granted roots, and destructive system operations are denied in V1.
+Normal AI tools cannot mutate security policy, elevate privilege, control arbitrary PIDs, escape granted roots or perform destructive system operations.
+
+Network access is a separate capability, not ambient permission inherited by every process.
 
 ## Approval
 
-Approval is one-shot and bound to the exact action/target/preconditions/time window. A model-generated “yes” is never user approval.
+Approval is one-shot and bound to exact normalized action/target/preconditions/time window. A model-generated “yes” is never approval.
 
-## Explain/dry-run
+## Risk budget
 
-PROPOSED: policy_explain/dry-run returns the normalized action, target, decision and non-sensitive reason without executing it. This improves debuggability without weakening policy.
+Do not let an AI-generated probability/score authorize actions. Risk is represented deterministically as capability boundaries and resource budgets. Crossing a boundary requires policy/approval.
+
+## Explain / dry-run
+
+policy_explain/dry-run should return normalized action, target class, policy decision/rule and required capability without executing it. Explanations are diagnostic; policy code remains authoritative.
+
+## MCP annotations
+
+Tool annotations such as read-only/destructive hints can improve UX but are not trusted security controls. Optic derives enforcement from its own tool/action definitions and policy.
