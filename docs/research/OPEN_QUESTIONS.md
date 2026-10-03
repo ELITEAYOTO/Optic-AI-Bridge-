@@ -9,7 +9,7 @@
 7. Exact RMCP cache configuration for Optic adapters; default stance is no stale-on-error for freshness/security-sensitive state.
 8. Disk-spool ACL/encryption requirements.
 9. Safe updater/signing mechanism.
-10. Whether FILE_ID_INFO materially improves stale/delete-recreate detection beyond content hashes enough to justify a Windows-specific identity abstraction.
+10. Whether a Windows oplock (`FSCTL_REQUEST_OPLOCK`) or handle-based rename experiment materially reduces the residual final path-based commit race enough to justify its break/deadlock/compatibility complexity. Phase 2B already proved that `FILE_ID_INFO` materially detects same-path delete/recreate even when bytes are identical.
 11. Whether USN-assisted invalidation reduces revalidation/scanning cost enough to justify its recovery/fallback complexity.
 12. ActionId idempotency ledger persistence format, retention window and crash-recovery interaction.
 13. Whether content-addressed output dedup justifies its complexity after bounded spool benchmarks.
