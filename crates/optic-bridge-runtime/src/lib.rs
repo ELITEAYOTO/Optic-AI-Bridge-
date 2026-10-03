@@ -34,7 +34,9 @@ pub use mutation::{
     AtomicMutationError, AtomicMutationService, CommitVerification, DeleteCommit,
     DeleteVerification, MutationCommit, PreparedDelete, PreparedMutation,
 };
-pub use mutation_authority::{MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec};
+pub use mutation_authority::{
+    MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
+};
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,
     ProcessStream,
