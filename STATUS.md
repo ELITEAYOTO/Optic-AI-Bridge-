@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2C2 journal-wrapped commit and crash recovery  
+**Lifecycle:** pre-alpha / Phase 2C2 implemented on PR #18, final gate pending  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`): Optic now has a bounded recovery-journal state machine and deterministic reconciliation foundation. The current implementation tranche is Phase 2C2: wire that journal around the proven Windows mutation commit, bind the operation ActionId to its staging artifact, and prove process-crash recovery at the actual namespace boundary. Public MCP file mutation remains intentionally disabled until those recovery and policy gates pass.
+Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`). Phase 2C2 is implemented on PR #18: the real Windows mutation commit is journal-wrapped, one ActionId owns journal + staging identity, process-crash recovery is exercised at four durable lifecycle boundaries, and recovery preserves journal evidence until operation-owned staging has been validated/cleaned. Public MCP file mutation remains intentionally disabled. The remaining work in this tranche is final living-doc alignment and a clean Ubuntu/Windows/dependency-policy gate on the complete PR head before merge.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -95,15 +95,24 @@ Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`): Optic now has a bounded r
 - Recovery is deterministic and bounded: exact intended state = committed, exact prior state = not committed, third state/canonical mismatch = unresolved conflict retained fail-closed.
 - `verified` is terminal and is not reinterpreted from later external edits.
 - Well-formed unpublished `*.prepared.tmp` records are removable because namespace commit is forbidden before durable `committing` under the protocol.
-- Six recovery-specific tests pass on native Windows alongside the existing Phase 2B mutation and Phase 1 Job Object gates.
-- Scope boundary: 2C1 proves the recovery state machine, not yet the journal-wrapped real commit, forced crash behavior or power-loss/ACID durability.
+- Scope boundary: 2C1 proves the recovery state machine, not the journal-wrapped real commit, forced crash behavior or power-loss/ACID durability.
+
+### Phase 2C2 — implemented / under review
+- PR #18 wires `MutationRecoveryJournal` around the actual Phase 2B Windows commit; no public MCP mutation tool is added.
+- One opaque operation `ActionId` owns both the durable journal and deterministic same-directory `.optic-<ActionId>.staged` artifact.
+- `prepared` is durable first; `committing` is appended and synced before the atomic mutation service may be called.
+- Atomic errors after durable `committing` become recovery-required and are best-effort marked `ambiguous`; blind retry is not treated as safe.
+- Verified commits append durable `verified` before journal retirement. `CommittedButUnverified` remains explicit recovery-required state.
+- Production recovery uses a preserving inspection path: journal evidence is not retired until staging validation/cleanup has succeeded.
+- Any surviving staging artifact must be a regular file, must not exist for `PreparedNotCommitted`, must remain under the mutation byte ceiling, and its bounded BLAKE3 must match the journaled intended content before removal. Mismatch/unsafe cleanup fails closed while retaining journal evidence.
+- Native Windows child-process tests terminate the process after durable `prepared`, after durable `committing` before the atomic service call, after the atomic commit service returns but before terminal journal state, and after terminal state before retirement. Restart recovery deterministically classifies each case and a second recovery is empty.
+- Important precision: the post-commit crash hook is after `AtomicMutationService` returns (namespace effect and its post-commit verification have completed), not an instrumentation point between the raw `ReplaceFileW`/hard-link instruction and verification.
+- No power-loss/ACID durability claim is made; the tested model is process termination/restart.
 
 ### Current / next implementation
-- Phase 2C2: bind one journal ActionId to the actual Windows mutation lifecycle and staging artifact.
-- Persist `committing` before any namespace commit can be attempted; map post-commit uncertainty to explicit recovery-required state rather than blind retry.
-- Add child-process crash fixtures after durable `prepared`, after durable `committing` before namespace commit, immediately after namespace commit before terminal journal state, and after terminal state before retirement.
-- Startup recovery must deterministically reconcile every surviving bounded journal entry before public mutation is enabled.
-- Only after that gate, Phase 2C3 builds transactional file write/patch/delete runtime services; MCP `fs_write` / patch / delete remain deferred.
+- Finish PR #18 only after its complete code + documentation head passes Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- After merge, Phase 2C3 builds policy-gated transactional runtime file write/patch/delete services on the journal-wrapped boundary.
+- Public MCP mutation remains deferred until the 2C3 service/policy/recovery negative gates pass.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
@@ -113,17 +122,18 @@ Phase 2C1 is merged on `main` via PR #15 (`85aec4c6`): Optic now has a bounded r
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Journal-wrapped production mutation commit and forced-crash recovery gate.
-- Public filesystem mutation MCP services and Git execution services.
-- Cross-platform durable mutation primitive equivalent to the Windows 2B boundary.
+- Transactional runtime file write/patch/delete services and public filesystem mutation MCP services.
+- Git execution services.
+- Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
 - Restricted-token/AppContainer hardening profile.
+- Power-loss/ACID durability proof.
 - Public release.
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`) and Phase 2C1 (`85aec4c6`). Phase 2C2 is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`) and Phase 2C1 (`85aec4c6`). Phase 2C2 is implemented on PR #18 but remains unmerged until the final documentation head passes all gates.
 
 ## Health rule
 
