@@ -2,10 +2,7 @@ use std::{
     ffi::c_void,
     fs::{File, OpenOptions},
     mem::size_of,
-    os::windows::{
-        fs::OpenOptionsExt,
-        io::AsRawHandle,
-    },
+    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
     path::{Path, PathBuf},
 };
 
@@ -14,8 +11,9 @@ use windows::Win32::{
     Foundation::HANDLE,
     Storage::FileSystem::{
         FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FILE_NAME_NORMALIZED,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
+        FILE_NAME_NORMALIZED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        FileAttributeTagInfo, FileIdInfo, GETFINALPATHNAMEBYHANDLE_FLAGS,
         GetFileInformationByHandleEx, GetFinalPathNameByHandleW, VOLUME_NAME_DOS,
     },
 };
@@ -215,7 +213,7 @@ fn query_identity(file: &File) -> Result<WindowsFileIdentity, WindowsMutationHan
 
 fn query_final_path(file: &File) -> Result<PathBuf, WindowsMutationHandleError> {
     let mut buffer = vec![0_u16; INITIAL_FINAL_PATH_CHARS];
-    let flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+    let flags = GETFINALPATHNAMEBYHANDLE_FLAGS(FILE_NAME_NORMALIZED.0 | VOLUME_NAME_DOS.0);
 
     loop {
         // SAFETY: `file` owns a live handle and `buffer` is a valid mutable UTF-16
@@ -224,9 +222,8 @@ fn query_final_path(file: &File) -> Result<PathBuf, WindowsMutationHandleError> 
         if length == 0 {
             return Err(std::io::Error::last_os_error().into());
         }
-        let length = usize::try_from(length).map_err(|_| {
-            std::io::Error::other("final Windows path length does not fit usize")
-        })?;
+        let length = usize::try_from(length)
+            .map_err(|_| std::io::Error::other("final Windows path length does not fit usize"))?;
         if length < buffer.len() {
             use std::os::windows::ffi::OsStringExt;
             let path = std::ffi::OsString::from_wide(&buffer[..length]);
@@ -258,11 +255,7 @@ mod tests {
     }
 
     fn create_junction(link: &Path, target: &Path) {
-        let command = format!(
-            "mklink /J \"{}\" \"{}\"",
-            link.display(),
-            target.display()
-        );
+        let command = format!("mklink /J \"{}\" \"{}\"", link.display(), target.display());
         let status = Command::new("cmd")
             .args(["/C", &command])
             .status()
@@ -283,7 +276,8 @@ mod tests {
 
         let mut file = first.try_clone_file().expect("clone validated file");
         let mut content = String::new();
-        file.read_to_string(&mut content).expect("read validated file");
+        file.read_to_string(&mut content)
+            .expect("read validated file");
         assert_eq!(content, "alpha");
 
         drop(first);
