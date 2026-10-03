@@ -28,10 +28,8 @@ impl ReadonlyMcpServer {
     ) -> Result<Json<FsMutationResponse>, ErrorData> {
         let path = parse_workspace_path(&params.0.path)?;
         let expected = params.0.expected.into_expected_state()?;
-        let content = decode_bounded_base64(
-            &params.0.content_base64,
-            self.limits.max_fs_mutation_bytes,
-        )?;
+        let content =
+            decode_bounded_base64(&params.0.content_base64, self.limits.max_fs_mutation_bytes)?;
         let effect = Effect::FileWrite {
             path: path.clone(),
             expected,
@@ -55,10 +53,8 @@ impl ReadonlyMcpServer {
     ) -> Result<Json<FsMutationResponse>, ErrorData> {
         let path = parse_workspace_path(&params.0.path)?;
         let expected = parse_content_version(&params.0.expected_version)?;
-        let insert = decode_bounded_base64(
-            &params.0.insert_base64,
-            self.limits.max_fs_mutation_bytes,
-        )?;
+        let insert =
+            decode_bounded_base64(&params.0.insert_base64, self.limits.max_fs_mutation_bytes)?;
         let patch = BytePatch {
             offset: params.0.offset,
             remove_bytes: params.0.remove_bytes,
@@ -143,11 +139,9 @@ impl ReadonlyMcpServer {
             .transport_guard
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
-        let service = self
-            .mutation_service
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| ErrorData::invalid_request("optic.mutation_runtime_unavailable", None))?;
+        let service = self.mutation_service.as_ref().cloned().ok_or_else(|| {
+            ErrorData::invalid_request("optic.mutation_runtime_unavailable", None)
+        })?;
         let timeout_ms = permit
             .deadline()
             .as_millis()
@@ -393,13 +387,9 @@ fn map_atomic_mutation_error(error: AtomicMutationError) -> ErrorData {
         AtomicMutationError::InvalidTarget
         | AtomicMutationError::InvalidPreparedMutation
         | AtomicMutationError::TempNameEntropy
-        | AtomicMutationError::Io(_) => {
-            ErrorData::internal_error("optic.mutation_failed", None)
-        }
+        | AtomicMutationError::Io(_) => ErrorData::internal_error("optic.mutation_failed", None),
         #[cfg(windows)]
-        AtomicMutationError::Windows(_) => {
-            ErrorData::internal_error("optic.mutation_failed", None)
-        }
+        AtomicMutationError::Windows(_) => ErrorData::internal_error("optic.mutation_failed", None),
     }
 }
 
