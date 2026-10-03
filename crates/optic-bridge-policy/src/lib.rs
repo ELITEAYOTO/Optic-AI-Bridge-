@@ -100,12 +100,11 @@ impl PolicyEngine {
             if !session.allows(Capability::NetworkAccess) {
                 return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
             }
-            if let Some(lease) = lease {
-                if !lease.allows(Capability::NetworkAccess)
-                    || !lease_covers_network(lease, &envelope.effect)
-                {
-                    return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
-                }
+            if let Some(lease) = lease
+                && (!lease.allows(Capability::NetworkAccess)
+                    || !lease_covers_network(lease, &envelope.effect))
+            {
+                return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
             }
         }
 
