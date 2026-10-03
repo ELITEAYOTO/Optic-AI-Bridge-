@@ -1,0 +1,43 @@
+# Optic AI Bridge
+
+**Status:** architecture & documentation phase  
+**Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
+
+> **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
+
+Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
+
+The repository starts documentation-first so the implementation does not drift into a monolith.
+
+## Canonical documentation
+
+Start with [`docs/README.md`](docs/README.md).
+
+The canonical documents are grouped by purpose:
+
+- `docs/product/` — product charter, scope and roadmap.
+- `docs/architecture/` — system, sessions, concurrency, transport, memory and recovery.
+- `docs/security/` — threat model, policy, Windows isolation and filesystem safety.
+- `docs/specs/` — MCP tool contracts, config and errors.
+- `docs/engineering/` — implementation, tests, CI/security gates, dependencies and OpticCode reuse.
+- `docs/operations/` — install, observability and benchmarks.
+- `docs/decisions/` — Architecture Decision Records (ADRs).
+- `docs/research/` — source register, research ledger and open questions.
+
+`AI_HANDOFF.md` is the mandatory guardrail for AI coding agents.
+
+## Current V1 direction
+
+V1 stays deliberately narrow: Rust daemon/core, MCP adapter, deterministic local policy, project-scoped filesystem/search/edit primitives, Git primitives, supervised process execution, bounded output, crash cleanup, and strong session isolation.
+
+Multi-session support is a first-class architecture requirement. Two chats must be able to work on different projects safely; parallel work on the same repository must use isolated Git worktrees and explicit integration/conflict gates rather than uncontrolled shared writes.
+
+## Status labels used in the docs
+
+- **DECIDED** — accepted architecture direction.
+- **PROPOSED** — strong candidate, still needs an ADR/PoC.
+- **TARGET** — benchmark or resource objective; not a measured fact.
+- **RESEARCH** — externally sourced information to validate during implementation.
+- **OPEN** — unresolved question.
+
+Research baseline: **2026-10-03**.
