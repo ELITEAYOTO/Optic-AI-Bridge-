@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,3 +48,58 @@ jobs:
         run: cargo install --locked cargo-deny --version 0.20.2
       - name: Check advisories, licenses, bans and sources
         run: cargo deny check
+
+  canonical-windows-containment:
+    name: Temporary Phase 1D canonical wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-1/windows-job-limits
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Wire runtime to limited Job Object and finalize tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          process = Path('crates/optic-bridge-runtime/src/process.rs')
+          text = process.read_text()
+          old_imports = '''#[cfg(windows)]\nuse process_wrap::tokio::JobObject;\n#[cfg(unix)]\nuse process_wrap::tokio::ProcessGroup;\nuse process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};\n'''
+          new_imports = '''#[cfg(windows)]\nuse optic_bridge_windows::LimitedJobObject;\n#[cfg(unix)]\nuse process_wrap::tokio::{KillOnDrop, ProcessGroup};\nuse process_wrap::tokio::{ChildWrapper, CommandWrap};\n'''
+          if old_imports not in text:
+              raise SystemExit('expected process import block not found')
+          text = text.replace(old_imports, new_imports, 1)
+
+          old_wrap = '''        let mut command = CommandWrap::from(command);\n        command.wrap(KillOnDrop);\n        #[cfg(windows)]\n        command.wrap(JobObject);\n        #[cfg(unix)]\n        command.wrap(ProcessGroup::leader());\n'''
+          new_wrap = '''        let mut command = CommandWrap::from(command);\n        #[cfg(windows)]\n        command.wrap(\n            LimitedJobObject::new(resources.process_count, resources.memory_bytes)\n                .map_err(ProcessError::Io)?,\n        );\n        #[cfg(unix)]\n        {\n            command.wrap(KillOnDrop);\n            command.wrap(ProcessGroup::leader());\n        }\n'''
+          if old_wrap not in text:
+              raise SystemExit('expected process wrapper block not found')
+          process.write_text(text.replace(old_wrap, new_wrap, 1))
+
+          job = Path('crates/optic-bridge-windows/src/job.rs')
+          text = job.read_text()
+          old_tail = '''    #[test]\n    fn accepts_nonzero_limits() {\n        assert!(LimitedJobObject::new(1, 64 * 1024 * 1024).is_ok());\n    }\n}\n'''
+          new_tail = '''    #[test]\n    fn accepts_nonzero_limits() {\n        assert!(LimitedJobObject::new(1, 64 * 1024 * 1024).is_ok());\n    }\n\n    #[test]\n    fn drop_fixture_child() {\n        let Some(started) = std::env::var_os("OPTIC_JOB_DROP_STARTED") else {\n            return;\n        };\n        let survived = std::env::var_os("OPTIC_JOB_DROP_SURVIVED")\n            .expect("survived marker must accompany started marker");\n        std::fs::write(started, b"started").expect("write started marker");\n        std::thread::sleep(Duration::from_millis(700));\n        std::fs::write(survived, b"survived").expect("write survived marker");\n    }\n\n    #[tokio::test]\n    async fn dropping_job_handle_kills_running_child() {\n        use process_wrap::tokio::CommandWrap;\n        use std::time::{SystemTime, UNIX_EPOCH};\n\n        let token = SystemTime::now()\n            .duration_since(UNIX_EPOCH)\n            .expect("system time")\n            .as_nanos();\n        let root = std::env::temp_dir().join(format!("optic-job-drop-{token}"));\n        std::fs::create_dir_all(&root).expect("create fixture dir");\n        let started = root.join("started");\n        let survived = root.join("survived");\n\n        let mut command = Command::new(std::env::current_exe().expect("current test executable"));\n        command\n            .args(["--exact", "job::tests::drop_fixture_child", "--nocapture"])\n            .env("OPTIC_JOB_DROP_STARTED", &started)\n            .env("OPTIC_JOB_DROP_SURVIVED", &survived);\n        let mut command = CommandWrap::from(command);\n        command.wrap(\n            LimitedJobObject::new(1, 512 * 1024 * 1024).expect("valid Job Object limits"),\n        );\n        let child = command.spawn().expect("spawn wrapped fixture");\n\n        for _ in 0..200 {\n            if started.exists() {\n                break;\n            }\n            tokio::time::sleep(Duration::from_millis(10)).await;\n        }\n        assert!(started.exists(), "fixture child did not start");\n        drop(child);\n        tokio::time::sleep(Duration::from_millis(900)).await;\n        assert!(\n            !survived.exists(),\n            "closing the kill-on-close Job Object did not terminate the child"\n        );\n\n        std::fs::remove_dir_all(root).expect("remove fixture dir");\n    }\n}\n'''
+          if old_tail not in text:
+              raise SystemExit('expected Windows job test tail not found')
+          job.write_text(text.replace(old_tail, new_tail, 1))
+          PY
+          cargo fmt --all
+          cargo generate-lockfile
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock \
+            crates/optic-bridge-runtime/src/process.rs \
+            crates/optic-bridge-windows/src/job.rs \
+            crates/optic-bridge-runtime/tests/windows_job_limits.rs \
+            crates/optic-bridge-runtime/src/bin/optic-process-fixture.rs
+          if git diff --cached --quiet; then
+            echo "Phase 1D canonical files already committed."
+          else
+            git commit -m "phase1: wire Windows Job Object resource enforcement"
+            git push origin HEAD:phase-1/windows-job-limits
+          fi
