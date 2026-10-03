@@ -61,6 +61,9 @@ All notable project changes are recorded here.
 - Phase 2C2 process-crash fixtures covering durable prepared, durable committing, post-atomic-service return before terminal state, and terminal state before retirement.
 - Recovery-owned staging validation/cleanup with regular-file, byte-ceiling and journaled-intended BLAKE3 checks before journal retirement.
 - Negative staging-tamper regression proving mismatched staging fails closed while retaining recovery evidence.
+- Phase 2C3A `TransactionalFileService` layered over the journaled mutation boundary for explicit-state whole-file writes and deterministic single-range byte patches.
+- Bounded patch snapshot assembly with exact base `ContentVersion` re-hash before deriving and committing the result.
+- Cross-platform patch range/size tests plus native Windows write/patch coverage through the real journaled commit path.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
@@ -75,6 +78,8 @@ All notable project changes are recorded here.
 - Phase 2 is split into narrow gates: canonical/bounded observation, Windows mutation-time containment and atomic namespace commit, recovery state machine, journal-wrapped forced-crash gate, transactional file services, then Git read/integration.
 - Non-Windows durable file commit remains explicitly unsupported until an equivalent containment/commit boundary is designed and proven.
 - Production Phase 2C2 recovery now separates journal inspection from retirement so operation evidence survives until staging validation/cleanup completes.
+- Phase 2C3 patch is modeled as a deterministic transformation under existing `FileWrite` authority rather than introducing a broader patch-specific capability.
+- Transactional delete is deferred until the recovery journal can encode `ExpectedState::Absent` as the intended committed result instead of content-only intent.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -101,4 +106,5 @@ All notable project changes are recorded here.
 - Phase 2C2 keeps journal evidence until any surviving operation staging artifact is validated as regular, bounded and content-equal to the journaled intention; tampering fails closed.
 - Phase 2C2 crash tests prove process-termination/restart reconciliation at documented service boundaries, but do not prove sudden-power-loss ACID durability.
 - The Phase 2C2 post-commit crash point is after the atomic service returns, not between the raw namespace syscall and its verification.
+- Phase 2C3A patch refuses a mixed/changed bounded snapshot unless its complete BLAKE3 still equals the exact expected base; the eventual commit then performs the Phase 2C2 expected-state and Windows identity revalidation again.
 - Public MCP file mutation remains disabled until transactional runtime services and policy/recovery negative gates pass.
