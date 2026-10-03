@@ -185,7 +185,7 @@ Status: **merged** in PR #20 (`4415a65c`). Exact final head `531f0e38` passed Ub
 
 ##### Phase 2C3B — intended-state recovery + delete
 
-Status: **current**, split into B1/B2.
+Status: **B1 merged; B2 under review in PR #24**.
 
 ###### Phase 2C3B1 — intended-state journal compatibility
 
@@ -202,20 +202,26 @@ Status: **merged** in PR #22 (`f5eafc3a`). Exact final head `fe025f46` passed Ub
 
 ###### Phase 2C3B2 — Windows transactional delete
 
-Status: **current**.
+Status: **implemented / under review in PR #24**. Exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; final documentation head must pass the same gates before merge.
 
-Required before delete can be called transactional/recoverable:
+Implemented:
 
-1. add a Windows handle-first delete primitive with final-component no-reparse denial, final-path workspace containment and exact `FILE_ID_INFO` binding;
-2. require exact current `ContentVersion` for delete and revalidate state + identity immediately before the delete effect;
-3. wrap delete in the Phase 2C journal lifecycle with intended `ExpectedState::Absent` and no write-staging artifact;
-4. treat any failure after durable `committing` as recovery-required until exact observed state reconciles it;
-5. add native Windows forced-process-crash gates for durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement boundaries;
-6. retain non-Windows fail-closed behavior and expose no MCP delete tool in this tranche.
+1. `optic-bridge-windows` opens a dedicated delete-capable no-reparse handle with read + `DELETE`, captures final path and exact `FILE_ID_INFO`, and issues `SetFileInformationByHandle(..., FileDispositionInfo, ...)` on that same handle rather than deleting by path;
+2. `PreparedDelete` requires an exact existing `ContentVersion`; commit revalidates canonical state, final-path containment, exact file identity and bounded BLAKE3 bytes on the delete handle before the effect;
+3. stale content and same-path/same-content delete-recreate identity changes fail closed without deleting the replacement;
+4. successful handle deletion closes before returning and the runtime explicitly verifies final `ExpectedState::Absent`, with a committed-but-unverified recovery-required result preserved when proof fails;
+5. `JournaledMutationService` wraps delete in the existing durable `prepared → committing → verified|ambiguous` lifecycle with `intended = ExpectedState::Absent` and no write-staging artifact;
+6. any atomic failure after durable `committing` remains recovery-required rather than a blind-retry signal;
+7. native Windows child-process gates terminate after durable prepared, durable committing-before-delete, atomic delete service return and terminal state before retirement; restart recovery classifies all four outcomes and a second recovery is empty;
+8. `TransactionalFileService::delete(path, exact_content_version)` exposes the proven runtime primitive without creating a second OS mutation path;
+9. non-Windows durable delete remains fail-closed as unsupported;
+10. no MCP write, patch or delete tool is exposed by this tranche.
+
+Claim boundary: the forced-crash suite proves process termination/restart semantics at the documented service boundaries, not sudden-power-loss ACID durability. The write/replace path's documented Phase 2B `ReplaceFileW` external-writer window is unchanged; delete itself stays handle-based through its namespace effect.
 
 ##### Phase 2C3C — authorization/adapter gate
 
-Only after the runtime mutation set is complete:
+Status: **next after PR #24 merges**.
 
 1. authorize canonical `FileWrite`/`FileDelete` effects through existing session capability + exact task lease + structural workspace scope policy;
 2. add negative tests for missing/wrong/cross-session leases, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes;
