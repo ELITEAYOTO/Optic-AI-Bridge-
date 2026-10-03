@@ -28,7 +28,7 @@ Target flow:
 
 `stdio MCP → application session → fs_list/read → policy → process_start/read/stop/result → Windows Job Object → bounded output`
 
-Phase 1 is deliberately split into narrow mergeable tranches so protocol, runtime and Windows failures remain attributable.
+Phase 1 was deliberately split into narrow mergeable tranches so protocol, runtime and Windows failures remained attributable.
 
 ### Phase 1A — runtime foundation
 
@@ -84,37 +84,49 @@ Gate passed: cross-session rejection, timeout/cancel/output-overflow determinism
 
 ### Phase 1D — Windows Job Object enforcement and Phase 1 gate
 
-Status: **implemented on PR #7 branch; merge only while final docs + CI remain green**.
+Status: **merged** in PR #7 (`69af07a`).
 
 - dedicated `optic-bridge-windows` crate contains the narrow Win32 `unsafe` boundary;
 - cross-platform core/policy/MCP/runtime remain unsafe-free;
 - custom `LimitedJobObject` derives Windows containment limits from the already-authorized `ResourceBudget`;
-- force temporary suspended child creation;
-- create/configure Job Object before assignment;
-- enable `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` and `JOB_OBJECT_LIMIT_JOB_MEMORY`;
-- assign the child before resuming its threads;
-- retain Job Object ownership until the complete child tree is terminal;
-- timeout/explicit stop/output overflow terminate the owned Job Object tree through the wrapped child;
+- temporary suspended child creation;
+- Job Object creation/configuration before assignment;
+- `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` and `JOB_OBJECT_LIMIT_JOB_MEMORY`;
+- child assignment before thread resume;
+- Job Object ownership retained until the complete child tree is terminal;
+- timeout/explicit stop/output overflow terminate the owned Job Object tree;
+- containment unwrap is fail-closed and does not leak the Job Object handle;
 - non-Windows builds retain process-group behavior and make no Windows enforcement claim.
 
-Native Windows gate passed on PR #7 implementation head:
+Native Windows gate passed before merge:
 
 - `process_count = 1` blocks descendant creation;
 - a 128 MiB job-memory limit prevents a fixture from reaching a 384 MiB allocation target;
 - timeout kills a spawned descendant before it can write a delayed survival marker;
 - dropping the live wrapper proves kill-on-close cleanup;
+- explicitly unwrapping containment does not allow the child to survive;
 - all existing Phase 1C timeout/stop/output-overflow tests remain green;
 - Windows Clippy/tests, Ubuntu format/Clippy/tests and `cargo-deny` all pass.
 
-Phase 1 gate is considered satisfied once the final documentation head passes the same CI and PR #7 is merged. Job Objects provide lifecycle/resource containment, not a complete security sandbox.
+**Phase 1 gate passed.** The current pre-alpha vertical slice has an Optic-owned session/policy boundary, bounded stdio MCP transport, bounded read-only filesystem access, structured lease-gated process execution and native Windows lifecycle/process-count/job-memory containment. Job Objects provide containment, not a complete security sandbox.
 
 ## Phase 2 — safe mutation/Git
 
-Transactional patch/write, expected states/hashes, git status/diff/log, crash journal.
+Status: **next**.
 
-Evaluate handle-first filesystem operations and durable file identity at this phase because a real mutation-capable filesystem service then exists.
+Start narrow rather than exposing all write/Git tools at once:
 
-Gate: forced-crash recovery and stale-write tests.
+1. mutation runtime primitives with explicit `ExpectedState::{Absent, Content}` checks;
+2. mutation-time containment/revalidation so a path cannot be authorized and later resolve elsewhere;
+3. bounded journal/recovery state sufficient to survive forced crashes without silently reporting success;
+4. transactional file write/patch/delete services;
+5. Git read primitives (`status`, `diff`, `log`) through bounded structured outputs;
+6. Git integration only with an exact validated `expected_target_head` and explicit integration gate;
+7. expose MCP mutation/Git tools only after runtime negative tests pass.
+
+Evaluate handle-first filesystem operations and durable Windows file identity (`FILE_ID_INFO`) in this phase because a real mutation-capable filesystem service now justifies that boundary.
+
+Gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
 
 ## Phase 3 — multi-session
 

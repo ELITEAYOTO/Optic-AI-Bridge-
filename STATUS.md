@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 1 vertical slice gate  
+**Lifecycle:** pre-alpha / Phase 2 preparation  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Finish Phase 1D documentation and merge only while the native Windows resource-containment gate remains green. Phase 2 mutation/Git work starts only from that clean baseline.
+Phase 1 is complete on `main`. The next implementation work is Phase 2: safe transactional filesystem mutation and Git read/integration primitives, built on the existing session, lease, policy, transport and Windows process-containment boundaries.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -63,26 +63,27 @@ Finish Phase 1D documentation and merge only while the native Windows resource-c
 - Environment is cleared by default; only operator-allowlisted variables may be inherited.
 - Native Windows CI caught and closed an output-overflow terminal-status race; timeout, explicit stop, output overflow and cross-session ownership tests pass on Windows and Linux.
 
-### Phase 1D — implemented on PR #7 branch
-- New `optic-bridge-windows` crate isolates the narrow Win32/unsafe boundary; core, policy, MCP and cross-platform runtime remain unsafe-free.
+### Phase 1D — merged
+- PR #7 merged to `main` as `69af07a`.
+- `optic-bridge-windows` isolates the narrow Win32/unsafe boundary; core, policy, MCP and cross-platform runtime remain unsafe-free.
 - Windows `ProcessManager` jobs use a custom `LimitedJobObject` configured from the already-authorized `ResourceBudget`.
-- Child creation is forced suspended; the Job Object is created and configured, the child is assigned, and only then are child threads resumed.
+- Child creation is forced suspended; the Job Object is created/configured, the child is assigned, and only then are child threads resumed.
 - Kernel Job Object flags enforce kill-on-close, active-process count and total job-memory ceilings.
 - Each process job owns its own Job Object; the job itself remains owned by exactly one application session.
 - `try_wait`/`wait` do not treat the job as terminal while descendants remain active.
-- Removing/unwrapping the containment wrapper is fail-closed: the whole job is terminated, the root child receives a fallback kill request, and the Job Object handle is closed rather than leaked.
+- Removing/unwrapping containment is fail-closed: terminate the whole job, fallback-kill the root child and close the Job Object handle rather than leak/detach it.
 - Native Windows tests prove:
   - `process_count = 1` blocks descendant creation;
   - a 128 MiB job-memory ceiling prevents a fixture from reaching a 384 MiB allocation target;
   - timeout terminates the descendant tree before a delayed survival marker can be written;
   - dropping the live Job Object wrapper triggers kill-on-close cleanup;
   - explicitly unwrapping the containment wrapper does not allow the child to survive.
-- Ubuntu format/Clippy/tests and Windows Clippy/tests are green on the fail-closed implementation head; the dependency-policy gate is unchanged and remains required on the final documentation head.
+- Final PR #7 head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
 
 ### Current / next implementation
-- Finalize PR #7 documentation and merge only while the final documentation head remains green.
-- After merge, Phase 1 vertical-slice requirements are satisfied at the current pre-alpha scope.
-- Phase 2 begins transactional filesystem mutation/Git work with explicit expected-state preconditions and recovery semantics.
+- Phase 1 vertical-slice requirements are satisfied at the current pre-alpha scope.
+- Phase 2 starts with a narrow mutation foundation: expected-state checked file write/patch semantics, containment that remains valid at mutation time, bounded journaling/recovery primitives, then Git read/integration services.
+- Do not expose broad mutation tools until stale-write and forced-crash gates exist.
 
 ### Later validated research candidates
 - Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
@@ -100,7 +101,7 @@ Finish Phase 1D documentation and merge only while the native Windows resource-c
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`) and Phase 1C (`adf2e772`). Phase 1D is under review in PR #7 and has passed its native Windows implementation gates; the final documentation head must remain green before merge.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`) and Phase 1D (`69af07a`). Phase 1 is complete at the current pre-alpha scope.
 
 ## Health rule
 
