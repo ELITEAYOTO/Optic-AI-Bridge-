@@ -15,7 +15,7 @@ Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
 
 Baseline merged through PR #1 on 2026-10-03.
 
-## Phase 0.1 — Contract hardening (CURRENT)
+## Phase 0.1 — Contract hardening (COMPLETED)
 
 - Typed `Effect` variants instead of independently combinable action/target fields.
 - Explicit file `ExpectedState` and Git target-head preconditions.
@@ -26,17 +26,26 @@ Baseline merged through PR #1 on 2026-10-03.
 - Regression tests for scope/network failures.
 - Research pass on filesystem identity, handle-first I/O, stale-context invalidation, retry/idempotency and Windows isolation profiles.
 
-**Gate:** CI green and no unresolved contradiction between tool contracts, policy, session ownership, lease scope, mutation preconditions and resource bounds.
+Gate passed on 2026-10-03: formatting, Clippy, tests and dependency-policy checks were green on Linux/Windows before PR #2 was squash-merged into `main`.
 
-## V1 essential
+## Phase 1 — Vertical slice (CURRENT)
 
-- MCP adapter using the maintained Rust MCP SDK behind TransportGuard with explicit stale-cache/freshness policy.
-- Session identity, scoped project grant and revocable task/capability leases.
-- Filesystem list/read/search plus transactional patch/write with expected state/version.
+- TransportGuard-owned request/frame/body/concurrency/response/time limits.
+- MCP stdio adapter using the maintained Rust MCP SDK behind TransportGuard.
+- Explicit application SessionHandle mapping and session registry/revocation lifecycle.
+- Real monotonic Clock adapter for active session/task deadlines.
+- Bounded `fs_list` / `fs_read` path through normalization and policy.
+- Structured `process_start/read/stop/result` with Windows Job Object lifecycle/resource enforcement.
+- Explicit RMCP cache/freshness policy: stale cached state never satisfies mutation/security preconditions.
+- Windows-native tests for process-tree cleanup and resource ceilings.
+
+**Gate:** native Windows integration test proves child-tree cleanup and memory/output bounds; transport/session limits remain enforceable independently of SDK defaults.
+
+## V1 essential after Phase 1
+
+- Transactional patch/write with expected state/version.
 - Git status/diff/log and worktree lifecycle.
-- Structured process start/read/stop/result.
-- Per-session process ownership and Windows Job Object cleanup/resource enforcement.
-- Deterministic deny-by-default policy.
+- Deterministic deny-by-default policy preserved across all services.
 - Bounded output, pagination, disk spool quotas and TTL.
 - Crash recovery journal.
 - Two simultaneous sessions on different projects.
