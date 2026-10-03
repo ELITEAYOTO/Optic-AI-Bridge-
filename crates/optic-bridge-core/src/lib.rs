@@ -13,9 +13,7 @@ mod path;
 mod session;
 mod version;
 
-pub use action::{
-    ActionEnvelope, ActionKind, Capability, NetworkAccess, Reversibility, Target,
-};
+pub use action::{ActionEnvelope, ActionKind, Capability, NetworkAccess, Reversibility, Target};
 pub use ids::{ActionId, IdError, SessionHandle, TaskLeaseId, TokenParseError};
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
