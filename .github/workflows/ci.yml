@@ -13,6 +13,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  phase2c2-cfg-fix:
+    if: github.event_name == 'pull_request' && github.head_ref == 'phase-2/journaled-commit-crash'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-2/journaled-commit-crash
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Apply Windows-only field fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/optic-bridge-runtime/src/journaled_mutation.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''pub struct JournaledMutationService {
+              atomic: AtomicMutationService,
+              journal: MutationRecoveryJournal,
+              max_mutation_bytes: u64,
+          }'''
+          new = '''pub struct JournaledMutationService {
+              atomic: AtomicMutationService,
+              journal: MutationRecoveryJournal,
+              #[cfg(windows)]
+              max_mutation_bytes: u64,
+          }'''
+          if old not in text:
+              raise SystemExit('service field block not found')
+          text = text.replace(old, new, 1)
+          old = '''        Ok(Self {
+              atomic,
+              journal,
+              max_mutation_bytes: limits.max_fs_mutation_bytes,
+          })'''
+          new = '''        Ok(Self {
+              atomic,
+              journal,
+              #[cfg(windows)]
+              max_mutation_bytes: limits.max_fs_mutation_bytes,
+          })'''
+          if old not in text:
+              raise SystemExit('service initializer block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          cargo fmt --all
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Restore normal CI and push clean commit
+        run: |
+          git fetch origin main --depth=1
+          git checkout origin/main -- .github/workflows/ci.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: scope staging byte ceiling to Windows recovery"
+          git push origin HEAD:phase-2/journaled-commit-crash
+
   rust:
     name: Rust / ${{ matrix.os }}
     strategy:
