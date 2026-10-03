@@ -12,3 +12,6 @@ optic-bridge-core = { path = "../optic-bridge-core" }
 process-wrap.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+optic-bridge-windows = { path = "../optic-bridge-windows" }
