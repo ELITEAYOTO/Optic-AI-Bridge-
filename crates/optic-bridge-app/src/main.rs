@@ -320,8 +320,11 @@ mod tests {
             "*",
         ] {
             assert!(
-                AppArgs::parse_from(args(&[&format!("--allow-write-scope={value}"), "workspace"]))
-                    .is_err(),
+                AppArgs::parse_from(args(&[
+                    &format!("--allow-write-scope={value}"),
+                    "workspace"
+                ]))
+                .is_err(),
                 "scope should fail: {value}"
             );
         }
