@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 
-//! Runtime services for the Phase 1 Optic AI Bridge vertical slice.
+//! Runtime services for Optic AI Bridge.
 //!
 //! This crate owns application runtime state and hard limits. MCP remains an
 //! adapter outside this boundary, so SDK defaults cannot silently weaken
-//! session, transport, filesystem, process, or output constraints.
+//! session, transport, filesystem, process, mutation-precondition, or output constraints.
 
 mod clock;
 mod filesystem;
@@ -16,6 +16,7 @@ mod transport;
 pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
+    MutationError, MutationObservation,
 };
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,

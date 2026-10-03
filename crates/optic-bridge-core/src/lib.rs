@@ -21,4 +21,4 @@ pub use ids::{ActionId, IdError, JobId, SessionHandle, TaskLeaseId, TokenParseEr
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
 pub use session::{LeaseScope, MonotonicTime, PrincipalId, ProjectId, SessionGrant, TaskLease};
-pub use version::ContentVersion;
+pub use version::{ContentVersion, ContentVersionReadError};

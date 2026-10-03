@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2 preparation  
+**Lifecycle:** pre-alpha / Phase 2A mutation foundation  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 1 is complete on `main`. The next implementation work is Phase 2: safe transactional filesystem mutation and Git read/integration primitives, built on the existing session, lease, policy, transport and Windows process-containment boundaries.
+Phase 1 is complete on `main`. Phase 2A is under review in PR #9 and deliberately stops at bounded canonical mutation observation plus exact expected-state validation. It does **not** expose durable filesystem mutation or new MCP write tools yet.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -80,10 +80,23 @@ Phase 1 is complete on `main`. The next implementation work is Phase 2: safe tra
   - explicitly unwrapping the containment wrapper does not allow the child to survive.
 - Final PR #7 head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
 
+### Phase 2A — under review in PR #9
+- Adds bounded streaming BLAKE3 content observation without loading whole files into RAM.
+- Adds `HardLimits::max_fs_mutation_bytes` (default 8 MiB) so precondition hashing is bounded in bytes as well as memory.
+- Adds `MutationObservation` and isolated `MutationError` runtime types without changing the existing read-only MCP error surface.
+- Existing mutation targets must be regular files; leaf symlinks are rejected.
+- Absent mutation targets canonicalize the parent first, preventing a symlinked parent from hiding the actual authorization path.
+- Canonical targets must remain inside the canonical workspace root.
+- `ExpectedState::Absent` and exact `ExpectedState::Content(version)` are checked explicitly; stale/blind-overwrite attempts fail closed.
+- Unix regression tests cover leaf symlink denial, canonicalized in-workspace parent symlinks and parent escape denial.
+- This tranche performs no durable mutation and exposes no MCP write/delete/patch tools.
+- It also does not claim final race-free Windows mutation containment: handle-first reparse/final-path/file-identity revalidation remains required at commit time in the next tranche.
+
 ### Current / next implementation
-- Phase 1 vertical-slice requirements are satisfied at the current pre-alpha scope.
-- Phase 2 starts with a narrow mutation foundation: expected-state checked file write/patch semantics, containment that remains valid at mutation time, bounded journaling/recovery primitives, then Git read/integration services.
-- Do not expose broad mutation tools until stale-write and forced-crash gates exist.
+- Merge PR #9 only after its final documentation head passes Ubuntu, Windows and dependency-policy CI.
+- Phase 2B should introduce mutation-time OS containment/revalidation, including Windows handle-first reparse/final-target checks and a `FILE_ID_INFO` identity PoC where it materially closes delete/recreate races.
+- Only after that boundary is proven should the runtime add same-directory temporary writes/atomic replacement plus a bounded durable recovery journal.
+- MCP `fs_write` / patch / delete surfaces remain deferred until stale-write, path/reparse and forced-crash gates exist.
 
 ### Later validated research candidates
 - Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
@@ -92,8 +105,9 @@ Phase 1 is complete on `main`. The next implementation work is Phase 2: safe tra
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Filesystem mutation services and Git execution services.
+- Durable filesystem mutation services and Git execution services.
 - Transaction journal / crash-recovery implementation for mutations.
+- Windows handle-first final mutation commit/revalidation boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
 - Restricted-token/AppContainer hardening profile.
@@ -101,7 +115,7 @@ Phase 1 is complete on `main`. The next implementation work is Phase 2: safe tra
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`) and Phase 1D (`69af07a`). Phase 1 is complete at the current pre-alpha scope.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`) and Phase 1D (`69af07a`). Phase 1 is complete at the current pre-alpha scope. Phase 2A is under review in PR #9 and is not part of `main` until its final gates pass.
 
 ## Health rule
 

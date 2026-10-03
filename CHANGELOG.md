@@ -43,17 +43,22 @@ All notable project changes are recorded here.
 - Phase 1D `optic-bridge-windows` crate as the narrow Win32/unsafe containment boundary.
 - Custom Windows `LimitedJobObject` with suspended creation, configure-before-resume ordering, kill-on-close, active-process and total job-memory limits.
 - Native Windows Phase 1D fixtures proving process-count enforcement, memory enforcement, descendant-tree timeout cleanup and kill-on-close behavior.
+- Phase 2A bounded streaming BLAKE3 content observation for mutation preconditions.
+- `HardLimits::max_fs_mutation_bytes` so mutation observation has an explicit hard byte ceiling.
+- Runtime `MutationObservation` / `MutationError` foundation for canonical target observation and exact `ExpectedState` conflict detection without exposing durable writes.
+- Regression coverage for stale/blind-overwrite preconditions, oversized mutation targets, leaf symlink denial and parent-symlink workspace escape handling.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1 and the complete Phase 1A–1D vertical-slice implementation under review.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, and the gated Phase 2 mutation foundation.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
 - A session receives `ProcessRun` only when the bridge operator explicitly authorizes at least one executable at startup.
 - Process output overflow is classified after stdout/stderr drains complete, closing a Windows race where a fast child could exit before the overflow flag was observed.
 - Windows process lifecycle no longer relies on the generic process-wrap Job Object wrapper for Phase 1D resource claims; the runtime uses the Optic-owned Windows adapter so authorized memory/process-count budgets become explicit kernel Job Object limits.
+- Phase 2 is split into narrow gates: canonical/bounded observation first, mutation-time OS containment and atomic commit next, durable recovery journal after that, then Git read/integration.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -69,3 +74,6 @@ All notable project changes are recorded here.
 - Process control is by opaque session-owned JobId; no arbitrary PID kill API exists.
 - On Windows, authorized `memory_bytes` and `process_count` now map to Job Object `JOB_OBJECT_LIMIT_JOB_MEMORY` and `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`; native CI proves both limits are enforced.
 - Each process job owns its own kill-on-close Job Object and is owned by exactly one application session; Job Objects are containment, not a complete sandbox.
+- Phase 2A mutation observation rejects blind overwrite/stale expected state, rejects leaf symlinks, resolves absent-target parents canonically and enforces workspace containment.
+- Mutation precondition hashing is both memory-bounded and byte-bounded; oversized existing targets fail closed rather than triggering unbounded scans.
+- Phase 2A is not treated as a race-free Windows commit boundary: handle-first reparse/final-path/file-identity revalidation remains mandatory before durable mutation is exposed.
