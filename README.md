@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2B merged, Phase 2C recovery in progress  
+**Status:** pre-alpha — Phase 2C2 recovery gate implemented on PR #18, final review in progress  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A and Phase 2B are merged. The current baseline includes bounded MCP filesystem reads, structured lease-gated processes, native Windows Job Object containment, bounded mutation observation, and a Windows handle/identity/revalidation boundary for atomic namespace commits. Public durable file mutation is still intentionally not exposed.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B and Phase 2C1 are merged. Phase 2C2 is implemented on PR #18 and is undergoing its final full CI/documentation gate. Public durable file mutation is still intentionally not exposed.
 
 ## Implemented Phase 1 surface
 
@@ -45,9 +45,9 @@ The repository started documentation-first and now contains an executable Rust i
 
 This boundary intentionally does not claim kernel compare-and-swap semantics: the final `ReplaceFileW` call remains path-based and a small external-writer window is documented.
 
-### Phase 2C1 — recovery journal under review
+### Phase 2C1 — bounded recovery journal
 
-PR #15 adds a bounded recovery-journal state machine before the journal is allowed to control real mutations:
+Merged in PR #15:
 
 - operator-controlled recovery state outside the project workspace;
 - one opaque ActionId per operation;
@@ -57,7 +57,21 @@ PR #15 adds a bounded recovery-journal state machine before the journal is allow
 - deterministic reconciliation to exact intended state, exact prior state, or fail-closed unresolved conflict;
 - torn trailing transition handling without accepting a corrupt initial record.
 
-The clean 2C1 code head passes Linux/Windows CI and dependency policy. The next gate wires this journal around the real Phase 2B Windows commit and runs forced child-process crashes at each transition boundary. Only after that will transactional write/patch/delete runtime services be considered. MCP mutation tools remain disabled throughout these gates.
+### Phase 2C2 — journal-wrapped commit / crash recovery
+
+Implemented on PR #18, with public MCP mutation still disabled:
+
+- one ActionId binds the recovery journal and deterministic same-directory staging artifact;
+- `prepared` and then `committing` are durable before the Phase 2B atomic mutation service is invoked;
+- verified/ambiguous terminal semantics preserve post-commit uncertainty rather than turning it into a blind retry;
+- production recovery preserves journal evidence until surviving staging is validated and cleaned;
+- staging cleanup requires a regular file, bounded size and exact BLAKE3 match to the journaled intended content;
+- native Windows child-process tests terminate after durable prepared, after durable committing, after atomic-service return before terminal state, and after terminal state before retirement, then prove deterministic restart reconciliation;
+- tampered staging fails closed and retains journal evidence.
+
+The crash model is deliberately narrow: the post-commit hook is after the atomic service returns (effect + its verification), not between the raw namespace syscall and verification. The project does **not** claim sudden-power-loss ACID durability.
+
+The next gate is Phase 2C3 transactional write/patch/delete runtime services with policy and negative recovery tests. MCP mutation tools remain disabled until that gate passes.
 
 The implementation remains pre-alpha. Installer/tunnel integration, public mutation/Git tools, multi-session orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
