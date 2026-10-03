@@ -255,9 +255,12 @@ mod tests {
     }
 
     fn create_junction(link: &Path, target: &Path) {
-        let command = format!("mklink /J \"{}\" \"{}\"", link.display(), target.display());
         let status = Command::new("cmd")
-            .args(["/C", &command])
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(link)
+            .arg(target)
             .status()
             .expect("invoke mklink");
         assert!(status.success(), "mklink /J failed: {status}");
@@ -315,6 +318,7 @@ mod tests {
             Err(WindowsMutationHandleError::ReparsePointDenied)
         ));
 
+        fs::remove_dir(&alias).expect("remove junction");
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
@@ -332,6 +336,7 @@ mod tests {
             Err(WindowsMutationHandleError::OutsideWorkspace)
         ));
 
+        fs::remove_dir(&escape).expect("remove junction");
         fs::remove_dir_all(root).expect("remove root fixture");
         fs::remove_dir_all(outside).expect("remove outside fixture");
     }
