@@ -1,0 +1,35 @@
+name: Phase1B export
+
+on:
+  push:
+    branches:
+      - phase-1/mcp-readonly-adapter
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Generate canonical files
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+          mkdir -p export/crates/optic-bridge-app/src
+          mkdir -p export/crates/optic-bridge-mcp/src
+          cp crates/optic-bridge-app/src/main.rs export/crates/optic-bridge-app/src/main.rs
+          cp crates/optic-bridge-mcp/src/server.rs export/crates/optic-bridge-mcp/src/server.rs
+          cp crates/optic-bridge-mcp/src/transport.rs export/crates/optic-bridge-mcp/src/transport.rs
+          cp Cargo.lock export/Cargo.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-canonical-files
+          path: export
+          retention-days: 1
+          if-no-files-found: error
