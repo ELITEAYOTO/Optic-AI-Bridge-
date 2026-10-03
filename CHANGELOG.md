@@ -47,18 +47,24 @@ All notable project changes are recorded here.
 - `HardLimits::max_fs_mutation_bytes` so mutation observation has an explicit hard byte ceiling.
 - Runtime `MutationObservation` / `MutationError` foundation for canonical target observation and exact `ExpectedState` conflict detection without exposing durable writes.
 - Regression coverage for stale/blind-overwrite preconditions, oversized mutation targets, leaf symlink denial and parent-symlink workspace escape handling.
+- Phase 2B Windows handle-first filesystem primitives using no-reparse opens, final paths from handles and `FILE_ID_INFO` identity.
+- `AtomicMutationService` / opaque `PreparedMutation` foundation with double expected-state + identity revalidation around same-directory staging.
+- Windows existing-target commit through `ReplaceFileW` and absent-target create-only commit through hard-link semantics.
+- Explicit `CommitVerification::{Verified, CommittedButUnverified}` so a post-commit verification failure is not misreported as a pre-commit rollback.
+- Native Windows mutation tests proving replacement, create-only semantics, same-content delete/recreate identity rejection and parent-directory recreation rejection.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, and the gated Phase 2 mutation foundation.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, and gated Phase 2A/2B mutation foundations.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
 - A session receives `ProcessRun` only when the bridge operator explicitly authorizes at least one executable at startup.
 - Process output overflow is classified after stdout/stderr drains complete, closing a Windows race where a fast child could exit before the overflow flag was observed.
 - Windows process lifecycle no longer relies on the generic process-wrap Job Object wrapper for Phase 1D resource claims; the runtime uses the Optic-owned Windows adapter so authorized memory/process-count budgets become explicit kernel Job Object limits.
-- Phase 2 is split into narrow gates: canonical/bounded observation first, mutation-time OS containment and atomic commit next, durable recovery journal after that, then Git read/integration.
+- Phase 2 is split into narrow gates: canonical/bounded observation, Windows mutation-time containment and atomic namespace commit, durable recovery journal/file services, then Git read/integration.
+- Non-Windows durable file commit remains explicitly unsupported until an equivalent containment/commit boundary is designed and proven.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -72,8 +78,12 @@ All notable project changes are recorded here.
 - MCP cannot create process capabilities or leases; `process_start` must match an exact canonical executable lease created from operator startup configuration.
 - Process environment is empty by default and can inherit only names explicitly allowlisted by the operator.
 - Process control is by opaque session-owned JobId; no arbitrary PID kill API exists.
-- On Windows, authorized `memory_bytes` and `process_count` now map to Job Object `JOB_OBJECT_LIMIT_JOB_MEMORY` and `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`; native CI proves both limits are enforced.
+- On Windows, authorized `memory_bytes` and `process_count` map to Job Object `JOB_OBJECT_LIMIT_JOB_MEMORY` and `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`; native CI proves both limits are enforced.
 - Each process job owns its own kill-on-close Job Object and is owned by exactly one application session; Job Objects are containment, not a complete sandbox.
 - Phase 2A mutation observation rejects blind overwrite/stale expected state, rejects leaf symlinks, resolves absent-target parents canonically and enforces workspace containment.
 - Mutation precondition hashing is both memory-bounded and byte-bounded; oversized existing targets fail closed rather than triggering unbounded scans.
-- Phase 2A is not treated as a race-free Windows commit boundary: handle-first reparse/final-path/file-identity revalidation remains mandatory before durable mutation is exposed.
+- Phase 2B binds prepared Windows mutations to `FILE_ID_INFO`, so same-path delete/recreate with identical content is still detected as stale.
+- Existing and absent targets are revalidated immediately before the namespace commit; replacement data is staged in the same directory and synced before commit.
+- Final-component reparse points are denied in the Windows handle boundary, and opened final paths must remain under the canonical workspace root.
+- Phase 2B does not claim an impossible compare-and-swap guarantee: `ReplaceFileW` still names the final target by path after revalidation, so a small external-writer TOCTOU window remains documented for later oplock/handle-rename research.
+- Public MCP file mutation remains disabled until durable journal/recovery and forced-crash gates pass.

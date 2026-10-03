@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2B mutation-time containment next  
+**Lifecycle:** pre-alpha / Phase 2B under review  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2A is merged on `main` via PR #9 (`71bdf082`). The next implementation tranche is Phase 2B: mutation-time OS containment/revalidation and a narrow atomic commit primitive. Durable filesystem mutation remains intentionally unavailable to MCP until the Windows handle/reparse boundary and later recovery journal gates are proven.
+Phase 2A is merged on `main` via PR #9 (`71bdf082`). Phase 2B is implemented on PR #13 and has passed its code-only Linux/Windows/dependency gates; the remaining work in this tranche is documentation alignment and final review before merge. Durable filesystem mutation remains intentionally unavailable to MCP until Phase 2C adds recovery/journal guarantees and the public mutation-service gates pass.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -95,23 +95,42 @@ Phase 2A is merged on `main` via PR #9 (`71bdf082`). The next implementation tra
 - It does not claim final race-free Windows mutation containment: handle-first reparse/final-path/file-identity revalidation remains required at commit time.
 - The exact final tree was validated green on Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; a temporary CI-only PR #10 was used because PR #9's Actions concurrency group had a cancelled intermediate Ubuntu job stuck without steps.
 
+### Phase 2B — implemented / under review
+- PR #13 implements the Windows mutation-time containment and atomic namespace-commit foundation; no MCP mutation tool is exposed.
+- `optic-bridge-windows` now owns the Win32 filesystem boundary in addition to Job Objects.
+- Existing files and parent directories are inspected from handles opened with `FILE_FLAG_OPEN_REPARSE_POINT`; final-component reparse points are denied.
+- `GetFinalPathNameByHandleW` is used to verify the opened object remains under the canonical workspace root.
+- `FILE_ID_INFO` binds a prepared mutation to the exact existing file identity, or to the exact parent-directory identity for an absent target.
+- Prepared writes revalidate expected content/absence plus Windows identity before staging and again immediately before the namespace commit.
+- Replacement content is written and `sync_all`'d to a create-new temporary file in the same directory.
+- Existing targets commit through `ReplaceFileW`; absent targets use create-only hard-link semantics so a target that appears is never overwritten.
+- Post-commit verification is explicit: an operation that may already have committed is never converted into an ordinary pre-commit failure merely because verification cannot prove the result.
+- Non-Windows durable commit remains fail-closed as unsupported in this tranche.
+- Native Windows Server 2025 CI proves:
+  - an existing target is replaced and the new content version verifies;
+  - deleting/recreating the same path with the same bytes is rejected because `FILE_ID_INFO` changed;
+  - absent-target creation succeeds with create-only semantics;
+  - recreating the parent directory invalidates an absent-target plan;
+  - the low-level handle identity and `ReplaceFileW` adapter tests pass.
+- Code head `ba24c1eb` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before documentation alignment.
+- Important residual boundary: `ReplaceFileW` is a path-based final namespace call. Immediate handle/content/identity revalidation greatly narrows stale-target races but is not claimed to be a kernel compare-and-swap against arbitrary external writers in the final instruction window.
+
 ### Current / next implementation
-- Phase 2B should introduce mutation-time OS containment/revalidation, including Windows handle-first reparse/final-target checks and a `FILE_ID_INFO` identity PoC where it materially closes delete/recreate races.
-- Revalidate the exact expected state immediately before the durable commit point.
-- Add a bounded same-directory temporary write plus atomic create/replace primitive only after the target handle boundary is proven.
-- Keep MCP `fs_write` / patch / delete surfaces deferred.
-- Phase 2C then adds the durable recovery journal and forced-crash gates before public mutation services.
+- Finish Phase 2B review/documentation and merge PR #13 after the documentation head re-passes all gates.
+- Phase 2C then adds a bounded durable mutation journal, startup recovery/reconciliation, forced-crash gates and transactional file write/patch/delete runtime services.
+- Keep MCP `fs_write` / patch / delete surfaces deferred until the Phase 2C recovery and policy gates pass.
+- Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
-- Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
+- Phase 2C hardening: Windows oplock / handle-based rename experiment for the remaining path-based final-commit race; default is not to add it without a measurable correctness benefit.
 - Phase 3: bounded ActionId idempotency ledger integrated with recovery state.
 - Phase 4: worktree resource lifecycle and USN/notification-assisted invalidation with mandatory commit-time revalidation.
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Durable filesystem mutation services and Git execution services.
+- Public filesystem mutation MCP services and Git execution services.
 - Transaction journal / crash-recovery implementation for mutations.
-- Windows handle-first final mutation commit/revalidation boundary.
+- Cross-platform durable mutation primitive equivalent to the Windows 2B boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
 - Restricted-token/AppContainer hardening profile.
@@ -119,7 +138,7 @@ Phase 2A is merged on `main` via PR #9 (`71bdf082`). The next implementation tra
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`) and Phase 2A (`71bdf082`). Phase 2B is the next implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`) and Phase 2A (`71bdf082`). Phase 2B is implemented on PR #13 and remains unmerged until its final documentation head passes all gates.
 
 ## Health rule
 
