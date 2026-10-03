@@ -52,10 +52,11 @@ impl TransportGuard {
         request_bytes: u64,
         now: MonotonicTime,
     ) -> Result<RequestPermit, TransportError> {
-        if request_bytes > self.limits.max_request_bytes {
-            return Err(TransportError::RequestTooLarge);
-        }
+        self.validate_request_bytes(request_bytes)?;
+        self.begin_execution(now)
+    }
 
+    pub fn begin_execution(&self, now: MonotonicTime) -> Result<RequestPermit, TransportError> {
         let mut current = self.in_flight.load(Ordering::Acquire);
         loop {
             if current >= self.limits.max_concurrent_requests {
@@ -77,6 +78,13 @@ impl TransportGuard {
             in_flight: Arc::clone(&self.in_flight),
             deadline: now.saturating_add_millis(self.limits.max_request_duration_ms),
         })
+    }
+
+    pub fn validate_request_bytes(&self, request_bytes: u64) -> Result<(), TransportError> {
+        if request_bytes > self.limits.max_request_bytes {
+            return Err(TransportError::RequestTooLarge);
+        }
+        Ok(())
     }
 
     pub fn validate_response_bytes(&self, response_bytes: u64) -> Result<(), TransportError> {
@@ -156,6 +164,17 @@ mod tests {
                 .expect_err("oversized request must fail"),
             TransportError::RequestTooLarge
         );
+        assert_eq!(guard.active_requests(), 0);
+    }
+
+    #[test]
+    fn execution_permit_does_not_revalidate_already_bounded_frames() {
+        let guard = guard(1);
+        let permit = guard
+            .begin_execution(MonotonicTime::from_millis(10))
+            .expect("execution permit should be granted");
+        assert_eq!(guard.active_requests(), 1);
+        drop(permit);
         assert_eq!(guard.active_requests(), 0);
     }
 
