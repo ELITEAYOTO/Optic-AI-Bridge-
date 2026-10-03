@@ -11,6 +11,7 @@ Implemented process containment is deliberately narrow:
 - the authorized process-count budget maps to `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`;
 - the authorized memory budget maps to `JOB_OBJECT_LIMIT_JOB_MEMORY`;
 - timeout, explicit stop and output overflow terminate the owned Job Object tree;
+- removing/unwrapping the containment wrapper is fail-closed: terminate the Job Object, request root-child kill as a fallback, then close the owned handle rather than detach or leak containment;
 - workspace/cwd, executable lease, environment inheritance and resource authorization remain application policy concerns outside the Win32 adapter;
 - no privilege elevation is provided;
 - process network access remains unavailable in Phase 1.
@@ -27,6 +28,7 @@ The Phase 1D native gate currently verifies:
 - job-memory limit prevents a fixture from reaching an allocation target above its authorized ceiling;
 - timeout kills a descendant tree before a delayed child survival marker can be written;
 - closing/dropping the live kill-on-close Job Object prevents the root child from surviving;
+- explicitly unwrapping the containment wrapper also prevents the child from surviving;
 - existing timeout, explicit-stop and output-overflow process tests remain green.
 
 These are containment tests, not proof that arbitrary untrusted native code is sandboxed.
