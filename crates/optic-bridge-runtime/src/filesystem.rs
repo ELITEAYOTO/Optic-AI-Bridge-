@@ -5,7 +5,8 @@ use std::{
 };
 
 use optic_bridge_core::{
-    ContentVersion, ExpectedState, HardLimits, WorkspacePath, WorkspacePathError,
+    ContentVersion, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
+    WorkspacePathError,
 };
 use thiserror::Error;
 
@@ -13,6 +14,7 @@ use thiserror::Error;
 pub struct BoundedFileSystem {
     root: PathBuf,
     max_read_bytes: u64,
+    max_mutation_bytes: u64,
     max_list_page_entries: usize,
     max_directory_scan_entries: usize,
 }
@@ -22,9 +24,10 @@ impl BoundedFileSystem {
         root: impl AsRef<Path>,
         limits: HardLimits,
     ) -> Result<Self, FileSystemError> {
-        Self::new(
+        Self::new_with_mutation_limit(
             root,
             limits.max_fs_read_bytes,
+            limits.max_fs_mutation_bytes,
             limits.max_fs_list_page_entries,
             limits.max_fs_directory_scan_entries,
         )
@@ -36,7 +39,27 @@ impl BoundedFileSystem {
         max_list_page_entries: u32,
         max_directory_scan_entries: u32,
     ) -> Result<Self, FileSystemError> {
-        if max_read_bytes == 0 || max_list_page_entries == 0 || max_directory_scan_entries == 0 {
+        Self::new_with_mutation_limit(
+            root,
+            max_read_bytes,
+            max_read_bytes,
+            max_list_page_entries,
+            max_directory_scan_entries,
+        )
+    }
+
+    pub fn new_with_mutation_limit(
+        root: impl AsRef<Path>,
+        max_read_bytes: u64,
+        max_mutation_bytes: u64,
+        max_list_page_entries: u32,
+        max_directory_scan_entries: u32,
+    ) -> Result<Self, FileSystemError> {
+        if max_read_bytes == 0
+            || max_mutation_bytes == 0
+            || max_list_page_entries == 0
+            || max_directory_scan_entries == 0
+        {
             return Err(FileSystemError::InvalidLimits);
         }
         if max_directory_scan_entries < max_list_page_entries {
@@ -51,6 +74,7 @@ impl BoundedFileSystem {
         Ok(Self {
             root,
             max_read_bytes,
+            max_mutation_bytes,
             max_list_page_entries: usize::try_from(max_list_page_entries)
                 .map_err(|_| FileSystemError::InvalidLimits)?,
             max_directory_scan_entries: usize::try_from(max_directory_scan_entries)
@@ -185,6 +209,11 @@ impl BoundedFileSystem {
                 if !metadata.is_file() {
                     return Err(MutationError::NotFile);
                 }
+                if metadata.len() > self.max_mutation_bytes {
+                    return Err(MutationError::TargetTooLarge {
+                        limit: self.max_mutation_bytes,
+                    });
+                }
 
                 let canonical = fs::canonicalize(&candidate).map_err(MutationError::Io)?;
                 self.ensure_inside_workspace(&canonical)
@@ -195,7 +224,24 @@ impl BoundedFileSystem {
                 if !opened_metadata.is_file() {
                     return Err(MutationError::NotFile);
                 }
-                let version = ContentVersion::from_reader(&mut file).map_err(MutationError::Io)?;
+                if opened_metadata.len() > self.max_mutation_bytes {
+                    return Err(MutationError::TargetTooLarge {
+                        limit: self.max_mutation_bytes,
+                    });
+                }
+
+                let version = match ContentVersion::from_reader_bounded(
+                    &mut file,
+                    self.max_mutation_bytes,
+                ) {
+                    Ok(version) => version,
+                    Err(ContentVersionReadError::LimitExceeded) => {
+                        return Err(MutationError::TargetTooLarge {
+                            limit: self.max_mutation_bytes,
+                        });
+                    }
+                    Err(ContentVersionReadError::Io(error)) => return Err(MutationError::Io(error)),
+                };
 
                 Ok(MutationObservation {
                     canonical_path,
@@ -343,6 +389,8 @@ pub enum MutationError {
     NonUtf8Name,
     #[error("mutation path is invalid: {0}")]
     Path(WorkspacePathError),
+    #[error("mutation target exceeds the hard observation byte limit")]
+    TargetTooLarge { limit: u64 },
     #[error("mutation precondition does not match the current canonical target state")]
     PreconditionFailed {
         expected: ExpectedState,
@@ -491,6 +539,21 @@ mod tests {
     }
 
     #[test]
+    fn mutation_observation_is_hard_bounded() {
+        let root = workspace("mutation-limit");
+        fs::write(root.join("large.txt"), vec![0x41; 17]).expect("write fixture");
+        let service = BoundedFileSystem::new_with_mutation_limit(&root, 64, 16, 2, 16)
+            .expect("filesystem service");
+        let path = WorkspacePath::parse("large.txt").expect("safe path");
+
+        assert!(matches!(
+            service.observe_mutation_target(&path),
+            Err(MutationError::TargetTooLarge { limit: 16 })
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn stale_and_blind_overwrite_preconditions_fail_closed() {
         let root = workspace("mutation-stale");
         fs::write(root.join("target.txt"), b"alpha").expect("write fixture");
@@ -576,9 +639,7 @@ mod tests {
 
         assert!(matches!(
             service.observe_mutation_target(&requested),
-            Err(MutationError::FileSystem(
-                FileSystemError::OutsideWorkspace
-            ))
+            Err(MutationError::FileSystem(FileSystemError::OutsideWorkspace))
         ));
 
         fs::remove_dir_all(root).expect("remove fixture");
