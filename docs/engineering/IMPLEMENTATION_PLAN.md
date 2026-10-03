@@ -114,7 +114,7 @@ Status: **current**, split into narrow gates.
 
 #### Phase 2C1 — bounded recovery journal state machine
 
-Status: **implemented / under review** in PR #15.
+Status: **merged** in PR #15 (`85aec4c6`).
 
 Implemented:
 
@@ -131,7 +131,7 @@ Implemented:
 11. `verified` is terminal and can be retired without reinterpreting later third-party edits;
 12. no MCP mutation exposure.
 
-Technical gate: clean head `58781ed4` passes Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; six recovery-specific tests pass on native Windows.
+Final validation: exact PR #15 head `90a6b646` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` through temporary validation PR #16 after the main PR concurrency group was blocked by a cancelled predecessor. PR #16 was closed without merge.
 
 What 2C1 does **not** prove:
 
@@ -142,7 +142,9 @@ What 2C1 does **not** prove:
 
 #### Phase 2C2 — journal-wrapped Windows commit and forced-crash gate
 
-Next implementation order:
+Status: **current**.
+
+Implement in this order:
 
 1. bind the journal ActionId to the actual mutation lifecycle and staging artifact;
 2. persist `prepared`, then persist `committing` before any namespace commit can be attempted;
