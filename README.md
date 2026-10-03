@@ -1,13 +1,26 @@
 # Optic AI Bridge
 
-**Status:** architecture & documentation phase  
+**Status:** pre-alpha — Phase 1 vertical slice in implementation  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository starts documentation-first so the implementation does not drift into a monolith.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A and 1B are merged; Phase 1C adds structured, lease-gated process lifecycle support, while Windows kernel enforcement of memory/process-count Job Object limits remains a Phase 1D gate.
+
+## Implemented Phase 1 surface
+
+- application-owned sessions, monotonic expiry and revocation;
+- independent hard transport/body/concurrency ceilings;
+- bounded MCP stdio framing and responses;
+- project-scoped bounded `fs_list` / `fs_read`;
+- structured process lifecycle with opaque JobIds, bounded output and timeout/stop handling;
+- operator-created executable/environment allowlists for process authority;
+- deterministic session + task-lease policy before process execution;
+- native Windows CI coverage for current process lifecycle behavior.
+
+The implementation remains pre-alpha. Filesystem mutation, Git execution, installer/tunnel integration and the Phase 1D Windows kernel resource-limit gate are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 

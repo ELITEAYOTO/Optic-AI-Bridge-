@@ -32,66 +32,74 @@ Phase 1 is deliberately split into narrow mergeable tranches so protocol, runtim
 
 ### Phase 1A — runtime foundation
 
-Status: implemented on PR #4 branch; merge only while all CI gates remain green.
+Status: **merged** in PR #4 (`d33a1e5`).
 
-- add `optic-bridge-runtime` as an application-owned runtime layer;
-- add a real monotonic `StdClock` adapter;
-- add revocable/expiring `SessionRegistry`;
-- add `TransportGuard` with hard request/response byte limits, request lifetime and bounded concurrency;
-- extend `HardLimits` with transport/filesystem ceilings;
-- add bounded `fs_read` and deterministic paginated `fs_list` runtime services;
-- canonicalize existing read-only paths and reject resolution outside the canonical workspace root;
-- bound both returned directory pages and total directory entries scanned per call;
-- keep the runtime crate independent of MCP so SDK behavior cannot silently become authorization or resource policy.
+- `optic-bridge-runtime` is the application-owned runtime layer;
+- real monotonic `StdClock` adapter;
+- revocable/expiring `SessionRegistry`;
+- `TransportGuard` with hard request/response byte limits, request lifetime and bounded concurrency;
+- transport/filesystem `HardLimits`;
+- bounded `fs_read` and deterministic paginated `fs_list` runtime services;
+- canonical containment for existing read-only paths;
+- hard page and total-directory-scan ceilings;
+- runtime independent of MCP so SDK behavior cannot silently become authorization or resource policy.
 
-Acceptance:
-
-- Linux + Windows formatting/lint/tests green;
-- dependency policy green;
-- transport/session/filesystem negative tests exercise limits and revocation;
-- docs describe only behavior that exists.
+Gate passed: Linux + Windows formatting/lint/tests and dependency policy green.
 
 ### Phase 1B — MCP read-only adapter
 
-- introduce the maintained Rust MCP SDK as an adapter dependency, pinned/controlled through the workspace;
-- use stdio transport for the first vertical slice;
-- create/map exactly one Optic-owned application session for the initial server lifecycle;
-- expose only the Phase 1 read-only/system surface initially (`fs_list`, `fs_read`, `session_info`, `session_cancel`, minimal `system_info` if justified);
-- parse all public paths through `WorkspacePath` before filesystem access;
-- construct typed `ActionEnvelope` values and authorize them with `PolicyEngine` before calling runtime services;
-- ensure MCP handlers never call `std::fs` or process APIs directly;
-- apply Optic-owned handler concurrency/deadline/response ceilings and investigate raw stdio frame/body bounding so SDK defaults are never the sole protection;
-- define explicit RMCP cache/freshness behavior: protocol cache cannot satisfy authorization or mutation/security preconditions.
+Status: **merged** in PR #5 (`681f939`).
 
-Acceptance:
+- pinned maintained RMCP adapter;
+- stdio first transport;
+- one Optic-owned application session for initial server lifecycle;
+- read-only/system surface: `fs_list`, `fs_read`, `session_info`;
+- public paths normalized through `WorkspacePath` before filesystem access;
+- typed `ActionEnvelope` plus `PolicyEngine` authorization before runtime I/O;
+- MCP handlers do not call filesystem/process APIs directly;
+- Optic-owned handler concurrency/deadline/response ceilings;
+- custom bounded JSON-line stdio transport caps a line before JSON deserialization and caps the final serialized response before stdout write.
 
-- direct handler tests prove invalid path/session/policy requests fail closed;
-- read/list outputs remain bounded independently of caller arguments;
-- stdio server starts and exposes only intended tools in CI-compatible tests;
-- any raw-frame limitation not yet enforceable is documented rather than implied solved.
+Gate passed: direct negative handler tests, bounded read/list outputs, intended tool-surface test, Linux/Windows CI and dependency policy.
 
 ### Phase 1C — structured process lifecycle
 
-- add process job identifiers owned by one application session;
-- implement structured executable + args + cwd + controlled environment; never shell-string execution as the primitive;
-- implement `process_start`, cursor-based bounded `process_read`, `process_stop`, `process_result`;
-- deny network by default and preserve dual session+task-lease authorization when network is requested;
-- bound stdout/stderr capture, process count, timeout and memory request before platform execution;
-- cancellation propagates session → job → child tree.
+Status: **implemented on PR #6 branch; merge only with final gates green**.
+
+- opaque session-owned `JobId` with no arbitrary PID operation;
+- revocable application-owned `TaskLeaseRegistry`;
+- structured executable + `args[]` + cwd + controlled environment; shell strings are not the primitive;
+- executable must be absolute, canonical and exactly present in an operator-created task lease;
+- operator startup allowlists create process leases through `--allow-executable`; inherited environment names require `--allow-env`;
+- MCP never creates capabilities or task leases;
+- `process_start`, cursor-based bounded `process_read`, `process_stop`, `process_result` and `session_cancel`;
+- `process_start` normalizes to `Effect::ProcessRun` and is authorized by both the application session and exact executable task lease;
+- network remains unavailable in the Phase 1C runtime and `network=true` fails closed;
+- stdout/stderr capture, active jobs, retained records, output reads and timeout are hard bounded;
+- cancellation propagates session → job → owned child tree;
+- Windows lifecycle already uses Job Object assignment plus kill-on-drop; Unix development builds use process-group lifecycle containment;
+- Windows CI found and closed a fast-exit/output-overflow status race.
 
 Acceptance:
 
-- cross-session job access is rejected;
-- timeout/cancel/output-overflow paths are deterministic and tested;
-- no arbitrary PID operation is exposed.
+- cross-session job access rejected;
+- timeout/cancel/output-overflow deterministic and tested on native Windows and Linux;
+- no arbitrary PID operation;
+- operator allowlist required before ProcessRun appears in the session;
+- Linux/Windows formatting/lint/tests and dependency policy green before merge.
+
+Important boundary: Phase 1C validates requested `memory_bytes` and `process_count` against hard/lease ceilings, but does **not** claim Windows-kernel enforcement for those two values.
 
 ### Phase 1D — Windows Job Object enforcement and Phase 1 gate
 
+Status: **next after Phase 1C merge**.
+
 - implement a narrow audited Windows containment adapter using Job Objects;
-- configure kill-on-close and approved resource limits;
-- assign the child immediately enough that no intended child tree escapes lifecycle ownership;
+- keep the suspended spawn → configured Job Object → assign → resume ordering so intended child trees do not escape lifecycle ownership;
+- configure kill-on-close plus kernel-enforced active-process and memory ceilings derived from the authorized ResourceBudget;
 - close/terminate handles deterministically on normal completion, cancellation, timeout and bridge shutdown;
-- retain non-Windows compile/test support without pretending it proves Windows containment.
+- retain non-Windows compile/test support without pretending it proves Windows containment;
+- keep timeout/output bounds independently enforced even when Job Object limits exist.
 
 Phase 1 gate: native Windows integration tests prove owned child-tree cleanup plus memory/process/output/time resource behavior. Transport/session limits remain enforceable independently of MCP SDK defaults.
 

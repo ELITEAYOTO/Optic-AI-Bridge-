@@ -39,6 +39,9 @@ pub struct HardLimits {
     pub max_fs_read_bytes: u64,
     pub max_fs_list_page_entries: u32,
     pub max_fs_directory_scan_entries: u32,
+    pub max_active_process_jobs: u32,
+    pub max_process_records: u32,
+    pub max_process_read_bytes: u64,
     pub max_process_budget: ResourceBudget,
 }
 
@@ -53,6 +56,9 @@ impl Default for HardLimits {
             max_fs_read_bytes: 256 * 1024,
             max_fs_list_page_entries: 256,
             max_fs_directory_scan_entries: 4096,
+            max_active_process_jobs: 8,
+            max_process_records: 64,
+            max_process_read_bytes: 64 * 1024,
             max_process_budget: ResourceBudget {
                 timeout_ms: 60 * 60 * 1000,
                 output_bytes: 16 * 1024 * 1024,
@@ -73,8 +79,14 @@ impl HardLimits {
             || self.max_fs_read_bytes == 0
             || self.max_fs_list_page_entries == 0
             || self.max_fs_directory_scan_entries == 0
+            || self.max_active_process_jobs == 0
+            || self.max_process_records == 0
+            || self.max_process_read_bytes == 0
         {
             return Err(LimitError::ZeroIsNotUnlimited);
+        }
+        if self.max_process_records < self.max_active_process_jobs {
+            return Err(LimitError::InvalidRelationship);
         }
         self.max_process_budget.validate_nonzero()?;
         Ok(self)
@@ -87,6 +99,8 @@ pub enum LimitError {
     ZeroIsNotUnlimited,
     #[error("requested resource budget exceeds its authorized ceiling")]
     ExceedsCeiling,
+    #[error("hard-limit relationships are invalid")]
+    InvalidRelationship,
 }
 
 #[cfg(test)]
@@ -116,6 +130,21 @@ mod tests {
         assert_eq!(
             limits.validate_nonzero().expect_err("zero must fail"),
             LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn process_record_limit_must_cover_active_jobs() {
+        let limits = HardLimits {
+            max_active_process_jobs: 4,
+            max_process_records: 3,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits
+                .validate_nonzero()
+                .expect_err("relationship must fail"),
+            LimitError::InvalidRelationship
         );
     }
 }
