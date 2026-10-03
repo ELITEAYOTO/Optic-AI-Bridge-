@@ -4,7 +4,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath, WorkspacePathError};
+use optic_bridge_core::{
+    ContentVersion, ExpectedState, HardLimits, WorkspacePath, WorkspacePathError,
+};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -172,28 +174,28 @@ impl BoundedFileSystem {
     pub fn observe_mutation_target(
         &self,
         path: &WorkspacePath,
-    ) -> Result<MutationObservation, FileSystemError> {
+    ) -> Result<MutationObservation, MutationError> {
         let candidate = self.join_workspace_path(path);
 
         match fs::symlink_metadata(&candidate) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
-                    return Err(FileSystemError::MutationSymlinkDenied);
+                    return Err(MutationError::SymlinkDenied);
                 }
                 if !metadata.is_file() {
-                    return Err(FileSystemError::NotFile);
+                    return Err(MutationError::NotFile);
                 }
 
-                let canonical = fs::canonicalize(&candidate).map_err(FileSystemError::Io)?;
-                self.ensure_inside_workspace(&canonical)?;
+                let canonical = fs::canonicalize(&candidate).map_err(MutationError::Io)?;
+                self.ensure_inside_workspace(&canonical)
+                    .map_err(MutationError::FileSystem)?;
                 let canonical_path = self.workspace_path_from_absolute(&canonical)?;
-                let mut file = File::open(&canonical).map_err(FileSystemError::Io)?;
-                let opened_metadata = file.metadata().map_err(FileSystemError::Io)?;
+                let mut file = File::open(&canonical).map_err(MutationError::Io)?;
+                let opened_metadata = file.metadata().map_err(MutationError::Io)?;
                 if !opened_metadata.is_file() {
-                    return Err(FileSystemError::NotFile);
+                    return Err(MutationError::NotFile);
                 }
-                let version =
-                    ContentVersion::from_reader(&mut file).map_err(FileSystemError::Io)?;
+                let version = ContentVersion::from_reader(&mut file).map_err(MutationError::Io)?;
 
                 Ok(MutationObservation {
                     canonical_path,
@@ -201,17 +203,14 @@ impl BoundedFileSystem {
                 })
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let parent = candidate
-                    .parent()
-                    .ok_or(FileSystemError::InvalidMutationTarget)?;
-                let parent = fs::canonicalize(parent).map_err(FileSystemError::Io)?;
-                self.ensure_inside_workspace(&parent)?;
+                let parent = candidate.parent().ok_or(MutationError::InvalidTarget)?;
+                let parent = fs::canonicalize(parent).map_err(MutationError::Io)?;
+                self.ensure_inside_workspace(&parent)
+                    .map_err(MutationError::FileSystem)?;
                 if !parent.is_dir() {
-                    return Err(FileSystemError::NotDirectory);
+                    return Err(MutationError::NotDirectory);
                 }
-                let file_name = candidate
-                    .file_name()
-                    .ok_or(FileSystemError::InvalidMutationTarget)?;
+                let file_name = candidate.file_name().ok_or(MutationError::InvalidTarget)?;
                 let canonical_candidate = parent.join(file_name);
                 let canonical_path = self.workspace_path_from_absolute(&canonical_candidate)?;
 
@@ -220,7 +219,7 @@ impl BoundedFileSystem {
                     state: ExpectedState::Absent,
                 })
             }
-            Err(error) => Err(FileSystemError::Io(error)),
+            Err(error) => Err(MutationError::Io(error)),
         }
     }
 
@@ -231,10 +230,10 @@ impl BoundedFileSystem {
         &self,
         path: &WorkspacePath,
         expected: ExpectedState,
-    ) -> Result<MutationObservation, FileSystemError> {
+    ) -> Result<MutationObservation, MutationError> {
         let observation = self.observe_mutation_target(path)?;
         if observation.state != expected {
-            return Err(FileSystemError::MutationPreconditionFailed {
+            return Err(MutationError::PreconditionFailed {
                 expected,
                 observed: observation.state,
             });
@@ -270,27 +269,28 @@ impl BoundedFileSystem {
         }
     }
 
-    fn workspace_path_from_absolute(&self, path: &Path) -> Result<WorkspacePath, FileSystemError> {
-        self.ensure_inside_workspace(path)?;
+    fn workspace_path_from_absolute(&self, path: &Path) -> Result<WorkspacePath, MutationError> {
+        self.ensure_inside_workspace(path)
+            .map_err(MutationError::FileSystem)?;
         let relative = path
             .strip_prefix(&self.root)
-            .map_err(|_| FileSystemError::OutsideWorkspace)?;
+            .map_err(|_| MutationError::FileSystem(FileSystemError::OutsideWorkspace))?;
         let mut segments = Vec::new();
         for component in relative.components() {
             match component {
                 Component::Normal(segment) => segments.push(
                     segment
                         .to_str()
-                        .ok_or(FileSystemError::NonUtf8Name)?
+                        .ok_or(MutationError::NonUtf8Name)?
                         .to_owned(),
                 ),
-                _ => return Err(FileSystemError::InvalidMutationTarget),
+                _ => return Err(MutationError::InvalidTarget),
             }
         }
         if segments.is_empty() {
-            return Err(FileSystemError::InvalidMutationTarget);
+            return Err(MutationError::InvalidTarget);
         }
-        WorkspacePath::parse(&segments.join("/")).map_err(FileSystemError::Path)
+        WorkspacePath::parse(&segments.join("/")).map_err(MutationError::Path)
     }
 }
 
@@ -330,6 +330,31 @@ pub enum EntryKind {
 }
 
 #[derive(Debug, Error)]
+pub enum MutationError {
+    #[error("mutation target is invalid")]
+    InvalidTarget,
+    #[error("mutation of a leaf symlink is denied")]
+    SymlinkDenied,
+    #[error("mutation target is not a regular file")]
+    NotFile,
+    #[error("mutation target parent is not a directory")]
+    NotDirectory,
+    #[error("mutation target contains a non-UTF-8 path segment")]
+    NonUtf8Name,
+    #[error("mutation path is invalid: {0}")]
+    Path(WorkspacePathError),
+    #[error("mutation precondition does not match the current canonical target state")]
+    PreconditionFailed {
+        expected: ExpectedState,
+        observed: ExpectedState,
+    },
+    #[error("canonical mutation target validation failed: {0}")]
+    FileSystem(FileSystemError),
+    #[error("mutation observation failed: {0}")]
+    Io(std::io::Error),
+}
+
+#[derive(Debug, Error)]
 pub enum FileSystemError {
     #[error("filesystem limits are invalid")]
     InvalidLimits,
@@ -353,15 +378,6 @@ pub enum FileSystemError {
     OffsetOutOfRange,
     #[error("directory entry cannot be represented as UTF-8")]
     NonUtf8Name,
-    #[error("mutation target is invalid")]
-    InvalidMutationTarget,
-    #[error("mutation of a leaf symlink is denied")]
-    MutationSymlinkDenied,
-    #[error("mutation precondition does not match the current canonical target state")]
-    MutationPreconditionFailed {
-        expected: ExpectedState,
-        observed: ExpectedState,
-    },
     #[error("filesystem operation failed: {0}")]
     Io(std::io::Error),
 }
@@ -487,12 +503,12 @@ mod tests {
             .expect("matching version");
         assert!(matches!(
             service.require_expected_state(&path, ExpectedState::Absent),
-            Err(FileSystemError::MutationPreconditionFailed { .. })
+            Err(MutationError::PreconditionFailed { .. })
         ));
 
         fs::write(root.join("target.txt"), b"beta").expect("mutate fixture");
         match service.require_expected_state(&path, ExpectedState::Content(alpha)) {
-            Err(FileSystemError::MutationPreconditionFailed { expected, observed }) => {
+            Err(MutationError::PreconditionFailed { expected, observed }) => {
                 assert_eq!(expected, ExpectedState::Content(alpha));
                 assert_eq!(
                     observed,
@@ -518,7 +534,7 @@ mod tests {
 
         assert!(matches!(
             service.observe_mutation_target(&alias),
-            Err(FileSystemError::MutationSymlinkDenied)
+            Err(MutationError::SymlinkDenied)
         ));
 
         fs::remove_dir_all(root).expect("remove fixture");
@@ -560,7 +576,9 @@ mod tests {
 
         assert!(matches!(
             service.observe_mutation_target(&requested),
-            Err(FileSystemError::OutsideWorkspace)
+            Err(MutationError::FileSystem(
+                FileSystemError::OutsideWorkspace
+            ))
         ));
 
         fs::remove_dir_all(root).expect("remove fixture");
