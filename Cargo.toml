@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/optic-bridge-core",
+    "crates/optic-bridge-policy",
+    "crates/optic-bridge-app",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/ELITEAYOTO/Optic-AI-Bridge-"
+publish = false
+
+[workspace.dependencies]
+blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
+getrandom = { version = "0.4.3", features = ["std"] }
+thiserror = "2.0.21"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+debug = 1

@@ -1,0 +1,16 @@
+[package]
+name = "optic-bridge-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "optic-bridge"
+path = "src/main.rs"
+
+[dependencies]
+optic-bridge-core = { path = "../optic-bridge-core" }
+optic-bridge-policy = { path = "../optic-bridge-policy" }
