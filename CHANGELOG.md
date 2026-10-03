@@ -57,11 +57,15 @@ All notable project changes are recorded here.
 - Dedicated `HardLimits::max_mutation_journal_file_bytes` and `max_mutation_recovery_records` ceilings.
 - Bounded deterministic recovery scan and reconciliation against exact prior/intended content state.
 - Recovery tests proving prepared-only abort classification, intended/prior-state reconciliation, third-state fail-closed retention, outside-workspace state placement and verified-terminal retirement.
+- Phase 2C2 `JournaledMutationService` binding the same operation `ActionId` to journal state and deterministic same-directory staging.
+- Phase 2C2 process-crash fixtures covering durable prepared, durable committing, post-atomic-service return before terminal state, and terminal state before retirement.
+- Recovery-owned staging validation/cleanup with regular-file, byte-ceiling and journaled-intended BLAKE3 checks before journal retirement.
+- Negative staging-tamper regression proving mismatched staging fails closed while retaining recovery evidence.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations and the Phase 2C1 recovery-state foundation.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state and the Phase 2C2 journal-wrapped crash-recovery gate under review.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
@@ -70,6 +74,7 @@ All notable project changes are recorded here.
 - Windows process lifecycle uses the Optic-owned Windows adapter so authorized memory/process-count budgets become explicit kernel Job Object limits.
 - Phase 2 is split into narrow gates: canonical/bounded observation, Windows mutation-time containment and atomic namespace commit, recovery state machine, journal-wrapped forced-crash gate, transactional file services, then Git read/integration.
 - Non-Windows durable file commit remains explicitly unsupported until an equivalent containment/commit boundary is designed and proven.
+- Production Phase 2C2 recovery now separates journal inspection from retirement so operation evidence survives until staging validation/cleanup completes.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -92,5 +97,8 @@ All notable project changes are recorded here.
 - Phase 2B does not claim compare-and-swap semantics: `ReplaceFileW` still names the final target by path after revalidation, leaving a documented external-writer TOCTOU window.
 - Phase 2C1 recovery state is kept outside the project workspace, is byte/count bounded, ignores only a torn trailing transition, and retains unresolved third-state conflicts instead of retrying blindly.
 - A `prepared` journal record alone cannot authorize a namespace commit; the durable `committing` transition is the protocol boundary before commit may be attempted.
-- Phase 2C1 does not yet prove forced-crash behavior around the real Windows namespace commit or power-loss/ACID durability.
-- Public MCP file mutation remains disabled until the journal-wrapped commit and forced-crash recovery gates pass.
+- Phase 2C2 errors after durable `committing` are recovery-required rather than safe retry signals.
+- Phase 2C2 keeps journal evidence until any surviving operation staging artifact is validated as regular, bounded and content-equal to the journaled intention; tampering fails closed.
+- Phase 2C2 crash tests prove process-termination/restart reconciliation at documented service boundaries, but do not prove sudden-power-loss ACID durability.
+- The Phase 2C2 post-commit crash point is after the atomic service returns, not between the raw namespace syscall and its verification.
+- Public MCP file mutation remains disabled until transactional runtime services and policy/recovery negative gates pass.

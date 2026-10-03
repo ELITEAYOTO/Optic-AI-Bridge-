@@ -1,17 +1,14 @@
 use std::path::Path;
 
-#[cfg(all(test, not(windows)))]
+#[cfg(any(windows, all(test, not(windows))))]
 use std::path::PathBuf;
 #[cfg(windows)]
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
 };
 
-#[cfg(windows)]
-use optic_bridge_core::ActionId;
-use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath};
+use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
 use thiserror::Error;
 
 use crate::{BoundedFileSystem, FileSystemError, MutationError};
@@ -21,6 +18,11 @@ use optic_bridge_windows::{
     WindowsFileError, WindowsFileIdentity, inspect_directory_no_reparse, open_file_no_reparse,
     replace_file_atomically,
 };
+
+#[cfg(windows)]
+const STAGING_PREFIX: &str = ".optic-";
+#[cfg(windows)]
+const STAGING_SUFFIX: &str = ".staged";
 
 #[derive(Debug)]
 pub struct AtomicMutationService {
@@ -73,6 +75,26 @@ impl AtomicMutationService {
         plan: &PreparedMutation,
         content: &[u8],
     ) -> Result<MutationCommit, AtomicMutationError> {
+        #[cfg(windows)]
+        {
+            let action_id =
+                ActionId::generate().map_err(|_| AtomicMutationError::TempNameEntropy)?;
+            self.commit_write_for_action(plan, content, &action_id)
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = (plan, content);
+            Err(AtomicMutationError::UnsupportedPlatform)
+        }
+    }
+
+    pub fn commit_write_for_action(
+        &self,
+        plan: &PreparedMutation,
+        content: &[u8],
+        action_id: &ActionId,
+    ) -> Result<MutationCommit, AtomicMutationError> {
         let content_len =
             u64::try_from(content.len()).map_err(|_| AtomicMutationError::NewContentTooLarge {
                 limit: self.max_mutation_bytes,
@@ -85,12 +107,12 @@ impl AtomicMutationService {
 
         #[cfg(windows)]
         {
-            self.commit_write_windows(plan, content)
+            self.commit_write_windows(plan, content, action_id)
         }
 
         #[cfg(not(windows))]
         {
-            let _ = (plan, content);
+            let _ = (plan, content, action_id);
             Err(AtomicMutationError::UnsupportedPlatform)
         }
     }
@@ -148,12 +170,13 @@ impl AtomicMutationService {
         &self,
         plan: &PreparedMutation,
         content: &[u8],
+        action_id: &ActionId,
     ) -> Result<MutationCommit, AtomicMutationError> {
         self.revalidate_plan(plan)?;
 
         let target = self.absolute_path(&plan.canonical_path);
         let parent = target.parent().ok_or(AtomicMutationError::InvalidTarget)?;
-        let mut staged = StagedFile::create(parent, content)?;
+        let mut staged = StagedFile::create(parent, content, action_id)?;
 
         // The staging write may take time. Revalidate again immediately before
         // the one-step namespace commit so an editor/change during staging fails closed.
@@ -267,11 +290,7 @@ impl AtomicMutationService {
 
     #[cfg(windows)]
     fn absolute_path(&self, path: &WorkspacePath) -> PathBuf {
-        let mut absolute = self.filesystem.root().to_path_buf();
-        for segment in path.as_str().split('/') {
-            absolute.push(segment);
-        }
-        absolute
+        absolute_workspace_path(self.filesystem.root(), path)
     }
 }
 
@@ -328,25 +347,26 @@ struct StagedFile {
 
 #[cfg(windows)]
 impl StagedFile {
-    fn create(parent: &Path, content: &[u8]) -> Result<Self, AtomicMutationError> {
-        for _ in 0..16 {
-            let action = ActionId::generate().map_err(|_| AtomicMutationError::TempNameEntropy)?;
-            let path = parent.join(format!(".optic-{}.tmp", action.to_token()));
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            match options.open(&path) {
-                Ok(mut file) => {
-                    if let Err(error) = file.write_all(content).and_then(|()| file.sync_all()) {
-                        let _ = fs::remove_file(&path);
-                        return Err(AtomicMutationError::Io(error));
-                    }
-                    return Ok(Self { path, armed: true });
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(AtomicMutationError::Io(error)),
+    fn create(
+        parent: &Path,
+        content: &[u8],
+        action_id: &ActionId,
+    ) -> Result<Self, AtomicMutationError> {
+        let path = parent.join(staging_file_name(action_id));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        let mut file = match options.open(&path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(AtomicMutationError::StagingArtifactAlreadyExists);
             }
+            Err(error) => return Err(AtomicMutationError::Io(error)),
+        };
+        if let Err(error) = file.write_all(content).and_then(|()| file.sync_all()) {
+            let _ = fs::remove_file(&path);
+            return Err(AtomicMutationError::Io(error));
         }
-        Err(AtomicMutationError::TempNameCollision)
+        Ok(Self { path, armed: true })
     }
 
     fn path(&self) -> &Path {
@@ -365,6 +385,32 @@ impl Drop for StagedFile {
             let _ = fs::remove_file(&self.path);
         }
     }
+}
+
+#[cfg(windows)]
+pub(crate) fn staging_file_name(action_id: &ActionId) -> String {
+    format!("{STAGING_PREFIX}{}{STAGING_SUFFIX}", action_id.to_token())
+}
+
+#[cfg(windows)]
+pub(crate) fn staging_path_for(
+    filesystem: &BoundedFileSystem,
+    path: &WorkspacePath,
+    action_id: &ActionId,
+) -> PathBuf {
+    let mut target = absolute_workspace_path(filesystem.root(), path);
+    let _ = target.pop();
+    target.push(staging_file_name(action_id));
+    target
+}
+
+#[cfg(windows)]
+fn absolute_workspace_path(root: &Path, path: &WorkspacePath) -> PathBuf {
+    let mut absolute = root.to_path_buf();
+    for segment in path.as_str().split('/') {
+        absolute.push(segment);
+    }
+    absolute
 }
 
 #[cfg(windows)]
@@ -418,8 +464,8 @@ pub enum AtomicMutationError {
     OutsideWorkspace,
     #[error("failed to obtain entropy for a staging-file name")]
     TempNameEntropy,
-    #[error("could not allocate a unique staging-file name")]
-    TempNameCollision,
+    #[error("operation staging artifact already exists")]
+    StagingArtifactAlreadyExists,
     #[error("durable mutation commit is not implemented on this platform yet")]
     UnsupportedPlatform,
 }
@@ -427,8 +473,6 @@ pub enum AtomicMutationError {
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
-
-    use optic_bridge_core::ActionId;
 
     use super::*;
 
@@ -479,6 +523,33 @@ mod tests {
             commit.verification,
             CommitVerification::Verified(ContentVersion::from_bytes(b"beta"))
         );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_action_id_owns_the_staging_name() {
+        let root = workspace("windows-action-staging");
+        fs::write(root.join("target.txt"), b"alpha").expect("write fixture");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_write(
+                &path,
+                ExpectedState::Content(ContentVersion::from_bytes(b"alpha")),
+            )
+            .expect("plan");
+        let action_id = ActionId::generate().expect("action");
+        let staging = staging_path_for(service.filesystem(), &path, &action_id);
+        fs::write(&staging, b"foreign").expect("reserve action staging path");
+
+        assert!(matches!(
+            service.commit_write_for_action(&plan, b"beta", &action_id),
+            Err(AtomicMutationError::StagingArtifactAlreadyExists)
+        ));
+        assert_eq!(fs::read(root.join("target.txt")).expect("target"), b"alpha");
+        assert_eq!(fs::read(&staging).expect("staging"), b"foreign");
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

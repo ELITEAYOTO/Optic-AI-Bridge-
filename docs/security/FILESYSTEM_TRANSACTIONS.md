@@ -86,8 +86,6 @@ The ordering contract is strict:
 5. after the namespace effect, append and `sync_all` either `verified` or `ambiguous`;
 6. retire the journal only after terminal handling.
 
-The first PR proves the journal/recovery logic but does not yet connect step 4 to the actual Phase 2B namespace operation. That wiring and forced-crash proof belong to Phase 2C2.
-
 ### Bounded recovery
 
 Two independent hard ceilings are enforced:
@@ -114,26 +112,65 @@ For a complete journal:
 
 Recovery never blindly retries an ambiguous operation.
 
+## Phase 2C2 journal-wrapped commit boundary
+
+PR #18 wraps the real Phase 2B Windows mutation lifecycle with the Phase 2C1 journal. Public MCP mutation remains disabled.
+
+The operation order is:
+
+1. generate one opaque `ActionId` and persist durable `prepared`;
+2. append and sync durable `committing`;
+3. use the same ActionId for the deterministic same-directory staging path `.optic-<ActionId>.staged`;
+4. invoke the Phase 2B atomic mutation path;
+5. append durable `verified` when the result is proven, or preserve recovery-required/`ambiguous` semantics when it is not safe to report a clean failure;
+6. retire a verified journal only after terminal state is durable under the tested process-crash model.
+
+After durable `committing`, an atomic error is **not** converted into permission to retry. The operation remains recovery-required because a caller cannot infer from an error alone whether a namespace effect happened.
+
+### Recovery-owned staging safety
+
+The production `JournaledMutationService::recover` intentionally separates **inspection** from **retirement**:
+
+1. inspect bounded journal records and classify target state without deleting the journal;
+2. validate any deterministic operation-owned staging artifact;
+3. only after validation/cleanup succeeds, retire the corresponding journal evidence.
+
+A surviving staging artifact is removable only when:
+
+- its name is derived from the journal ActionId and canonical mutation target directory;
+- it is a regular file, not a symlink or other object;
+- the durable journal has reached at least `committing` (a `prepared`-only journal plus staging is a protocol contradiction and fails closed);
+- its size is within `max_fs_mutation_bytes`;
+- a bounded BLAKE3 observation equals the journaled intended content version.
+
+If any of those checks fail, recovery fails closed and keeps both the journal evidence and staging artifact for explicit reconciliation instead of deleting an unexpected file.
+
+The lower-level Phase 2C1 `MutationRecoveryJournal::reconcile` keeps its original convenience semantics (classify then retire). The production journal-wrapped mutation service uses the preserving inspection/cleanup/retirement ordering above.
+
+### Forced process-crash gates
+
+Native Windows tests launch a child copy of the test binary and terminate that process at four real service boundaries:
+
+- after durable `prepared` → restart classifies `PreparedNotCommitted` and target is absent;
+- after durable `committing`, before calling the atomic mutation service → `ObservedNotCommitted` and target is absent;
+- after `AtomicMutationService` returns, before terminal journal state → `ObservedCommitted` and target exists;
+- after terminal journal state, before retirement → `VerifiedTerminal` and target exists.
+
+After each successful reconciliation, a second recovery is empty. A separate negative test proves tampered staging causes `StagingContentMismatch` and retains the journal evidence.
+
+The third crash point is deliberately described precisely: it occurs **after the atomic service returns**, meaning the namespace effect and that service's post-commit verification have completed. It is not a hook between the raw `ReplaceFileW`/hard-link instruction and post-commit verification.
+
 ## Durability claim boundary
 
-`sync_all` / Windows file flushing improves file-data persistence, but Phase 2C1 does **not** claim full power-loss ACID durability for the journal or workspace namespace. In particular, filesystem/directory metadata ordering across sudden power failure is not proven by the current tests.
+`sync_all` / Windows file flushing improves file-data persistence, but Phase 2C does **not** claim full power-loss ACID durability for the journal or workspace namespace. In particular, filesystem/directory metadata ordering across sudden power failure is not proven by the current tests.
 
-The currently supported claim is narrower: the state machine is designed for deterministic process-crash recovery, and Phase 2C2 must prove that claim with real child-process termination around the journal-wrapped Phase 2B commit. Power-loss guarantees, if ever claimed, require a separate documented persistence design and test strategy.
+The supported claim is narrower: deterministic recovery after **process termination/restart** at the tested service boundaries. Power-loss guarantees, if ever claimed, require a separate documented persistence design and test strategy.
 
-## Phase 2C2 required crash gates
-
-Before public mutation tools are enabled, a child process must be terminated at least at these boundaries and startup recovery must produce the expected classification without blind retry:
-
-- after durable `prepared`;
-- after durable `committing`, before namespace commit;
-- immediately after namespace commit, before terminal journal state;
-- after terminal state, before journal retirement.
-
-The journal ActionId should also identify the actual staging artifact so recovery can reason about and clean only artifacts owned by that operation.
+The Phase 2B residual external-writer boundary also remains: `ReplaceFileW` is path-based at its final namespace call and is not claimed to be a kernel compare-and-swap.
 
 ## Transactional services
 
-Prefer patch/transaction APIs over blind whole-file replacement. File write/patch/delete runtime services are Phase 2C3 and must reuse the journal-wrapped commit boundary rather than bypass it. Public MCP mutation remains disabled until the recovery and policy gates pass.
+Prefer patch/transaction APIs over blind whole-file replacement. File write/patch/delete runtime services are Phase 2C3 and must reuse the journal-wrapped commit boundary rather than bypass it. Public MCP mutation remains disabled until the runtime service, policy and negative recovery gates pass.
 
 ## Sensitive files
 

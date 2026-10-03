@@ -449,6 +449,8 @@ dependencies = [
  "optic-bridge-core",
  "optic-bridge-windows",
  "process-wrap",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
 ]
@@ -458,6 +460,7 @@ name = "optic-bridge-windows"
 version = "0.0.1"
 dependencies = [
  "process-wrap",
+ "thiserror",
  "tokio",
  "windows",
 ]

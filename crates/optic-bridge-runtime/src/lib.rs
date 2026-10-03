@@ -9,6 +9,7 @@
 
 mod clock;
 mod filesystem;
+mod journaled_mutation;
 mod mutation;
 mod process;
 mod recovery;
@@ -20,6 +21,9 @@ pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation,
+};
+pub use journaled_mutation::{
+    JournaledMutationCommit, JournaledMutationError, JournaledMutationService,
 };
 pub use mutation::{
     AtomicMutationError, AtomicMutationService, CommitVerification, MutationCommit,

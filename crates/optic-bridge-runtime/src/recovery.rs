@@ -118,6 +118,17 @@ impl MutationRecoveryJournal {
         &self,
         filesystem: &BoundedFileSystem,
     ) -> Result<RecoveryReport, RecoveryJournalError> {
+        let report = self.inspect_pending(filesystem)?;
+        for record in &report.records {
+            self.retire_action(&record.action_id)?;
+        }
+        Ok(report)
+    }
+
+    pub(crate) fn inspect_pending(
+        &self,
+        filesystem: &BoundedFileSystem,
+    ) -> Result<RecoveryReport, RecoveryJournalError> {
         let mut paths = Vec::new();
         for entry in fs::read_dir(&self.root)? {
             if paths.len() >= self.max_records {
@@ -171,15 +182,20 @@ impl MutationRecoveryJournal {
                 }
             };
 
-            self.remove_regular_file(&path)?;
+            let intended_version_hex = parsed.ticket.intended_version_hex.clone();
             records.push(RecoveryRecord {
                 action_id: parsed.ticket.action_id,
                 canonical_path: parsed.ticket.canonical_path,
+                intended_version_hex,
                 outcome,
             });
         }
 
         Ok(RecoveryReport { records })
+    }
+
+    pub(crate) fn retire_action(&self, action_id: &ActionId) -> Result<(), RecoveryJournalError> {
+        self.remove_regular_file(&self.journal_path(action_id))
     }
 
     fn append(
@@ -346,6 +362,7 @@ impl RecoveryReport {
 pub struct RecoveryRecord {
     pub action_id: ActionId,
     pub canonical_path: WorkspacePath,
+    pub intended_version_hex: String,
     pub outcome: RecoveryOutcome,
 }
 
