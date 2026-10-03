@@ -101,7 +101,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         processes,
         task_leases,
         process_leases,
-        mutation_authorities,
     )?;
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
