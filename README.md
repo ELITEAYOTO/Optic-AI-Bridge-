@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2C2 recovery gate implemented on PR #18, final review in progress  
+**Status:** pre-alpha — Phase 2C2 merged, Phase 2C3 transactional file services in progress  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B and Phase 2C1 are merged. Phase 2C2 is implemented on PR #18 and is undergoing its final full CI/documentation gate. Public durable file mutation is still intentionally not exposed.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1 and Phase 2C2 are merged. Phase 2C3 is the current implementation tranche. Public durable file mutation is still intentionally not exposed through MCP.
 
 ## Implemented Phase 1 surface
 
@@ -47,7 +47,7 @@ This boundary intentionally does not claim kernel compare-and-swap semantics: th
 
 ### Phase 2C1 — bounded recovery journal
 
-Merged in PR #15:
+Merged in PR #15 (`85aec4c6`):
 
 - operator-controlled recovery state outside the project workspace;
 - one opaque ActionId per operation;
@@ -59,7 +59,7 @@ Merged in PR #15:
 
 ### Phase 2C2 — journal-wrapped commit / crash recovery
 
-Implemented on PR #18, with public MCP mutation still disabled:
+Merged in PR #18 (`0297406c`), with public MCP mutation still disabled:
 
 - one ActionId binds the recovery journal and deterministic same-directory staging artifact;
 - `prepared` and then `committing` are durable before the Phase 2B atomic mutation service is invoked;
@@ -67,11 +67,14 @@ Implemented on PR #18, with public MCP mutation still disabled:
 - production recovery preserves journal evidence until surviving staging is validated and cleaned;
 - staging cleanup requires a regular file, bounded size and exact BLAKE3 match to the journaled intended content;
 - native Windows child-process tests terminate after durable prepared, after durable committing, after atomic-service return before terminal state, and after terminal state before retirement, then prove deterministic restart reconciliation;
-- tampered staging fails closed and retains journal evidence.
+- tampered staging fails closed and retains journal evidence;
+- exact pre-merge head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
 The crash model is deliberately narrow: the post-commit hook is after the atomic service returns (effect + its verification), not between the raw namespace syscall and verification. The project does **not** claim sudden-power-loss ACID durability.
 
-The next gate is Phase 2C3 transactional write/patch/delete runtime services with policy and negative recovery tests. MCP mutation tools remain disabled until that gate passes.
+### Phase 2C3 — current gate
+
+The current tranche builds transactional runtime write/patch/delete services on the journal-wrapped boundary. Those services must preserve exact expected-state checks, path/reparse containment, byte ceilings, session ownership, task-lease scope and capabilities, with negative recovery/policy tests. MCP mutation tools remain disabled until this gate passes.
 
 The implementation remains pre-alpha. Installer/tunnel integration, public mutation/Git tools, multi-session orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
