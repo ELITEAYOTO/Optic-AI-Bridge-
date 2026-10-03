@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use optic_bridge_core::{
-    Capability, IdError, LeaseScope, LimitError, MonotonicTime, ResourceBudget, SessionHandle,
-    TaskLease, TaskLeaseId,
+    Capability, HardLimits, IdError, LeaseScope, LimitError, MonotonicTime, ResourceBudget,
+    SessionHandle, TaskLease, TaskLeaseId,
 };
 use thiserror::Error;
 
@@ -91,6 +91,16 @@ impl MutationAuthoritySet {
     #[must_use]
     pub const fn has_delete(&self) -> bool {
         self.delete_lease.is_some()
+    }
+}
+
+#[must_use]
+pub const fn mutation_resource_budget(limits: HardLimits) -> ResourceBudget {
+    ResourceBudget {
+        timeout_ms: limits.max_request_duration_ms,
+        output_bytes: limits.max_response_bytes,
+        memory_bytes: limits.max_active_output_ram_bytes,
+        process_count: 1,
     }
 }
 
@@ -282,5 +292,15 @@ mod tests {
                 .expect_err("revoked lease must fail"),
             TaskLeaseRegistryError::Revoked
         );
+    }
+
+    #[test]
+    fn canonical_mutation_budget_tracks_hard_limits() {
+        let limits = HardLimits::default();
+        let budget = mutation_resource_budget(limits);
+        assert_eq!(budget.timeout_ms, limits.max_request_duration_ms);
+        assert_eq!(budget.output_bytes, limits.max_response_bytes);
+        assert_eq!(budget.memory_bytes, limits.max_active_output_ram_bytes);
+        assert_eq!(budget.process_count, 1);
     }
 }
