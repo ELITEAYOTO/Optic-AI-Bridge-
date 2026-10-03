@@ -222,7 +222,9 @@ pub enum JournaledMutationError {
     },
     #[error("operation {action_id:?} recovery found a non-regular staging artifact")]
     UnsafeStagingArtifact { action_id: ActionId },
-    #[error("operation {action_id:?} has a staging artifact even though only prepared state was durable")]
+    #[error(
+        "operation {action_id:?} has a staging artifact even though only prepared state was durable"
+    )]
     UnexpectedPreparedStagingArtifact { action_id: ActionId },
     #[error("operation {action_id:?} staging cleanup failed: {source}")]
     StagingCleanupFailed {
