@@ -109,8 +109,10 @@ mod tests {
 
     #[test]
     fn hard_limits_reject_zero_concurrency() {
-        let mut limits = HardLimits::default();
-        limits.max_concurrent_requests = 0;
+        let limits = HardLimits {
+            max_concurrent_requests: 0,
+            ..HardLimits::default()
+        };
         assert_eq!(
             limits.validate_nonzero().expect_err("zero must fail"),
             LimitError::ZeroIsNotUnlimited
