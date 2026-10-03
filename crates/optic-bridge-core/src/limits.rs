@@ -33,7 +33,12 @@ impl ResourceBudget {
 pub struct HardLimits {
     pub max_request_bytes: u64,
     pub max_response_bytes: u64,
+    pub max_request_duration_ms: u64,
+    pub max_concurrent_requests: u32,
     pub max_active_output_ram_bytes: u64,
+    pub max_fs_read_bytes: u64,
+    pub max_fs_list_page_entries: u32,
+    pub max_fs_directory_scan_entries: u32,
     pub max_process_budget: ResourceBudget,
 }
 
@@ -42,7 +47,12 @@ impl Default for HardLimits {
         Self {
             max_request_bytes: 1024 * 1024,
             max_response_bytes: 256 * 1024,
+            max_request_duration_ms: 30_000,
+            max_concurrent_requests: 16,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
+            max_fs_read_bytes: 256 * 1024,
+            max_fs_list_page_entries: 256,
+            max_fs_directory_scan_entries: 4096,
             max_process_budget: ResourceBudget {
                 timeout_ms: 60 * 60 * 1000,
                 output_bytes: 16 * 1024 * 1024,
@@ -50,6 +60,24 @@ impl Default for HardLimits {
                 process_count: 32,
             },
         }
+    }
+}
+
+impl HardLimits {
+    pub fn validate_nonzero(self) -> Result<Self, LimitError> {
+        if self.max_request_bytes == 0
+            || self.max_response_bytes == 0
+            || self.max_request_duration_ms == 0
+            || self.max_concurrent_requests == 0
+            || self.max_active_output_ram_bytes == 0
+            || self.max_fs_read_bytes == 0
+            || self.max_fs_list_page_entries == 0
+            || self.max_fs_directory_scan_entries == 0
+        {
+            return Err(LimitError::ZeroIsNotUnlimited);
+        }
+        self.max_process_budget.validate_nonzero()?;
+        Ok(self)
     }
 }
 
@@ -75,6 +103,18 @@ mod tests {
         };
         assert_eq!(
             budget.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_concurrency() {
+        let limits = HardLimits {
+            max_concurrent_requests: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
             LimitError::ZeroIsNotUnlimited
         );
     }
