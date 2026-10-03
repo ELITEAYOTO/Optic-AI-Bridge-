@@ -1,17 +1,17 @@
 use std::path::Path;
 
+#[cfg(all(test, not(windows)))]
+use std::path::PathBuf;
 #[cfg(windows)]
 use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
 };
-#[cfg(all(test, not(windows)))]
-use std::path::PathBuf;
 
-use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath};
 #[cfg(windows)]
 use optic_bridge_core::ActionId;
+use optic_bridge_core::{ContentVersion, ExpectedState, HardLimits, WorkspacePath};
 use thiserror::Error;
 
 use crate::{BoundedFileSystem, FileSystemError, MutationError};
