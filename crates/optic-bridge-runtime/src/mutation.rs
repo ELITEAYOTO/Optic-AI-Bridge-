@@ -81,14 +81,13 @@ impl AtomicMutationService {
             .require_expected_state(path, expected_state)?;
 
         #[cfg(windows)]
-        let windows_identity = match self
-            .prepare_windows_guard(&observation.canonical_path, expected_state)?
-        {
-            WindowsMutationGuard::Existing { identity } => identity,
-            WindowsMutationGuard::Absent { .. } => {
-                return Err(AtomicMutationError::InvalidPreparedMutation);
-            }
-        };
+        let windows_identity =
+            match self.prepare_windows_guard(&observation.canonical_path, expected_state)? {
+                WindowsMutationGuard::Existing { identity } => identity,
+                WindowsMutationGuard::Absent { .. } => {
+                    return Err(AtomicMutationError::InvalidPreparedMutation);
+                }
+            };
 
         Ok(PreparedDelete {
             canonical_path: observation.canonical_path,
@@ -795,7 +794,7 @@ mod tests {
             )
             .expect("plan");
 
-        fs::rename(&target, &backup).expect("preserve original identity");
+        fs::rename(&target, &backup).expect("preserve old identity");
         fs::write(&target, b"alpha").expect("recreate same bytes");
 
         assert!(matches!(
