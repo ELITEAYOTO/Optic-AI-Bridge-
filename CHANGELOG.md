@@ -76,7 +76,8 @@ All notable project changes are recorded here.
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`) and Phase 2C3B1 intended-state recovery (`f5eafc3a`); Phase 2C3B2 transactional delete is implemented in PR #24 and Phase 2C3C authorization/adapter gating is next after merge.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`) and Phase 2C3B2 transactional delete (`b346a7d9`); Phase 2C3C authorization/adapter gating is current.
+- Phase 2C3B2 merged through PR #24 after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.

@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-04  
-**Lifecycle:** pre-alpha / Phase 2C3B2 transactional delete under review  
+**Lifecycle:** pre-alpha / Phase 2C3C authorization/adapter gate  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2C3B2 is implemented in PR #24. The exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The runtime now has a Windows handle-based transactional delete requiring an exact existing `ContentVersion`, durable journal intent `ExpectedState::Absent`, recovery-required semantics after durable `committing`, and native forced-process-crash recovery gates. `TransactionalFileService::delete` routes only through that proven journaled boundary. Public MCP file mutation remains intentionally disabled; after #24 merges, the next implementation tranche is Phase 2C3C authorization/adapter gating.
+Phase 2C3B2 is merged on `main` via PR #24 (`b346a7d9`) after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. The runtime now has a Windows handle-based transactional delete requiring an exact existing `ContentVersion`, durable journal intent `ExpectedState::Absent`, recovery-required semantics after durable `committing`, native forced-process-crash recovery gates and `TransactionalFileService::delete` routed only through that proven journaled boundary. The current implementation tranche is Phase 2C3C: authorize canonical `FileWrite` / `FileDelete` effects through the existing session capability + exact task lease + structural workspace scope model and prove the negative policy/recovery gates before any MCP mutation surface is enabled.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -127,8 +127,8 @@ Phase 2C3B2 is implemented in PR #24. The exact code head `3a5758e3` passed Ubun
 - Tests prove both delete-shaped outcomes before delete exists: observed `Absent` is committed; unchanged exact prior content is not committed.
 - Write staging cleanup accepts only `intended = Content`; a surviving write staging artifact associated with `intended = Absent` fails closed.
 
-### Phase 2C3B2 — Windows transactional delete under review
-- PR #24 implements the complete runtime delete slice; exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before documentation alignment.
+### Phase 2C3B2 — Windows transactional delete merged
+- PR #24 merged to `main` as `b346a7d9`; exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 - `optic-bridge-windows` adds a distinct delete-capable no-reparse file handle opened with read + `DELETE` access and captures final path + `FILE_ID_INFO` before mutation.
 - The exact handle whose identity and bounded BLAKE3 content are validated receives `SetFileInformationByHandle(..., FileDispositionInfo, ...)`; delete is not reissued by path.
 - `PreparedDelete` requires an exact existing `ContentVersion`. Stale bytes and same-path/same-content file recreation fail closed before deletion.
@@ -140,8 +140,7 @@ Phase 2C3B2 is implemented in PR #24. The exact code head `3a5758e3` passed Ubun
 - Public MCP write/patch/delete remains disabled.
 
 ### Current / next implementation
-- Finalize PR #24 documentation and require the complete documentation-aligned head to pass Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
-- After #24 merges, Phase 2C3C becomes current: authorize canonical `FileWrite`/`FileDelete` through existing session capability + exact task lease + structural workspace scope policy.
+- Phase 2C3C is current: authorize canonical `FileWrite`/`FileDelete` through existing session capability + exact task lease + structural workspace scope policy.
 - Add negative tests for missing/wrong leases, cross-session access, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes.
 - Keep patch normalized to `FileWrite` authority and keep MCP `fs_write`/patch/delete disabled until those runtime/policy/recovery gates pass.
 - Expose MCP mutation only as a thin adapter over the proven application/runtime contract once 2C3C is green.
@@ -165,7 +164,7 @@ Phase 2C3B2 is implemented in PR #24. The exact code head `3a5758e3` passed Ubun
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`) and Phase 2C3B1 (`f5eafc3a`). Phase 2C3B2 is under review in PR #24 and is not yet part of `main`.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`), Phase 2C3B1 (`f5eafc3a`) and Phase 2C3B2 (`b346a7d9`). Phase 2C3C is the current implementation tranche.
 
 ## Health rule
 

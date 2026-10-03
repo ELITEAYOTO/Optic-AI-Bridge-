@@ -185,7 +185,7 @@ Status: **merged** in PR #20 (`4415a65c`). Exact final head `531f0e38` passed Ub
 
 ##### Phase 2C3B — intended-state recovery + delete
 
-Status: **B1 merged; B2 under review in PR #24**.
+Status: **merged**.
 
 ###### Phase 2C3B1 — intended-state journal compatibility
 
@@ -202,7 +202,7 @@ Status: **merged** in PR #22 (`f5eafc3a`). Exact final head `fe025f46` passed Ub
 
 ###### Phase 2C3B2 — Windows transactional delete
 
-Status: **implemented / under review in PR #24**. Exact code head `3a5758e3` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; final documentation head must pass the same gates before merge.
+Status: **merged** in PR #24 (`b346a7d9`). Exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
 
 Implemented:
 
@@ -221,7 +221,7 @@ Claim boundary: the forced-crash suite proves process termination/restart semant
 
 ##### Phase 2C3C — authorization/adapter gate
 
-Status: **next after PR #24 merges**.
+Status: **current**.
 
 1. authorize canonical `FileWrite`/`FileDelete` effects through existing session capability + exact task lease + structural workspace scope policy;
 2. add negative tests for missing/wrong/cross-session leases, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes;
