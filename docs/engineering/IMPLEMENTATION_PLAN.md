@@ -142,7 +142,7 @@ What 2C1 does **not** prove:
 
 #### Phase 2C2 — journal-wrapped Windows commit and forced-crash gate
 
-Status: **implemented on PR #18; final full CI/documentation gate pending**.
+Status: **merged** in PR #18 (`0297406c`).
 
 Implemented in order:
 
@@ -163,16 +163,23 @@ Crash-model precision:
 - the gate proves deterministic **process termination + restart** recovery, not sudden-power-loss ACID durability;
 - Phase 2B's residual path-based external-writer race remains documented and unchanged.
 
-Merge gate for PR #18: the complete code + living-doc head must pass Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
+Gate passed: exact final PR #18 head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
 
 #### Phase 2C3 — transactional file services
 
-Only after 2C2 is merged:
+Status: **current**.
 
-1. build runtime file write/patch/delete services on the journal-wrapped boundary;
-2. preserve exact stale-state, reparse, byte-size, task-lease and capability checks;
-3. add negative policy/recovery tests for each public mutation operation;
-4. expose MCP mutation tools only after those runtime/policy gates pass.
+Implement in this order:
+
+1. build runtime file write/patch/delete services that always reuse the Phase 2C2 journal-wrapped boundary;
+2. normalize/authorize the canonical mutation target before effect execution;
+3. require exact `ExpectedState` semantics for create/update/delete instead of blind overwrite/delete;
+4. enforce session ownership, exact task lease, workspace scope and operation capability before every mutation;
+5. preserve mutation byte ceilings for request data, observed prior state and derived patch result;
+6. make patch semantics deterministic and bounded rather than accepting an opaque shell/editor primitive;
+7. surface recovery-required/ambiguous outcomes distinctly from ordinary pre-commit failures;
+8. add negative tests for stale base, missing/wrong/cross-session lease, scope escape, symlink/reparse escape, oversized input/result and recovery-required outcomes;
+9. keep MCP `fs_write`/patch/delete disabled until these runtime/policy gates pass.
 
 Design constraints across Phase 2C:
 
@@ -184,7 +191,7 @@ Design constraints across Phase 2C:
 - recovery evidence must not be retired before operation-owned staging has been safely handled;
 - durability claims must match actual Windows semantics and the tested crash model.
 
-Phase 2C gate: deterministic startup reconciliation + forced process-crash tests around the real journal-wrapped commit, before any public mutation surface is enabled.
+Phase 2C gate: transactional mutation runtime + deterministic startup reconciliation + forced process-crash tests + policy/recovery negative tests before any public mutation surface is enabled.
 
 ### Phase 2D — Git read/integration
 
