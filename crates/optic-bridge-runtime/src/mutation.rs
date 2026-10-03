@@ -66,8 +66,8 @@ impl AtomicMutationService {
         plan: &PreparedMutation,
         content: &[u8],
     ) -> Result<MutationCommit, AtomicMutationError> {
-        let content_len = u64::try_from(content.len())
-            .map_err(|_| AtomicMutationError::NewContentTooLarge {
+        let content_len =
+            u64::try_from(content.len()).map_err(|_| AtomicMutationError::NewContentTooLarge {
                 limit: self.max_mutation_bytes,
             })?;
         if content_len > self.max_mutation_bytes {
@@ -104,20 +104,18 @@ impl AtomicMutationService {
             ExpectedState::Content(version) => {
                 let mut opened = open_file_no_reparse(&absolute)?;
                 self.ensure_windows_final_path(opened.final_path())?;
-                let observed = ContentVersion::from_reader_bounded(
-                    opened.file_mut(),
-                    self.max_mutation_bytes,
-                )
-                .map_err(|error| match error {
-                    optic_bridge_core::ContentVersionReadError::LimitExceeded => {
-                        AtomicMutationError::NewContentTooLarge {
-                            limit: self.max_mutation_bytes,
-                        }
-                    }
-                    optic_bridge_core::ContentVersionReadError::Io(error) => {
-                        AtomicMutationError::Io(error)
-                    }
-                })?;
+                let observed =
+                    ContentVersion::from_reader_bounded(opened.file_mut(), self.max_mutation_bytes)
+                        .map_err(|error| match error {
+                            optic_bridge_core::ContentVersionReadError::LimitExceeded => {
+                                AtomicMutationError::NewContentTooLarge {
+                                    limit: self.max_mutation_bytes,
+                                }
+                            }
+                            optic_bridge_core::ContentVersionReadError::Io(error) => {
+                                AtomicMutationError::Io(error)
+                            }
+                        })?;
                 if observed != version {
                     return Err(AtomicMutationError::StrongPreconditionMismatch);
                 }
@@ -126,7 +124,9 @@ impl AtomicMutationService {
                 })
             }
             ExpectedState::Absent => {
-                let parent = absolute.parent().ok_or(AtomicMutationError::InvalidTarget)?;
+                let parent = absolute
+                    .parent()
+                    .ok_or(AtomicMutationError::InvalidTarget)?;
                 let parent = inspect_directory_no_reparse(parent)?;
                 self.ensure_windows_final_path(&parent.final_path)?;
                 Ok(WindowsMutationGuard::Absent {
@@ -175,7 +175,10 @@ impl AtomicMutationService {
         };
 
         let expected_new = ContentVersion::from_bytes(content);
-        let verification = match self.filesystem.observe_mutation_target(&plan.canonical_path) {
+        let verification = match self
+            .filesystem
+            .observe_mutation_target(&plan.canonical_path)
+        {
             Ok(observation)
                 if observation.state == ExpectedState::Content(expected_new)
                     && observation.canonical_path == plan.canonical_path =>
@@ -210,27 +213,27 @@ impl AtomicMutationService {
                 if opened.identity() != *identity {
                     return Err(AtomicMutationError::TargetIdentityChanged);
                 }
-                let observed = ContentVersion::from_reader_bounded(
-                    opened.file_mut(),
-                    self.max_mutation_bytes,
-                )
-                .map_err(|error| match error {
-                    optic_bridge_core::ContentVersionReadError::LimitExceeded => {
-                        AtomicMutationError::NewContentTooLarge {
-                            limit: self.max_mutation_bytes,
-                        }
-                    }
-                    optic_bridge_core::ContentVersionReadError::Io(error) => {
-                        AtomicMutationError::Io(error)
-                    }
-                })?;
+                let observed =
+                    ContentVersion::from_reader_bounded(opened.file_mut(), self.max_mutation_bytes)
+                        .map_err(|error| match error {
+                            optic_bridge_core::ContentVersionReadError::LimitExceeded => {
+                                AtomicMutationError::NewContentTooLarge {
+                                    limit: self.max_mutation_bytes,
+                                }
+                            }
+                            optic_bridge_core::ContentVersionReadError::Io(error) => {
+                                AtomicMutationError::Io(error)
+                            }
+                        })?;
                 if observed != version {
                     return Err(AtomicMutationError::StrongPreconditionMismatch);
                 }
                 Ok(())
             }
             (WindowsMutationGuard::Absent { parent_identity }, ExpectedState::Absent) => {
-                let parent = absolute.parent().ok_or(AtomicMutationError::InvalidTarget)?;
+                let parent = absolute
+                    .parent()
+                    .ok_or(AtomicMutationError::InvalidTarget)?;
                 let current_parent = inspect_directory_no_reparse(parent)?;
                 self.ensure_windows_final_path(&current_parent.final_path)?;
                 if current_parent.identity != *parent_identity {
@@ -287,8 +290,12 @@ impl PreparedMutation {
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowsMutationGuard {
-    Existing { identity: WindowsFileIdentity },
-    Absent { parent_identity: WindowsFileIdentity },
+    Existing {
+        identity: WindowsFileIdentity,
+    },
+    Absent {
+        parent_identity: WindowsFileIdentity,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -505,7 +512,10 @@ mod tests {
 
         let commit = service.commit_write(&plan, b"created").expect("commit");
         assert_eq!(fs::read(root.join("new.txt")).expect("read"), b"created");
-        assert!(matches!(commit.verification, CommitVerification::Verified(_)));
+        assert!(matches!(
+            commit.verification,
+            CommitVerification::Verified(_)
+        ));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
