@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/optic-bridge-core",
     "crates/optic-bridge-policy",
+    "crates/optic-bridge-runtime",
     "crates/optic-bridge-app",
 ]
 
