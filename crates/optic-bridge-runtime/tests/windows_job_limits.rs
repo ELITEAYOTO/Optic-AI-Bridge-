@@ -61,7 +61,13 @@ fn stdout_text(
     job: &optic_bridge_core::JobId,
 ) -> String {
     let chunk = manager
-        .read(session, job, ProcessStream::Stdout, 0, 128 * 1024)
+        .read(
+            session,
+            job,
+            ProcessStream::Stdout,
+            0,
+            HardLimits::default().max_process_read_bytes,
+        )
         .expect("read stdout");
     String::from_utf8_lossy(&chunk.bytes).into_owned()
 }
