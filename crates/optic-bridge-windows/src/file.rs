@@ -16,10 +16,11 @@ use windows::{
     Win32::{
         Foundation::HANDLE,
         Storage::FileSystem::{
-            FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FileAttributeTagInfo, FileIdInfo,
+            DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_DISPOSITION_INFO,
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+            FILE_ID_INFO, FILE_SHARE_READ, FileAttributeTagInfo, FileDispositionInfo, FileIdInfo,
             GetFileInformationByHandleEx, GetFinalPathNameByHandleW, REPLACE_FILE_FLAGS,
-            ReplaceFileW, VOLUME_NAME_DOS,
+            ReplaceFileW, SetFileInformationByHandle, VOLUME_NAME_DOS,
         },
     },
     core::{Error as WindowsError, PCWSTR},
@@ -55,6 +56,49 @@ impl OpenedWindowsFile {
     }
 }
 
+#[derive(Debug)]
+pub struct OpenedWindowsDeleteFile {
+    file: File,
+    identity: WindowsFileIdentity,
+    final_path: PathBuf,
+}
+
+impl OpenedWindowsDeleteFile {
+    #[must_use]
+    pub fn file_mut(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> WindowsFileIdentity {
+        self.identity
+    }
+
+    #[must_use]
+    pub fn final_path(&self) -> &Path {
+        &self.final_path
+    }
+
+    pub fn delete(self) -> Result<(), WindowsFileError> {
+        let Self { file, .. } = self;
+        let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+        unsafe {
+            SetFileInformationByHandle(
+                file_handle(&file),
+                FileDispositionInfo,
+                (&raw const disposition).cast::<c_void>(),
+                u32::try_from(size_of::<FILE_DISPOSITION_INFO>())
+                    .expect("FILE_DISPOSITION_INFO size must fit u32"),
+            )?;
+        }
+        // FILE_DISPOSITION_INFO marks the opened file for deletion when the
+        // handle closes. Close it before returning so callers can verify the
+        // namespace state immediately after this primitive succeeds.
+        drop(file);
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WindowsPathIdentity {
     pub identity: WindowsFileIdentity,
@@ -71,6 +115,25 @@ pub fn open_file_no_reparse(path: &Path) -> Result<OpenedWindowsFile, WindowsFil
     let identity = query_identity(&file)?;
     let final_path = query_final_path(&file)?;
     Ok(OpenedWindowsFile {
+        file,
+        identity,
+        final_path,
+    })
+}
+
+pub fn open_file_for_delete_no_reparse(
+    path: &Path,
+) -> Result<OpenedWindowsDeleteFile, WindowsFileError> {
+    let mut options = OpenOptions::new();
+    options
+        .access_mode(FILE_GENERIC_READ.0 | DELETE.0)
+        .share_mode(FILE_SHARE_READ.0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0);
+    let file = options.open(path)?;
+    reject_reparse(&file)?;
+    let identity = query_identity(&file)?;
+    let final_path = query_final_path(&file)?;
+    Ok(OpenedWindowsDeleteFile {
         file,
         identity,
         final_path,
@@ -210,6 +273,25 @@ mod tests {
         let second = open_file_no_reparse(&path).expect("second open");
         assert_eq!(first.identity(), second.identity());
         assert_eq!(first.final_path(), second.final_path());
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn delete_handle_removes_the_exact_opened_target_on_close() {
+        let root = workspace("delete");
+        let path = root.join("target.txt");
+        fs::write(&path, b"alpha").expect("write fixture");
+
+        let opened = open_file_no_reparse(&path).expect("read open");
+        let expected_identity = opened.identity();
+        drop(opened);
+
+        let delete = open_file_for_delete_no_reparse(&path).expect("delete open");
+        assert_eq!(delete.identity(), expected_identity);
+        assert_eq!(delete.final_path(), path.as_path());
+        delete.delete().expect("delete by handle");
+        assert!(!path.exists());
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
