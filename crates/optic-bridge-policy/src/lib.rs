@@ -2,10 +2,8 @@
 
 //! Deterministic authorization for normalized Optic AI Bridge actions.
 
-use std::time::SystemTime;
-
 use optic_bridge_core::{
-    ActionEnvelope, ActionKind, Capability, NetworkAccess, SessionGrant, TaskLease,
+    ActionEnvelope, Capability, Effect, LeaseScope, MonotonicTime, SessionGrant, TaskLease,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +22,7 @@ pub enum PolicyReason {
     LeaseWrongSession,
     StalePolicyEpoch,
     MissingCapability,
+    ScopeNotAuthorized,
     ResourceBudgetExceeded,
     NetworkNotAuthorized,
     SecurityPolicyImmutable,
@@ -40,7 +39,7 @@ impl PolicyEngine {
         envelope: &ActionEnvelope,
         session: &SessionGrant,
         task_lease: Option<&TaskLease>,
-        now: SystemTime,
+        now: MonotonicTime,
     ) -> PolicyDecision {
         if envelope.session != session.handle {
             return PolicyDecision::Deny(PolicyReason::WrongSession);
@@ -52,11 +51,11 @@ impl PolicyEngine {
             return PolicyDecision::Deny(PolicyReason::StalePolicyEpoch);
         }
 
-        match envelope.kind {
-            ActionKind::PolicyChange => {
+        match &envelope.effect {
+            Effect::PolicyChange => {
                 return PolicyDecision::Deny(PolicyReason::SecurityPolicyImmutable);
             }
-            ActionKind::PrivilegeElevation => {
+            Effect::PrivilegeElevation => {
                 return PolicyDecision::Deny(PolicyReason::PrivilegeElevationDenied);
             }
             _ => {}
@@ -70,7 +69,7 @@ impl PolicyEngine {
             return PolicyDecision::Deny(PolicyReason::MissingCapability);
         }
 
-        if envelope.kind.requires_task_lease() {
+        let lease = if envelope.effect.requires_task_lease() {
             let Some(lease) = task_lease else {
                 return PolicyDecision::Deny(PolicyReason::LeaseRequired);
             };
@@ -89,16 +88,28 @@ impl PolicyEngine {
             if !envelope.resources.fits_within(lease.resource_ceiling) {
                 return PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded);
             }
+            if !lease_covers_effect(lease, &envelope.effect) {
+                return PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized);
+            }
+            Some(lease)
+        } else {
+            None
+        };
+
+        if envelope.effect.requires_network_capability() {
+            if !session.allows(Capability::NetworkAccess) {
+                return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
+            }
+            if let Some(lease) = lease {
+                if !lease.allows(Capability::NetworkAccess)
+                    || !lease_covers_network(lease, &envelope.effect)
+                {
+                    return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
+                }
+            }
         }
 
-        if envelope.network == NetworkAccess::Allowed
-            && required != Capability::NetworkAccess
-            && !session.allows(Capability::NetworkAccess)
-        {
-            return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
-        }
-
-        if envelope.kind == ActionKind::NetworkAccess {
+        if matches!(&envelope.effect, Effect::NetworkAccess { .. }) {
             return PolicyDecision::RequireApproval(PolicyReason::NetworkNotAuthorized);
         }
 
@@ -106,17 +117,44 @@ impl PolicyEngine {
     }
 }
 
+fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
+    match effect {
+        Effect::FileWrite { path, .. } | Effect::FileDelete { path, .. } => {
+            lease.has_scope(&LeaseScope::WorkspaceAll)
+                || lease.scopes.iter().any(|scope| {
+                    matches!(scope, LeaseScope::WorkspacePrefix(prefix) if path.is_within(prefix))
+                })
+        }
+        Effect::GitIntegrate { .. } => lease.has_scope(&LeaseScope::Repository),
+        Effect::ProcessRun { executable, .. } => {
+            lease.has_scope(&LeaseScope::ProcessExecutable(executable.clone()))
+        }
+        Effect::NetworkAccess { endpoint } => {
+            lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
+        }
+        Effect::FileRead { .. } | Effect::FileSearch { .. } | Effect::GitRead => true,
+        Effect::PolicyChange | Effect::PrivilegeElevation => false,
+    }
+}
+
+fn lease_covers_network(lease: &TaskLease, effect: &Effect) -> bool {
+    match effect {
+        Effect::ProcessRun { .. } => lease.has_scope(&LeaseScope::NetworkAny),
+        Effect::NetworkAccess { endpoint } => {
+            lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
+        }
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::BTreeSet,
-        time::{Duration, SystemTime},
-    };
+    use std::collections::BTreeSet;
 
     use optic_bridge_core::{
-        ActionEnvelope, ActionId, ActionKind, Capability, NetworkAccess, PrincipalId, ProjectId,
-        ResourceBudget, Reversibility, SessionGrant, SessionHandle, Target, TaskLease, TaskLeaseId,
-        WorkspacePath,
+        ActionEnvelope, ActionId, Capability, ContentVersion, Effect, ExpectedState, LeaseScope,
+        MonotonicTime, NetworkAccess, PrincipalId, ProjectId, ResourceBudget, SessionGrant,
+        SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
     };
 
     use super::*;
@@ -130,136 +168,287 @@ mod tests {
         }
     }
 
-    fn session(now: SystemTime, capabilities: &[Capability]) -> SessionGrant {
+    fn now() -> MonotonicTime {
+        MonotonicTime::from_millis(10_000)
+    }
+
+    fn session(capabilities: &[Capability]) -> SessionGrant {
+        let now = now();
         SessionGrant {
             handle: SessionHandle::generate().expect("test entropy"),
             principal: PrincipalId::new("test-principal").expect("valid principal"),
             project: ProjectId::new("project-a").expect("valid project"),
             capabilities: capabilities.iter().copied().collect::<BTreeSet<_>>(),
-            expires_at: now + Duration::from_secs(300),
+            expires_at: now.saturating_add_millis(300_000),
             policy_epoch: 7,
         }
     }
 
     fn envelope(
         session: &SessionGrant,
-        kind: ActionKind,
+        effect: Effect,
         lease: Option<&TaskLease>,
     ) -> ActionEnvelope {
         ActionEnvelope {
             action_id: ActionId::generate().expect("test entropy"),
             session: session.handle.clone(),
             task_lease: lease.map(|value| value.id.clone()),
-            kind,
-            target: Target::WorkspacePath(
-                WorkspacePath::parse("src/lib.rs").expect("safe test path"),
-            ),
-            expected_content: None,
+            effect,
             resources: budget(),
-            network: NetworkAccess::Denied,
-            reversibility: Reversibility::Transactional,
             policy_epoch: session.policy_epoch,
         }
     }
 
-    fn lease(session: &SessionGrant, now: SystemTime, capabilities: &[Capability]) -> TaskLease {
+    fn lease(
+        session: &SessionGrant,
+        capabilities: &[Capability],
+        scopes: &[LeaseScope],
+    ) -> TaskLease {
         TaskLease {
             id: TaskLeaseId::generate().expect("test entropy"),
             session: session.handle.clone(),
             capabilities: capabilities.iter().copied().collect::<BTreeSet<_>>(),
+            scopes: scopes.iter().cloned().collect::<BTreeSet<_>>(),
             resource_ceiling: budget(),
-            expires_at: now + Duration::from_secs(60),
+            expires_at: now().saturating_add_millis(60_000),
             policy_epoch: session.policy_epoch,
         }
     }
 
+    fn path(value: &str) -> WorkspacePath {
+        WorkspacePath::parse(value).expect("safe test path")
+    }
+
     #[test]
     fn read_can_be_allowed_without_task_lease() {
-        let now = SystemTime::now();
-        let session = session(now, &[Capability::FileRead]);
-        let action = envelope(&session, ActionKind::FileRead, None);
+        let session = session(&[Capability::FileRead]);
+        let action = envelope(
+            &session,
+            Effect::FileRead {
+                path: path("src/lib.rs"),
+            },
+            None,
+        );
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, None, now),
+            PolicyEngine.evaluate(&action, &session, None, now()),
             PolicyDecision::Allow
         );
     }
 
     #[test]
     fn mutation_requires_narrow_task_lease() {
-        let now = SystemTime::now();
-        let session = session(now, &[Capability::FileWrite]);
-        let action = envelope(&session, ActionKind::FileWrite, None);
+        let session = session(&[Capability::FileWrite]);
+        let action = envelope(
+            &session,
+            Effect::FileWrite {
+                path: path("src/lib.rs"),
+                expected: ExpectedState::Absent,
+            },
+            None,
+        );
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, None, now),
+            PolicyEngine.evaluate(&action, &session, None, now()),
             PolicyDecision::Deny(PolicyReason::LeaseRequired)
         );
     }
 
     #[test]
-    fn mutation_with_matching_lease_is_allowed() {
-        let now = SystemTime::now();
-        let session = session(now, &[Capability::FileWrite]);
-        let lease = lease(&session, now, &[Capability::FileWrite]);
-        let action = envelope(&session, ActionKind::FileWrite, Some(&lease));
+    fn mutation_with_matching_scope_is_allowed() {
+        let session = session(&[Capability::FileWrite]);
+        let lease = lease(
+            &session,
+            &[Capability::FileWrite],
+            &[LeaseScope::WorkspacePrefix(path("src"))],
+        );
+        let action = envelope(
+            &session,
+            Effect::FileWrite {
+                path: path("src/lib.rs"),
+                expected: ExpectedState::Content(ContentVersion::from_bytes(b"old")),
+            },
+            Some(&lease),
+        );
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, Some(&lease), now),
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
             PolicyDecision::Allow
         );
     }
 
     #[test]
-    fn cross_session_lease_is_denied() {
-        let now = SystemTime::now();
-        let first = session(now, &[Capability::FileWrite]);
-        let second = session(now, &[Capability::FileWrite]);
-        let lease = lease(&second, now, &[Capability::FileWrite]);
-        let action = envelope(&first, ActionKind::FileWrite, Some(&lease));
+    fn mutation_outside_lease_scope_is_denied() {
+        let session = session(&[Capability::FileWrite]);
+        let lease = lease(
+            &session,
+            &[Capability::FileWrite],
+            &[LeaseScope::WorkspacePrefix(path("src"))],
+        );
+        let action = envelope(
+            &session,
+            Effect::FileWrite {
+                path: path("docs/README.md"),
+                expected: ExpectedState::Absent,
+            },
+            Some(&lease),
+        );
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &first, Some(&lease), now),
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn cross_session_lease_is_denied() {
+        let first = session(&[Capability::FileWrite]);
+        let second = session(&[Capability::FileWrite]);
+        let lease = lease(
+            &second,
+            &[Capability::FileWrite],
+            &[LeaseScope::WorkspaceAll],
+        );
+        let action = envelope(
+            &first,
+            Effect::FileWrite {
+                path: path("src/lib.rs"),
+                expected: ExpectedState::Absent,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &first, Some(&lease), now()),
             PolicyDecision::Deny(PolicyReason::LeaseWrongSession)
         );
     }
 
     #[test]
     fn stale_policy_epoch_is_denied() {
-        let now = SystemTime::now();
-        let session = session(now, &[Capability::FileRead]);
-        let mut action = envelope(&session, ActionKind::FileRead, None);
+        let session = session(&[Capability::FileRead]);
+        let mut action = envelope(
+            &session,
+            Effect::FileRead {
+                path: path("src/lib.rs"),
+            },
+            None,
+        );
         action.policy_epoch += 1;
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, None, now),
+            PolicyEngine.evaluate(&action, &session, None, now()),
             PolicyDecision::Deny(PolicyReason::StalePolicyEpoch)
         );
     }
 
     #[test]
     fn policy_change_is_always_denied() {
-        let now = SystemTime::now();
-        let session = session(now, &[]);
-        let action = envelope(&session, ActionKind::PolicyChange, None);
+        let session = session(&[]);
+        let action = envelope(&session, Effect::PolicyChange, None);
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, None, now),
+            PolicyEngine.evaluate(&action, &session, None, now()),
             PolicyDecision::Deny(PolicyReason::SecurityPolicyImmutable)
         );
     }
 
     #[test]
     fn lease_budget_cannot_be_exceeded() {
-        let now = SystemTime::now();
-        let session = session(now, &[Capability::ProcessRun]);
-        let mut lease = lease(&session, now, &[Capability::ProcessRun]);
+        let session = session(&[Capability::ProcessRun]);
+        let mut lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[LeaseScope::ProcessExecutable("cargo".to_owned())],
+        );
         lease.resource_ceiling.output_bytes = 1024;
-        let action = envelope(&session, ActionKind::ProcessRun, Some(&lease));
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "cargo".to_owned(),
+                network: NetworkAccess::Denied,
+            },
+            Some(&lease),
+        );
 
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, Some(&lease), now),
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
             PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded)
+        );
+    }
+
+    #[test]
+    fn process_network_requires_network_capability_in_lease() {
+        let session = session(&[Capability::ProcessRun, Capability::NetworkAccess]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[
+                LeaseScope::ProcessExecutable("cargo".to_owned()),
+                LeaseScope::NetworkAny,
+            ],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "cargo".to_owned(),
+                network: NetworkAccess::Allowed,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn process_network_requires_explicit_network_scope() {
+        let session = session(&[Capability::ProcessRun, Capability::NetworkAccess]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun, Capability::NetworkAccess],
+            &[LeaseScope::ProcessExecutable("cargo".to_owned())],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "cargo".to_owned(),
+                network: NetworkAccess::Allowed,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn process_network_with_capability_and_scope_is_allowed() {
+        let session = session(&[Capability::ProcessRun, Capability::NetworkAccess]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun, Capability::NetworkAccess],
+            &[
+                LeaseScope::ProcessExecutable("cargo".to_owned()),
+                LeaseScope::NetworkAny,
+            ],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "cargo".to_owned(),
+                network: NetworkAccess::Allowed,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Allow
         );
     }
 }
