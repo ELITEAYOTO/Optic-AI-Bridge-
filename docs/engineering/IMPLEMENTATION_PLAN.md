@@ -137,16 +137,33 @@ Gate passed: the exact final tree `c5bba2be` passed Ubuntu format/Clippy/tests, 
 
 ### Phase 2B — mutation-time OS containment and atomic commit
 
-Status: **next**.
+Status: **implemented / under review** in PR #13.
 
-Planned next:
+Implemented:
 
-1. Windows handle-first target validation with reparse-aware open semantics;
-2. final-path/root validation from the opened handle;
-3. prototype durable file identity using `FILE_ID_INFO` where it closes same-path delete/recreate races;
-4. mandatory expected-state revalidation immediately before the durable commit point;
-5. bounded same-directory temporary write and atomic replace/create primitive;
-6. no MCP exposure yet.
+1. Windows no-reparse handle opens inside the existing `optic-bridge-windows` unsafe boundary;
+2. final-path/root validation from the opened file/directory handle;
+3. `FILE_ID_INFO` binding for existing-file identity and absent-target parent-directory identity;
+4. exact expected-state plus identity revalidation before staging and again immediately before namespace commit;
+5. bounded create-new temporary write in the same directory with `sync_all`;
+6. existing-target replacement through `ReplaceFileW`;
+7. absent-target creation through create-only hard-link semantics, so a concurrently appearing target is not overwritten;
+8. explicit post-commit verification with a distinct `CommittedButUnverified` state for cases where the namespace operation may have committed but verification cannot prove it;
+9. non-Windows durable commit remains fail-closed as unsupported;
+10. no MCP mutation exposure yet.
+
+Native Windows gate on code head `ba24c1eb` proves:
+
+- existing target replacement succeeds and verifies the new content version;
+- deleting/recreating the same path with the same bytes is rejected by changed file identity;
+- absent-target create succeeds without overwrite semantics;
+- recreating the parent directory invalidates the prepared absent-target plan;
+- low-level Windows file identity and `ReplaceFileW` adapter tests pass;
+- previous Phase 1 Job Object gates remain green.
+
+Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` all passed on the code head before documentation alignment.
+
+Important boundary: this is a strong optimistic-concurrency commit foundation, but **not a kernel compare-and-swap against arbitrary external writers**. `ReplaceFileW` still names the final target by path after immediate handle/content/identity revalidation, leaving a very small external-writer race window. Do not claim that window is eliminated. A later oplock or handle-based rename experiment is justified only if it materially reduces the window without introducing deadlock or compatibility risk.
 
 ### Phase 2C — durable recovery journal and file mutation services
 
@@ -155,7 +172,7 @@ Planned after 2B:
 1. bounded durable mutation journal with explicit state transitions;
 2. startup detection/reconciliation of incomplete mutations;
 3. forced-crash tests proving incomplete work cannot be silently reported as committed;
-4. transactional file write/patch/delete runtime services;
+4. transactional file write/patch/delete runtime services built on the 2B prepared/commit boundary;
 5. MCP mutation tools only after policy, stale-write, reparse and recovery gates pass.
 
 ### Phase 2D — Git read/integration
@@ -166,8 +183,6 @@ Planned after mutation recovery is stable:
 2. Git integration only with exact validated `expected_target_head`;
 3. explicit integration/conflict gate;
 4. MCP Git exposure only after negative tests pass.
-
-Evaluate handle-first filesystem operations and durable Windows file identity (`FILE_ID_INFO`) in this phase because a real mutation-capable filesystem service now justifies that boundary.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
 
