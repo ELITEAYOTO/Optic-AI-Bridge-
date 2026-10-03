@@ -52,6 +52,7 @@ macro_rules! opaque_id {
 opaque_id!(SessionHandle);
 opaque_id!(TaskLeaseId);
 opaque_id!(ActionId);
+opaque_id!(JobId);
 
 fn encode_token(bytes: &[u8; TOKEN_BYTES]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -120,5 +121,13 @@ mod tests {
                 .expect_err("non-hex token must fail"),
             TokenParseError::InvalidHex
         );
+    }
+
+    #[test]
+    fn job_ids_are_opaque_and_round_trip() {
+        let job = JobId::generate().expect("OS entropy should be available in tests");
+        let token = job.to_token();
+        assert_eq!(JobId::from_token(&token).expect("job token must parse"), job);
+        assert_eq!(format!("{job:?}"), "JobId(REDACTED)");
     }
 }
