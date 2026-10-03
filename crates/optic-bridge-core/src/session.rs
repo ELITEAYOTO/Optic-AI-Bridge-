@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    time::SystemTime,
-};
+use std::{collections::BTreeSet, time::SystemTime};
 
 use crate::{Capability, ResourceBudget, SessionHandle, TaskLeaseId};
 
