@@ -45,7 +45,9 @@ impl ContentVersion {
             }
 
             total = total
-                .checked_add(u64::try_from(read).map_err(|_| ContentVersionReadError::LimitExceeded)?)
+                .checked_add(
+                    u64::try_from(read).map_err(|_| ContentVersionReadError::LimitExceeded)?,
+                )
                 .ok_or(ContentVersionReadError::LimitExceeded)?;
             if total > max_bytes {
                 return Err(ContentVersionReadError::LimitExceeded);
