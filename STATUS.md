@@ -7,7 +7,7 @@
 
 ## Current focus
 
-Phase 2B is merged on `main` via PR #13 (`80f3aa9b`). The current implementation tranche is Phase 2C: bounded durable mutation journal, startup recovery/reconciliation, forced-crash gates and transactional file mutation services. Public MCP file mutation remains intentionally disabled until those recovery and policy gates pass.
+Phase 2B is merged on `main` via PR #13 (`80f3aa9b`) and the Phase 2B closure docs via PR #14 (`c9590f5c`). Phase 2C is now split into narrow recovery gates. PR #15 implements the first gate: a bounded recovery-journal state machine and deterministic reconciliation. The next gate wires that journal around the proven Windows commit path and exercises forced process crashes. Public MCP file mutation remains intentionally disabled until those recovery and policy gates pass.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -55,66 +55,70 @@ Phase 2B is merged on `main` via PR #13 (`80f3aa9b`). The current implementation
 - Revocable application-owned `TaskLeaseRegistry`.
 - Structured process API: absolute/canonical executable + `args[]` + workspace-contained cwd + controlled inherited environment.
 - Operator-only startup allowlists (`--allow-executable`, `--allow-env`); MCP tools cannot create capabilities or task leases.
-- Session receives `ProcessRun` only when at least one executable is explicitly operator-authorized.
 - MCP tools: `process_start`, `process_read`, `process_stop`, `process_result`, plus `session_cancel`.
-- `process_start` normalizes to `Effect::ProcessRun` and requires both the active session grant and the exact executable task lease before runtime execution.
 - Network remains unavailable in the Phase 1 runtime; `network=true` fails closed.
 - Bounded active jobs, retained records, stdout/stderr RAM, per-call output reads and process timeouts.
-- Environment is cleared by default; only operator-allowlisted variables may be inherited.
-- Native Windows CI caught and closed an output-overflow terminal-status race; timeout, explicit stop, output overflow and cross-session ownership tests pass on Windows and Linux.
 
 ### Phase 1D — merged
 - PR #7 merged to `main` as `69af07a`.
-- `optic-bridge-windows` isolates the narrow Win32/unsafe boundary; core, policy, MCP and cross-platform runtime remain unsafe-free.
-- Windows `ProcessManager` jobs use a custom `LimitedJobObject` configured from the already-authorized `ResourceBudget`.
-- Child creation is forced suspended; the Job Object is created/configured, the child is assigned, and only then are child threads resumed.
-- Kernel Job Object flags enforce kill-on-close, active-process count and total job-memory ceilings.
-- Each process job owns its own Job Object; the job itself remains owned by exactly one application session.
-- `try_wait`/`wait` do not treat the job as terminal while descendants remain active.
-- Removing/unwrapping containment is fail-closed: terminate the whole job, fallback-kill the root child and close the Job Object handle rather than leak/detach it.
+- `optic-bridge-windows` isolates the narrow Win32/unsafe boundary.
+- Windows jobs use configure-before-resume Job Objects with kill-on-close, active-process and total job-memory ceilings.
 - Native Windows tests prove process-count, memory, descendant-tree timeout, kill-on-close and fail-closed unwrap behavior.
 
 ### Phase 2A — merged
 - PR #9 merged to `main` as `71bdf082`.
 - Adds bounded streaming BLAKE3 content observation and `HardLimits::max_fs_mutation_bytes`.
-- Adds `MutationObservation` and isolated `MutationError` without changing the read-only MCP error surface.
-- Existing mutation targets must be regular files; leaf symlinks are rejected.
-- Absent targets canonicalize the parent before deriving the authorization target.
-- Canonical targets must remain inside the canonical workspace root.
-- `ExpectedState::Absent` and exact `ExpectedState::Content(version)` are checked explicitly; stale/blind-overwrite attempts fail closed.
+- Adds canonical mutation observation and exact `ExpectedState::{Absent, Content}` conflict detection.
+- Existing leaf symlinks are rejected; absent targets canonicalize the parent; targets remain workspace-contained.
 - This tranche performs no durable mutation and exposes no MCP write/delete/patch tools.
 
 ### Phase 2B — merged
-- PR #13 merged to `main` as `80f3aa9b` after the final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- PR #13 merged to `main` as `80f3aa9b`; closure docs merged in PR #14 as `c9590f5c`.
 - `optic-bridge-windows` owns the Win32 filesystem boundary in addition to Job Objects.
-- Existing files and parent directories are inspected from handles opened with `FILE_FLAG_OPEN_REPARSE_POINT`; final-component reparse points are denied.
-- `GetFinalPathNameByHandleW` verifies the opened object remains under the canonical workspace root.
-- `FILE_ID_INFO` binds a prepared mutation to the exact existing file identity, or to the exact parent-directory identity for an absent target.
-- Prepared writes revalidate expected content/absence plus Windows identity before staging and again immediately before namespace commit.
-- Replacement content is written and `sync_all`'d to a create-new temporary file in the same directory.
-- Existing targets commit through `ReplaceFileW`; absent targets use create-only hard-link semantics so a target that appears is never overwritten.
+- Existing files and parent directories are inspected through no-reparse handles; final-component reparse points are denied.
+- `GetFinalPathNameByHandleW` verifies containment and `FILE_ID_INFO` binds prepared mutations to exact file or parent-directory identity.
+- Prepared writes revalidate expected state + identity before staging and immediately before namespace commit.
+- Replacement bytes are create-new staged in the same directory and `sync_all`'d.
+- Existing targets commit through `ReplaceFileW`; absent targets use create-only hard-link semantics.
 - Post-commit verification is explicit via `CommitVerification::{Verified, CommittedButUnverified}`.
-- Non-Windows durable commit remains fail-closed as unsupported in this tranche.
-- Native Windows CI proves existing replacement, create-only creation, same-content delete/recreate rejection by file identity, and parent-directory recreation rejection.
-- Important residual boundary: `ReplaceFileW` is a path-based final namespace call. Immediate handle/content/identity revalidation greatly narrows stale-target races but is not claimed to be a kernel compare-and-swap against arbitrary external writers in the final instruction window.
+- Native Windows CI proves replacement, create-only creation, same-content delete/recreate rejection and parent-directory recreation rejection.
+- Residual boundary: `ReplaceFileW` is still path-based at the final call, so this is not claimed to be a kernel compare-and-swap against arbitrary external writers.
+
+### Phase 2C1 — recovery journal foundation / PR #15 under review
+- Adds `MutationRecoveryJournal` outside the canonical workspace so project-scoped MCP paths cannot address recovery state.
+- Adds dedicated hard ceilings: `max_mutation_journal_file_bytes` (64 KiB default) and `max_mutation_recovery_records` (256 default); zero never means unlimited.
+- One opaque `ActionId` keys each transaction journal.
+- Complete journal states are append-only: `prepared → committing → verified|ambiguous`.
+- The initial `prepared` record is written to a create-new temp file, `sync_all`'d, then published by same-directory rename. Later states append a complete JSON line and `sync_all`.
+- A torn trailing state line is ignored in favor of the last complete state; corruption before the first complete `prepared` record fails closed.
+- Recovery is deterministic and bounded:
+  - `prepared` only → definitely not committed under the journal protocol;
+  - `committing`/`ambiguous` + intended state observed → committed;
+  - `committing`/`ambiguous` + exact prior state observed → not committed;
+  - any third state/canonical mismatch → unresolved conflict, fail closed, retain the journal;
+  - `verified` is terminal and can be retired without reinterpreting later external edits.
+- Well-formed unpublished `*.prepared.tmp` files are removable during recovery because namespace commit is forbidden before the durable `committing` transition.
+- Clean code head `58781ed4` passes Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; Windows runs all six new recovery tests successfully.
+- Scope limit: 2C1 proves the state machine and reconciliation logic. It does **not** yet wire the journal around the real Phase 2B namespace commit, run forced process-crash fixtures, or claim power-loss/ACID semantics.
 
 ### Current / next implementation
-- Phase 2C: bounded durable mutation journal with explicit state transitions.
-- Persist enough information to reconcile prepared/committing/committed-or-ambiguous operations on startup without blind retry.
-- Add forced-crash tests around the journal and namespace commit boundary.
-- Build transactional file write/patch/delete runtime services only after recovery behavior is deterministic.
-- Keep MCP `fs_write` / patch / delete surfaces deferred until Phase 2C recovery and policy gates pass.
+- Finish PR #15 documentation and final CI, then merge 2C1.
+- Phase 2C2: bind one journal ActionId to the actual Windows mutation lifecycle and staging artifact.
+- Persist `committing` before any namespace commit can be attempted; map post-commit uncertainty to explicit recovery-required state rather than blind retry.
+- Add child-process crash fixtures after durable `prepared`, after durable `committing` before namespace commit, immediately after namespace commit before terminal journal state, and after terminal state before retirement.
+- Startup recovery must deterministically reconcile every surviving bounded journal entry before public mutation is enabled.
+- Only after that gate, build transactional file write/patch/delete runtime services; keep MCP `fs_write` / patch / delete deferred.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
-- Phase 2C hardening: Windows oplock / handle-based rename experiment for the remaining path-based final-commit race; default is not to add it without a measurable correctness benefit.
+- Phase 2C hardening: Windows oplock / handle-based rename experiment for the remaining path-based final-commit race.
 - Phase 3: bounded ActionId idempotency ledger integrated with recovery state.
 - Phase 4: worktree resource lifecycle and USN/notification-assisted invalidation with mandatory commit-time revalidation.
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
+- Journal-wrapped production mutation commit and forced-crash recovery gate.
 - Public filesystem mutation MCP services and Git execution services.
-- Transaction journal / crash-recovery implementation for mutations.
 - Cross-platform durable mutation primitive equivalent to the Windows 2B boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
@@ -123,7 +127,7 @@ Phase 2B is merged on `main` via PR #13 (`80f3aa9b`). The current implementation
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`) and Phase 2B (`80f3aa9b`). Phase 2C is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`) and the Phase 2B closure docs (`c9590f5c`). PR #15 is the current Phase 2C1 recovery-journal gate.
 
 ## Health rule
 
