@@ -53,7 +53,9 @@ impl AuthorizedFileMutationService {
             return Err(AuthorizedFileMutationError::EffectMismatch);
         };
         self.authorize(envelope)?;
-        Ok(self.transactions.write(path, *expected, content)?)
+        Ok(self
+            .transactions
+            .write_for_action(&envelope.action_id, path, *expected, content)?)
     }
 
     pub fn apply_patch(
@@ -68,7 +70,9 @@ impl AuthorizedFileMutationService {
             return Err(AuthorizedFileMutationError::PatchRequiresContentState);
         };
         self.authorize(envelope)?;
-        Ok(self.transactions.apply_patch(path, *expected, patch)?)
+        Ok(self
+            .transactions
+            .apply_patch_for_action(&envelope.action_id, path, *expected, patch)?)
     }
 
     pub fn delete(
@@ -79,7 +83,9 @@ impl AuthorizedFileMutationService {
             return Err(AuthorizedFileMutationError::EffectMismatch);
         };
         self.authorize(envelope)?;
-        Ok(self.transactions.delete(path, *expected)?)
+        Ok(self
+            .transactions
+            .delete_for_action(&envelope.action_id, path, *expected)?)
     }
 
     fn authorize(&self, envelope: &ActionEnvelope) -> Result<(), AuthorizedFileMutationError> {
@@ -621,6 +627,7 @@ mod tests {
             },
         );
         let write_result = service.write(&write, b"alpha").expect("authorized write");
+        assert_eq!(write_result.action_id, write.action_id);
         assert!(write_result.journal_retired);
         assert_eq!(
             fs::read(workspace.join("target.txt")).expect("target"),
@@ -636,6 +643,7 @@ mod tests {
             },
         );
         let delete_result = service.delete(&delete).expect("authorized delete");
+        assert_eq!(delete_result.action_id, delete.action_id);
         assert!(delete_result.journal_retired);
         assert!(!workspace.join("target.txt").exists());
 
