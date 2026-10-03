@@ -6,33 +6,41 @@ Status: DECIDED at boundary level; module names may evolve.
 
 ChatGPT / MCP client
 → Transport Adapter
+→ TransportGuard
 → MCP Adapter
 → Session Router
-→ Policy Engine
+→ ActionEnvelope normalization
+→ Policy / Capability Engine
 → Capability-scoped Services
-→ Files/Git/Process services
+→ Files / Git / Process services
 → OS Runtime
-→ Windows / project workspaces
+→ Windows / isolated project workspaces
 
 ## Boundary rules
 
 ### Transport Adapter
-Connectivity only. It must not contain filesystem, Git, process, policy or session business logic.
+Connectivity only. No filesystem, Git, process, policy or session business logic.
+
+### TransportGuard
+Optic-owned ceilings for request/frame/body size, concurrency, response size, timeouts and cancellation. SDK defaults are not security invariants.
 
 ### MCP Adapter
-Protocol schemas, MCP request/response translation, cancellation/progress plumbing. No security decisions.
+Protocol schemas and translation. It can expose protocol features but makes no authorization decision.
 
 ### Session Router
-Maps authenticated connection/session identity to immutable or narrowly mutable SessionContext: project grant, worktree, capabilities, resource budget and owned jobs.
+MCP 2026-07-28 is stateless at protocol level, so Optic owns application sessions explicitly. It maps a server-minted SessionHandle to a validated SessionContext: principal/project grant, worktree, task/capability leases, resource budget, policy epoch and owned jobs.
 
-### Policy Engine
-Deterministic final authority. Evaluates typed actions and canonical targets. The model may provide intent/context but never the final authorization bit.
+### ActionEnvelope
+Every side-effecting request becomes one typed normalized effect containing canonical targets, expected state, requested resources/network, session/task and policy context. No service can execute directly from raw MCP arguments.
+
+### Policy / Capability Engine
+Deterministic final authority. Model intent is advisory input, never an authorization bit.
 
 ### Services
-Typed Rust APIs. Files, Git and processes receive an authorized SessionContext rather than global machine access.
+Typed Rust APIs receive an authorized envelope/context rather than global machine access.
 
 ### OS Runtime
-Windows-specific containment and process lifecycle. Hidden behind traits/interfaces so core logic is testable.
+Windows-specific containment/process lifecycle behind narrow interfaces.
 
 ## Proposed Cargo workspace
 
@@ -52,8 +60,8 @@ Do not split further until dependency boundaries justify it.
 
 ## Local core + MCP adapter
 
-This is preferred over coupling the entire application to MCP. Core services should be callable from integration tests and a future local CLI without pretending to be MCP clients.
+Core services must be callable from integration tests and a future local CLI without pretending to be MCP clients.
 
 ## Dependency direction
 
-Adapters depend inward. Core/security layers never import a concrete transport. Windows implementation depends on core interfaces, not the reverse.
+Adapters depend inward. Core/security layers never import a concrete transport. Windows implementation satisfies core interfaces. Raw transport arguments never reach OS execution without normalization/policy.
