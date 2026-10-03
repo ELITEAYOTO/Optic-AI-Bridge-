@@ -112,21 +112,62 @@ Native Windows gate passed before merge:
 
 ## Phase 2 — safe mutation/Git
 
-Status: **next**.
+Status: **in progress**.
 
-Start narrow rather than exposing all write/Git tools at once:
+Start narrow rather than exposing all write/Git tools at once.
 
-1. mutation runtime primitives with explicit `ExpectedState::{Absent, Content}` checks;
-2. mutation-time containment/revalidation so a path cannot be authorized and later resolve elsewhere;
-3. bounded journal/recovery state sufficient to survive forced crashes without silently reporting success;
-4. transactional file write/patch/delete services;
-5. Git read primitives (`status`, `diff`, `log`) through bounded structured outputs;
-6. Git integration only with an exact validated `expected_target_head` and explicit integration gate;
-7. expose MCP mutation/Git tools only after runtime negative tests pass.
+### Phase 2A — mutation observation and expected-state foundation
+
+Status: **under review in PR #9**.
+
+- streaming BLAKE3 `ContentVersion` observation for readers;
+- observation is byte-bounded by `HardLimits::max_fs_mutation_bytes` as well as memory-bounded;
+- canonical mutation observation distinguishes `ExpectedState::Absent` from exact `ExpectedState::Content(version)`;
+- existing mutation leaves must be regular files and leaf symlinks are denied;
+- absent targets canonicalize their parent before deriving the authorization target;
+- canonical targets must remain inside the canonical workspace root;
+- exact expected-state mismatch returns a structured mutation conflict;
+- mutation-specific errors remain isolated from the existing read-only MCP filesystem error contract;
+- negative tests cover stale versions, blind overwrite, bounded observation and Unix symlink/path escape cases;
+- no durable write/delete/patch operation and no MCP mutation tool are added in this tranche.
+
+Important boundary: Phase 2A is a planning/revalidation foundation, **not** the final race-free mutation commit path. Windows mutation execution must still converge on validated handles/reparse/final-target checks and revalidate immediately before commit/replace.
+
+Gate: Ubuntu format/Clippy/tests, Windows Clippy/tests and dependency policy green on the final documentation head.
+
+### Phase 2B — mutation-time OS containment and atomic commit
+
+Planned next:
+
+1. Windows handle-first target validation with reparse-aware open semantics;
+2. final-path/root validation from the opened handle;
+3. prototype durable file identity using `FILE_ID_INFO` where it closes same-path delete/recreate races;
+4. mandatory expected-state revalidation immediately before the durable commit point;
+5. bounded same-directory temporary write and atomic replace/create primitive;
+6. no MCP exposure yet.
+
+### Phase 2C — durable recovery journal and file mutation services
+
+Planned after 2B:
+
+1. bounded durable mutation journal with explicit state transitions;
+2. startup detection/reconciliation of incomplete mutations;
+3. forced-crash tests proving incomplete work cannot be silently reported as committed;
+4. transactional file write/patch/delete runtime services;
+5. MCP mutation tools only after policy, stale-write, reparse and recovery gates pass.
+
+### Phase 2D — Git read/integration
+
+Planned after mutation recovery is stable:
+
+1. bounded Git read primitives (`status`, `diff`, `log`);
+2. Git integration only with exact validated `expected_target_head`;
+3. explicit integration/conflict gate;
+4. MCP Git exposure only after negative tests pass.
 
 Evaluate handle-first filesystem operations and durable Windows file identity (`FILE_ID_INFO`) in this phase because a real mutation-capable filesystem service now justifies that boundary.
 
-Gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
+Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
 
 ## Phase 3 — multi-session
 
