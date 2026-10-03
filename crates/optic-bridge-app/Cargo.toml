@@ -13,4 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 optic-bridge-core = { path = "../optic-bridge-core" }
-optic-bridge-policy = { path = "../optic-bridge-policy" }
+optic-bridge-mcp = { path = "../optic-bridge-mcp" }
+optic-bridge-runtime = { path = "../optic-bridge-runtime" }
+rmcp.workspace = true
+tokio.workspace = true
