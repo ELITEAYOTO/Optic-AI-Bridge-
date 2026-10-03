@@ -32,6 +32,7 @@ enum JournalCommitBoundary {
 pub struct JournaledMutationService {
     atomic: AtomicMutationService,
     journal: MutationRecoveryJournal,
+    #[cfg(windows)]
     max_mutation_bytes: u64,
 }
 
@@ -47,6 +48,7 @@ impl JournaledMutationService {
         Ok(Self {
             atomic,
             journal,
+            #[cfg(windows)]
             max_mutation_bytes: limits.max_fs_mutation_bytes,
         })
     }
