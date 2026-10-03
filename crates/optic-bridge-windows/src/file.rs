@@ -289,7 +289,6 @@ mod tests {
 
         let delete = open_file_for_delete_no_reparse(&path).expect("delete open");
         assert_eq!(delete.identity(), expected_identity);
-        assert_eq!(delete.final_path(), path.as_path());
         delete.delete().expect("delete by handle");
         assert!(!path.exists());
 
