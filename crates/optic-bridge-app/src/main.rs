@@ -9,13 +9,13 @@ use std::{
 };
 
 use optic_bridge_core::{
-    Capability, HardLimits, LeaseScope, PrincipalId, ProjectId, ResourceBudget, SessionGrant,
-    SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
+    Capability, HardLimits, LeaseScope, PrincipalId, ProjectId, SessionGrant, SessionHandle,
+    TaskLease, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
     Clock, MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock,
-    TaskLeaseRegistry,
+    TaskLeaseRegistry, mutation_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -124,15 +124,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let service = server.serve(transport).await?;
     service.waiting().await?;
     Ok(())
-}
-
-fn mutation_resource_budget(limits: HardLimits) -> ResourceBudget {
-    ResourceBudget {
-        timeout_ms: limits.max_request_duration_ms,
-        output_bytes: limits.max_response_bytes,
-        memory_bytes: limits.max_active_output_ram_bytes,
-        process_count: 1,
-    }
 }
 
 #[derive(Debug)]
