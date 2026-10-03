@@ -30,6 +30,7 @@ pub struct WindowsFileIdentity {
 pub struct HandleValidatedFile {
     root: ValidatedHandle,
     target: ValidatedHandle,
+    relative_path: PathBuf,
 }
 
 impl HandleValidatedFile {
@@ -39,13 +40,22 @@ impl HandleValidatedFile {
     ) -> Result<Self, WindowsMutationHandleError> {
         let root = ValidatedHandle::open(workspace_root.as_ref(), ExpectedKind::Directory)?;
         let target = ValidatedHandle::open(target.as_ref(), ExpectedKind::File)?;
-        ensure_under_root(&root.final_path, &target.final_path, false)?;
-        Ok(Self { root, target })
+        let relative_path = relative_under_root(&root.final_path, &target.final_path, false)?;
+        Ok(Self {
+            root,
+            target,
+            relative_path,
+        })
     }
 
     #[must_use]
     pub fn final_path(&self) -> &Path {
         &self.target.final_path
+    }
+
+    #[must_use]
+    pub fn relative_path(&self) -> &Path {
+        &self.relative_path
     }
 
     #[must_use]
@@ -67,6 +77,7 @@ impl HandleValidatedFile {
 pub struct HandleValidatedDirectory {
     root: ValidatedHandle,
     target: ValidatedHandle,
+    relative_path: PathBuf,
 }
 
 impl HandleValidatedDirectory {
@@ -76,13 +87,22 @@ impl HandleValidatedDirectory {
     ) -> Result<Self, WindowsMutationHandleError> {
         let root = ValidatedHandle::open(workspace_root.as_ref(), ExpectedKind::Directory)?;
         let target = ValidatedHandle::open(target.as_ref(), ExpectedKind::Directory)?;
-        ensure_under_root(&root.final_path, &target.final_path, true)?;
-        Ok(Self { root, target })
+        let relative_path = relative_under_root(&root.final_path, &target.final_path, true)?;
+        Ok(Self {
+            root,
+            target,
+            relative_path,
+        })
     }
 
     #[must_use]
     pub fn final_path(&self) -> &Path {
         &self.target.final_path
+    }
+
+    #[must_use]
+    pub fn relative_path(&self) -> &Path {
+        &self.relative_path
     }
 
     #[must_use]
@@ -159,17 +179,18 @@ impl ValidatedHandle {
     }
 }
 
-fn ensure_under_root(
+fn relative_under_root(
     root: &Path,
     target: &Path,
     allow_root_itself: bool,
-) -> Result<(), WindowsMutationHandleError> {
-    let inside = target.starts_with(root) && (allow_root_itself || target != root);
-    if inside {
-        Ok(())
-    } else {
-        Err(WindowsMutationHandleError::OutsideWorkspace)
+) -> Result<PathBuf, WindowsMutationHandleError> {
+    if !target.starts_with(root) || (!allow_root_itself && target == root) {
+        return Err(WindowsMutationHandleError::OutsideWorkspace);
     }
+    target
+        .strip_prefix(root)
+        .map(Path::to_path_buf)
+        .map_err(|_| WindowsMutationHandleError::OutsideWorkspace)
 }
 
 fn handle(file: &File) -> HANDLE {
@@ -267,15 +288,18 @@ mod tests {
     }
 
     #[test]
-    fn stable_identity_and_readable_handle_for_same_file() {
+    fn stable_identity_relative_path_and_readable_handle_for_same_file() {
         let root = temp_dir("identity");
-        let target = root.join("target.txt");
+        let child = root.join("child");
+        let target = child.join("target.txt");
+        fs::create_dir(&child).expect("create child");
         fs::write(&target, b"alpha").expect("write fixture");
 
         let first = HandleValidatedFile::open_under_root(&root, &target).expect("first open");
         let second = HandleValidatedFile::open_under_root(&root, &target).expect("second open");
         assert_eq!(first.identity(), second.identity());
         assert_eq!(first.final_path(), second.final_path());
+        assert_eq!(first.relative_path(), Path::new("child").join("target.txt"));
 
         let mut file = first.try_clone_file().expect("clone validated file");
         let mut content = String::new();
@@ -285,6 +309,45 @@ mod tests {
 
         drop(first);
         drop(second);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn same_path_replacement_has_a_different_file_identity() {
+        let root = temp_dir("identity-replacement");
+        let target = root.join("target.txt");
+        let moved = root.join("moved.txt");
+        fs::write(&target, b"alpha").expect("write original");
+
+        let original =
+            HandleValidatedFile::open_under_root(&root, &target).expect("open original");
+        fs::rename(&target, &moved).expect("rename original while handle remains open");
+        fs::write(&target, b"beta").expect("write replacement");
+        let replacement =
+            HandleValidatedFile::open_under_root(&root, &target).expect("open replacement");
+
+        assert_ne!(original.identity(), replacement.identity());
+        assert_eq!(original.relative_path(), Path::new("target.txt"));
+        assert_eq!(replacement.relative_path(), Path::new("target.txt"));
+
+        let mut original_file = original.try_clone_file().expect("clone original handle");
+        let mut original_content = String::new();
+        original_file
+            .read_to_string(&mut original_content)
+            .expect("read original handle");
+        assert_eq!(original_content, "alpha");
+
+        let mut replacement_file = replacement
+            .try_clone_file()
+            .expect("clone replacement handle");
+        let mut replacement_content = String::new();
+        replacement_file
+            .read_to_string(&mut replacement_content)
+            .expect("read replacement handle");
+        assert_eq!(replacement_content, "beta");
+
+        drop(original);
+        drop(replacement);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
@@ -299,6 +362,8 @@ mod tests {
         let child_handle =
             HandleValidatedDirectory::open_under_root(&root, &child).expect("child directory");
         assert_ne!(root_handle.identity(), child_handle.identity());
+        assert_eq!(root_handle.relative_path(), Path::new(""));
+        assert_eq!(child_handle.relative_path(), Path::new("child"));
 
         drop(root_handle);
         drop(child_handle);
