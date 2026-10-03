@@ -440,11 +440,11 @@ impl PreparedDelete {
         ExpectedState::Content(self.expected)
     }
 
+    #[cfg(windows)]
     pub(crate) fn journal_plan(&self) -> PreparedMutation {
         PreparedMutation {
             canonical_path: self.canonical_path.clone(),
             expected: self.previous_state(),
-            #[cfg(windows)]
             windows_guard: WindowsMutationGuard::Existing {
                 identity: self.windows_identity,
             },
