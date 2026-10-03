@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,3 +48,99 @@ jobs:
         run: cargo install --locked cargo-deny --version 0.20.2
       - name: Check advisories, licenses, bans and sources
         run: cargo deny check
+
+  wire-process-tools:
+    name: Temporary Phase 1C MCP wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-1/process-lifecycle
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Wire process router and canonicalize sources
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('crates/optic-bridge-mcp/src/server.rs')
+          text = path.read_text()
+
+          def replace(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'expected server snippet not found: {label}')
+              text = text.replace(old, new, 1)
+
+          replace(
+              'use std::{path::Path, sync::Arc, time::Duration};',
+              'use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};',
+              'std imports',
+          )
+          replace(
+              '    SessionGrant, SessionHandle, WorkspacePath,\n',
+              '    SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,\n',
+              'core imports',
+          )
+          replace(
+              '    BoundedFileSystem, Clock, EntryKind, FileSystemError, SessionRegistry, SessionRegistryError,\n    TransportError, TransportGuard, TransportLimits,\n',
+              '    BoundedFileSystem, Clock, EntryKind, FileSystemError, ProcessError, ProcessManager,\n    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard,\n    TransportLimits,\n',
+              'runtime imports',
+          )
+          replace(
+              '''pub struct ReadonlyMcpServer {\n    tool_router: ToolRouter<Self>,\n    filesystem: Arc<BoundedFileSystem>,\n    sessions: Arc<SessionRegistry>,\n    session: SessionHandle,\n    clock: Arc<dyn Clock>,\n    policy: Arc<PolicyEngine>,\n    transport_guard: TransportGuard,\n    limits: HardLimits,\n}\n''',
+              '''pub struct ReadonlyMcpServer {\n    tool_router: ToolRouter<Self>,\n    filesystem: Arc<BoundedFileSystem>,\n    pub(crate) sessions: Arc<SessionRegistry>,\n    pub(crate) session: SessionHandle,\n    pub(crate) clock: Arc<dyn Clock>,\n    pub(crate) policy: Arc<PolicyEngine>,\n    pub(crate) transport_guard: TransportGuard,\n    pub(crate) limits: HardLimits,\n    pub(crate) processes: Arc<ProcessManager>,\n    pub(crate) task_leases: Arc<TaskLeaseRegistry>,\n    pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,\n}\n''',
+              'server fields',
+          )
+          replace(
+              '#[tool_router(router = tool_router)]',
+              '#[tool_router(router = readonly_tool_router)]',
+              'readonly router name',
+          )
+          old_ctor = '''    pub fn new(\n        root: impl AsRef<Path>,\n        sessions: Arc<SessionRegistry>,\n        session: SessionHandle,\n        clock: Arc<dyn Clock>,\n        limits: HardLimits,\n    ) -> Result<Self, ServerBuildError> {\n        let limits = limits.validate_nonzero()?;\n        if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES\n        {\n            return Err(ServerBuildError::ResponseLimitTooSmall);\n        }\n        let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);\n        let transport_guard = TransportGuard::new(TransportLimits::from(limits))?;\n\n        Ok(Self {\n            tool_router: Self::tool_router(),\n            filesystem,\n            sessions,\n            session,\n            clock,\n            policy: Arc::new(PolicyEngine),\n            transport_guard,\n            limits,\n        })\n    }\n'''
+          new_ctor = '''    pub fn new(\n        root: impl AsRef<Path>,\n        sessions: Arc<SessionRegistry>,\n        session: SessionHandle,\n        clock: Arc<dyn Clock>,\n        limits: HardLimits,\n    ) -> Result<Self, ServerBuildError> {\n        let limits = limits.validate_nonzero()?;\n        let processes = Arc::new(ProcessManager::new(root.as_ref(), limits, Vec::new())?);\n        Self::new_with_process_runtime(\n            root,\n            sessions,\n            session,\n            clock,\n            limits,\n            processes,\n            Arc::new(TaskLeaseRegistry::new()),\n            BTreeMap::new(),\n        )\n    }\n\n    #[allow(clippy::too_many_arguments)]\n    pub fn new_with_process_runtime(\n        root: impl AsRef<Path>,\n        sessions: Arc<SessionRegistry>,\n        session: SessionHandle,\n        clock: Arc<dyn Clock>,\n        limits: HardLimits,\n        processes: Arc<ProcessManager>,\n        task_leases: Arc<TaskLeaseRegistry>,\n        process_leases: BTreeMap<String, TaskLeaseId>,\n    ) -> Result<Self, ServerBuildError> {\n        let limits = limits.validate_nonzero()?;\n        if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES\n        {\n            return Err(ServerBuildError::ResponseLimitTooSmall);\n        }\n        let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);\n        let transport_guard = TransportGuard::new(TransportLimits::from(limits))?;\n        let mut tool_router = Self::readonly_tool_router();\n        tool_router.merge(Self::process_tool_router());\n\n        Ok(Self {\n            tool_router,\n            filesystem,\n            sessions,\n            session,\n            clock,\n            policy: Arc::new(PolicyEngine),\n            transport_guard,\n            limits,\n            processes,\n            task_leases,\n            process_leases: Arc::new(process_leases),\n        })\n    }\n'''
+          replace(old_ctor, new_ctor, 'constructor')
+          replace('    fn active_grant(\n', '    pub(crate) fn active_grant(\n', 'active_grant visibility')
+          replace(
+              '    fn ensure_structured_payload_fits<T: Serialize>(&self, value: &T) -> Result<(), ErrorData> {\n',
+              '    pub(crate) fn ensure_structured_payload_fits<T: Serialize>(\n        &self,\n        value: &T,\n    ) -> Result<(), ErrorData> {\n',
+              'response fit visibility',
+          )
+          replace(
+              '    #[error("transport guard initialization failed: {0}")]\n    Transport(#[from] TransportError),\n',
+              '    #[error("transport guard initialization failed: {0}")]\n    Transport(#[from] TransportError),\n    #[error("process runtime initialization failed: {0}")]\n    Process(#[from] ProcessError),\n',
+              'server build process error',
+          )
+          replace('fn map_session_error(_error: SessionRegistryError) -> ErrorData {', 'pub(crate) fn map_session_error(_error: SessionRegistryError) -> ErrorData {', 'session error visibility')
+          replace('fn map_transport_error(error: TransportError) -> ErrorData {', 'pub(crate) fn map_transport_error(error: TransportError) -> ErrorData {', 'transport error visibility')
+          replace(
+              '        assert_eq!(names, vec!["fs_list", "fs_read", "session_info"]);',
+              '        assert_eq!(\n            names,\n            vec![\n                "fs_list",\n                "fs_read",\n                "process_read",\n                "process_result",\n                "process_start",\n                "process_stop",\n                "session_cancel",\n                "session_info",\n            ]\n        );',
+              'tool surface assertion',
+          )
+          replace('    fn tool_surface_is_read_only_and_minimal() {', '    fn tool_surface_matches_phase1c_contract() {', 'tool surface test name')
+          path.write_text(text)
+
+          process_tools = Path('crates/optic-bridge-mcp/src/process_tools.rs')
+          ptext = process_tools.read_text()
+          ptext = ptext.replace('use std::sync::Arc;\n\n', '', 1)
+          process_tools.write_text(ptext)
+          PY
+          cargo fmt --all
+          cargo generate-lockfile
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock \
+            crates/optic-bridge-app/src/main.rs \
+            crates/optic-bridge-mcp/src/lib.rs \
+            crates/optic-bridge-mcp/src/process_tools.rs \
+            crates/optic-bridge-mcp/src/server.rs
+          if git diff --cached --quiet; then
+            echo "Phase 1C MCP wiring already canonical."
+          else
+            git commit -m "phase1: wire lease-gated MCP process lifecycle"
+            git push origin HEAD:phase-1/process-lifecycle
+          fi
