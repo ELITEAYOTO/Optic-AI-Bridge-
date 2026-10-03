@@ -1,4 +1,5 @@
 use crate::{ActionId, ContentVersion, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath};
+use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Capability {
@@ -10,59 +11,6 @@ pub enum Capability {
     GitIntegrate,
     ProcessRun,
     NetworkAccess,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ActionKind {
-    FileRead,
-    FileSearch,
-    FileWrite,
-    FileDelete,
-    GitRead,
-    GitIntegrate,
-    ProcessRun,
-    NetworkAccess,
-    PolicyChange,
-    PrivilegeElevation,
-}
-
-impl ActionKind {
-    #[must_use]
-    pub const fn required_capability(self) -> Option<Capability> {
-        match self {
-            Self::FileRead => Some(Capability::FileRead),
-            Self::FileSearch => Some(Capability::FileSearch),
-            Self::FileWrite => Some(Capability::FileWrite),
-            Self::FileDelete => Some(Capability::FileDelete),
-            Self::GitRead => Some(Capability::GitRead),
-            Self::GitIntegrate => Some(Capability::GitIntegrate),
-            Self::ProcessRun => Some(Capability::ProcessRun),
-            Self::NetworkAccess => Some(Capability::NetworkAccess),
-            Self::PolicyChange | Self::PrivilegeElevation => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn requires_task_lease(self) -> bool {
-        matches!(
-            self,
-            Self::FileWrite
-                | Self::FileDelete
-                | Self::GitIntegrate
-                | Self::ProcessRun
-                | Self::NetworkAccess
-        )
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Target {
-    WorkspacePath(WorkspacePath),
-    GitRepository,
-    ProcessExecutable(String),
-    NetworkEndpoint(String),
-    SecurityPolicy,
-    PrivilegeBoundary,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,23 +26,160 @@ pub enum Reversibility {
     Irreversible,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExpectedState {
+    Absent,
+    Content(ContentVersion),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GitObjectId(String);
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum GitObjectIdError {
+    #[error("Git object id must be a 40- or 64-character hexadecimal value")]
+    Invalid,
+}
+
+impl GitObjectId {
+    pub fn parse(value: impl Into<String>) -> Result<Self, GitObjectIdError> {
+        let value = value.into();
+        if matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            Ok(Self(value.to_ascii_lowercase()))
+        } else {
+            Err(GitObjectIdError::Invalid)
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Effect {
+    FileRead {
+        path: WorkspacePath,
+    },
+    FileSearch {
+        root: Option<WorkspacePath>,
+    },
+    FileWrite {
+        path: WorkspacePath,
+        expected: ExpectedState,
+    },
+    FileDelete {
+        path: WorkspacePath,
+        expected: ContentVersion,
+    },
+    GitRead,
+    GitIntegrate {
+        expected_target_head: GitObjectId,
+    },
+    ProcessRun {
+        executable: String,
+        network: NetworkAccess,
+    },
+    NetworkAccess {
+        endpoint: String,
+    },
+    PolicyChange,
+    PrivilegeElevation,
+}
+
+impl Effect {
+    #[must_use]
+    pub const fn required_capability(&self) -> Option<Capability> {
+        match self {
+            Self::FileRead { .. } => Some(Capability::FileRead),
+            Self::FileSearch { .. } => Some(Capability::FileSearch),
+            Self::FileWrite { .. } => Some(Capability::FileWrite),
+            Self::FileDelete { .. } => Some(Capability::FileDelete),
+            Self::GitRead => Some(Capability::GitRead),
+            Self::GitIntegrate { .. } => Some(Capability::GitIntegrate),
+            Self::ProcessRun { .. } => Some(Capability::ProcessRun),
+            Self::NetworkAccess { .. } => Some(Capability::NetworkAccess),
+            Self::PolicyChange | Self::PrivilegeElevation => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn requires_task_lease(&self) -> bool {
+        matches!(
+            self,
+            Self::FileWrite { .. }
+                | Self::FileDelete { .. }
+                | Self::GitIntegrate { .. }
+                | Self::ProcessRun { .. }
+                | Self::NetworkAccess { .. }
+        )
+    }
+
+    #[must_use]
+    pub const fn requires_network_capability(&self) -> bool {
+        matches!(
+            self,
+            Self::ProcessRun {
+                network: NetworkAccess::Allowed,
+                ..
+            } | Self::NetworkAccess { .. }
+        )
+    }
+
+    #[must_use]
+    pub const fn reversibility(&self) -> Reversibility {
+        match self {
+            Self::FileRead { .. } | Self::FileSearch { .. } | Self::GitRead => {
+                Reversibility::ReadOnly
+            }
+            Self::FileWrite { .. } | Self::FileDelete { .. } | Self::GitIntegrate { .. } => {
+                Reversibility::Transactional
+            }
+            Self::ProcessRun { .. }
+            | Self::NetworkAccess { .. }
+            | Self::PolicyChange
+            | Self::PrivilegeElevation => Reversibility::Irreversible,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionEnvelope {
     pub action_id: ActionId,
     pub session: SessionHandle,
     pub task_lease: Option<TaskLeaseId>,
-    pub kind: ActionKind,
-    pub target: Target,
-    pub expected_content: Option<ContentVersion>,
+    pub effect: Effect,
     pub resources: ResourceBudget,
-    pub network: NetworkAccess,
-    pub reversibility: Reversibility,
     pub policy_epoch: u64,
 }
 
 impl ActionEnvelope {
     #[must_use]
-    pub fn required_capability(&self) -> Option<Capability> {
-        self.kind.required_capability()
+    pub const fn required_capability(&self) -> Option<Capability> {
+        self.effect.required_capability()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_object_ids_are_normalized_and_validated() {
+        let sha1 = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+        let parsed = GitObjectId::parse(sha1).expect("valid SHA-1 object id");
+        assert_eq!(parsed.as_str(), sha1.to_ascii_lowercase());
+        assert!(GitObjectId::parse("main").is_err());
+    }
+
+    #[test]
+    fn process_network_is_a_second_explicit_capability() {
+        let effect = Effect::ProcessRun {
+            executable: "cargo".to_owned(),
+            network: NetworkAccess::Allowed,
+        };
+        assert_eq!(effect.required_capability(), Some(Capability::ProcessRun));
+        assert!(effect.requires_network_capability());
     }
 }
