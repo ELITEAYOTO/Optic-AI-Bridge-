@@ -14,8 +14,9 @@ use optic_bridge_core::{
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
-    Clock, MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock,
-    TaskLeaseRegistry, mutation_resource_budget,
+    AuthorizedFileMutationService, Clock, MutationAuthoritySet, MutationAuthoritySpec,
+    ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry, TransactionalFileService,
+    mutation_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -92,7 +93,30 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let sessions = Arc::new(SessionRegistry::new());
     sessions.register(grant)?;
-    let server = ReadonlyMcpServer::new_with_process_runtime(
+
+    let mutation_service = if let Some(state_root) = &args.mutation_state_dir {
+        let recovery = TransactionalFileService::from_hard_limits(&args.workspace, state_root, limits)?;
+        let report = recovery.recover()?;
+        if !report.is_empty() {
+            eprintln!(
+                "Optic AI Bridge startup recovery reconciled {} mutation record(s)",
+                report.records.len()
+            );
+        }
+        drop(recovery);
+        Some(Arc::new(AuthorizedFileMutationService::from_hard_limits(
+            &args.workspace,
+            state_root,
+            limits,
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            Arc::clone(&clock) as Arc<dyn Clock>,
+        )?))
+    } else {
+        None
+    };
+
+    let server = ReadonlyMcpServer::new_with_mutation_runtime(
         &args.workspace,
         sessions,
         session,
@@ -101,6 +125,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         processes,
         task_leases,
         process_leases,
+        mutation_service,
+        mutation_authorities,
     )?;
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
@@ -133,6 +159,7 @@ struct AppArgs {
     allowed_env: Vec<String>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
+    mutation_state_dir: Option<PathBuf>,
 }
 
 impl AppArgs {
@@ -149,6 +176,7 @@ impl AppArgs {
         let mut allowed_env = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
+        let mut mutation_state_dir = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -190,6 +218,14 @@ impl AppArgs {
                     value,
                     "delete scope",
                 )?)?);
+            } else if arg == "--mutation-state-dir" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--mutation-state-dir requires an absolute path outside the workspace",
+                    )
+                })?;
+                set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--allow-executable=")? {
                 allowed_executables.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
@@ -198,6 +234,8 @@ impl AppArgs {
                 write_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-delete-scope=")? {
                 delete_scopes.insert(parse_mutation_scope(value)?);
+            } else if let Some(value) = option_value(&arg, "--mutation-state-dir=")? {
+                set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
             } else if arg.to_string_lossy().starts_with('-') {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -211,14 +249,41 @@ impl AppArgs {
             }
         }
 
+        if (!write_scopes.is_empty() || !delete_scopes.is_empty()) && mutation_state_dir.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "mutation authority requires --mutation-state-dir",
+            ));
+        }
+
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
             allowed_executables,
             allowed_env,
             write_scopes,
             delete_scopes,
+            mutation_state_dir,
         })
     }
+}
+
+fn set_mutation_state_dir(
+    slot: &mut Option<PathBuf>,
+    value: PathBuf,
+) -> Result<(), std::io::Error> {
+    if !value.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--mutation-state-dir must be an absolute path",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--mutation-state-dir may be supplied only once",
+        ));
+    }
+    Ok(())
 }
 
 fn parse_mutation_scope(value: String) -> Result<LeaseScope, std::io::Error> {
@@ -275,17 +340,21 @@ mod tests {
         let parsed = AppArgs::parse_from(args(&["workspace"])).expect("args");
         assert!(parsed.write_scopes.is_empty());
         assert!(parsed.delete_scopes.is_empty());
+        assert!(parsed.mutation_state_dir.is_none());
     }
 
     #[test]
-    fn mutation_scope_flags_are_explicit_and_repeatable() {
-        let parsed = AppArgs::parse_from(args(&[
-            "--allow-write-scope=prefix:src",
-            "--allow-write-scope",
-            "prefix:generated",
-            "--allow-delete-scope=all",
-            "workspace",
-        ]))
+    fn mutation_scope_flags_are_explicit_repeatable_and_require_state_dir() {
+        let state = std::env::temp_dir().join("optic-mutation-state-test");
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--allow-write-scope=prefix:src"),
+            OsString::from("--allow-write-scope"),
+            OsString::from("prefix:generated"),
+            OsString::from("--allow-delete-scope=all"),
+            OsString::from("--mutation-state-dir"),
+            state.clone().into_os_string(),
+            OsString::from("workspace"),
+        ])
         .expect("args");
 
         assert_eq!(
@@ -299,6 +368,34 @@ mod tests {
             parsed.delete_scopes,
             BTreeSet::from([LeaseScope::WorkspaceAll])
         );
+        assert_eq!(parsed.mutation_state_dir, Some(state));
+    }
+
+    #[test]
+    fn mutation_scope_without_state_dir_fails_closed() {
+        assert!(
+            AppArgs::parse_from(args(&["--allow-write-scope=prefix:src", "workspace"]))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn mutation_state_dir_must_be_absolute_but_may_be_recovery_only() {
+        assert!(
+            AppArgs::parse_from(args(&["--mutation-state-dir=relative-state", "workspace"]))
+                .is_err()
+        );
+
+        let state = std::env::temp_dir().join("optic-recovery-only-state");
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--mutation-state-dir"),
+            state.clone().into_os_string(),
+            OsString::from("workspace"),
+        ])
+        .expect("recovery-only state dir");
+        assert_eq!(parsed.mutation_state_dir, Some(state));
+        assert!(parsed.write_scopes.is_empty());
+        assert!(parsed.delete_scopes.is_empty());
     }
 
     #[test]
