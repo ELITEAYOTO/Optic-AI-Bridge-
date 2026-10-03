@@ -75,9 +75,7 @@ where
         async move {
             let encoded = serialize_json_line_bounded(&item, max_response_bytes)?;
             let mut guard = write.lock().await;
-            let writer = guard
-                .as_mut()
-                .ok_or(BoundedTransportError::NotConnected)?;
+            let writer = guard.as_mut().ok_or(BoundedTransportError::NotConnected)?;
             writer
                 .write_all(&encoded)
                 .await
@@ -104,10 +102,7 @@ where
     async fn close(&mut self) -> Result<(), Self::Error> {
         let mut guard = self.write.lock().await;
         if let Some(mut writer) = guard.take() {
-            writer
-                .shutdown()
-                .await
-                .map_err(BoundedTransportError::Io)?;
+            writer.shutdown().await.map_err(BoundedTransportError::Io)?;
         }
         Ok(())
     }

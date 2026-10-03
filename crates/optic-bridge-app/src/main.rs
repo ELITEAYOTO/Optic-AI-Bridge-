@@ -1,11 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{
-    collections::BTreeSet,
-    error::Error,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::BTreeSet, error::Error, path::PathBuf, sync::Arc};
 
 use optic_bridge_core::{
     Capability, HardLimits, PrincipalId, ProjectId, SessionGrant, SessionHandle,

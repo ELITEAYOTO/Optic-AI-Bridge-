@@ -1,8 +1,4 @@
-use std::{
-    path::Path,
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
@@ -53,8 +49,7 @@ impl ReadonlyMcpServer {
         limits: HardLimits,
     ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
-        if limits.max_response_bytes
-            <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
+        if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
             return Err(ServerBuildError::ResponseLimitTooSmall);
         }
@@ -106,11 +101,7 @@ impl ReadonlyMcpServer {
             .begin_execution(now)
             .map_err(map_transport_error)?;
         let grant = self.active_grant(now)?;
-        self.authorize(
-            &grant,
-            Effect::FileRead { path: path.clone() },
-            now,
-        )?;
+        self.authorize(&grant, Effect::FileRead { path: path.clone() }, now)?;
 
         let filesystem = Arc::clone(&self.filesystem);
         let task_path = path.clone();
@@ -121,7 +112,9 @@ impl ReadonlyMcpServer {
             .max(1);
         let chunk = tokio::time::timeout(
             Duration::from_millis(timeout_ms),
-            tokio::task::spawn_blocking(move || filesystem.read(&task_path, offset, Some(max_bytes))),
+            tokio::task::spawn_blocking(move || {
+                filesystem.read(&task_path, offset, Some(max_bytes))
+            }),
         )
         .await
         .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
@@ -149,7 +142,12 @@ impl ReadonlyMcpServer {
         &self,
         params: Parameters<FsListRequest>,
     ) -> Result<Json<FsListResponse>, ErrorData> {
-        let root = params.0.path.as_deref().map(parse_workspace_path).transpose()?;
+        let root = params
+            .0
+            .path
+            .as_deref()
+            .map(parse_workspace_path)
+            .transpose()?;
         let cursor_u64 = params.0.cursor.unwrap_or(0);
         let cursor = usize::try_from(cursor_u64)
             .map_err(|_| ErrorData::invalid_params("optic.invalid_cursor", None))?;
@@ -232,7 +230,10 @@ impl ReadonlyMcpServer {
         Ok(Json(response))
     }
 
-    fn active_grant(&self, now: optic_bridge_core::MonotonicTime) -> Result<SessionGrant, ErrorData> {
+    fn active_grant(
+        &self,
+        now: optic_bridge_core::MonotonicTime,
+    ) -> Result<SessionGrant, ErrorData> {
         self.sessions
             .get_active(&self.session, now)
             .map_err(map_session_error)
@@ -299,7 +300,8 @@ impl ReadonlyMcpServer {
         original_len: usize,
         response: &mut FsListResponse,
     ) -> Result<(), ErrorData> {
-        while self.ensure_structured_payload_fits(response).is_err() && !response.entries.is_empty() {
+        while self.ensure_structured_payload_fits(response).is_err() && !response.entries.is_empty()
+        {
             response.entries.pop();
         }
         self.ensure_structured_payload_fits(response)?;
@@ -449,11 +451,7 @@ fn capability_name(capability: Capability) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::BTreeSet,
-        env, fs,
-        path::PathBuf,
-    };
+    use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
     use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId};
 
