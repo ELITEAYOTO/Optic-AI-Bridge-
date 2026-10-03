@@ -171,18 +171,21 @@ Status: **current**, split into narrow gates.
 
 ##### Phase 2C3A — transactional write + deterministic patch
 
-Status: **under review in PR #20**.
+Status: **merged** in PR #20 (`4415a65c`). Exact final head `531f0e38` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
-1. add `TransactionalFileService` above `JournaledMutationService`; do not introduce another OS mutation path;
+1. `TransactionalFileService` sits above `JournaledMutationService`; no second OS mutation path exists;
 2. whole-file write keeps explicit `ExpectedState::{Absent, Content}` and enforces `max_fs_mutation_bytes` before commit;
 3. patch is a bounded deterministic single byte range (`offset`, `remove_bytes`, `insert`) and remains authorized as `FileWrite`, not a new capability/effect;
-4. prepare against an exact `ContentVersion`, read the canonical base in bounded chunks, cap the assembled snapshot at the mutation ceiling and re-hash it before deriving output;
-5. reject a changed/mixed snapshot before commit, then rely on the Phase 2C2 final expected-state + Windows identity revalidation again at commit time;
-6. bound the derived patch result before journaled commit;
-7. retain non-Windows fail-closed behavior;
-8. expose no MCP mutation tool in this tranche.
+4. patch prepares against an exact `ContentVersion`, reads the canonical base in bounded chunks, caps the assembled snapshot at the mutation ceiling and re-hashes it before deriving output;
+5. changed/mixed snapshots are rejected before commit; the Phase 2C2 boundary then performs final expected-state + Windows identity revalidation again at commit time;
+6. the derived patch result is bounded before journaled commit;
+7. non-Windows durable mutation remains fail-closed;
+8. native Windows coverage includes real write+patch, multi-chunk base reads and stale-base rejection without modification;
+9. no MCP mutation tool is exposed.
 
 ##### Phase 2C3B — intended-state journal generalization + delete
+
+Status: **current**.
 
 Required before delete can be called transactional/recoverable:
 
@@ -191,6 +194,8 @@ Required before delete can be called transactional/recoverable:
 3. classify a post-delete crash as committed when the exact intended final state is `Absent` and as not committed when the exact prior content remains;
 4. add the Windows delete primitive with the same canonical/no-reparse/file-identity revalidation discipline as write;
 5. add forced-crash delete recovery gates before exposing delete above runtime.
+
+Prefer splitting 2C3B into a compatibility-only journal tranche followed by the Windows delete tranche if that keeps failures attributable.
 
 ##### Phase 2C3C — authorization/adapter gate
 
