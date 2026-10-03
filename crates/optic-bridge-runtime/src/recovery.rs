@@ -13,7 +13,11 @@ use thiserror::Error;
 
 use crate::{BoundedFileSystem, MutationError, PreparedMutation};
 
-const JOURNAL_VERSION: u32 = 1;
+const JOURNAL_VERSION_V1: u32 = 1;
+const JOURNAL_VERSION_V2: u32 = 2;
+const JOURNAL_VERSION_CURRENT: u32 = JOURNAL_VERSION_V2;
+// This directory name is the stable storage-layout version. Record schemas
+// inside it are independently versioned and currently accept v1 + v2.
 const JOURNAL_DIR_NAME: &str = "mutation-journal-v1";
 const JOURNAL_SUFFIX: &str = ".journal";
 const PREPARED_TEMP_SUFFIX: &str = ".prepared.tmp";
@@ -66,18 +70,17 @@ impl MutationRecoveryJournal {
     pub fn begin(
         &self,
         plan: &PreparedMutation,
-        intended: ContentVersion,
+        intended: ExpectedState,
     ) -> Result<JournalTicket, RecoveryJournalError> {
         self.ensure_record_capacity()?;
         let action_id = ActionId::generate()?;
         let ticket = JournalTicket {
             action_id,
             canonical_path: plan.canonical_path().clone(),
-            previous: JournalExpectedState::from_expected(plan.expected_state()),
-            intended_version_hex: intended.to_hex(),
+            previous: plan.expected_state(),
+            intended,
         };
-        let entry = ticket.entry(JournalState::Prepared);
-        let bytes = serialize_line(&entry)?;
+        let bytes = serialize_line(&ticket.entry(JournalState::Prepared))?;
         self.ensure_file_size(0, bytes.len())?;
 
         let temp_path = self.prepared_temp_path(&ticket.action_id);
@@ -163,30 +166,29 @@ impl MutationRecoveryJournal {
                 JournalState::Verified => RecoveryOutcome::VerifiedTerminal,
                 JournalState::Committing | JournalState::Ambiguous => {
                     let observation = filesystem
-                        .observe_mutation_target(&parsed.ticket.canonical_path)
+                        .observe_mutation_target(&parsed.canonical_path)
                         .map_err(RecoveryJournalError::RecoveryObservation)?;
-                    if observation.canonical_path != parsed.ticket.canonical_path {
+                    if observation.canonical_path != parsed.canonical_path {
                         return Err(RecoveryJournalError::UnresolvedRecoveryConflict {
-                            path: parsed.ticket.canonical_path.as_str().to_owned(),
+                            path: parsed.canonical_path.as_str().to_owned(),
                         });
                     }
-                    if parsed.ticket.matches_intended(observation.state) {
+                    if observation.state == parsed.intended {
                         RecoveryOutcome::ObservedCommitted
-                    } else if parsed.ticket.previous.matches(observation.state) {
+                    } else if observation.state == parsed.previous {
                         RecoveryOutcome::ObservedNotCommitted
                     } else {
                         return Err(RecoveryJournalError::UnresolvedRecoveryConflict {
-                            path: parsed.ticket.canonical_path.as_str().to_owned(),
+                            path: parsed.canonical_path.as_str().to_owned(),
                         });
                     }
                 }
             };
 
-            let intended_version_hex = parsed.ticket.intended_version_hex.clone();
             records.push(RecoveryRecord {
-                action_id: parsed.ticket.action_id,
-                canonical_path: parsed.ticket.canonical_path,
-                intended_version_hex,
+                action_id: parsed.action_id,
+                canonical_path: parsed.canonical_path,
+                intended: parsed.intended,
                 outcome,
             });
         }
@@ -315,8 +317,8 @@ impl MutationRecoveryJournal {
 pub struct JournalTicket {
     action_id: ActionId,
     canonical_path: WorkspacePath,
-    previous: JournalExpectedState,
-    intended_version_hex: String,
+    previous: ExpectedState,
+    intended: ExpectedState,
 }
 
 impl JournalTicket {
@@ -330,19 +332,20 @@ impl JournalTicket {
         &self.canonical_path
     }
 
-    fn entry(&self, state: JournalState) -> JournalEntry {
-        JournalEntry {
-            version: JOURNAL_VERSION,
+    #[must_use]
+    pub const fn intended_state(&self) -> ExpectedState {
+        self.intended
+    }
+
+    fn entry(&self, state: JournalState) -> JournalEntryV2 {
+        JournalEntryV2 {
+            version: JOURNAL_VERSION_CURRENT,
             action_id: self.action_id.to_token(),
             state,
             path: self.canonical_path.as_str().to_owned(),
-            previous: self.previous.clone(),
-            intended_version_hex: self.intended_version_hex.clone(),
+            previous: JournalExpectedState::from_expected(self.previous),
+            intended: JournalExpectedState::from_expected(self.intended),
         }
-    }
-
-    fn matches_intended(&self, state: ExpectedState) -> bool {
-        matches!(state, ExpectedState::Content(version) if version.to_hex() == self.intended_version_hex)
     }
 }
 
@@ -362,7 +365,7 @@ impl RecoveryReport {
 pub struct RecoveryRecord {
     pub action_id: ActionId,
     pub canonical_path: WorkspacePath,
-    pub intended_version_hex: String,
+    pub intended: ExpectedState,
     pub outcome: RecoveryOutcome,
 }
 
@@ -400,19 +403,19 @@ impl JournalExpectedState {
         }
     }
 
-    fn matches(&self, observed: ExpectedState) -> bool {
-        match (self, observed) {
-            (Self::Absent, ExpectedState::Absent) => true,
-            (Self::Content { version_hex }, ExpectedState::Content(version)) => {
-                version.to_hex() == version_hex.as_str()
-            }
-            _ => false,
+    fn to_expected(&self) -> Result<ExpectedState, RecoveryJournalError> {
+        match self {
+            Self::Absent => Ok(ExpectedState::Absent),
+            Self::Content { version_hex } => ContentVersion::from_hex(version_hex)
+                .map(ExpectedState::Content)
+                .map_err(|_| RecoveryJournalError::CorruptJournal),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct JournalEntry {
+#[serde(deny_unknown_fields)]
+struct JournalEntryV1 {
     version: u32,
     action_id: String,
     state: JournalState,
@@ -421,16 +424,76 @@ struct JournalEntry {
     intended_version_hex: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JournalEntryV2 {
+    version: u32,
+    action_id: String,
+    state: JournalState,
+    path: String,
+    previous: JournalExpectedState,
+    intended: JournalExpectedState,
+}
+
+#[derive(Deserialize)]
+struct JournalVersionHeader {
+    version: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NormalizedJournalEntry {
+    version: u32,
+    action_id: String,
+    state: JournalState,
+    path: String,
+    previous: JournalExpectedState,
+    intended: JournalExpectedState,
+}
+
 #[derive(Debug)]
 struct ParsedJournal {
-    ticket: JournalTicket,
+    action_id: ActionId,
+    canonical_path: WorkspacePath,
+    previous: ExpectedState,
+    intended: ExpectedState,
     latest_state: JournalState,
 }
 
-fn serialize_line(entry: &JournalEntry) -> Result<Vec<u8>, RecoveryJournalError> {
+fn serialize_line(entry: &impl Serialize) -> Result<Vec<u8>, RecoveryJournalError> {
     let mut bytes = serde_json::to_vec(entry)?;
     bytes.push(b'\n');
     Ok(bytes)
+}
+
+fn parse_entry(bytes: &[u8]) -> Result<NormalizedJournalEntry, RecoveryJournalError> {
+    let header = serde_json::from_slice::<JournalVersionHeader>(bytes)?;
+    match header.version {
+        JOURNAL_VERSION_V1 => {
+            let entry = serde_json::from_slice::<JournalEntryV1>(bytes)?;
+            Ok(NormalizedJournalEntry {
+                version: entry.version,
+                action_id: entry.action_id,
+                state: entry.state,
+                path: entry.path,
+                previous: entry.previous,
+                intended: JournalExpectedState::Content {
+                    version_hex: entry.intended_version_hex,
+                },
+            })
+        }
+        JOURNAL_VERSION_V2 => {
+            let entry = serde_json::from_slice::<JournalEntryV2>(bytes)?;
+            Ok(NormalizedJournalEntry {
+                version: entry.version,
+                action_id: entry.action_id,
+                state: entry.state,
+                path: entry.path,
+                previous: entry.previous,
+                intended: entry.intended,
+            })
+        }
+        _ => Err(RecoveryJournalError::CorruptJournal),
+    }
 }
 
 fn parse_journal(
@@ -452,34 +515,27 @@ fn parse_journal(
         if is_last && !has_complete_tail {
             break;
         }
-        entries.push(serde_json::from_slice::<JournalEntry>(chunk)?);
+        entries.push(parse_entry(chunk)?);
     }
 
     let first = entries
         .first()
         .ok_or(RecoveryJournalError::CorruptJournal)?;
-    if first.version != JOURNAL_VERSION
-        || first.state != JournalState::Prepared
-        || first.action_id != expected_action_id.to_token()
-    {
+    if first.state != JournalState::Prepared || first.action_id != expected_action_id.to_token() {
         return Err(RecoveryJournalError::CorruptJournal);
     }
 
     let canonical_path = WorkspacePath::parse(&first.path)?;
-    let ticket = JournalTicket {
-        action_id: expected_action_id.clone(),
-        canonical_path,
-        previous: first.previous.clone(),
-        intended_version_hex: first.intended_version_hex.clone(),
-    };
+    let previous = first.previous.to_expected()?;
+    let intended = first.intended.to_expected()?;
 
     let mut latest = JournalState::Prepared;
     for (index, entry) in entries.iter().enumerate() {
-        if entry.version != JOURNAL_VERSION
+        if entry.version != first.version
             || entry.action_id != first.action_id
             || entry.path != first.path
             || entry.previous != first.previous
-            || entry.intended_version_hex != first.intended_version_hex
+            || entry.intended != first.intended
         {
             return Err(RecoveryJournalError::CorruptJournal);
         }
@@ -505,7 +561,10 @@ fn parse_journal(
     }
 
     Ok(ParsedJournal {
-        ticket,
+        action_id: expected_action_id.clone(),
+        canonical_path,
+        previous,
+        intended,
         latest_state: latest,
     })
 }
@@ -570,6 +629,28 @@ mod tests {
         (atomic, journal)
     }
 
+    fn v1_entry(
+        action_id: &ActionId,
+        state: JournalState,
+        path: &WorkspacePath,
+        previous: ExpectedState,
+        intended: ContentVersion,
+    ) -> JournalEntryV1 {
+        JournalEntryV1 {
+            version: JOURNAL_VERSION_V1,
+            action_id: action_id.to_token(),
+            state,
+            path: path.as_str().to_owned(),
+            previous: JournalExpectedState::from_expected(previous),
+            intended_version_hex: intended.to_hex(),
+        }
+    }
+
+    fn write_lines(path: &Path, lines: &[Vec<u8>]) {
+        let bytes = lines.concat();
+        fs::write(path, bytes).expect("write journal fixture");
+    }
+
     #[test]
     fn state_directory_inside_workspace_is_rejected() {
         let (workspace, state) = fixture("inside-state");
@@ -600,7 +681,10 @@ mod tests {
             .prepare_write(&path, ExpectedState::Absent)
             .expect("plan");
         journal
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
 
         let report = journal.reconcile(atomic.filesystem()).expect("reconcile");
@@ -619,6 +703,30 @@ mod tests {
     }
 
     #[test]
+    fn new_journal_records_use_v2_explicit_intended_state() {
+        let (workspace, state) = fixture("v2-format");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("new.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let intended = ExpectedState::Content(ContentVersion::from_bytes(b"new"));
+        let ticket = journal.begin(&plan, intended).expect("begin");
+
+        let bytes = fs::read(journal.journal_path(ticket.action_id())).expect("journal bytes");
+        let first = bytes
+            .split(|byte| *byte == b'\n')
+            .find(|line| !line.is_empty())
+            .expect("first line");
+        let entry = serde_json::from_slice::<JournalEntryV2>(first).expect("v2 entry");
+        assert_eq!(entry.version, JOURNAL_VERSION_V2);
+        assert_eq!(entry.intended.to_expected().expect("intended"), intended);
+
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
     fn committing_state_recovers_by_observing_intended_content() {
         let (workspace, state) = fixture("committed");
         let limits = HardLimits::default();
@@ -631,13 +739,13 @@ mod tests {
                 ExpectedState::Content(ContentVersion::from_bytes(b"old")),
             )
             .expect("plan");
-        let ticket = journal
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
-            .expect("begin");
+        let intended = ExpectedState::Content(ContentVersion::from_bytes(b"new"));
+        let ticket = journal.begin(&plan, intended).expect("begin");
         journal.mark_committing(&ticket).expect("committing");
         fs::write(workspace.join("target.txt"), b"new").expect("new");
 
         let report = journal.reconcile(atomic.filesystem()).expect("reconcile");
+        assert_eq!(report.records[0].intended, intended);
         assert_eq!(
             report.records[0].outcome,
             RecoveryOutcome::ObservedCommitted
@@ -652,14 +760,13 @@ mod tests {
         let (atomic, journal) = service(&workspace, &state, limits);
         let path = WorkspacePath::parse("target.txt").expect("path");
         fs::write(workspace.join("target.txt"), b"old").expect("old");
-        let plan = atomic
-            .prepare_write(
-                &path,
-                ExpectedState::Content(ContentVersion::from_bytes(b"old")),
-            )
-            .expect("plan");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let plan = atomic.prepare_write(&path, previous).expect("plan");
         let ticket = journal
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         journal.mark_committing(&ticket).expect("committing");
 
@@ -672,20 +779,180 @@ mod tests {
     }
 
     #[test]
+    fn intended_absent_can_classify_a_committed_delete_shape() {
+        let (workspace, state) = fixture("intended-absent-committed");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        fs::write(workspace.join("target.txt"), b"old").expect("old");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let plan = atomic.prepare_write(&path, previous).expect("plan");
+        let ticket = journal
+            .begin(&plan, ExpectedState::Absent)
+            .expect("begin absent intent");
+        journal.mark_committing(&ticket).expect("committing");
+        fs::remove_file(workspace.join("target.txt")).expect("simulate delete effect");
+
+        let report = journal.reconcile(atomic.filesystem()).expect("reconcile");
+        assert_eq!(report.records[0].intended, ExpectedState::Absent);
+        assert_eq!(
+            report.records[0].outcome,
+            RecoveryOutcome::ObservedCommitted
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn intended_absent_can_classify_a_not_committed_delete_shape() {
+        let (workspace, state) = fixture("intended-absent-not-committed");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        fs::write(workspace.join("target.txt"), b"old").expect("old");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let plan = atomic.prepare_write(&path, previous).expect("plan");
+        let ticket = journal
+            .begin(&plan, ExpectedState::Absent)
+            .expect("begin absent intent");
+        journal.mark_committing(&ticket).expect("committing");
+
+        let report = journal.reconcile(atomic.filesystem()).expect("reconcile");
+        assert_eq!(
+            report.records[0].outcome,
+            RecoveryOutcome::ObservedNotCommitted
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn v1_content_journal_remains_recoverable() {
+        let (workspace, state) = fixture("v1-compatible");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let action_id = ActionId::generate().expect("action id");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let intended = ContentVersion::from_bytes(b"new");
+        fs::write(workspace.join("target.txt"), b"new").expect("committed content");
+
+        write_lines(
+            &journal.journal_path(&action_id),
+            &[
+                serialize_line(&v1_entry(
+                    &action_id,
+                    JournalState::Prepared,
+                    &path,
+                    previous,
+                    intended,
+                ))
+                .expect("v1 prepared"),
+                serialize_line(&v1_entry(
+                    &action_id,
+                    JournalState::Committing,
+                    &path,
+                    previous,
+                    intended,
+                ))
+                .expect("v1 committing"),
+            ],
+        );
+
+        let report = journal.reconcile(atomic.filesystem()).expect("reconcile v1");
+        assert_eq!(
+            report.records[0].intended,
+            ExpectedState::Content(intended)
+        );
+        assert_eq!(
+            report.records[0].outcome,
+            RecoveryOutcome::ObservedCommitted
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn mixed_schema_journal_fails_closed_and_keeps_evidence() {
+        let (workspace, state) = fixture("mixed-schema");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let action_id = ActionId::generate().expect("action id");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let intended = ContentVersion::from_bytes(b"new");
+        fs::write(workspace.join("target.txt"), b"old").expect("old");
+
+        let v2 = JournalEntryV2 {
+            version: JOURNAL_VERSION_V2,
+            action_id: action_id.to_token(),
+            state: JournalState::Committing,
+            path: path.as_str().to_owned(),
+            previous: JournalExpectedState::from_expected(previous),
+            intended: JournalExpectedState::from_expected(ExpectedState::Content(intended)),
+        };
+        write_lines(
+            &journal.journal_path(&action_id),
+            &[
+                serialize_line(&v1_entry(
+                    &action_id,
+                    JournalState::Prepared,
+                    &path,
+                    previous,
+                    intended,
+                ))
+                .expect("v1 prepared"),
+                serialize_line(&v2).expect("v2 committing"),
+            ],
+        );
+
+        assert!(matches!(
+            journal.reconcile(atomic.filesystem()),
+            Err(RecoveryJournalError::CorruptJournal)
+        ));
+        assert!(journal.journal_path(&action_id).exists());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn invalid_persisted_content_version_fails_closed_and_keeps_evidence() {
+        let (workspace, state) = fixture("invalid-version");
+        let limits = HardLimits::default();
+        let (atomic, journal) = service(&workspace, &state, limits);
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let action_id = ActionId::generate().expect("action id");
+        let entry = JournalEntryV1 {
+            version: JOURNAL_VERSION_V1,
+            action_id: action_id.to_token(),
+            state: JournalState::Prepared,
+            path: path.as_str().to_owned(),
+            previous: JournalExpectedState::Absent,
+            intended_version_hex: "z".repeat(64),
+        };
+        write_lines(
+            &journal.journal_path(&action_id),
+            &[serialize_line(&entry).expect("invalid fixture")],
+        );
+
+        assert!(matches!(
+            journal.reconcile(atomic.filesystem()),
+            Err(RecoveryJournalError::CorruptJournal)
+        ));
+        assert!(journal.journal_path(&action_id).exists());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
     fn conflicting_recovery_state_fails_closed_and_keeps_journal() {
         let (workspace, state) = fixture("conflict");
         let limits = HardLimits::default();
         let (atomic, journal) = service(&workspace, &state, limits);
         let path = WorkspacePath::parse("target.txt").expect("path");
         fs::write(workspace.join("target.txt"), b"old").expect("old");
-        let plan = atomic
-            .prepare_write(
-                &path,
-                ExpectedState::Content(ContentVersion::from_bytes(b"old")),
-            )
-            .expect("plan");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let plan = atomic.prepare_write(&path, previous).expect("plan");
         let ticket = journal
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         journal.mark_committing(&ticket).expect("committing");
         fs::write(workspace.join("target.txt"), b"third-party").expect("third party");
@@ -705,14 +972,13 @@ mod tests {
         let (atomic, journal) = service(&workspace, &state, limits);
         let path = WorkspacePath::parse("target.txt").expect("path");
         fs::write(workspace.join("target.txt"), b"old").expect("old");
-        let plan = atomic
-            .prepare_write(
-                &path,
-                ExpectedState::Content(ContentVersion::from_bytes(b"old")),
-            )
-            .expect("plan");
+        let previous = ExpectedState::Content(ContentVersion::from_bytes(b"old"));
+        let plan = atomic.prepare_write(&path, previous).expect("plan");
         let ticket = journal
-            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
             .expect("begin");
         journal.mark_committing(&ticket).expect("committing");
         journal.mark_verified(&ticket).expect("verified");
