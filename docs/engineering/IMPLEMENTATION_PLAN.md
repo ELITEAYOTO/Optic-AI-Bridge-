@@ -167,19 +167,40 @@ Gate passed: exact final PR #18 head `fdfc3ace` passed Ubuntu format/Clippy/test
 
 #### Phase 2C3 — transactional file services
 
-Status: **current**.
+Status: **current**, split into narrow gates.
 
-Implement in this order:
+##### Phase 2C3A — transactional write + deterministic patch
 
-1. build runtime file write/patch/delete services that always reuse the Phase 2C2 journal-wrapped boundary;
-2. normalize/authorize the canonical mutation target before effect execution;
-3. require exact `ExpectedState` semantics for create/update/delete instead of blind overwrite/delete;
-4. enforce session ownership, exact task lease, workspace scope and operation capability before every mutation;
-5. preserve mutation byte ceilings for request data, observed prior state and derived patch result;
-6. make patch semantics deterministic and bounded rather than accepting an opaque shell/editor primitive;
-7. surface recovery-required/ambiguous outcomes distinctly from ordinary pre-commit failures;
-8. add negative tests for stale base, missing/wrong/cross-session lease, scope escape, symlink/reparse escape, oversized input/result and recovery-required outcomes;
-9. keep MCP `fs_write`/patch/delete disabled until these runtime/policy gates pass.
+Status: **under review in PR #20**.
+
+1. add `TransactionalFileService` above `JournaledMutationService`; do not introduce another OS mutation path;
+2. whole-file write keeps explicit `ExpectedState::{Absent, Content}` and enforces `max_fs_mutation_bytes` before commit;
+3. patch is a bounded deterministic single byte range (`offset`, `remove_bytes`, `insert`) and remains authorized as `FileWrite`, not a new capability/effect;
+4. prepare against an exact `ContentVersion`, read the canonical base in bounded chunks, cap the assembled snapshot at the mutation ceiling and re-hash it before deriving output;
+5. reject a changed/mixed snapshot before commit, then rely on the Phase 2C2 final expected-state + Windows identity revalidation again at commit time;
+6. bound the derived patch result before journaled commit;
+7. retain non-Windows fail-closed behavior;
+8. expose no MCP mutation tool in this tranche.
+
+##### Phase 2C3B — intended-state journal generalization + delete
+
+Required before delete can be called transactional/recoverable:
+
+1. evolve the journal contract from content-only intended success to explicit intended `ExpectedState::{Absent, Content}`;
+2. preserve deterministic parsing/recovery of already-written v1 content journals or provide a strictly validated compatible migration path;
+3. classify a post-delete crash as committed when the exact intended final state is `Absent` and as not committed when the exact prior content remains;
+4. add the Windows delete primitive with the same canonical/no-reparse/file-identity revalidation discipline as write;
+5. add forced-crash delete recovery gates before exposing delete above runtime.
+
+##### Phase 2C3C — authorization/adapter gate
+
+Only after the runtime mutation set is complete:
+
+1. authorize canonical `FileWrite`/`FileDelete` effects through existing session capability + exact task lease + structural workspace scope policy;
+2. add negative tests for missing/wrong/cross-session leases, stale policy epoch, scope escape, stale expected state, symlink/reparse escape, oversized input/result and recovery-required outcomes;
+3. keep patch normalized to `FileWrite` authority;
+4. keep MCP `fs_write`/patch/delete disabled until all runtime/policy/recovery gates pass;
+5. expose MCP mutation only as a thin adapter over the proven application/runtime contract.
 
 Design constraints across Phase 2C:
 
