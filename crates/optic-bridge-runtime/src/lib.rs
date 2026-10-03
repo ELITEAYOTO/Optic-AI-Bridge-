@@ -4,12 +4,14 @@
 //!
 //! This crate owns application runtime state and hard limits. MCP remains an
 //! adapter outside this boundary, so SDK defaults cannot silently weaken
-//! session, transport, filesystem, process, mutation-precondition, or output constraints.
+//! session, transport, filesystem, process, mutation-precondition, recovery,
+//! or output constraints.
 
 mod clock;
 mod filesystem;
 mod mutation;
 mod process;
+mod recovery;
 mod session_registry;
 mod task_lease_registry;
 mod transport;
@@ -26,6 +28,10 @@ pub use mutation::{
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,
     ProcessStream,
+};
+pub use recovery::{
+    JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
+    RecoveryReport,
 };
 pub use session_registry::{SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
