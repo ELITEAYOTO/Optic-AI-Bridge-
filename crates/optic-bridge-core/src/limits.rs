@@ -38,6 +38,8 @@ pub struct HardLimits {
     pub max_active_output_ram_bytes: u64,
     pub max_fs_read_bytes: u64,
     pub max_fs_mutation_bytes: u64,
+    pub max_mutation_journal_file_bytes: u64,
+    pub max_mutation_recovery_records: u32,
     pub max_fs_list_page_entries: u32,
     pub max_fs_directory_scan_entries: u32,
     pub max_active_process_jobs: u32,
@@ -56,6 +58,8 @@ impl Default for HardLimits {
             max_active_output_ram_bytes: 16 * 1024 * 1024,
             max_fs_read_bytes: 256 * 1024,
             max_fs_mutation_bytes: 8 * 1024 * 1024,
+            max_mutation_journal_file_bytes: 64 * 1024,
+            max_mutation_recovery_records: 256,
             max_fs_list_page_entries: 256,
             max_fs_directory_scan_entries: 4096,
             max_active_process_jobs: 8,
@@ -80,6 +84,8 @@ impl HardLimits {
             || self.max_active_output_ram_bytes == 0
             || self.max_fs_read_bytes == 0
             || self.max_fs_mutation_bytes == 0
+            || self.max_mutation_journal_file_bytes == 0
+            || self.max_mutation_recovery_records == 0
             || self.max_fs_list_page_entries == 0
             || self.max_fs_directory_scan_entries == 0
             || self.max_active_process_jobs == 0
@@ -140,6 +146,30 @@ mod tests {
     fn hard_limits_reject_zero_mutation_ceiling() {
         let limits = HardLimits {
             max_fs_mutation_bytes: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_recovery_journal_ceiling() {
+        let limits = HardLimits {
+            max_mutation_journal_file_bytes: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_recovery_record_ceiling() {
+        let limits = HardLimits {
+            max_mutation_recovery_records: 0,
             ..HardLimits::default()
         };
         assert_eq!(
