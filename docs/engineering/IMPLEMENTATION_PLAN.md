@@ -135,33 +135,44 @@ Final validation: exact PR #15 head `90a6b646` passed Ubuntu format/Clippy/tests
 
 What 2C1 does **not** prove:
 
-- the journal is not yet wired around the real Phase 2B namespace commit;
-- no forced process-crash fixture has yet interrupted the real commit lifecycle;
+- the journal alone does not wire itself around the Phase 2B namespace commit;
+- it does not by itself prove forced process-crash behavior around that real lifecycle;
 - no power-loss / ACID claim is made; file flush and namespace/directory-metadata persistence must not be overstated;
 - public write/patch/delete services remain disabled.
 
 #### Phase 2C2 — journal-wrapped Windows commit and forced-crash gate
 
-Status: **current**.
+Status: **implemented on PR #18; final full CI/documentation gate pending**.
 
-Implement in this order:
+Implemented in order:
 
-1. bind the journal ActionId to the actual mutation lifecycle and staging artifact;
-2. persist `prepared`, then persist `committing` before any namespace commit can be attempted;
-3. execute the Phase 2B commit boundary;
-4. persist `verified` when the result is proven, or `ambiguous` when a namespace effect may have happened but cannot be proven;
-5. retire terminal journal files only after the terminal transition is durable enough for the supported crash model;
-6. add child-process crash points after `prepared`, after `committing` before namespace commit, immediately after namespace commit before terminal record, and after terminal record before retirement;
-7. restart and reconcile every crash fixture without blind retry;
-8. keep unresolved third-state conflicts fail-closed and retained.
+1. bind one operation `ActionId` to the durable journal and deterministic same-directory staging artifact;
+2. persist `prepared`, then persist and sync `committing` before the Phase 2B atomic service can be called;
+3. execute the Phase 2B commit using that exact ActionId;
+4. persist `verified` when the result is proven, or retain/mark recovery-required `ambiguous` semantics when a namespace effect may have happened but cannot be proven;
+5. retire a verified journal only after its terminal transition is durable under the tested process-crash model;
+6. preserve recovery evidence until operation-owned staging validation/cleanup succeeds;
+7. require any surviving staging artifact to be regular, bounded, and BLAKE3-equal to the journaled intended content before deletion; unexpected/tampered staging fails closed and keeps the journal;
+8. child-process termination gates cover durable `prepared`, durable `committing` before the atomic call, return from the atomic commit service before terminal journal state, and terminal journal state before retirement;
+9. restart reconciliation classifies every tested crash fixture without blind retry and subsequent recovery is empty;
+10. unresolved third-state conflicts remain fail-closed and retained.
+
+Crash-model precision:
+
+- the post-commit hook is after `AtomicMutationService` returns, so the namespace effect and its post-commit verification have completed; it is **not** an instrumentation point between the raw `ReplaceFileW`/hard-link operation and verification;
+- the gate proves deterministic **process termination + restart** recovery, not sudden-power-loss ACID durability;
+- Phase 2B's residual path-based external-writer race remains documented and unchanged.
+
+Merge gate for PR #18: the complete code + living-doc head must pass Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
 
 #### Phase 2C3 — transactional file services
 
-Only after 2C2 passes:
+Only after 2C2 is merged:
 
 1. build runtime file write/patch/delete services on the journal-wrapped boundary;
-2. preserve exact stale-state, reparse, size and capability checks;
-3. expose MCP mutation tools only after policy + recovery negative tests pass.
+2. preserve exact stale-state, reparse, byte-size, task-lease and capability checks;
+3. add negative policy/recovery tests for each public mutation operation;
+4. expose MCP mutation tools only after those runtime/policy gates pass.
 
 Design constraints across Phase 2C:
 
@@ -170,9 +181,10 @@ Design constraints across Phase 2C:
 - wall-clock timestamps are diagnostic only and never authorization/freshness state;
 - recovery never infers success merely from the absence of a temp file;
 - an operation that may have committed but cannot be proven remains explicit/ambiguous until reconciled;
-- durability claims must match actual Windows semantics and tested crash model.
+- recovery evidence must not be retired before operation-owned staging has been safely handled;
+- durability claims must match actual Windows semantics and the tested crash model.
 
-Phase 2C gate: deterministic startup reconciliation + forced process-crash tests around the real namespace commit, before any public mutation surface is enabled.
+Phase 2C gate: deterministic startup reconciliation + forced process-crash tests around the real journal-wrapped commit, before any public mutation surface is enabled.
 
 ### Phase 2D — Git read/integration
 
