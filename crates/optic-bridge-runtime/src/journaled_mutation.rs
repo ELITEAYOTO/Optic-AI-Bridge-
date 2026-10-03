@@ -1,18 +1,23 @@
 use std::path::Path;
 
 #[cfg(windows)]
-use std::fs;
+use std::fs::{self, File};
 
-use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
+#[cfg(windows)]
+use optic_bridge_core::ContentVersion;
+use optic_bridge_core::{
+    ActionId, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
+};
 use thiserror::Error;
 
 #[cfg(windows)]
 use crate::mutation::staging_path_for;
 use crate::{
-    AtomicMutationError, AtomicMutationService, CommitVerification, MutationCommit,
-    MutationRecoveryJournal, PreparedMutation, RecoveryJournalError, RecoveryOutcome,
-    RecoveryReport,
+    AtomicMutationError, AtomicMutationService, MutationCommit, MutationRecoveryJournal,
+    PreparedMutation, RecoveryJournalError, RecoveryReport,
 };
+#[cfg(windows)]
+use crate::{CommitVerification, RecoveryOutcome};
 
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +32,7 @@ enum JournalCommitBoundary {
 pub struct JournaledMutationService {
     atomic: AtomicMutationService,
     journal: MutationRecoveryJournal,
+    max_mutation_bytes: u64,
 }
 
 impl JournaledMutationService {
@@ -38,7 +44,11 @@ impl JournaledMutationService {
         let atomic = AtomicMutationService::from_hard_limits(workspace_root, limits)?;
         let journal =
             MutationRecoveryJournal::open(state_root, atomic.filesystem().root(), limits)?;
-        Ok(Self { atomic, journal })
+        Ok(Self {
+            atomic,
+            journal,
+            max_mutation_bytes: limits.max_fs_mutation_bytes,
+        })
     }
 
     pub fn prepare_write(
@@ -68,9 +78,12 @@ impl JournaledMutationService {
     }
 
     pub fn recover(&self) -> Result<RecoveryReport, JournaledMutationError> {
-        let report = self.journal.reconcile(self.atomic.filesystem())?;
+        let report = self.journal.inspect_pending(self.atomic.filesystem())?;
         #[cfg(windows)]
         self.cleanup_recovered_staging(&report)?;
+        for record in &report.records {
+            self.journal.retire_action(&record.action_id)?;
+        }
         Ok(report)
     }
 
@@ -175,6 +188,30 @@ impl JournaledMutationService {
                     action_id: record.action_id.clone(),
                 });
             }
+            if metadata.len() > self.max_mutation_bytes {
+                return Err(JournaledMutationError::StagingArtifactTooLarge {
+                    action_id: record.action_id.clone(),
+                    limit: self.max_mutation_bytes,
+                });
+            }
+
+            let mut file = File::open(&staging).map_err(|source| {
+                JournaledMutationError::StagingCleanupFailed {
+                    action_id: record.action_id.clone(),
+                    source,
+                }
+            })?;
+            let observed = ContentVersion::from_reader_bounded(&mut file, self.max_mutation_bytes)
+                .map_err(|source| JournaledMutationError::StagingObservationFailed {
+                    action_id: record.action_id.clone(),
+                    source,
+                })?;
+            if observed.to_hex() != record.intended_version_hex {
+                return Err(JournaledMutationError::StagingContentMismatch {
+                    action_id: record.action_id.clone(),
+                });
+            }
+            drop(file);
 
             fs::remove_file(&staging).map_err(|source| {
                 JournaledMutationError::StagingCleanupFailed {
@@ -226,6 +263,16 @@ pub enum JournaledMutationError {
         "operation {action_id:?} has a staging artifact even though only prepared state was durable"
     )]
     UnexpectedPreparedStagingArtifact { action_id: ActionId },
+    #[error("operation {action_id:?} staging artifact exceeds hard byte ceiling {limit}")]
+    StagingArtifactTooLarge { action_id: ActionId, limit: u64 },
+    #[error("operation {action_id:?} staging content observation failed: {source}")]
+    StagingObservationFailed {
+        action_id: ActionId,
+        #[source]
+        source: ContentVersionReadError,
+    },
+    #[error("operation {action_id:?} staging content no longer matches its journaled intent")]
+    StagingContentMismatch { action_id: ActionId },
     #[error("operation {action_id:?} staging cleanup failed: {source}")]
     StagingCleanupFailed {
         action_id: ActionId,
@@ -383,6 +430,42 @@ mod tests {
         assert_eq!(
             report.records[0].outcome,
             RecoveryOutcome::ObservedNotCommitted
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn staging_mismatch_fails_closed_and_retains_journal_evidence() {
+        let (workspace, state) = fixture("staging-mismatch");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = service
+            .journal()
+            .begin(&plan, ContentVersion::from_bytes(b"new"))
+            .expect("begin");
+        service
+            .journal()
+            .mark_committing(&ticket)
+            .expect("committing");
+
+        let staging = staging_path_for(service.atomic().filesystem(), &path, ticket.action_id());
+        fs::write(&staging, b"tampered").expect("staging fixture");
+        assert!(matches!(
+            service.recover(),
+            Err(JournaledMutationError::StagingContentMismatch { .. })
+        ));
+        assert!(staging.exists());
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("journal root")
+                .count(),
+            1
         );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }

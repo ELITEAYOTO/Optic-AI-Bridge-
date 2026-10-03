@@ -1,12 +1,11 @@
 use std::path::Path;
 
-#[cfg(all(test, not(windows)))]
+#[cfg(any(windows, all(test, not(windows))))]
 use std::path::PathBuf;
 #[cfg(windows)]
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
 };
 
 use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
@@ -20,7 +19,9 @@ use optic_bridge_windows::{
     replace_file_atomically,
 };
 
+#[cfg(windows)]
 const STAGING_PREFIX: &str = ".optic-";
+#[cfg(windows)]
 const STAGING_SUFFIX: &str = ".staged";
 
 #[derive(Debug)]
@@ -386,10 +387,12 @@ impl Drop for StagedFile {
     }
 }
 
+#[cfg(windows)]
 pub(crate) fn staging_file_name(action_id: &ActionId) -> String {
     format!("{STAGING_PREFIX}{}{STAGING_SUFFIX}", action_id.to_token())
 }
 
+#[cfg(windows)]
 pub(crate) fn staging_path_for(
     filesystem: &BoundedFileSystem,
     path: &WorkspacePath,
@@ -401,6 +404,7 @@ pub(crate) fn staging_path_for(
     target
 }
 
+#[cfg(windows)]
 fn absolute_workspace_path(root: &Path, path: &WorkspacePath) -> PathBuf {
     let mut absolute = root.to_path_buf();
     for segment in path.as_str().split('/') {
