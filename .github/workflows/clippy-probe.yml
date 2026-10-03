@@ -1,0 +1,35 @@
+name: Clippy probe
+
+on:
+  push:
+    branches:
+      - hardening/phase-0-1-contracts
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Capture clippy diagnostics
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --all-features -- -D warnings > clippy.txt 2>&1
+          code=$?
+          cat clippy.txt
+          echo "$code" > clippy-exit.txt
+          exit 0
+      - name: Upload clippy diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-diagnostics
+          path: |
+            clippy.txt
+            clippy-exit.txt
+          if-no-files-found: error
+          retention-days: 1
