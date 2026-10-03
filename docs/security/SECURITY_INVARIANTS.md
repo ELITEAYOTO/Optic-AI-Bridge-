@@ -12,6 +12,10 @@ Status: DECIDED baseline. Every invariant must eventually have an executable tes
 
 **INV-004 — Capability expiry/revocation.** Capability leases have scope, ceiling and expiry; revocation invalidates future use without relying on model cooperation.
 
+**INV-005 — Scope is authoritative.** A capability name alone never authorizes a side effect outside the task lease's explicit workspace/repository/executable/network scope. Scope comparison is structural rather than naive string-prefix matching.
+
+**INV-006 — Runtime expiry is monotonic.** Session/task lease runtime deadlines are evaluated against a monotonic time source so wall-clock correction cannot extend an active authorization window.
+
 ## Files and Git
 
 **INV-010 — Canonical target first.** Authorization happens on a canonical target after root/reparse/symlink checks, never on raw user/model path text.
@@ -22,6 +26,10 @@ Status: DECIDED baseline. Every invariant must eventually have an executable tes
 
 **INV-013 — Reversible mutation.** Multi-file mutation is journaled/transactional or explicitly classified as irreversible before execution.
 
+**INV-014 — No blind create/update ambiguity.** File write intent states either `ExpectedState::Absent` or an exact expected content version; absence of a precondition is not interpreted as permission to overwrite whatever currently exists.
+
+**INV-015 — Git integration has an exact base.** Integration carries a validated expected target object id and fails on target-head drift.
+
 ## Processes and resources
 
 **INV-020 — Structured process launch.** Fundamental process API is executable + args + cwd + explicit environment/network/resource request, not an opaque shell string.
@@ -31,6 +39,8 @@ Status: DECIDED baseline. Every invariant must eventually have an executable tes
 **INV-022 — Bounded everything.** Request bodies, protocol frames, queues, stdout/stderr, MCP responses, caches, completed-job retention, audit logs and spool disk have hard ceilings/TTL/quota.
 
 **INV-023 — Cleanup after cancellation/crash.** Owned process trees terminate or are recoverably quarantined; cleanup is idempotent.
+
+**INV-024 — Process network is dual-authorized.** A leased process receives network only when both its session and its task lease carry `NetworkAccess` and the task lease also contains an explicit network scope.
 
 ## Data-flow containment
 
