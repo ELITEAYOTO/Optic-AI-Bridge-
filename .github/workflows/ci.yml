@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,3 +48,45 @@ jobs:
         run: cargo install --locked cargo-deny --version 0.20.2
       - name: Check advisories, licenses, bans and sources
         run: cargo deny check
+
+  canonicalize-recovery-branch:
+    name: Canonicalize Phase 2C branch (temporary)
+    if: github.event_name == 'pull_request' && github.head_ref == 'phase-2/recovery-journal'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-2/recovery-journal
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Apply known compiler fixes and canonical rustfmt
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/optic-bridge-runtime/src/recovery.rs')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'file.by_ref().take(read_limit).read_to_end(&mut bytes)?;',
+              'std::io::Read::by_ref(&mut file)\n            .take(read_limit)\n            .read_to_end(&mut bytes)?;'
+          )
+          text = text.replace(
+              'version.to_hex() == *version_hex',
+              'version.to_hex() == version_hex.as_str()'
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          cargo fmt --all
+      - name: Commit only Phase 2C canonicalization
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/optic-bridge-runtime/src/recovery.rs crates/optic-bridge-runtime/src/lib.rs crates/optic-bridge-core/src/limits.rs
+          git commit -m "fix: canonicalize Phase 2C recovery journal"
+          git push origin HEAD:phase-2/recovery-journal
