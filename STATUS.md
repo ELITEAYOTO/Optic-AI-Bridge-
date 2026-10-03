@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 2B under review  
+**Lifecycle:** pre-alpha / Phase 2C journal and recovery  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Phase 2A is merged on `main` via PR #9 (`71bdf082`). Phase 2B is implemented on PR #13 and has passed its code-only Linux/Windows/dependency gates; the remaining work in this tranche is documentation alignment and final review before merge. Durable filesystem mutation remains intentionally unavailable to MCP until Phase 2C adds recovery/journal guarantees and the public mutation-service gates pass.
+Phase 2B is merged on `main` via PR #13 (`80f3aa9b`). The current implementation tranche is Phase 2C: bounded durable mutation journal, startup recovery/reconciliation, forced-crash gates and transactional file mutation services. Public MCP file mutation remains intentionally disabled until those recovery and policy gates pass.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -72,53 +72,38 @@ Phase 2A is merged on `main` via PR #9 (`71bdf082`). Phase 2B is implemented on 
 - Each process job owns its own Job Object; the job itself remains owned by exactly one application session.
 - `try_wait`/`wait` do not treat the job as terminal while descendants remain active.
 - Removing/unwrapping containment is fail-closed: terminate the whole job, fallback-kill the root child and close the Job Object handle rather than leak/detach it.
-- Native Windows tests prove:
-  - `process_count = 1` blocks descendant creation;
-  - a 128 MiB job-memory ceiling prevents a fixture from reaching a 384 MiB allocation target;
-  - timeout terminates the descendant tree before a delayed survival marker can be written;
-  - dropping the live Job Object wrapper triggers kill-on-close cleanup;
-  - explicitly unwrapping the containment wrapper does not allow the child to survive.
-- Final PR #7 head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before merge.
+- Native Windows tests prove process-count, memory, descendant-tree timeout, kill-on-close and fail-closed unwrap behavior.
 
 ### Phase 2A — merged
 - PR #9 merged to `main` as `71bdf082`.
-- Adds bounded streaming BLAKE3 content observation without loading whole files into RAM.
-- Adds `HardLimits::max_fs_mutation_bytes` (default 8 MiB) so precondition hashing is bounded in bytes as well as memory.
-- Adds `MutationObservation` and isolated `MutationError` runtime types without changing the existing read-only MCP error surface.
+- Adds bounded streaming BLAKE3 content observation and `HardLimits::max_fs_mutation_bytes`.
+- Adds `MutationObservation` and isolated `MutationError` without changing the read-only MCP error surface.
 - Existing mutation targets must be regular files; leaf symlinks are rejected.
-- Absent mutation targets canonicalize the parent first, preventing a symlinked parent from hiding the actual authorization path.
+- Absent targets canonicalize the parent before deriving the authorization target.
 - Canonical targets must remain inside the canonical workspace root.
 - `ExpectedState::Absent` and exact `ExpectedState::Content(version)` are checked explicitly; stale/blind-overwrite attempts fail closed.
-- Unix regression tests cover leaf symlink denial, canonicalized in-workspace parent symlinks and parent escape denial.
-- Oversized mutation targets fail closed at the hard observation ceiling.
 - This tranche performs no durable mutation and exposes no MCP write/delete/patch tools.
-- It does not claim final race-free Windows mutation containment: handle-first reparse/final-path/file-identity revalidation remains required at commit time.
-- The exact final tree was validated green on Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; a temporary CI-only PR #10 was used because PR #9's Actions concurrency group had a cancelled intermediate Ubuntu job stuck without steps.
 
-### Phase 2B — implemented / under review
-- PR #13 implements the Windows mutation-time containment and atomic namespace-commit foundation; no MCP mutation tool is exposed.
-- `optic-bridge-windows` now owns the Win32 filesystem boundary in addition to Job Objects.
+### Phase 2B — merged
+- PR #13 merged to `main` as `80f3aa9b` after the final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- `optic-bridge-windows` owns the Win32 filesystem boundary in addition to Job Objects.
 - Existing files and parent directories are inspected from handles opened with `FILE_FLAG_OPEN_REPARSE_POINT`; final-component reparse points are denied.
-- `GetFinalPathNameByHandleW` is used to verify the opened object remains under the canonical workspace root.
+- `GetFinalPathNameByHandleW` verifies the opened object remains under the canonical workspace root.
 - `FILE_ID_INFO` binds a prepared mutation to the exact existing file identity, or to the exact parent-directory identity for an absent target.
-- Prepared writes revalidate expected content/absence plus Windows identity before staging and again immediately before the namespace commit.
+- Prepared writes revalidate expected content/absence plus Windows identity before staging and again immediately before namespace commit.
 - Replacement content is written and `sync_all`'d to a create-new temporary file in the same directory.
 - Existing targets commit through `ReplaceFileW`; absent targets use create-only hard-link semantics so a target that appears is never overwritten.
-- Post-commit verification is explicit: an operation that may already have committed is never converted into an ordinary pre-commit failure merely because verification cannot prove the result.
+- Post-commit verification is explicit via `CommitVerification::{Verified, CommittedButUnverified}`.
 - Non-Windows durable commit remains fail-closed as unsupported in this tranche.
-- Native Windows Server 2025 CI proves:
-  - an existing target is replaced and the new content version verifies;
-  - deleting/recreating the same path with the same bytes is rejected because `FILE_ID_INFO` changed;
-  - absent-target creation succeeds with create-only semantics;
-  - recreating the parent directory invalidates an absent-target plan;
-  - the low-level handle identity and `ReplaceFileW` adapter tests pass.
-- Code head `ba24c1eb` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before documentation alignment.
+- Native Windows CI proves existing replacement, create-only creation, same-content delete/recreate rejection by file identity, and parent-directory recreation rejection.
 - Important residual boundary: `ReplaceFileW` is a path-based final namespace call. Immediate handle/content/identity revalidation greatly narrows stale-target races but is not claimed to be a kernel compare-and-swap against arbitrary external writers in the final instruction window.
 
 ### Current / next implementation
-- Finish Phase 2B review/documentation and merge PR #13 after the documentation head re-passes all gates.
-- Phase 2C then adds a bounded durable mutation journal, startup recovery/reconciliation, forced-crash gates and transactional file write/patch/delete runtime services.
-- Keep MCP `fs_write` / patch / delete surfaces deferred until the Phase 2C recovery and policy gates pass.
+- Phase 2C: bounded durable mutation journal with explicit state transitions.
+- Persist enough information to reconcile prepared/committing/committed-or-ambiguous operations on startup without blind retry.
+- Add forced-crash tests around the journal and namespace commit boundary.
+- Build transactional file write/patch/delete runtime services only after recovery behavior is deterministic.
+- Keep MCP `fs_write` / patch / delete surfaces deferred until Phase 2C recovery and policy gates pass.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual external-writer window without creating deadlock/compatibility complexity.
 
 ### Later validated research candidates
@@ -138,7 +123,7 @@ Phase 2A is merged on `main` via PR #9 (`71bdf082`). Phase 2B is implemented on 
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`) and Phase 2A (`71bdf082`). Phase 2B is implemented on PR #13 and remains unmerged until its final documentation head passes all gates.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`) and Phase 2B (`80f3aa9b`). Phase 2C is the current implementation tranche.
 
 ## Health rule
 
