@@ -1,18 +1,13 @@
-use std::sync::Arc;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
-    ActionEnvelope, ActionId, Effect, JobId, NetworkAccess, ResourceBudget, TaskLeaseId, WorkspacePath,
+    ActionEnvelope, ActionId, Effect, JobId, NetworkAccess, ResourceBudget, TaskLeaseId,
+    WorkspacePath,
 };
 use optic_bridge_policy::PolicyDecision;
 use optic_bridge_runtime::{
     ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, TaskLeaseRegistryError,
 };
-use rmcp::{
-    ErrorData, Json,
-    handler::server::wrapper::Parameters,
-    tool, tool_router,
-};
+use rmcp::{ErrorData, Json, handler::server::wrapper::Parameters, tool, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +51,9 @@ impl ReadonlyMcpServer {
             .process_leases
             .get(&executable)
             .cloned()
-            .ok_or_else(|| ErrorData::invalid_request("optic.process_executable_not_allowed", None))?;
+            .ok_or_else(|| {
+                ErrorData::invalid_request("optic.process_executable_not_allowed", None)
+            })?;
         let lease = self
             .task_leases
             .get_active(&lease_id, &self.session, now)
@@ -270,7 +267,9 @@ fn authorize_process(
 fn requested_budget(request: &ProcessStartRequest) -> Result<ResourceBudget, ErrorData> {
     ResourceBudget {
         timeout_ms: request.timeout_ms.unwrap_or(DEFAULT_PROCESS_TIMEOUT_MS),
-        output_bytes: request.output_budget.unwrap_or(DEFAULT_PROCESS_OUTPUT_BYTES),
+        output_bytes: request
+            .output_budget
+            .unwrap_or(DEFAULT_PROCESS_OUTPUT_BYTES),
         memory_bytes: request.memory_bytes.unwrap_or(DEFAULT_PROCESS_MEMORY_BYTES),
         process_count: request.process_count.unwrap_or(DEFAULT_PROCESS_COUNT),
     }

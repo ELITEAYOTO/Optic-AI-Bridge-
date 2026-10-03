@@ -13,9 +13,7 @@ use optic_bridge_core::{
     TaskLease, TaskLeaseId,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
-use optic_bridge_runtime::{
-    Clock, ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry,
-};
+use optic_bridge_runtime::{Clock, ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry};
 use rmcp::ServiceExt;
 
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
@@ -163,7 +161,10 @@ impl AppArgs {
 
 fn option_value(arg: &OsString, prefix: &str) -> Result<Option<String>, std::io::Error> {
     let value = arg.to_str().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "option must be valid UTF-8")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "option must be valid UTF-8",
+        )
     })?;
     Ok(value
         .strip_prefix(prefix)

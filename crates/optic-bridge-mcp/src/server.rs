@@ -1,14 +1,15 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
     ActionEnvelope, ActionId, Capability, Effect, HardLimits, LimitError, ResourceBudget,
-    SessionGrant, SessionHandle, WorkspacePath,
+    SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
-    BoundedFileSystem, Clock, EntryKind, FileSystemError, SessionRegistry, SessionRegistryError,
-    TransportError, TransportGuard, TransportLimits,
+    BoundedFileSystem, Clock, EntryKind, FileSystemError, ProcessError, ProcessManager,
+    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard,
+    TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -28,18 +29,21 @@ const STRUCTURED_VALUE_RESERVE_BYTES: u64 = 1024;
 pub struct ReadonlyMcpServer {
     tool_router: ToolRouter<Self>,
     filesystem: Arc<BoundedFileSystem>,
-    sessions: Arc<SessionRegistry>,
-    session: SessionHandle,
-    clock: Arc<dyn Clock>,
-    policy: Arc<PolicyEngine>,
-    transport_guard: TransportGuard,
-    limits: HardLimits,
+    pub(crate) sessions: Arc<SessionRegistry>,
+    pub(crate) session: SessionHandle,
+    pub(crate) clock: Arc<dyn Clock>,
+    pub(crate) policy: Arc<PolicyEngine>,
+    pub(crate) transport_guard: TransportGuard,
+    pub(crate) limits: HardLimits,
+    pub(crate) processes: Arc<ProcessManager>,
+    pub(crate) task_leases: Arc<TaskLeaseRegistry>,
+    pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
 }
 
 #[tool_handler(router = self.tool_router)]
 impl rmcp::ServerHandler for ReadonlyMcpServer {}
 
-#[tool_router(router = tool_router)]
+#[tool_router(router = readonly_tool_router)]
 impl ReadonlyMcpServer {
     pub fn new(
         root: impl AsRef<Path>,
@@ -49,15 +53,42 @@ impl ReadonlyMcpServer {
         limits: HardLimits,
     ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
+        let processes = Arc::new(ProcessManager::new(root.as_ref(), limits, Vec::new())?);
+        Self::new_with_process_runtime(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            Arc::new(TaskLeaseRegistry::new()),
+            BTreeMap::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_process_runtime(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+    ) -> Result<Self, ServerBuildError> {
+        let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
             return Err(ServerBuildError::ResponseLimitTooSmall);
         }
         let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);
         let transport_guard = TransportGuard::new(TransportLimits::from(limits))?;
+        let mut tool_router = Self::readonly_tool_router();
+        tool_router.merge(Self::process_tool_router());
 
         Ok(Self {
-            tool_router: Self::tool_router(),
+            tool_router,
             filesystem,
             sessions,
             session,
@@ -65,6 +96,9 @@ impl ReadonlyMcpServer {
             policy: Arc::new(PolicyEngine),
             transport_guard,
             limits,
+            processes,
+            task_leases,
+            process_leases: Arc::new(process_leases),
         })
     }
 
@@ -230,7 +264,7 @@ impl ReadonlyMcpServer {
         Ok(Json(response))
     }
 
-    fn active_grant(
+    pub(crate) fn active_grant(
         &self,
         now: optic_bridge_core::MonotonicTime,
     ) -> Result<SessionGrant, ErrorData> {
@@ -283,7 +317,10 @@ impl ReadonlyMcpServer {
         self.limits.max_fs_read_bytes.min(binary_budget)
     }
 
-    fn ensure_structured_payload_fits<T: Serialize>(&self, value: &T) -> Result<(), ErrorData> {
+    pub(crate) fn ensure_structured_payload_fits<T: Serialize>(
+        &self,
+        value: &T,
+    ) -> Result<(), ErrorData> {
         let bytes = serde_json::to_vec(value)
             .map_err(|_| ErrorData::internal_error("optic.response_serialization_failed", None))?;
         let bytes = u64::try_from(bytes.len())
@@ -369,6 +406,8 @@ pub enum ServerBuildError {
     FileSystem(#[from] FileSystemError),
     #[error("transport guard initialization failed: {0}")]
     Transport(#[from] TransportError),
+    #[error("process runtime initialization failed: {0}")]
+    Process(#[from] ProcessError),
     #[error("response hard limit is too small for the MCP envelope reserve")]
     ResponseLimitTooSmall,
 }
@@ -378,11 +417,11 @@ fn parse_workspace_path(value: &str) -> Result<WorkspacePath, ErrorData> {
         .map_err(|_| ErrorData::invalid_params("optic.invalid_workspace_path", None))
 }
 
-fn map_session_error(_error: SessionRegistryError) -> ErrorData {
+pub(crate) fn map_session_error(_error: SessionRegistryError) -> ErrorData {
     ErrorData::invalid_request("optic.session_inactive", None)
 }
 
-fn map_transport_error(error: TransportError) -> ErrorData {
+pub(crate) fn map_transport_error(error: TransportError) -> ErrorData {
     match error {
         TransportError::TooManyConcurrentRequests => {
             ErrorData::internal_error("optic.server_busy", None)
@@ -550,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_surface_is_read_only_and_minimal() {
+    fn tool_surface_matches_phase1c_contract() {
         let root = workspace("tools");
         let server = server(&root, &[Capability::FileRead, Capability::FileSearch]);
         let mut names = server
@@ -560,7 +599,19 @@ mod tests {
             .map(|tool| tool.name.to_string())
             .collect::<Vec<_>>();
         names.sort();
-        assert_eq!(names, vec!["fs_list", "fs_read", "session_info"]);
+        assert_eq!(
+            names,
+            vec![
+                "fs_list",
+                "fs_read",
+                "process_read",
+                "process_result",
+                "process_start",
+                "process_stop",
+                "session_cancel",
+                "session_info",
+            ]
+        );
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }
