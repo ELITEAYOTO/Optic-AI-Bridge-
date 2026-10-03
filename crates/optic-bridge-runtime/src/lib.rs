@@ -7,6 +7,7 @@
 //! session, transport, filesystem, process, mutation-precondition, recovery,
 //! or output constraints.
 
+mod authorized_file_mutation;
 mod clock;
 mod filesystem;
 mod journaled_mutation;
@@ -18,6 +19,7 @@ mod task_lease_registry;
 mod transactional_file;
 mod transport;
 
+pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
 pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
