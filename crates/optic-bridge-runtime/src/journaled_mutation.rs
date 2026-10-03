@@ -12,7 +12,8 @@ use thiserror::Error;
 use crate::mutation::staging_path_for;
 use crate::{
     AtomicMutationError, AtomicMutationService, DeleteCommit, MutationCommit,
-    MutationRecoveryJournal, PreparedDelete, PreparedMutation, RecoveryJournalError, RecoveryReport,
+    MutationRecoveryJournal, PreparedDelete, PreparedMutation, RecoveryJournalError,
+    RecoveryReport,
 };
 #[cfg(windows)]
 use crate::{CommitVerification, DeleteVerification, RecoveryOutcome};
@@ -513,7 +514,10 @@ mod tests {
             .expect("plan");
 
         let result = service.commit_delete(&plan).expect("delete");
-        assert_eq!(result.commit.verification, DeleteVerification::VerifiedAbsent);
+        assert_eq!(
+            result.commit.verification,
+            DeleteVerification::VerifiedAbsent
+        );
         assert!(result.journal_retired);
         assert!(!workspace.join("target.txt").exists());
         assert!(service.recover().expect("recover").is_empty());
@@ -842,7 +846,12 @@ mod tests {
                 expected_target,
                 "delete boundary {boundary:?}"
             );
-            assert!(service.recover().expect("second delete recovery").is_empty());
+            assert!(
+                service
+                    .recover()
+                    .expect("second delete recovery")
+                    .is_empty()
+            );
             fs::remove_dir_all(&base).expect("cleanup delete crash fixture");
         }
     }
