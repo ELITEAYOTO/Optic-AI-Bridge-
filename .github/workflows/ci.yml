@@ -13,6 +13,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  recovery-v2-rustfmt-fix:
+    if: github.event_name == 'pull_request' && github.head_ref == 'phase-2/recovery-intended-state-v2'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: phase-2/recovery-intended-state-v2
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Apply rustfmt and restore normal CI
+        run: |
+          cargo fmt --all
+          git fetch origin main --depth=1
+          git checkout origin/main -- .github/workflows/ci.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: format recovery intended-state v2"
+          git push origin HEAD:phase-2/recovery-intended-state-v2
+
   rust:
     name: Rust / ${{ matrix.os }}
     strategy:
