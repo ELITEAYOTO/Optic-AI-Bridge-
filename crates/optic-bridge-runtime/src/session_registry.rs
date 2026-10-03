@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-};
+use std::{collections::HashMap, sync::Mutex};
 
 use optic_bridge_core::{MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
@@ -175,9 +172,7 @@ mod tests {
         let grant = grant(100);
         registry.register(grant.clone()).expect("first insert");
         assert_eq!(
-            registry
-                .register(grant)
-                .expect_err("duplicate must fail"),
+            registry.register(grant).expect_err("duplicate must fail"),
             SessionRegistryError::AlreadyRegistered
         );
     }
