@@ -180,10 +180,6 @@ impl OwnedJob {
         .map_err(Error::other)?;
         Ok(accounting.ActiveProcesses)
     }
-
-    fn leak(self) {
-        std::mem::forget(self);
-    }
 }
 
 impl Drop for OwnedJob {
@@ -211,12 +207,15 @@ impl ChildWrapper for LimitedJobChild {
     }
 
     fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
-        let LimitedJobChild { inner, job, .. } = *self;
-        // `ChildWrapper::into_inner` semantically asks to detach the wrapper without
-        // changing the process state. Closing a kill-on-close job here would terminate
-        // the tree, so deliberately relinquish this internal handle. Optic runtime never
-        // unwraps its process jobs; normal Drop remains leak-free and kill-on-close.
-        job.leak();
+        let LimitedJobChild {
+            mut inner, job, ..
+        } = *self;
+        // Removing the containment wrapper must not silently detach a live process tree.
+        // Fail closed: terminate the whole job, ask the root child to terminate as a
+        // fallback, then drop the owned Job Object handle instead of leaking it.
+        let _ = job.terminate(1);
+        let _ = inner.start_kill();
+        drop(job);
         inner
     }
 
@@ -352,8 +351,9 @@ mod tests {
         std::fs::write(survived, b"survived").expect("write survived marker");
     }
 
-    #[tokio::test]
-    async fn dropping_job_handle_kills_running_child() {
+    async fn spawn_delayed_marker_fixture(
+        label: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf, Box<dyn ChildWrapper>) {
         use process_wrap::tokio::CommandWrap;
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -361,7 +361,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system time")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("optic-job-drop-{token}"));
+        let root = std::env::temp_dir().join(format!("optic-job-{label}-{token}"));
         std::fs::create_dir_all(&root).expect("create fixture dir");
         let started = root.join("started");
         let survived = root.join("survived");
@@ -382,13 +382,31 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert!(started.exists(), "fixture child did not start");
+        (root, survived, child)
+    }
+
+    #[tokio::test]
+    async fn dropping_job_handle_kills_running_child() {
+        let (root, survived, child) = spawn_delayed_marker_fixture("drop").await;
         drop(child);
         tokio::time::sleep(Duration::from_millis(900)).await;
         assert!(
             !survived.exists(),
             "closing the kill-on-close Job Object did not terminate the child"
         );
+        std::fs::remove_dir_all(root).expect("remove fixture dir");
+    }
 
+    #[tokio::test]
+    async fn unwrapping_job_containment_fails_closed() {
+        let (root, survived, child) = spawn_delayed_marker_fixture("unwrap").await;
+        let inner = child.into_inner();
+        drop(inner);
+        tokio::time::sleep(Duration::from_millis(900)).await;
+        assert!(
+            !survived.exists(),
+            "unwrapping containment allowed the child to survive"
+        );
         std::fs::remove_dir_all(root).expect("remove fixture dir");
     }
 }
