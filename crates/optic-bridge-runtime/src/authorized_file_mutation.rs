@@ -417,7 +417,10 @@ mod tests {
                 PolicyReason::MissingCapability
             ))
         ));
-        assert_eq!(fs::read(workspace.join("target.txt")).expect("target"), b"old");
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("target"),
+            b"old"
+        );
         fs::remove_dir_all(base).expect("cleanup");
     }
 
@@ -477,7 +480,10 @@ mod tests {
             service.delete(&action),
             Err(AuthorizedFileMutationError::EffectMismatch)
         ));
-        assert_eq!(fs::read(workspace.join("target.txt")).expect("target"), b"old");
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("target"),
+            b"old"
+        );
         fs::remove_dir_all(base).expect("cleanup");
     }
 
@@ -616,7 +622,10 @@ mod tests {
         );
         let write_result = service.write(&write, b"alpha").expect("authorized write");
         assert!(write_result.journal_retired);
-        assert_eq!(fs::read(workspace.join("target.txt")).expect("target"), b"alpha");
+        assert_eq!(
+            fs::read(workspace.join("target.txt")).expect("target"),
+            b"alpha"
+        );
 
         let delete = envelope(
             &grant,
