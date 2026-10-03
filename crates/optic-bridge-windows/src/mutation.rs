@@ -319,8 +319,7 @@ mod tests {
         let moved = root.join("moved.txt");
         fs::write(&target, b"alpha").expect("write original");
 
-        let original =
-            HandleValidatedFile::open_under_root(&root, &target).expect("open original");
+        let original = HandleValidatedFile::open_under_root(&root, &target).expect("open original");
         fs::rename(&target, &moved).expect("rename original while handle remains open");
         fs::write(&target, b"beta").expect("write replacement");
         let replacement =
