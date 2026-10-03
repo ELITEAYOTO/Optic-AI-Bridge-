@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 1 vertical slice at final native gate  
+**Status:** pre-alpha — Phase 1 complete, Phase 2 in preparation  
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A, 1B and 1C are merged. Phase 1D adds the remaining Windows-native process-count, job-memory and descendant-tree Job Object gate and is under final review.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D are merged. The current baseline includes bounded MCP filesystem reads, structured lease-gated processes, and native Windows Job Object containment with process-count, job-memory and child-tree cleanup gates.
 
 ## Implemented Phase 1 surface
 
@@ -21,9 +21,9 @@ The repository started documentation-first and now contains an executable Rust i
 - dedicated Windows containment crate with a narrow Win32/unsafe boundary;
 - per-job Windows Job Objects with suspended create → configure → assign → resume ordering;
 - Windows kill-on-close, active-process and total job-memory limits derived from the authorized `ResourceBudget`;
-- native Windows gates for process count, memory, descendant-tree timeout cleanup and kill-on-close.
+- native Windows gates for process count, memory, descendant-tree timeout cleanup, kill-on-close and fail-closed containment unwrap.
 
-The implementation remains pre-alpha. Filesystem mutation, Git execution, mutation recovery, installer/tunnel integration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+The implementation remains pre-alpha. Phase 2 will add safe filesystem mutation and Git execution with explicit stale-state and crash-recovery gates. Installer/tunnel integration and stronger restricted-token/AppContainer-style hardening are also not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 
