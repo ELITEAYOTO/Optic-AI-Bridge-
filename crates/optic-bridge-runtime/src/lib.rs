@@ -12,6 +12,7 @@ mod clock;
 mod filesystem;
 mod journaled_mutation;
 mod mutation;
+mod mutation_authority;
 mod process;
 mod recovery;
 mod session_registry;
@@ -32,6 +33,9 @@ pub use journaled_mutation::{
 pub use mutation::{
     AtomicMutationError, AtomicMutationService, CommitVerification, DeleteCommit,
     DeleteVerification, MutationCommit, PreparedDelete, PreparedMutation,
+};
+pub use mutation_authority::{
+    MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
 };
 pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,
