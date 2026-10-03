@@ -16,7 +16,10 @@ pub struct BoundedFileSystem {
 }
 
 impl BoundedFileSystem {
-    pub fn from_hard_limits(root: impl AsRef<Path>, limits: HardLimits) -> Result<Self, FileSystemError> {
+    pub fn from_hard_limits(
+        root: impl AsRef<Path>,
+        limits: HardLimits,
+    ) -> Result<Self, FileSystemError> {
         Self::new(
             root,
             limits.max_fs_read_bytes,
@@ -31,10 +34,7 @@ impl BoundedFileSystem {
         max_list_page_entries: u32,
         max_directory_scan_entries: u32,
     ) -> Result<Self, FileSystemError> {
-        if max_read_bytes == 0
-            || max_list_page_entries == 0
-            || max_directory_scan_entries == 0
-        {
+        if max_read_bytes == 0 || max_list_page_entries == 0 || max_directory_scan_entries == 0 {
             return Err(FileSystemError::InvalidLimits);
         }
         if max_directory_scan_entries < max_list_page_entries {
@@ -66,7 +66,8 @@ impl BoundedFileSystem {
         if requested == 0 || requested > self.max_read_bytes {
             return Err(FileSystemError::ReadLimitExceeded);
         }
-        let buffer_len = usize::try_from(requested).map_err(|_| FileSystemError::ReadLimitExceeded)?;
+        let buffer_len =
+            usize::try_from(requested).map_err(|_| FileSystemError::ReadLimitExceeded)?;
 
         let resolved = self.resolve_existing(path)?;
         let mut file = File::open(&resolved).map_err(FileSystemError::Io)?;
@@ -147,7 +148,11 @@ impl BoundedFileSystem {
 
         entries.sort_by(|left, right| left.path.cmp(&right.path));
         let total_entries = entries.len();
-        let page = entries.into_iter().skip(cursor).take(limit).collect::<Vec<_>>();
+        let page = entries
+            .into_iter()
+            .skip(cursor)
+            .take(limit)
+            .collect::<Vec<_>>();
         let consumed = cursor.saturating_add(page.len());
         let next_cursor = (consumed < total_entries).then_some(consumed);
 
