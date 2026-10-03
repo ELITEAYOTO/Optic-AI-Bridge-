@@ -79,9 +79,9 @@ pub fn open_file_no_reparse(path: &Path) -> Result<OpenedWindowsFile, WindowsFil
 
 pub fn inspect_directory_no_reparse(path: &Path) -> Result<WindowsPathIdentity, WindowsFileError> {
     let mut options = OpenOptions::new();
-    options.access_mode(0).custom_flags(
-        FILE_FLAG_OPEN_REPARSE_POINT.0 | FILE_FLAG_BACKUP_SEMANTICS.0,
-    );
+    options
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0 | FILE_FLAG_BACKUP_SEMANTICS.0);
     let file = options.open(path)?;
     reject_reparse(&file)?;
     Ok(WindowsPathIdentity {
@@ -152,7 +152,7 @@ fn query_final_path(file: &File) -> Result<PathBuf, WindowsFileError> {
     loop {
         let length = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, VOLUME_NAME_DOS) };
         if length == 0 {
-            return Err(WindowsFileError::Windows(WindowsError::from_win32()));
+            return Err(WindowsFileError::Windows(WindowsError::from_thread()));
         }
         let length = usize::try_from(length).map_err(|_| WindowsFileError::PathTooLong)?;
         if length < buffer.len() {
