@@ -1,13 +1,13 @@
 # Project Status
 
 **Last updated:** 2026-10-03  
-**Lifecycle:** pre-alpha / Phase 1 vertical slice  
+**Lifecycle:** pre-alpha / Phase 1 vertical slice gate  
 **Release:** none  
 **Security support:** no production-supported release yet
 
 ## Current focus
 
-Finish the Windows-specific Phase 1D resource-containment gate without weakening the application-owned session, policy, transport and process boundaries already implemented.
+Finish Phase 1D documentation and merge only while the native Windows resource-containment gate remains green. Phase 2 mutation/Git work starts only from that clean baseline.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -49,7 +49,8 @@ Finish the Windows-specific Phase 1D resource-containment gate without weakening
 - Application-owned session lifecycle is independent of MCP transport state.
 - MCP surface includes bounded `fs_read`, `fs_list` and `session_info` routed through normalization, policy and runtime services.
 
-### Phase 1C — implemented on PR #6 branch
+### Phase 1C — merged
+- PR #6 merged to `main` as `adf2e772`.
 - Opaque session-owned `JobId`; no arbitrary PID operation.
 - Revocable application-owned `TaskLeaseRegistry`.
 - Structured process API: absolute/canonical executable + `args[]` + workspace-contained cwd + controlled inherited environment.
@@ -57,16 +58,29 @@ Finish the Windows-specific Phase 1D resource-containment gate without weakening
 - Session receives `ProcessRun` only when at least one executable is explicitly operator-authorized.
 - MCP tools: `process_start`, `process_read`, `process_stop`, `process_result`, plus `session_cancel`.
 - `process_start` normalizes to `Effect::ProcessRun` and requires both the active session grant and the exact executable task lease before runtime execution.
-- Network remains unavailable in the Phase 1C runtime; `network=true` fails closed.
+- Network remains unavailable in the Phase 1 runtime; `network=true` fails closed.
 - Bounded active jobs, retained records, stdout/stderr RAM, per-call output reads and process timeouts.
 - Environment is cleared by default; only operator-allowlisted variables may be inherited.
-- Windows lifecycle uses `process-wrap` Job Object assignment plus kill-on-drop; Unix uses a process group plus kill-on-drop.
 - Native Windows CI caught and closed an output-overflow terminal-status race; timeout, explicit stop, output overflow and cross-session ownership tests pass on Windows and Linux.
 
+### Phase 1D — implemented on PR #7 branch
+- New `optic-bridge-windows` crate isolates the narrow Win32/unsafe boundary; core, policy, MCP and cross-platform runtime remain unsafe-free.
+- Windows `ProcessManager` jobs use a custom `LimitedJobObject` configured from the already-authorized `ResourceBudget`.
+- Child creation is forced suspended; the Job Object is created and configured, the child is assigned, and only then are child threads resumed.
+- Kernel Job Object flags enforce kill-on-close, active-process count and total job-memory ceilings.
+- Each process job owns its own Job Object; the job itself remains owned by exactly one application session.
+- `try_wait`/`wait` do not treat the job as terminal while descendants remain active.
+- Native Windows tests prove:
+  - `process_count = 1` blocks descendant creation;
+  - a 128 MiB job-memory ceiling prevents a fixture from reaching a 384 MiB allocation target;
+  - timeout terminates the descendant tree before a delayed survival marker can be written;
+  - dropping the live Job Object wrapper triggers kill-on-close cleanup.
+- Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` are green on the implementation head after correcting the test helper to respect the existing 64 KiB per-call process-read ceiling.
+
 ### Current / next implementation
-- Finalize PR #6 documentation and merge only while Linux/Windows/dependency gates remain green.
-- Phase 1D: narrow audited Windows Job Object adapter for kernel-enforced process-count and memory limits, deterministic handle cleanup and native child-tree/resource gates.
-- Do not claim `memory_bytes` or `process_count` as Windows-kernel-enforced until Phase 1D exists and its native tests pass.
+- Finalize PR #7 documentation and merge only while the final documentation head remains green.
+- After merge, Phase 1 vertical-slice requirements are satisfied at the current pre-alpha scope.
+- Phase 2 begins transactional filesystem mutation/Git work with explicit expected-state preconditions and recovery semantics.
 
 ### Later validated research candidates
 - Phase 2: handle-first filesystem service and FILE_ID_INFO identity PoC.
@@ -75,15 +89,16 @@ Finish the Windows-specific Phase 1D resource-containment gate without weakening
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Windows Job Object memory/process-count hard-limit adapter and Phase 1D native resource gate.
 - Filesystem mutation services and Git execution services.
-- Transaction journal.
+- Transaction journal / crash-recovery implementation for mutations.
+- Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
+- Restricted-token/AppContainer hardening profile.
 - Public release.
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`) and Phase 1B (`681f939`). Phase 1C is under review in PR #6 and must remain green before merge.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`) and Phase 1C (`adf2e772`). Phase 1D is under review in PR #7 and has passed its native Windows implementation gates; the documentation head must remain green before merge.
 
 ## Health rule
 
