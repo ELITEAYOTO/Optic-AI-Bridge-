@@ -3,6 +3,7 @@ use std::{fmt, io::Read};
 use thiserror::Error;
 
 const VERSION_READ_BUFFER_BYTES: usize = 64 * 1024;
+const CONTENT_VERSION_HEX_BYTES: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContentVersion([u8; 32]);
@@ -11,6 +12,21 @@ impl ContentVersion {
     #[must_use]
     pub fn from_bytes(content: &[u8]) -> Self {
         Self(*blake3::hash(content).as_bytes())
+    }
+
+    pub fn from_hex(value: &str) -> Result<Self, ContentVersionParseError> {
+        if value.len() != CONTENT_VERSION_HEX_BYTES {
+            return Err(ContentVersionParseError::InvalidLength);
+        }
+
+        let source = value.as_bytes();
+        let mut bytes = [0_u8; 32];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            let high = decode_hex_nibble(source[index * 2])?;
+            let low = decode_hex_nibble(source[index * 2 + 1])?;
+            *byte = (high << 4) | low;
+        }
+        Ok(Self(bytes))
     }
 
     /// Hash a reader while enforcing an exact upper bound on bytes consumed.
@@ -64,6 +80,15 @@ impl ContentVersion {
     }
 }
 
+fn decode_hex_nibble(byte: u8) -> Result<u8, ContentVersionParseError> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(ContentVersionParseError::InvalidHex),
+    }
+}
+
 impl fmt::Debug for ContentVersion {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -71,6 +96,14 @@ impl fmt::Debug for ContentVersion {
             .field(&self.to_hex())
             .finish()
     }
+}
+
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum ContentVersionParseError {
+    #[error("content version must contain exactly 64 hexadecimal characters")]
+    InvalidLength,
+    #[error("content version contains a non-hexadecimal character")]
+    InvalidHex,
 }
 
 #[derive(Debug, Error)]
@@ -93,6 +126,31 @@ mod tests {
         let second = ContentVersion::from_bytes(b"beta");
         assert_ne!(first, second);
         assert_eq!(first, ContentVersion::from_bytes(b"alpha"));
+    }
+
+    #[test]
+    fn persisted_hex_round_trips_case_insensitively() {
+        let version = ContentVersion::from_bytes(b"persisted");
+        let encoded = version.to_hex();
+        assert_eq!(ContentVersion::from_hex(&encoded).expect("lowercase"), version);
+        assert_eq!(
+            ContentVersion::from_hex(&encoded.to_uppercase()).expect("uppercase"),
+            version
+        );
+    }
+
+    #[test]
+    fn persisted_hex_rejects_wrong_length_or_non_hex() {
+        assert_eq!(
+            ContentVersion::from_hex("00"),
+            Err(ContentVersionParseError::InvalidLength)
+        );
+        let mut invalid = "0".repeat(CONTENT_VERSION_HEX_BYTES);
+        invalid.replace_range(7..8, "z");
+        assert_eq!(
+            ContentVersion::from_hex(&invalid),
+            Err(ContentVersionParseError::InvalidHex)
+        );
     }
 
     #[test]
