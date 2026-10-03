@@ -3,9 +3,7 @@
 use std::{fs, path::PathBuf, time::Duration};
 
 use optic_bridge_core::{ActionId, HardLimits, ResourceBudget, SessionHandle};
-use optic_bridge_runtime::{
-    ProcessManager, ProcessStartSpec, ProcessStatus, ProcessStream,
-};
+use optic_bridge_runtime::{ProcessManager, ProcessStartSpec, ProcessStatus, ProcessStream};
 
 fn workspace(label: &str) -> PathBuf {
     let token = ActionId::generate().expect("test entropy").to_token();
@@ -71,8 +69,8 @@ fn stdout_text(
 #[tokio::test]
 async fn active_process_limit_blocks_descendant_creation() {
     let root = workspace("process-limit");
-    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-        .expect("process manager");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
     let session = SessionHandle::generate().expect("session id");
     let job = manager
         .start(spec(
@@ -97,8 +95,8 @@ async fn active_process_limit_blocks_descendant_creation() {
 #[tokio::test]
 async fn job_memory_limit_prevents_large_allocation() {
     let root = workspace("memory-limit");
-    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-        .expect("process manager");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
     let session = SessionHandle::generate().expect("session id");
     let target = 384_u64 * 1024 * 1024;
     let job = manager
@@ -127,8 +125,8 @@ async fn job_memory_limit_prevents_large_allocation() {
 async fn timeout_kills_descendant_tree_before_it_can_survive() {
     let root = workspace("tree-timeout");
     let marker = root.join("descendant-survived.txt");
-    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-        .expect("process manager");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
     let session = SessionHandle::generate().expect("session id");
     let job = manager
         .start(spec(

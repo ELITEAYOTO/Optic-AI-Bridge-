@@ -14,10 +14,10 @@ use optic_bridge_core::{
     HardLimits, JobId, LimitError, ResourceBudget, SessionHandle, WorkspacePath,
 };
 #[cfg(windows)]
-use process_wrap::tokio::JobObject;
+use optic_bridge_windows::LimitedJobObject;
+use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(unix)]
-use process_wrap::tokio::ProcessGroup;
-use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
+use process_wrap::tokio::{KillOnDrop, ProcessGroup};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -206,11 +206,16 @@ impl ProcessManager {
         }
 
         let mut command = CommandWrap::from(command);
-        command.wrap(KillOnDrop);
         #[cfg(windows)]
-        command.wrap(JobObject);
+        command.wrap(
+            LimitedJobObject::new(resources.process_count, resources.memory_bytes)
+                .map_err(ProcessError::Io)?,
+        );
         #[cfg(unix)]
-        command.wrap(ProcessGroup::leader());
+        {
+            command.wrap(KillOnDrop);
+            command.wrap(ProcessGroup::leader());
+        }
 
         let mut child = match command.spawn() {
             Ok(child) => child,

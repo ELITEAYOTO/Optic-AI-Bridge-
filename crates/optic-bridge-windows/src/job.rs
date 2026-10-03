@@ -309,7 +309,9 @@ fn resume_process_threads(process: HANDLE) -> Result<()> {
     if resumed {
         Ok(())
     } else {
-        Err(Error::other("no suspended child thread was found to resume"))
+        Err(Error::other(
+            "no suspended child thread was found to resume",
+        ))
     }
 }
 
@@ -336,5 +338,57 @@ mod tests {
     #[test]
     fn accepts_nonzero_limits() {
         assert!(LimitedJobObject::new(1, 64 * 1024 * 1024).is_ok());
+    }
+
+    #[test]
+    fn drop_fixture_child() {
+        let Some(started) = std::env::var_os("OPTIC_JOB_DROP_STARTED") else {
+            return;
+        };
+        let survived = std::env::var_os("OPTIC_JOB_DROP_SURVIVED")
+            .expect("survived marker must accompany started marker");
+        std::fs::write(started, b"started").expect("write started marker");
+        std::thread::sleep(Duration::from_millis(700));
+        std::fs::write(survived, b"survived").expect("write survived marker");
+    }
+
+    #[tokio::test]
+    async fn dropping_job_handle_kills_running_child() {
+        use process_wrap::tokio::CommandWrap;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let token = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("optic-job-drop-{token}"));
+        std::fs::create_dir_all(&root).expect("create fixture dir");
+        let started = root.join("started");
+        let survived = root.join("survived");
+
+        let mut command = Command::new(std::env::current_exe().expect("current test executable"));
+        command
+            .args(["--exact", "job::tests::drop_fixture_child", "--nocapture"])
+            .env("OPTIC_JOB_DROP_STARTED", &started)
+            .env("OPTIC_JOB_DROP_SURVIVED", &survived);
+        let mut command = CommandWrap::from(command);
+        command.wrap(LimitedJobObject::new(1, 512 * 1024 * 1024).expect("valid Job Object limits"));
+        let child = command.spawn().expect("spawn wrapped fixture");
+
+        for _ in 0..200 {
+            if started.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(started.exists(), "fixture child did not start");
+        drop(child);
+        tokio::time::sleep(Duration::from_millis(900)).await;
+        assert!(
+            !survived.exists(),
+            "closing the kill-on-close Job Object did not terminate the child"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove fixture dir");
     }
 }
