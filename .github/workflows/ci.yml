@@ -32,34 +32,22 @@ jobs:
           from pathlib import Path
           path = Path('crates/optic-bridge-runtime/src/journaled_mutation.rs')
           text = path.read_text(encoding='utf-8')
-          old = '''pub struct JournaledMutationService {
-              atomic: AtomicMutationService,
-              journal: MutationRecoveryJournal,
-              max_mutation_bytes: u64,
-          }'''
-          new = '''pub struct JournaledMutationService {
-              atomic: AtomicMutationService,
-              journal: MutationRecoveryJournal,
-              #[cfg(windows)]
-              max_mutation_bytes: u64,
-          }'''
-          if old not in text:
-              raise SystemExit('service field block not found')
-          text = text.replace(old, new, 1)
-          old = '''        Ok(Self {
-              atomic,
-              journal,
-              max_mutation_bytes: limits.max_fs_mutation_bytes,
-          })'''
-          new = '''        Ok(Self {
-              atomic,
-              journal,
-              #[cfg(windows)]
-              max_mutation_bytes: limits.max_fs_mutation_bytes,
-          })'''
-          if old not in text:
-              raise SystemExit('service initializer block not found')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          replacements = [
+              (
+                  '    max_mutation_bytes: u64,\n',
+                  '    #[cfg(windows)]\n    max_mutation_bytes: u64,\n',
+              ),
+              (
+                  '            max_mutation_bytes: limits.max_fs_mutation_bytes,\n',
+                  '            #[cfg(windows)]\n            max_mutation_bytes: limits.max_fs_mutation_bytes,\n',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, got {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
           cargo fmt --all
           cargo clippy --workspace --all-targets --all-features -- -D warnings
