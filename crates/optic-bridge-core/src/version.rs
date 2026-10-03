@@ -132,7 +132,10 @@ mod tests {
     fn persisted_hex_round_trips_case_insensitively() {
         let version = ContentVersion::from_bytes(b"persisted");
         let encoded = version.to_hex();
-        assert_eq!(ContentVersion::from_hex(&encoded).expect("lowercase"), version);
+        assert_eq!(
+            ContentVersion::from_hex(&encoded).expect("lowercase"),
+            version
+        );
         assert_eq!(
             ContentVersion::from_hex(&encoded.to_uppercase()).expect("uppercase"),
             version

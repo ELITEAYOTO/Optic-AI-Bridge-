@@ -193,9 +193,11 @@ impl JournaledMutationService {
             let intended_version = match record.intended {
                 ExpectedState::Content(version) => version,
                 ExpectedState::Absent => {
-                    return Err(JournaledMutationError::UnexpectedAbsentIntentStagingArtifact {
-                        action_id: record.action_id.clone(),
-                    });
+                    return Err(
+                        JournaledMutationError::UnexpectedAbsentIntentStagingArtifact {
+                            action_id: record.action_id.clone(),
+                        },
+                    );
                 }
             };
             if metadata.len() > self.max_mutation_bytes {

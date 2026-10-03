@@ -857,11 +857,10 @@ mod tests {
             ],
         );
 
-        let report = journal.reconcile(atomic.filesystem()).expect("reconcile v1");
-        assert_eq!(
-            report.records[0].intended,
-            ExpectedState::Content(intended)
-        );
+        let report = journal
+            .reconcile(atomic.filesystem())
+            .expect("reconcile v1");
+        assert_eq!(report.records[0].intended, ExpectedState::Content(intended));
         assert_eq!(
             report.records[0].outcome,
             RecoveryOutcome::ObservedCommitted
