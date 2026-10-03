@@ -110,7 +110,7 @@ impl RequestPermit {
     }
 
     #[must_use]
-    pub const fn is_expired_at(&self, now: MonotonicTime) -> bool {
+    pub fn is_expired_at(&self, now: MonotonicTime) -> bool {
         now >= self.deadline
     }
 }
