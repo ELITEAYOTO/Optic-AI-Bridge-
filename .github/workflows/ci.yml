@@ -6,91 +6,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  phase2d2-docs:
-    name: Phase 2D2 docs helper
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'docs/close-phase-2d2'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: docs/close-phase-2d2
-      - name: Update living docs
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              if old not in text:
-                  raise SystemExit(f'missing expected text in {path}: {old[:100]!r}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          replace_once(
-              'README.md',
-              '**Status:** pre-alpha — Phase 2C3C authorized MCP file mutation merged through PR #30; Phase 2D Git read/integration current',
-              '**Status:** pre-alpha — Phase 2D2 operator-owned MCP Git read merged through PR #33; Phase 2D3 Git integration current',
-          )
-          replace_once(
-              'README.md',
-              'Phase 2D Git read/integration is current.',
-              'Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (validated head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status` / `git_diff` / `git_log` is merged as `aee4f168` (validated head `54951225`). Phase 2D3 exact-head Git integration and worktree/conflict isolation is current.',
-          )
-
-          replace_once(
-              'STATUS.md',
-              'The current tranche is Phase 2D: bounded Git read primitives followed by exact-head integration/conflict gates before any MCP Git exposure.',
-              'Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (exact green head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status`, `git_diff` and `git_log` is merged as `aee4f168` (exact green head `54951225`). Git read tools exist only when the operator supplies one absolute Git executable and the configured workspace validates as the exact canonical repository root. The current tranche is Phase 2D3: separate `GitIntegrate` authority with exact target-head precondition, repository-scoped lease, isolated worktree ownership and deterministic conflict/cleanup gates.',
-          )
-          status = Path('STATUS.md').read_text(encoding='utf-8')
-          marker = '### Current / next implementation\n'
-          addition = '''### Phase 2D1 — bounded Git read runtime merged\n- PR #32 merged to `main` as `1cb3cc03`; exact final head `ed3b5c43` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.\n- `GitReadService` is bound to one exact canonical Git worktree top-level and one absolute/canonical Git executable.\n- `status`, literal-path `diff` and paginated `log` are byte/entry/deadline bounded and run with prompts, pager, external diff/textconv, fsmonitor/untracked cache and submodule traversal constrained or disabled.\n- Log cursors remain pinned to their original reachable HEAD and fail closed after incompatible history rewrites.\n\n### Phase 2D2 — operator-owned MCP Git read adapter merged\n- PR #33 merged to `main` as `aee4f168`; exact final head `54951225` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.\n- `Capability::GitRead` and the `git_status`, `git_diff`, `git_log` tools are exposed only when the operator supplies one absolute `--git-executable`.\n- MCP callers cannot supply repository roots, Git executable paths, raw Git argv or authority identifiers.\n- Status/diff raw bytes are base64-encoded inside the structured response budget; log cursors are validated before use.\n\n'''
-          if marker not in status:
-              raise SystemExit('STATUS current/next marker missing')
-          status = status.replace(marker, addition + marker, 1)
-          status, count = re.subn(
-              r'(?m)^- Phase 2D is current:.*$',
-              '- Phase 2D3 is current: implement separate `GitIntegrate` authority with exact validated `expected_target_head`, repository-scoped lease, isolated worktree ownership and deterministic stale-target/conflict/cleanup behavior before any Git mutation MCP tool is exposed.',
-              status,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f'expected one Phase 2D current bullet, got {count}')
-          Path('STATUS.md').write_text(status, encoding='utf-8', newline='\n')
-
-          old_plan = '''### Phase 2D — Git read/integration\n\nStatus: **current**.\n\nImplement in narrow gates:\n\n1. bounded Git read primitives (`status`, `diff`, `log`) with repository-scoped authority and output ceilings;\n2. Git integration only with exact validated `expected_target_head`;\n3. explicit integration/conflict gate and stale-target rejection;\n4. application-owned Git authority; MCP cannot mint or freely select integration authority;\n5. MCP Git exposure only after runtime/policy negative tests pass.\n\nPhase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.\n'''
-          new_plan = '''### Phase 2D — Git read/integration\n\nStatus: **in progress; read path merged, integration current**.\n\n#### Phase 2D1 — bounded Git read runtime\n\nStatus: **merged** in PR #32 (`1cb3cc03`). Exact final head `ed3b5c43` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.\n\n- exact canonical repository root + absolute canonical Git executable;\n- bounded read-only `status`, literal-path/staged `diff`, and paginated `log`;\n- disabled prompting/pager/external diff/textconv and bounded command deadline/output;\n- log cursors pinned to their original reachable HEAD;\n- concurrent readers share no mutable runtime state.\n\n#### Phase 2D2 — operator-owned MCP Git read adapter\n\nStatus: **merged** in PR #33 (`aee4f168`). Exact final head `54951225` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.\n\n- operator-owned `--git-executable` conditionally provisions `GitRead`;\n- MCP exposes `git_status`, `git_diff`, `git_log` only when that application-owned runtime exists;\n- callers cannot select repository paths, executable paths, raw Git argv or authority identifiers;\n- raw status/diff bytes remain exact via base64 within structured-response ceilings;\n- log cursors are validated as current HEAD or reachable ancestors.\n\n#### Phase 2D3 — exact-head Git integration\n\nStatus: **current**.\n\n1. separate `GitIntegrate` authority with repository-scoped task lease;\n2. exact validated `expected_target_head` precondition before integration;\n3. isolated worktree/integration ownership rather than mutating the caller workspace directly;\n4. deterministic stale-target, conflict and cleanup semantics;\n5. no MCP Git mutation exposure until runtime/policy negative gates pass.\n\nPhase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict rejection.\n'''
-          replace_once('docs/engineering/IMPLEMENTATION_PLAN.md', old_plan, new_plan)
-
-          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
-          marker = '### Added\n'
-          bullets = '''- Phase 2D1 bounded `GitReadService` with exact canonical repository binding, bounded status/diff/log, pinned reachable log cursors and read-only Git hardening; merged in PR #32 (`1cb3cc03`, validated head `ed3b5c43`).\n- Phase 2D2 operator-owned MCP Git read adapter exposing conditional `git_status`, `git_diff` and `git_log` without caller-controlled repository/executable/argv authority; merged in PR #33 (`aee4f168`, validated head `54951225`).\n'''
-          if marker not in changelog:
-              raise SystemExit('CHANGELOG Added marker missing')
-          changelog = changelog.replace(marker, marker + bullets, 1)
-          Path('CHANGELOG.md').write_text(changelog, encoding='utf-8', newline='\n')
-          PY
-      - name: Commit docs if needed
-        shell: bash
-        run: |
-          git add README.md STATUS.md CHANGELOG.md docs/engineering/IMPLEMENTATION_PLAN.md
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "docs: close Phase 2D2 and start 2D3"
-          git push origin HEAD:docs/close-phase-2d2
-
   rust:
     name: Rust / ${{ matrix.os }}
     strategy:
