@@ -20,7 +20,9 @@ Git integration also introduces two separate risks that do not exist in read-onl
 7. The caller workspace is never checked out, reset, merged or updated by this primitive.
 8. Git commands disable prompting/pagers, system/global configuration and replacement objects. `core.hooksPath` is forced to an operator-owned empty directory and that directory is revalidated before mutation-capable Git calls.
 9. Windows canonical `\\?\` paths remain authoritative for Optic containment checks but are converted to an equivalent non-verbatim representation only when passed to Git, because Git for Windows does not consistently accept verbatim paths as worktree destinations.
-10. No MCP Git mutation tool is exposed by this runtime tranche. Application-owned authority provisioning and the thin MCP adapter are later Phase 2D3 gates.
+10. Recovery never uses broad `git worktree prune`. Git registration is read through bounded machine-readable `worktree list --porcelain -z`, user worktrees outside the canonical Optic integration root are ignored, and Optic-owned candidates are separately capped by the concurrent-request ceiling. An owned candidate must be a direct canonically encoded ActionId-named, registered, locked, non-symlink, canonically contained worktree.
+11. Recovery validates the complete bounded snapshot before cleanup, revalidates each filesystem path immediately before removal, and keeps the ownership lock until Git removes the worktree using double `--force`; ambiguous state fails closed.
+12. No MCP Git mutation tool is exposed by these runtime tranches. Explicit startup/operator provisioning and the thin MCP adapter are later Phase 2D3 gates.
 
 ## Consequences
 
@@ -28,13 +30,13 @@ Git integration also introduces two separate risks that do not exist in read-onl
 - A symbolic internal ref cannot redirect an Optic integration into a user branch.
 - Fast-forward-only integration has deterministic conflict semantics and does not invoke merge drivers or require a populated checkout.
 - The current user checkout remains untouched even when the Optic internal integration ref advances.
-- Worktree administrative state is temporary and operation-owned, but process-crash recovery of an orphaned locked worktree remains a follow-up gate before public MCP exposure.
-- A local actor with write access to the operator-owned integration state can still race external state; the runtime therefore revalidates critical state immediately before effects rather than treating earlier observations as authority.
+- Worktree administrative state is temporary and operation-owned. Because cleanup occurs before target-ref mutation, a process-termination orphan is a pre-ref-effect artifact; bounded recovery can remove only a proven owned orphan without inferring whether integration committed.
+- Recovery does not mutate unrelated worktree administration through prune and refuses partial cleanup when its initial bounded snapshot is ambiguous.
+- A local actor with write access to the operator-owned integration state can still race external state; the runtime therefore revalidates each cleanup path immediately before removal and revalidates critical target state immediately before ref effects rather than treating earlier observations as authority.
 
 ## Deferred
 
-- application-owned `GitIntegrate` authority provisioning and exact lease resolution;
-- bounded recovery/cleanup of worktrees left by process termination;
+- explicit startup/operator wiring of the merged internal `GitIntegrate` authority and recovery-before-serve;
 - MCP `git_integrate` exposure;
 - non-fast-forward merge/conflict production semantics;
 - multi-session same-repository worktree ownership/coordinator from Phase 4.

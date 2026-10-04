@@ -34,7 +34,8 @@ pub use filesystem::{
     MutationError, MutationObservation,
 };
 pub use git_integrate::{
-    GitIntegrationError, GitIntegrationMode, GitIntegrationResult, GitIntegrationService,
+    GitIntegrationError, GitIntegrationMode, GitIntegrationRecoveryReport, GitIntegrationResult,
+    GitIntegrationService,
 };
 pub use git_integration_authority::{
     GitIntegrationAuthorityError, GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec,

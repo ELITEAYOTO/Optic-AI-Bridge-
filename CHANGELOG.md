@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Phase 2D3B2 bounded Git worktree recovery foundation: machine-readable `git worktree list --porcelain -z` with byte/entry ceilings, complete-snapshot validation before cleanup, ActionId/direct-child/locked/canonical containment checks, no global `worktree prune`, locked removal through double `--force`, pre-cleanup path revalidation, and forced-process-termination recovery coverage; startup wiring and MCP exposure remain disabled.
 - Phase 2D3B1 internal Git integration authorization foundation: application-owned `GitIntegrate` task lease restricted to `LeaseScope::Repository`, canonical bounded resource budget, and `AuthorizedGitIntegrationService` requiring active session + exact active lease + deterministic `PolicyEngine` approval before the 2D3A runtime is reachable; no startup flag or MCP mutation exposure yet.
 - Phase 2D3A exact-head Git integration runtime foundation: fast-forward-only integration to operator-owned direct refs under `refs/optic/integration/`, exact source/target object binding, detached locked `--no-checkout` worktree validation/cleanup, atomic `update-ref --no-deref <new> <expected>` compare-and-swap, symbolic-ref/hook/replacement-object hardening, and no MCP mutation exposure yet.
 - ADR-0010 documenting the internal-ref, exact-head, fast-forward-first Git integration boundary and its remaining recovery/authority/MCP gates.
@@ -150,3 +151,4 @@ All notable project changes are recorded here.
 - Phase 2C3C3 public mutation schemas expose no authorization IDs; server-generated ActionIds and internally resolved leases flow through the existing policy/runtime boundary. Mutation tools are registered only when matching operator-owned authority exists.
 - Startup recovery runs before MCP serve whenever a mutation state directory is configured; unresolved recovery fails startup closed.
 - Blocking durable mutation execution is cancellation-safe at the adapter boundary: once started, it is followed to a known transaction/recovery outcome instead of returning a timeout while a filesystem effect may still commit.
+- Git integration recovery never invokes broad `git worktree prune`: only registered, locked, ActionId-owned direct children of the canonical Optic integration root are eligible, and the full bounded recovery snapshot must validate before cleanup begins.
