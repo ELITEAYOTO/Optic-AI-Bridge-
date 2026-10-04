@@ -1,6 +1,6 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Last reviewed: 2026-10-03.
+Status: LIVING DOCUMENT. Last reviewed: 2026-10-04.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
@@ -28,47 +28,114 @@ Baseline merged through PR #1 on 2026-10-03.
 
 Gate passed on 2026-10-03: formatting, Clippy, tests and dependency-policy checks were green on Linux/Windows before PR #2 was squash-merged into `main`.
 
-## Phase 1 — Vertical slice (CURRENT)
+## Phase 1 — Vertical slice (COMPLETED)
+
+Implemented and merged through PR #7:
 
 - TransportGuard-owned request/frame/body/concurrency/response/time limits.
-- MCP stdio adapter using the maintained Rust MCP SDK behind TransportGuard.
+- MCP stdio adapter using maintained RMCP behind Optic-owned limits.
 - Explicit application SessionHandle mapping and session registry/revocation lifecycle.
 - Real monotonic Clock adapter for active session/task deadlines.
 - Bounded `fs_list` / `fs_read` path through normalization and policy.
-- Structured `process_start/read/stop/result` with Windows Job Object lifecycle/resource enforcement.
-- Explicit RMCP cache/freshness policy: stale cached state never satisfies mutation/security preconditions.
-- Windows-native tests for process-tree cleanup and resource ceilings.
+- Structured `process_start/read/stop/result` with opaque JobIds.
+- Operator-owned executable/environment allowlists.
+- Windows Job Object lifecycle/resource enforcement with kill-on-close, process-count and job-memory limits.
+- Native Windows regression tests for process-tree cleanup and resource ceilings.
 
-**Gate:** native Windows integration test proves child-tree cleanup and memory/output bounds; transport/session limits remain enforceable independently of SDK defaults.
+Phase 1 gate passed. Job Objects are containment, not a complete sandbox.
 
-## V1 essential after Phase 1
+## Phase 2 — Safe mutation and Git (CURRENT)
 
-- Transactional patch/write with expected state/version.
-- Git status/diff/log and worktree lifecycle.
-- Deterministic deny-by-default policy preserved across all services.
-- Bounded output, pagination, disk spool quotas and TTL.
-- Crash recovery journal.
-- Two simultaneous sessions on different projects.
-- Same-repo parallel work via isolated Git worktrees.
-- Windows-native security/integration tests.
+Phase 2 is intentionally split into narrow security gates.
 
-## V1.5 candidates
+### Phase 2A — mutation observation/preconditions (COMPLETED)
 
-- Deterministic coordinator for same-repo integration.
-- Event-driven stale-context invalidation: TargetHeadChanged/FileVersionChanged/LeaseRevoked, with mandatory commit-time revalidation.
-- Bounded ActionId idempotency ledger if retry/recovery tests justify it.
-- Richer CLI session/task/resource dashboard.
-- Restricted-token and AppContainer/LPAC execution profiles after compatibility testing.
-- Signed installer/update path and release provenance.
+Merged in PR #9 (`71bdf082`).
 
-## Later / experimental
+- bounded streaming BLAKE3 content observation;
+- explicit `ExpectedState::{Absent, Content}` checks;
+- canonical target/workspace containment;
+- leaf-symlink denial and stale-state conflicts.
 
-- FILE_ID_INFO-backed durable file identity if Phase 2 adversarial tests show material benefit.
-- USN-assisted invalidation if benchmarks justify recovery/fallback complexity.
-- Content-addressed dedup if benchmarks justify it.
-- WASM/WASI extension boundary only after a concrete extension requirement.
-- VM/Windows Sandbox hard-isolation mode for untrusted workloads.
-- Linux/macOS adapters after Windows invariants are stable.
+### Phase 2B — Windows mutation containment/atomic commit (COMPLETED)
+
+Merged in PR #13 (`80f3aa9b`).
+
+- no-reparse handles and final-path validation;
+- `FILE_ID_INFO` identity binding;
+- expected-state + identity revalidation around staging/commit;
+- same-directory create-new staging;
+- `ReplaceFileW` for existing targets and create-only hard-link semantics for absent targets;
+- explicit committed/verified result semantics.
+
+Residual boundary remains documented: existing-target replacement is not a kernel compare-and-swap against arbitrary external writers.
+
+### Phase 2C — durable transactional file mutation (COMPLETED)
+
+Merged through PR #30 (`624e88da`).
+
+- bounded append-only mutation recovery journal outside the workspace;
+- process-crash/restart recovery gates;
+- transactional whole-file write, deterministic byte-range patch and handle-based delete;
+- application-owned `FileWrite` / `FileDelete` task leases with exact workspace scope;
+- conditional MCP `fs_write`, `fs_apply_patch`, `fs_delete` exposure only when matching authority exists;
+- server-generated ActionIds and startup recovery-before-serve;
+- cancellation-safe durable mutation handling that does not report timeout while a non-cancellable filesystem effect may still commit.
+
+This proves the documented process-termination/restart model, not sudden-power-loss ACID durability.
+
+### Phase 2D — Git read/integration (CURRENT)
+
+#### Phase 2D1 — bounded Git read runtime (COMPLETED)
+
+Merged in PR #32 (`1cb3cc03`).
+
+- exact canonical repository-root binding;
+- absolute/canonical Git executable;
+- bounded status, literal-path/staged diff and paginated log;
+- prompt/pager/external diff/textconv/fsmonitor/untracked-cache constraints;
+- pinned/reachable log cursors and hard command deadlines.
+
+#### Phase 2D2 — operator-owned MCP Git read (COMPLETED)
+
+Merged in PR #33 (`aee4f168`).
+
+- `GitRead` exists only when the operator supplies `--git-executable`;
+- conditional MCP `git_status`, `git_diff`, `git_log`;
+- callers cannot select repository roots, executable paths, raw argv or authority IDs;
+- exact raw status/diff bytes are returned as base64 within response ceilings.
+
+#### Phase 2D3 — exact-head Git integration (CURRENT GATE)
+
+Before any Git mutation MCP tool is exposed:
+
+- add a separate `GitIntegrate` authority and repository-scoped task lease;
+- validate an exact `expected_target_head` immediately before integration;
+- use isolated worktree/integration ownership instead of mutating the caller workspace directly;
+- make stale-target, conflict and cleanup outcomes deterministic and fail-closed;
+- add negative tests for stale target heads, conflicts, ownership/cleanup and authority separation.
+
+A first manual Windows developer smoke is useful now on a disposable repository, but it validates the current Phase 2D2 machine/integration surface only. It is not a substitute for the Phase 2D3 gate and is not a production-readiness claim.
+
+## Phase 3 — Multi-session runtime
+
+Independent sessions/projects, per-session jobs/resources/capabilities, with adversarial cross-session tests.
+
+Evaluate a bounded ActionId idempotency/replay ledger once stateful retries justify it.
+
+## Phase 4 — Same-repository parallelism
+
+Git worktrees, deterministic coordinator and integration/conflict gates for concurrent same-repository sessions.
+
+Event-driven invalidation may be evaluated only as an optimization on top of mandatory commit-time revalidation.
+
+## Phase 5 — Connectivity/install
+
+Installer/autoconfiguration/self-test and additional transport/tunnel integration as required.
+
+## Phase 6 — Hardening
+
+Restricted-token/AppContainer/LPAC compatibility experiments, fuzz/property tests, long soak and signed release pipeline.
 
 ## Reject unless evidence changes
 
@@ -76,4 +143,4 @@ Embedded AI security reviewer as authorization dependency; generic shell as core
 
 ## Maintenance rule
 
-A phase advances only when acceptance and security gates pass. Every roadmap movement updates STATUS.md. User-visible/relevant engineering changes update CHANGELOG.md. Changed invariants require tests and usually an ADR.
+A phase advances only when acceptance and security gates pass. Every roadmap movement updates `STATUS.md`. User-visible/relevant engineering changes update `CHANGELOG.md`. Changed invariants require tests and usually an ADR.
