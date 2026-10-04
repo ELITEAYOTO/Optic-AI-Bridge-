@@ -8,7 +8,9 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 **Release state:** no production-supported release  
 **Next gate:** add separate `GitIntegrate` authority with an exact validated target-head precondition, repository-scoped lease, isolated integration/worktree ownership and deterministic stale-target/conflict/cleanup behavior before exposing any Git mutation MCP tool.
 
-The current `main` is ready for a first manual Windows developer smoke on a disposable repository. That smoke is a machine/integration validation only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
+The first real Windows developer smoke has now passed on a disposable repository through ChatGPT Desktop: MCP stdio initialization, file reads, bounded Git reads, scoped transactional write/patch/delete, stale-version rejection, scope denial and clean recovery retirement were all observed. This validates the current Phase 2D2 machine/integration surface only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
+
+The user-scoped Windows quick installer, MCP doctor, uninstaller and tag-driven prerelease bundle workflow have also been pulled forward as developer-preview Phase 5 groundwork. No public release has been tagged yet, so the repository remains pre-alpha with release state `none`.
 
 Roadmap status is maintained with the repository. Every milestone change must update `STATUS.md`; user-visible changes update `CHANGELOG.md`; architecture/security changes update the owning canonical document and an ADR when a decision changes.
 
