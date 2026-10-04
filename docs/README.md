@@ -17,7 +17,8 @@ This directory is the canonical engineering knowledge base for Optic AI Bridge.
 11. [Memory & Output](architecture/MEMORY_OUTPUT.md)
 12. [Implementation Plan](engineering/IMPLEMENTATION_PLAN.md)
 13. [Test & CI Strategy](engineering/TEST_AND_CI_STRATEGY.md)
-14. [AI Handoff](../AI_HANDOFF.md)
+14. [Windows Manual Smoke Test](operations/WINDOWS_MANUAL_SMOKE.md)
+15. [AI Handoff](../AI_HANDOFF.md)
 
 Repository-level living documents: [ROADMAP](../ROADMAP.md), [STATUS](../STATUS.md), [CHANGELOG](../CHANGELOG.md), [SECURITY](../SECURITY.md), [MAINTENANCE](../MAINTENANCE.md).
 
@@ -34,4 +35,4 @@ Status vocabulary:
 
 ## Structure
 
-product = why/scope/roadmap; architecture = boundaries/sessions/processes/transport/memory/recovery; security = threats/policy/invariants/filesystem/Windows; specs = stable external contracts; engineering = implementation/tests/dependencies/CI/reuse; operations = install/diagnostics/benchmarks; decisions = ADRs; research = evidence/open questions.
+product = why/scope/roadmap; architecture = boundaries/sessions/processes/transport/memory/recovery; security = threats/policy/invariants/filesystem/Windows; specs = stable external contracts; engineering = implementation/tests/dependencies/CI/reuse; operations = install/diagnostics/benchmarks/manual smoke testing; decisions = ADRs; research = evidence/open questions.
