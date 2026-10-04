@@ -75,6 +75,7 @@ pub enum Effect {
     },
     GitRead,
     GitIntegrate {
+        source_head: GitObjectId,
         expected_target_head: GitObjectId,
     },
     ProcessRun {

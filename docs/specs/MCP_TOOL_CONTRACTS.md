@@ -87,14 +87,14 @@ Rules:
 - `git_log` is entry-bounded and cursor-based; a cursor contains the snapshot `head` plus an `offset` and must remain the current HEAD or a reachable ancestor;
 - Git subprocess output and runtime duration are hard-bounded.
 
-Not implemented yet:
+Not exposed through MCP yet:
 
 ```text
 git_worktree_status()
-git_integrate(change_set_id, expected_target_head)
+git_integrate(source_head, expected_target_head)
 ```
 
-Phase 2D3 owns Git integration. Any future integration must use a separate `GitIntegrate` authority, an exact validated `expected_target_head`, repository-scoped ownership and deterministic stale-target/conflict/cleanup behavior before MCP mutation exposure.
+Phase 2D3A now owns a runtime-only fast-forward integration foundation. The normalized `GitIntegrate` effect binds both exact `source_head` and `expected_target_head`; the runtime is restricted to operator-owned direct refs under `refs/optic/integration/`, an isolated locked `--no-checkout` worktree and atomic expected-old-value ref update. It does **not** register a public MCP mutation tool. Application-owned `GitIntegrate` authority, repository-scoped lease resolution, interruption cleanup/recovery and the thin conditional MCP adapter must pass their own gates first.
 
 ## Processes
 

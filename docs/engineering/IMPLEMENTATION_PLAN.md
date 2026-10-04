@@ -298,15 +298,42 @@ Status: **merged** in PR #33 (`aee4f168`). Exact final head `54951225` passed Ub
 
 #### Phase 2D3 — exact-head Git integration
 
-Status: **current**.
+Status: **current**, split into narrow gates.
 
-1. separate `GitIntegrate` authority with repository-scoped task lease;
-2. exact validated `expected_target_head` precondition before integration;
-3. isolated worktree/integration ownership rather than mutating the caller workspace directly;
-4. deterministic stale-target, conflict and cleanup semantics;
-5. no MCP Git mutation exposure until runtime/policy negative gates pass.
+##### Phase 2D3A — exact-head integration runtime foundation
 
-Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict rejection.
+Status: **implemented on the current development branch; not yet merged at this document revision**.
+
+- `Effect::GitIntegrate` binds exact `source_head` + `expected_target_head` object ids;
+- runtime target is restricted to an operator-owned **direct** ref under `refs/optic/integration/`; ordinary branch refs and symbolic refs fail closed;
+- first integration primitive is intentionally fast-forward-only; divergence returns deterministic `NonFastForward` instead of invoking merge machinery;
+- preparation uses an ActionId-owned detached, locked `--no-checkout` worktree under an integration root outside the repository checkout;
+- the worktree is validated against the exact expected head and must be removed successfully before any target ref update;
+- the caller workspace HEAD/files remain untouched;
+- the target is revalidated immediately before `git update-ref --no-deref <ref> <source> <expected>`, which repeats the exact-head comparison atomically;
+- Git prompting/pagers/system+global config/replacement objects are disabled and an empty hooks path is revalidated before mutation-capable Git calls;
+- no MCP Git mutation tool is exposed by 2D3A.
+
+##### Phase 2D3B — application-owned integration authority
+
+Remaining gate:
+
+1. provision `GitIntegrate` only from operator/application configuration;
+2. mint a distinct repository-scoped task lease that MCP cannot create, widen or select;
+3. authorize normalized source + expected target through `PolicyEngine` before the runtime is reachable;
+4. add bounded cleanup/recovery for an operation-owned worktree left by process termination.
+
+##### Phase 2D3C — thin MCP integration adapter
+
+Remaining gate:
+
+1. expose no repository/ref/path/raw-argv/lease/ActionId authority to MCP callers;
+2. generate ActionId server-side and resolve the application-owned integration lease internally;
+3. expose the tool only when `GitIntegrate` authority is provisioned;
+4. keep exact stale-target/non-fast-forward/cleanup outcomes structured and fail-closed;
+5. validate the final adapter in a disposable repository before adding it to the ChatGPT plugin tool allowlist.
+
+Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 
 ## Phase 3 — multi-session
 

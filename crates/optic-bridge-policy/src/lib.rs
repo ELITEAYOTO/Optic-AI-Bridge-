@@ -151,9 +151,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     use optic_bridge_core::{
-        ActionEnvelope, ActionId, Capability, ContentVersion, Effect, ExpectedState, LeaseScope,
-        MonotonicTime, NetworkAccess, PrincipalId, ProjectId, ResourceBudget, SessionGrant,
-        SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
+        ActionEnvelope, ActionId, Capability, ContentVersion, Effect, ExpectedState, GitObjectId,
+        LeaseScope, MonotonicTime, NetworkAccess, PrincipalId, ProjectId, ResourceBudget,
+        SessionGrant, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
     };
 
     use super::*;
@@ -216,6 +216,67 @@ mod tests {
 
     fn path(value: &str) -> WorkspacePath {
         WorkspacePath::parse(value).expect("safe test path")
+    }
+
+    fn oid(byte: char) -> GitObjectId {
+        GitObjectId::parse(std::iter::repeat_n(byte, 40).collect::<String>()).expect("test oid")
+    }
+
+    #[test]
+    fn git_integrate_requires_repository_scoped_lease() {
+        let session = session(&[Capability::GitIntegrate]);
+        let action = envelope(
+            &session,
+            Effect::GitIntegrate {
+                source_head: oid('b'),
+                expected_target_head: oid('a'),
+            },
+            None,
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, None, now()),
+            PolicyDecision::Deny(PolicyReason::LeaseRequired)
+        );
+
+        let wrong_scope = lease(
+            &session,
+            &[Capability::GitIntegrate],
+            &[LeaseScope::WorkspaceAll],
+        );
+        let action = envelope(
+            &session,
+            Effect::GitIntegrate {
+                source_head: oid('b'),
+                expected_target_head: oid('a'),
+            },
+            Some(&wrong_scope),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&wrong_scope), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn git_integrate_with_repository_scope_is_allowed() {
+        let session = session(&[Capability::GitIntegrate]);
+        let lease = lease(
+            &session,
+            &[Capability::GitIntegrate],
+            &[LeaseScope::Repository],
+        );
+        let action = envelope(
+            &session,
+            Effect::GitIntegrate {
+                source_head: oid('b'),
+                expected_target_head: oid('a'),
+            },
+            Some(&lease),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Allow
+        );
     }
 
     #[test]
