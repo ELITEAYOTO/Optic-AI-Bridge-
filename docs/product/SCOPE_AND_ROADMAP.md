@@ -17,7 +17,7 @@ Baseline merged through PR #1 on 2026-10-03.
 
 ## Phase 0.1 — Contract hardening (COMPLETED)
 
-- Typed `Effect` variants instead of independently combinable action/target fields.
+- Typed `Effect` variants instead of independently combinable action-kind/target fields.
 - Explicit file `ExpectedState` and Git target-head preconditions.
 - Scope-bearing task leases for workspace/repository/executable/network boundaries.
 - Segment-aware workspace scope checks.
@@ -105,6 +105,8 @@ Merged in PR #33 (`aee4f168`).
 - callers cannot select repository roots, executable paths, raw argv or authority IDs;
 - exact raw status/diff bytes are returned as base64 within response ceilings.
 
+The first real Windows/ChatGPT Desktop integration smoke passed on 2026-10-04 against this Phase 2D2 surface. It proved MCP stdio initialization, file reads, Git status/diff/log, scoped transactional write/patch/delete, stale-version rejection, scope denial, unallowlisted-process denial and clean recovery retirement on a disposable repository. This is machine/integration validation only, not a production-readiness claim.
+
 #### Phase 2D3 — exact-head Git integration (CURRENT GATE)
 
 Before any Git mutation MCP tool is exposed:
@@ -115,7 +117,7 @@ Before any Git mutation MCP tool is exposed:
 - make stale-target, conflict and cleanup outcomes deterministic and fail-closed;
 - add negative tests for stale target heads, conflicts, ownership/cleanup and authority separation.
 
-A first manual Windows developer smoke is useful now on a disposable repository, but it validates the current Phase 2D2 machine/integration surface only. It is not a substitute for the Phase 2D3 gate and is not a production-readiness claim.
+The successful Phase 2D2 Windows smoke does not substitute for this gate.
 
 ## Phase 3 — Multi-session runtime
 
@@ -131,7 +133,21 @@ Event-driven invalidation may be evaluated only as an optimization on top of man
 
 ## Phase 5 — Connectivity/install
 
-Installer/autoconfiguration/self-test and additional transport/tunnel integration as required.
+Status: future phase, with developer-preview groundwork already pulled forward.
+
+Already implemented ahead of this phase:
+
+- user-scoped Windows PowerShell install/update path;
+- local ChatGPT Desktop compatibility plugin packaging;
+- MCP handshake/tool doctor self-test;
+- uninstaller;
+- tag-driven Windows prerelease bundle + SHA-256 workflow.
+
+Still part of the later Phase 5 gate:
+
+- first tagged/public prerelease and repeatable clean-machine timing validation;
+- broader autoconfiguration/upgrade compatibility as the host evolves;
+- additional transport/tunnel integration only if required.
 
 ## Phase 6 — Hardening
 
