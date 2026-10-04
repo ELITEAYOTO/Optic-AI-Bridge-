@@ -14,9 +14,9 @@ use optic_bridge_core::{
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
-    AuthorizedFileMutationService, Clock, MutationAuthoritySet, MutationAuthoritySpec,
-    ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry, TransactionalFileService,
-    mutation_resource_budget,
+    AuthorizedFileMutationService, Clock, GitReadService, MutationAuthoritySet,
+    MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry,
+    TransactionalFileService, mutation_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -70,6 +70,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         1,
     )?;
 
+    let git_service = args
+        .git_executable
+        .as_ref()
+        .map(|git| GitReadService::from_hard_limits(&args.workspace, git, limits))
+        .transpose()?
+        .map(Arc::new);
+
     let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
     if !process_leases.is_empty() {
         capabilities.insert(Capability::ProcessRun);
@@ -79,6 +86,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     if mutation_authorities.has_delete() {
         capabilities.insert(Capability::FileDelete);
+    }
+    if git_service.is_some() {
+        capabilities.insert(Capability::GitRead);
     }
     let grant = SessionGrant {
         handle: session.clone(),
@@ -117,7 +127,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         None
     };
 
-    let server = ReadonlyMcpServer::new_with_mutation_runtime(
+    let git_read_enabled = git_service.is_some();
+    let server = ReadonlyMcpServer::new_with_git_runtime(
         &args.workspace,
         sessions,
         session,
@@ -128,6 +139,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         process_leases,
         mutation_service,
         mutation_authorities,
+        git_service,
     )?;
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
@@ -142,11 +154,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
 
     eprintln!(
-        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} write scope(s), {} delete scope(s) authorized)",
+        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} write scope(s), {} delete scope(s), Git read {})",
         env!("CARGO_PKG_VERSION"),
         args.allowed_executables.len(),
         args.write_scopes.len(),
         args.delete_scopes.len(),
+        if git_read_enabled { "enabled" } else { "disabled" },
     );
     let service = server.serve(transport).await?;
     service.waiting().await?;
@@ -161,6 +174,7 @@ struct AppArgs {
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
+    git_executable: Option<PathBuf>,
 }
 
 impl AppArgs {
@@ -178,6 +192,7 @@ impl AppArgs {
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
+        let mut git_executable = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -227,6 +242,14 @@ impl AppArgs {
                     )
                 })?;
                 set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
+            } else if arg == "--git-executable" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--git-executable requires an absolute path",
+                    )
+                })?;
+                set_git_executable(&mut git_executable, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--allow-executable=")? {
                 allowed_executables.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
@@ -237,6 +260,8 @@ impl AppArgs {
                 delete_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--mutation-state-dir=")? {
                 set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
+            } else if let Some(value) = option_value(&arg, "--git-executable=")? {
+                set_git_executable(&mut git_executable, PathBuf::from(value))?;
             } else if arg.to_string_lossy().starts_with('-') {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -264,6 +289,7 @@ impl AppArgs {
             write_scopes,
             delete_scopes,
             mutation_state_dir,
+            git_executable,
         })
     }
 }
@@ -282,6 +308,25 @@ fn set_mutation_state_dir(
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "--mutation-state-dir may be supplied only once",
+        ));
+    }
+    Ok(())
+}
+
+fn set_git_executable(
+    slot: &mut Option<PathBuf>,
+    value: PathBuf,
+) -> Result<(), std::io::Error> {
+    if !value.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-executable must be an absolute path",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-executable may be supplied only once",
         ));
     }
     Ok(())
@@ -342,6 +387,7 @@ mod tests {
         assert!(parsed.write_scopes.is_empty());
         assert!(parsed.delete_scopes.is_empty());
         assert!(parsed.mutation_state_dir.is_none());
+        assert!(parsed.git_executable.is_none());
     }
 
     #[test]
@@ -416,6 +462,39 @@ mod tests {
                 "scope should fail: {value}"
             );
         }
+    }
+
+    #[test]
+    fn git_read_authority_is_absent_by_default() {
+        let parsed = AppArgs::parse_from(args(&["workspace"])).expect("args");
+        assert!(parsed.git_executable.is_none());
+    }
+
+    #[test]
+    fn git_executable_must_be_absolute_and_unique() {
+        assert!(
+            AppArgs::parse_from(args(&["--git-executable=git", "workspace"])).is_err()
+        );
+
+        let git = std::env::temp_dir().join("optic-git-placeholder");
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--git-executable"),
+            git.clone().into_os_string(),
+            OsString::from("workspace"),
+        ])
+        .expect("absolute Git path is accepted at argument normalization");
+        assert_eq!(parsed.git_executable, Some(git.clone()));
+
+        assert!(
+            AppArgs::parse_from(vec![
+                OsString::from("--git-executable"),
+                git.clone().into_os_string(),
+                OsString::from("--git-executable"),
+                git.into_os_string(),
+                OsString::from("workspace"),
+            ])
+            .is_err()
+        );
     }
 
     #[test]
