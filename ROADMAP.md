@@ -6,7 +6,7 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 **Current phase:** Phase 2D3 — exact-head Git integration  
 **Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C and Phase 2D1–2D2 are merged  
 **Release state:** no production-supported release  
-**Next gate:** add separate `GitIntegrate` authority with an exact validated target-head precondition, repository-scoped lease, isolated integration/worktree ownership and deterministic stale-target/conflict/cleanup behavior before exposing any Git mutation MCP tool.
+**Next gate:** finish Phase 2D3 after the runtime-only 2D3A foundation: add interruption-safe cleanup/recovery plus application-owned `GitIntegrate` authority/repository lease, then a thin conditional MCP adapter. No Git mutation MCP tool is exposed yet.
 
 The first real Windows developer smoke has now passed on a disposable repository through ChatGPT Desktop: MCP stdio initialization, file reads, bounded Git reads, scoped transactional write/patch/delete, stale-version rejection, scope denial and clean recovery retirement were all observed. This validates the current Phase 2D2 machine/integration surface only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
 

@@ -10,6 +10,7 @@
 mod authorized_file_mutation;
 mod clock;
 mod filesystem;
+mod git_integrate;
 mod git_read;
 mod journaled_mutation;
 mod mutation;
@@ -26,6 +27,9 @@ pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation,
+};
+pub use git_integrate::{
+    GitIntegrationError, GitIntegrationMode, GitIntegrationResult, GitIntegrationService,
 };
 pub use git_read::{
     GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
