@@ -302,7 +302,7 @@ Status: **current**, split into narrow gates.
 
 ##### Phase 2D3A — exact-head integration runtime foundation
 
-Status: **implemented on the current development branch; not yet merged at this document revision**.
+Status: **merged** in PR #40 (`22b34149`). Exact final head `96b30f94` passed dependency policy, Ubuntu format/Clippy/tests and Windows Clippy/tests.
 
 - `Effect::GitIntegrate` binds exact `source_head` + `expected_target_head` object ids;
 - runtime target is restricted to an operator-owned **direct** ref under `refs/optic/integration/`; ordinary branch refs and symbolic refs fail closed;
@@ -314,14 +314,24 @@ Status: **implemented on the current development branch; not yet merged at this 
 - Git prompting/pagers/system+global config/replacement objects are disabled and an empty hooks path is revalidated before mutation-capable Git calls;
 - no MCP Git mutation tool is exposed by 2D3A.
 
-##### Phase 2D3B — application-owned integration authority
+##### Phase 2D3B — application-owned integration authority + recovery
 
-Remaining gate:
+Status: **current**, split into B1/B2.
 
-1. provision `GitIntegrate` only from operator/application configuration;
-2. mint a distinct repository-scoped task lease that MCP cannot create, widen or select;
-3. authorize normalized source + expected target through `PolicyEngine` before the runtime is reachable;
-4. add bounded cleanup/recovery for an operation-owned worktree left by process termination.
+**2D3B1 — internal authorization boundary (current branch):**
+
+1. `GitIntegrationAuthoritySet` mints no lease by default and, when enabled internally, exactly one `GitIntegrate` lease with `LeaseScope::Repository`;
+2. the lease contains only bounded resource ceiling, expiry and policy epoch owned by the application registry;
+3. `AuthorizedGitIntegrationService` resolves active session + exact active lease and applies `PolicyEngine` before the 2D3A runtime is reachable;
+4. negative coverage rejects missing lease, wrong scope, missing session capability and cross-session lease;
+5. no app startup flag and no MCP integration tool are added by B1.
+
+**2D3B2 — remaining recovery/startup gate:**
+
+1. add bounded fail-closed discovery/cleanup for an operation-owned worktree left by process termination;
+2. wire `GitIntegrate` only from explicit operator/application startup configuration after recovery succeeds;
+3. keep the authoritative lease mapping private from MCP callers;
+4. add forced-process-interruption coverage before proceeding to 2D3C.
 
 ##### Phase 2D3C — thin MCP integration adapter
 

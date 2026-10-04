@@ -8,9 +8,11 @@
 //! recovery, or output constraints.
 
 mod authorized_file_mutation;
+mod authorized_git_integration;
 mod clock;
 mod filesystem;
 mod git_integrate;
+mod git_integration_authority;
 mod git_read;
 mod journaled_mutation;
 mod mutation;
@@ -23,6 +25,9 @@ mod transactional_file;
 mod transport;
 
 pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
+pub use authorized_git_integration::{
+    AuthorizedGitIntegrationError, AuthorizedGitIntegrationService,
+};
 pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
@@ -30,6 +35,10 @@ pub use filesystem::{
 };
 pub use git_integrate::{
     GitIntegrationError, GitIntegrationMode, GitIntegrationResult, GitIntegrationService,
+};
+pub use git_integration_authority::{
+    GitIntegrationAuthorityError, GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec,
+    git_integration_resource_budget,
 };
 pub use git_read::{
     GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
