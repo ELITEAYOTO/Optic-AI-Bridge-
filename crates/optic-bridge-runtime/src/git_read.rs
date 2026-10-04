@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use optic_bridge_core::{ActionId, GitObjectId, GitObjectIdError, HardLimits, WorkspacePath};
+use optic_bridge_core::{GitObjectId, GitObjectIdError, HardLimits, WorkspacePath};
 use thiserror::Error;
 
 const REPOSITORY_PROBE_BYTES: u64 = 16 * 1024;
@@ -142,9 +142,7 @@ impl GitReadService {
             });
         };
 
-        let requested_count = limit
-            .checked_add(1)
-            .ok_or(GitReadError::InvalidLogRecord)?;
+        let requested_count = limit.checked_add(1).ok_or(GitReadError::InvalidLogRecord)?;
         let args = vec![
             OsString::from("log"),
             OsString::from(snapshot_head.as_str()),
@@ -268,8 +266,14 @@ impl GitReadService {
         let stderr = child.stderr.take().ok_or(GitReadError::MissingChildPipe)?;
         let total = Arc::new(AtomicU64::new(0));
         let exceeded = Arc::new(AtomicBool::new(false));
-        let stdout_reader = spawn_bounded_reader(stdout, Arc::clone(&total), Arc::clone(&exceeded), output_limit);
-        let stderr_reader = spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), output_limit);
+        let stdout_reader = spawn_bounded_reader(
+            stdout,
+            Arc::clone(&total),
+            Arc::clone(&exceeded),
+            output_limit,
+        );
+        let stderr_reader =
+            spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), output_limit);
 
         let started = Instant::now();
         let mut timed_out = false;
@@ -480,6 +484,8 @@ fn command_failed(status: ExitStatus, stderr: &[u8]) -> GitReadError {
 mod tests {
     use std::{env, ffi::OsStr, sync::Arc};
 
+    use optic_bridge_core::ActionId;
+
     use super::*;
 
     struct RepoFixture {
@@ -495,16 +501,28 @@ mod tests {
             let base = env::temp_dir().join(format!("optic-git-read-{label}-{token}"));
             let repo = base.join("repo");
             fs::create_dir_all(&repo).expect("repo dir");
-            run_git(&git, None, [OsStr::new("init"), OsStr::new("--quiet"), repo.as_os_str()]);
             run_git(
                 &git,
-                Some(&repo),
-                [OsStr::new("config"), OsStr::new("user.email"), OsStr::new("optic@example.invalid")],
+                None,
+                [OsStr::new("init"), OsStr::new("--quiet"), repo.as_os_str()],
             );
             run_git(
                 &git,
                 Some(&repo),
-                [OsStr::new("config"), OsStr::new("user.name"), OsStr::new("Optic Test")],
+                [
+                    OsStr::new("config"),
+                    OsStr::new("user.email"),
+                    OsStr::new("optic@example.invalid"),
+                ],
+            );
+            run_git(
+                &git,
+                Some(&repo),
+                [
+                    OsStr::new("config"),
+                    OsStr::new("user.name"),
+                    OsStr::new("Optic Test"),
+                ],
             );
             fs::write(repo.join("a.txt"), b"alpha\n").expect("a fixture");
             fs::write(repo.join("b.txt"), b"bravo\n").expect("b fixture");
@@ -538,11 +556,7 @@ mod tests {
         None
     }
 
-    fn run_git<'a, const N: usize>(
-        git: &Path,
-        repo: Option<&Path>,
-        args: [&'a OsStr; N],
-    ) {
+    fn run_git<'a, const N: usize>(git: &Path, repo: Option<&Path>, args: [&'a OsStr; N]) {
         let mut command = Command::new(git);
         if let Some(repo) = repo {
             command.arg("-C").arg(repo);
@@ -556,7 +570,12 @@ mod tests {
         run_git(
             git,
             Some(repo),
-            [OsStr::new("commit"), OsStr::new("--quiet"), OsStr::new("-m"), OsStr::new(message)],
+            [
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new(message),
+            ],
         );
     }
 
@@ -582,8 +601,18 @@ mod tests {
         fs::write(fixture.repo.join("new.txt"), b"new\n").expect("new file");
         let status = fixture.service().status().expect("status");
         assert!(status.head.is_some());
-        assert!(status.porcelain_v2.windows(b"a.txt".len()).any(|v| v == b"a.txt"));
-        assert!(status.porcelain_v2.windows(b"new.txt".len()).any(|v| v == b"new.txt"));
+        assert!(
+            status
+                .porcelain_v2
+                .windows(b"a.txt".len())
+                .any(|v| v == b"a.txt")
+        );
+        assert!(
+            status
+                .porcelain_v2
+                .windows(b"new.txt".len())
+                .any(|v| v == b"new.txt")
+        );
     }
 
     #[test]
