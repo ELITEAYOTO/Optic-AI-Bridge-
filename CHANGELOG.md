@@ -76,25 +76,32 @@ All notable project changes are recorded here.
 - Phase 2C3C1 negative mutation authorization coverage for missing/cross-session leases, missing capabilities, stale policy epoch, workspace scope escape, primitive/effect mismatch, stale expected state, mutation size bounds and symlink containment.
 - Caller-bound recovery-journal operation IDs so an authorized `ActionEnvelope.action_id` can own the same journal, deterministic write staging, commit result and recovery identity end-to-end.
 - Active `ActionId` collision protection for recovery journal/temp paths, failing closed instead of reusing live operation state.
+- Phase 2C3C2 application-owned mutation authority provisioning from operator startup configuration, with separate `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases that MCP cannot mint, widen or freely select.
+- Canonical mutation resource budget shared by authority provisioning and normalized action envelopes, plus fail-closed startup parsing for mutation scopes and absolute recovery-state placement.
+- Phase 2C3C3 thin MCP mutation tools: conditional `fs_write`, `fs_apply_patch` and `fs_delete` adapters that generate ActionIds server-side, resolve application-owned authority internally and invoke only the authorized transactional runtime.
+- Recovery-only startup through `--mutation-state-dir` without mutation authority, with bounded deterministic recovery before MCP serve and fail-closed unresolved conflicts.
 
 ### Changed
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
-- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`), Phase 2C3B2 transactional delete (`b346a7d9`) and Phase 2C3C1 internal mutation authorization/ActionId binding (`ac381002`, `1b5a3393`); Phase 2C3C2 application-owned mutation authority provisioning is current.
+- Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`), Phase 2C3B2 transactional delete (`b346a7d9`), Phase 2C3C1 internal mutation authorization/ActionId binding (`ac381002`, `1b5a3393`), Phase 2C3C2 application-owned authority provisioning (`75477c3b`) and Phase 2C3C3 conditional MCP mutation adapter (`624e88da`); Phase 2D Git read/integration is current.
 - Phase 2C3B2 merged through PR #24 after exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 - Phase 2C3C1 authorization merged through PR #26 as `ac381002` after exact final head `fcd1a6aa` passed the full Ubuntu/Windows/`cargo-deny` gate; ActionId binding merged through PR #27 as `1b5a3393` after exact final head `ae05d6a2` passed the same gate.
+- Phase 2C3C2 authority provisioning merged through PR #29 as `75477c3b`.
+- Phase 2C3C3 MCP mutation adapter merged through PR #30 as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 - Process network access requires NetworkAccess at both session and task-lease level plus an explicit network lease scope at the policy layer; the Phase 1 runtime itself still refuses network-enabled process starts.
 - Workspace prefix authorization is segment-aware (`src` does not authorize `src2`).
 - Existing read-only filesystem targets are canonicalized and verified to remain under the canonical workspace root before I/O.
 - A session receives `ProcessRun` only when the bridge operator explicitly authorizes at least one executable at startup.
 - Process output overflow is classified after stdout/stderr drains complete, closing a Windows race where a fast child could exit before the overflow flag was observed.
 - Windows process lifecycle uses the Optic-owned Windows adapter so authorized memory/process-count budgets become explicit kernel Job Object limits.
-- Phase 2 is split into narrow gates: canonical/bounded observation, Windows mutation-time containment and atomic namespace commit, recovery state machine, journal-wrapped forced-crash gate, transactional file services, then Git read/integration.
+- Phase 2 is split into narrow gates: canonical/bounded observation, Windows mutation-time containment and atomic namespace commit, recovery state machine, journal-wrapped forced-crash gate, transactional file services, authorization/adapter, then Git read/integration.
 - Non-Windows durable file commit remains explicitly unsupported until an equivalent containment/commit boundary is designed and proven.
 - Production Phase 2C2 recovery now separates journal inspection from retirement so operation evidence survives until staging validation/cleanup completes.
 - Phase 2C3 patch is modeled as a deterministic transformation under existing `FileWrite` authority rather than introducing a broader patch-specific capability.
 - Recovery intent is no longer content-only: new v2 records encode explicit `Absent|Content`, while surviving v1 content journals remain readable under strict validation.
-- Transactional delete now uses the absent-intent recovery representation through the same durable lifecycle; public mutation remains deferred to the Phase 2C3C authorization/adapter gate.
+- Transactional delete uses the absent-intent recovery representation through the same durable lifecycle and is exposed to MCP only when application-owned `FileDelete` authority is explicitly provisioned.
+- Started MCP durable mutations retain their transport execution permit and are awaited to a known transaction/recovery result rather than being wrapped in an unsafe timeout around non-cancellable `spawn_blocking` work.
 
 ### Security
 - Model/repository/process output explicitly treated as untrusted for authorization.
@@ -127,5 +134,8 @@ All notable project changes are recorded here.
 - Phase 2C3B2 delete requires exact content and exact Windows identity, validates and deletes through the same no-reparse handle, and never falls back to a path-based delete after validation.
 - Phase 2C3B2 forced-crash gates prove restart classification at the documented delete service boundaries; they do not expand the project’s durability claim to sudden power loss.
 - Phase 2C3C1 keeps authorization outside the MCP adapter: mutation requires application-owned session + exact lease resolution and deterministic policy before the transactional runtime is reachable.
-- The authorized envelope ActionId is now the durable transaction/recovery identity; active operation-id reuse fails closed, while a general retained replay/idempotency ledger remains deferred to Phase 3.
-- Public MCP file mutation remains disabled while Phase 2C3C2 application-owned mutation authority provisioning and its negative gates are incomplete.
+- The authorized envelope ActionId is the durable transaction/recovery identity; active operation-id reuse fails closed, while a general retained replay/idempotency ledger remains deferred to Phase 3.
+- Phase 2C3C2 keeps mutation authority application/operator-owned: callers cannot mint/widen capabilities or choose arbitrary mutation leases, and write/delete authority remains structurally scoped and separate.
+- Phase 2C3C3 public mutation schemas expose no authorization IDs; server-generated ActionIds and internally resolved leases flow through the existing policy/runtime boundary. Mutation tools are registered only when matching operator-owned authority exists.
+- Startup recovery runs before MCP serve whenever a mutation state directory is configured; unresolved recovery fails startup closed.
+- Blocking durable mutation execution is cancellation-safe at the adapter boundary: once started, it is followed to a known transaction/recovery outcome instead of returning a timeout while a filesystem effect may still commit.

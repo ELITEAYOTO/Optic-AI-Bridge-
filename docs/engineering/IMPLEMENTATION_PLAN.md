@@ -110,7 +110,7 @@ Important boundary: this is a strong optimistic-concurrency commit foundation, b
 
 ### Phase 2C — durable recovery journal and file mutation services
 
-Status: **current**, split into narrow gates.
+Status: **merged through Phase 2C3C3**.
 
 #### Phase 2C1 — bounded recovery journal state machine
 
@@ -167,7 +167,7 @@ Gate passed: exact final PR #18 head `fdfc3ace` passed Ubuntu format/Clippy/test
 
 #### Phase 2C3 — transactional file services
 
-Status: **current**, split into narrow gates.
+Status: **merged through the authorization/adapter gate**.
 
 ##### Phase 2C3A — transactional write + deterministic patch
 
@@ -181,7 +181,7 @@ Status: **merged** in PR #20 (`4415a65c`). Exact final head `531f0e38` passed Ub
 6. the derived patch result is bounded before journaled commit;
 7. non-Windows durable mutation remains fail-closed;
 8. native Windows coverage includes real write+patch, multi-chunk base reads and stale-base rejection without modification;
-9. no MCP mutation tool is exposed.
+9. no MCP mutation tool is exposed by this historical tranche.
 
 ##### Phase 2C3B — intended-state recovery + delete
 
@@ -215,13 +215,13 @@ Implemented:
 7. native Windows child-process gates terminate after durable prepared, durable committing-before-delete, atomic delete service return and terminal state before retirement; restart recovery classifies all four outcomes and a second recovery is empty;
 8. `TransactionalFileService::delete(path, exact_content_version)` exposes the proven runtime primitive without creating a second OS mutation path;
 9. non-Windows durable delete remains fail-closed as unsupported;
-10. no MCP write, patch or delete tool is exposed by this tranche.
+10. no MCP write, patch or delete tool is exposed by this historical tranche.
 
 Claim boundary: the forced-crash suite proves process termination/restart semantics at the documented service boundaries, not sudden-power-loss ACID durability. The write/replace path's documented Phase 2B `ReplaceFileW` external-writer window is unchanged; delete itself stays handle-based through its namespace effect.
 
 ##### Phase 2C3C — authorization/adapter gate
 
-Status: **in progress**; internal authorization + ActionId binding are merged, application-owned authority provisioning is current. Public MCP mutation remains disabled.
+Status: **merged** through PR #30 (`624e88da`).
 
 ###### Phase 2C3C1 — authorized runtime boundary + ActionId binding
 
@@ -237,24 +237,28 @@ Status: **merged** through PR #26 (`ac381002`) and PR #27 (`1b5a3393`). Exact fi
 
 ###### Phase 2C3C2 — application-owned mutation authority provisioning
 
-Status: **current**.
+Status: **merged** in PR #29 (`75477c3b`).
 
-1. define application/operator-owned configuration for mutation authority without allowing MCP to create or widen it;
-2. add `FileWrite` and/or `FileDelete` to a session only when corresponding mutation authority is explicitly provisioned;
-3. mint exact task leases with explicit workspace scope (`WorkspaceAll` or structural `WorkspacePrefix`), resource ceiling, expiry and policy epoch;
-4. keep the authoritative lease mapping application-owned so an MCP caller cannot submit or freely select an arbitrary lease id;
-5. add negative tests for no configured authority, wrong capability, revoked/expired/cross-session lease, stale policy epoch, scope escape and FileWrite/FileDelete separation;
-6. keep MCP `fs_write`/patch/delete disabled through this gate.
+1. application/operator-owned startup configuration defines mutation authority; MCP cannot create or widen it;
+2. `FileWrite` and/or `FileDelete` are added to the session only when corresponding mutation authority is explicitly provisioned;
+3. exact task leases carry structural workspace scope (`WorkspaceAll` or `WorkspacePrefix`), canonical bounded resource ceiling, expiry and policy epoch;
+4. the authoritative write/delete lease mapping remains application-owned, so a caller cannot submit or freely select an arbitrary lease id;
+5. startup parsing rejects unsafe scope syntax and requires an absolute recovery state directory when mutation authority exists;
+6. the session capability set is derived from actual provisioned authority rather than client request.
 
 ###### Phase 2C3C3 — thin MCP mutation adapter
 
-Planned only after C2 is green:
+Status: **merged** in PR #30 (`624e88da`). Exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
-1. normalize raw MCP parameters into typed `Effect::FileWrite` / `Effect::FileDelete` plus exact expected state;
-2. generate the `ActionId` server-side and resolve application-owned mutation authority internally rather than trusting caller-provided authorization material;
-3. invoke only `AuthorizedFileMutationService`; the adapter performs no independent authorization or filesystem mutation;
-4. map bounded/recovery-required outcomes without converting ambiguity into success or blind retry;
-5. expose MCP mutation only after adapter-level negative tests prove the internal security contract is not bypassable.
+1. raw MCP parameters normalize into typed `Effect::FileWrite` / `Effect::FileDelete` plus explicit `ExpectedState` / exact `ContentVersion`;
+2. the server generates the `ActionId` and resolves application-owned mutation authority internally; public schemas expose neither `TaskLeaseId` nor caller-provided `ActionId`;
+3. the adapter invokes only `AuthorizedFileMutationService`; it performs no independent authorization or filesystem mutation;
+4. `fs_write` / `fs_apply_patch` are registered only with `FileWrite` authority, while `fs_delete` requires the distinct `FileDelete` authority. With no authority the historical read/process surface is unchanged;
+5. base64 payloads are framed by the bounded MCP transport and decoded bytes remain under mutation limits; structured responses are checked again against response ceilings;
+6. startup recovery runs before MCP service start whenever a mutation state directory is supplied; unresolved recovery conflicts fail startup closed;
+7. recovery-required / ambiguous outcomes are never mapped to success or a blind-retry contract;
+8. started blocking durable mutations retain their transport execution permit and are awaited to a known transaction/recovery outcome. They are intentionally not wrapped in an adapter timeout that cannot cancel a started `spawn_blocking` task and could otherwise report failure while the filesystem effect still commits;
+9. non-Windows durable mutation remains fail-closed as unsupported.
 
 Design constraints across Phase 2C:
 
@@ -266,16 +270,19 @@ Design constraints across Phase 2C:
 - recovery evidence must not be retired before operation-owned staging has been safely handled;
 - durability claims must match actual Windows semantics and the tested crash model.
 
-Phase 2C gate: transactional mutation runtime + deterministic startup reconciliation + forced process-crash tests + policy/recovery negative tests before any public mutation surface is enabled.
+**Phase 2C gate passed.** Transactional mutation runtime, deterministic startup reconciliation, forced process-crash tests, application-owned authorization and the thin conditional MCP adapter are merged. The remaining Phase 2 work is Git.
 
 ### Phase 2D — Git read/integration
 
-Planned after mutation recovery is stable:
+Status: **current**.
 
-1. bounded Git read primitives (`status`, `diff`, `log`);
+Implement in narrow gates:
+
+1. bounded Git read primitives (`status`, `diff`, `log`) with repository-scoped authority and output ceilings;
 2. Git integration only with exact validated `expected_target_head`;
-3. explicit integration/conflict gate;
-4. MCP Git exposure only after negative tests pass.
+3. explicit integration/conflict gate and stale-target rejection;
+4. application-owned Git authority; MCP cannot mint or freely select integration authority;
+5. MCP Git exposure only after runtime/policy negative tests pass.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
 
