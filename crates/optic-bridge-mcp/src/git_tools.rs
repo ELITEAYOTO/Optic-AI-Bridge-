@@ -190,6 +190,9 @@ impl ReadonlyMcpServer {
         self.ensure_structured_payload_fits(response)?;
 
         if response.entries.len() < original_len {
+            if response.entries.is_empty() {
+                return Err(ErrorData::internal_error("optic.response_too_large", None));
+            }
             let head = response.snapshot_head.clone().ok_or_else(|| {
                 ErrorData::internal_error("optic.git_log_cursor_missing_head", None)
             })?;
@@ -290,9 +293,7 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
         GitReadError::OutputLimitExceeded { .. } => {
             ErrorData::internal_error("optic.git_output_too_large", None)
         }
-        GitReadError::CommandTimedOut => {
-            ErrorData::internal_error("optic.request_timeout", None)
-        }
+        GitReadError::CommandTimedOut => ErrorData::internal_error("optic.request_timeout", None),
         GitReadError::InvalidLimits
         | GitReadError::GitExecutableMustBeAbsolute
         | GitReadError::GitExecutableNotFile
@@ -305,5 +306,159 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
         | GitReadError::InvalidObjectId
         | GitReadError::InvalidLogRecord
         | GitReadError::Io(_) => ErrorData::internal_error("optic.git_read_error", None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        env,
+        ffi::OsStr,
+        fs,
+        path::{Path, PathBuf},
+        process::Command,
+        sync::Arc,
+    };
+
+    use optic_bridge_core::{
+        Capability, HardLimits, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
+    };
+    use optic_bridge_runtime::{
+        Clock, MutationAuthoritySet, ProcessManager, SessionRegistry, TaskLeaseRegistry,
+    };
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct FixedClock(MonotonicTime);
+
+    impl Clock for FixedClock {
+        fn now(&self) -> MonotonicTime {
+            self.0
+        }
+    }
+
+    struct RepoFixture {
+        base: PathBuf,
+        repo: PathBuf,
+        git: PathBuf,
+    }
+
+    impl RepoFixture {
+        fn new(label: &str) -> Self {
+            let git = find_git_executable().expect("git on CI PATH");
+            let token = ActionId::generate().expect("test entropy").to_token();
+            let base = env::temp_dir().join(format!("optic-mcp-git-{label}-{token}"));
+            let repo = base.join("repo");
+            fs::create_dir_all(&repo).expect("repo dir");
+            run_git(&git, None, [OsStr::new("init"), OsStr::new("--quiet"), repo.as_os_str()]);
+            run_git(
+                &git,
+                Some(&repo),
+                [OsStr::new("config"), OsStr::new("user.email"), OsStr::new("optic@example.invalid")],
+            );
+            run_git(
+                &git,
+                Some(&repo),
+                [OsStr::new("config"), OsStr::new("user.name"), OsStr::new("Optic Test")],
+            );
+            fs::write(repo.join("tracked.txt"), b"alpha\n").expect("fixture");
+            run_git(&git, Some(&repo), [OsStr::new("add"), OsStr::new(".")]);
+            run_git(
+                &git,
+                Some(&repo),
+                [OsStr::new("commit"), OsStr::new("--quiet"), OsStr::new("-m"), OsStr::new("initial")],
+            );
+            Self { base, repo, git }
+        }
+
+        fn server(&self, capabilities: &[Capability]) -> ReadonlyMcpServer {
+            let limits = HardLimits::default();
+            let clock: Arc<dyn Clock> = Arc::new(FixedClock(MonotonicTime::from_millis(10)));
+            let session = SessionHandle::generate().expect("session entropy");
+            let grant = SessionGrant {
+                handle: session.clone(),
+                principal: PrincipalId::new("test-principal").expect("principal"),
+                project: ProjectId::new("test-project").expect("project"),
+                capabilities: capabilities.iter().copied().collect::<BTreeSet<_>>(),
+                expires_at: MonotonicTime::from_millis(10_000),
+                policy_epoch: 1,
+            };
+            let sessions = Arc::new(SessionRegistry::new());
+            sessions.register(grant).expect("register session");
+            let processes = Arc::new(
+                ProcessManager::new(&self.repo, limits, Vec::new()).expect("process manager"),
+            );
+            let git_service = Arc::new(
+                GitReadService::from_hard_limits(&self.repo, &self.git, limits)
+                    .expect("git read service"),
+            );
+            ReadonlyMcpServer::new_with_git_runtime(
+                &self.repo,
+                sessions,
+                session,
+                clock,
+                limits,
+                processes,
+                Arc::new(TaskLeaseRegistry::new()),
+                BTreeMap::new(),
+                None,
+                MutationAuthoritySet::default(),
+                Some(git_service),
+            )
+            .expect("server")
+        }
+    }
+
+    impl Drop for RepoFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn find_git_executable() -> Option<PathBuf> {
+        let path = env::var_os("PATH")?;
+        for directory in env::split_paths(&path) {
+            #[cfg(windows)]
+            let candidate = directory.join("git.exe");
+            #[cfg(not(windows))]
+            let candidate = directory.join("git");
+            if candidate.is_file() {
+                return fs::canonicalize(candidate).ok();
+            }
+        }
+        None
+    }
+
+    fn run_git<const N: usize>(git: &Path, repo: Option<&Path>, args: [&OsStr; N]) {
+        let mut command = Command::new(git);
+        if let Some(repo) = repo {
+            command.arg("-C").arg(repo);
+        }
+        let status = command.args(args).status().expect("run Git fixture command");
+        assert!(status.success(), "Git fixture command failed");
+    }
+
+    #[tokio::test]
+    async fn git_status_routes_through_operator_owned_runtime() {
+        let fixture = RepoFixture::new("status");
+        fs::write(fixture.repo.join("tracked.txt"), b"changed\n").expect("modify fixture");
+        let server = fixture.server(&[Capability::GitRead]);
+
+        let response = server.git_status().await.expect("Git status").0;
+        assert!(response.head.is_some());
+        assert_eq!(response.encoding, "base64");
+        let raw = STANDARD
+            .decode(response.porcelain_v2_base64)
+            .expect("base64 status");
+        assert!(raw.windows(b"tracked.txt".len()).any(|window| window == b"tracked.txt"));
+    }
+
+    #[tokio::test]
+    async fn git_runtime_does_not_bypass_missing_session_capability() {
+        let fixture = RepoFixture::new("deny");
+        let server = fixture.server(&[Capability::FileRead]);
+        assert!(server.git_status().await.is_err());
     }
 }
