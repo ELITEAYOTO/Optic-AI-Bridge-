@@ -1,10 +1,15 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     ffi::OsString,
-    fs::{self, File, OpenOptions},
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
-    thread,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -15,7 +20,9 @@ use crate::{GitReadError, GitReadService};
 
 const INTEGRATION_REF_PREFIX: &str = "refs/optic/integration/";
 const CAPTURE_LIMIT_BYTES: u64 = 4 * 1024;
+const PIPE_READ_CHUNK_BYTES: usize = 8 * 1024;
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(5);
+const DISABLED_HOOKS_DIRECTORY: &str = "hooks-disabled";
 
 #[cfg(windows)]
 const NULL_CONFIG_PATH: &str = "NUL";
@@ -30,6 +37,9 @@ pub struct GitIntegrationService {
     disabled_hooks_root: PathBuf,
     target_ref: String,
     command_timeout: Duration,
+    recovery_output_limit: u64,
+    recovery_entry_limit: u32,
+    recovery_owned_limit: u32,
 }
 
 impl GitIntegrationService {
@@ -62,7 +72,7 @@ impl GitIntegrationService {
             return Err(GitIntegrationError::IntegrationRootOverlapsRepository);
         }
 
-        let disabled_hooks_root = integration_root.join("hooks-disabled");
+        let disabled_hooks_root = integration_root.join(DISABLED_HOOKS_DIRECTORY);
         fs::create_dir_all(&disabled_hooks_root)?;
         if fs::read_dir(&disabled_hooks_root)?.next().is_some() {
             return Err(GitIntegrationError::DisabledHooksDirectoryNotEmpty);
@@ -75,6 +85,9 @@ impl GitIntegrationService {
             disabled_hooks_root,
             target_ref: target_ref.into(),
             command_timeout: Duration::from_millis(limits.max_request_duration_ms),
+            recovery_output_limit: limits.max_git_read_bytes,
+            recovery_entry_limit: limits.max_fs_directory_scan_entries,
+            recovery_owned_limit: limits.max_concurrent_requests,
         };
         service.validate_target_ref()?;
         service.ensure_target_ref_is_direct()?;
@@ -171,6 +184,188 @@ impl GitIntegrationService {
             new_target_head: source_head.clone(),
             mode: GitIntegrationMode::FastForward,
         })
+    }
+
+    /// Removes only stale worktrees that can be proven to be Optic-owned.
+    ///
+    /// Recovery is deliberately conservative: all registered and on-disk state is
+    /// validated first, and cleanup begins only after the complete snapshot is
+    /// coherent. User worktrees outside `integration_root` are ignored. A missing,
+    /// unlocked, unregistered, escaped, malformed, or otherwise ambiguous owned
+    /// entry fails closed and no cleanup is attempted.
+    pub fn recover_owned_worktrees(
+        &self,
+    ) -> Result<GitIntegrationRecoveryReport, GitIntegrationError> {
+        self.ensure_disabled_hooks_empty()?;
+        let registered = self.registered_worktrees()?;
+        let owned = self.validate_owned_recovery_snapshot(&registered)?;
+
+        for (token, worktree) in &owned {
+            self.revalidate_owned_recovery_path(token, &worktree.canonical_path)?;
+            self.remove_owned_worktree(&worktree.canonical_path)?;
+        }
+
+        Ok(GitIntegrationRecoveryReport {
+            removed_worktrees: u32::try_from(owned.len())
+                .map_err(|_| GitIntegrationError::RecoveryEntryLimitExceeded)?,
+        })
+    }
+
+    fn registered_worktrees(&self) -> Result<Vec<RegisteredWorktree>, GitIntegrationError> {
+        let (status, bytes) = self.run_capture_bounded(
+            &self.repository_root,
+            [
+                OsString::from("worktree"),
+                OsString::from("list"),
+                OsString::from("--porcelain"),
+                OsString::from("-z"),
+            ],
+            self.recovery_output_limit,
+        )?;
+        if !status.success() {
+            return Err(GitIntegrationError::GitCommandFailed);
+        }
+        parse_worktree_list(&bytes, self.recovery_entry_limit)
+    }
+
+    fn validate_owned_recovery_snapshot(
+        &self,
+        registered: &[RegisteredWorktree],
+    ) -> Result<BTreeMap<String, OwnedRecoveryWorktree>, GitIntegrationError> {
+        let mut registered_owned = BTreeMap::new();
+        for worktree in registered {
+            if !worktree.path.is_absolute() {
+                return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
+            }
+            if !path_is_lexically_within(&self.integration_root, &worktree.path) {
+                continue;
+            }
+
+            let parent = worktree
+                .path
+                .parent()
+                .ok_or(GitIntegrationError::RecoveryOwnedPathMalformed)?;
+            if !paths_lexically_equal(parent, &self.integration_root) {
+                return Err(GitIntegrationError::RecoveryOwnedPathMalformed);
+            }
+            let token = worktree
+                .path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .ok_or(GitIntegrationError::RecoveryOwnedPathMalformed)?;
+            let action = ActionId::from_token(token)
+                .map_err(|_| GitIntegrationError::RecoveryOwnedPathMalformed)?;
+            if action.to_token() != token {
+                return Err(GitIntegrationError::RecoveryOwnedPathMalformed);
+            }
+            if !worktree.locked {
+                return Err(GitIntegrationError::RecoveryOwnedWorktreeUnlocked);
+            }
+            if registered_owned.contains_key(token) {
+                return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
+            }
+            if registered_owned.len()
+                >= usize::try_from(self.recovery_owned_limit).unwrap_or(usize::MAX)
+            {
+                return Err(GitIntegrationError::RecoveryOwnedLimitExceeded);
+            }
+
+            let metadata =
+                fs::symlink_metadata(&worktree.path).map_err(|error| match error.kind() {
+                    io::ErrorKind::NotFound => GitIntegrationError::RecoveryOwnedWorktreeMissing,
+                    _ => GitIntegrationError::Io(error),
+                })?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+            }
+            let canonical = fs::canonicalize(&worktree.path)?;
+            if !canonical.starts_with(&self.integration_root)
+                || canonical.parent() != Some(self.integration_root.as_path())
+            {
+                return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+            }
+
+            registered_owned.insert(
+                token.to_owned(),
+                OwnedRecoveryWorktree {
+                    canonical_path: canonical,
+                },
+            );
+        }
+
+        let mut seen_owned = BTreeSet::new();
+        let mut scanned = 0_u32;
+        for entry in fs::read_dir(&self.integration_root)? {
+            scanned = scanned
+                .checked_add(1)
+                .ok_or(GitIntegrationError::RecoveryEntryLimitExceeded)?;
+            if scanned > self.recovery_entry_limit {
+                return Err(GitIntegrationError::RecoveryEntryLimitExceeded);
+            }
+            let entry = entry?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| GitIntegrationError::RecoveryUnexpectedEntry)?;
+            if name == DISABLED_HOOKS_DIRECTORY {
+                if entry.path() != self.disabled_hooks_root {
+                    return Err(GitIntegrationError::RecoveryUnexpectedEntry);
+                }
+                continue;
+            }
+
+            let action = ActionId::from_token(&name)
+                .map_err(|_| GitIntegrationError::RecoveryUnexpectedEntry)?;
+            if action.to_token() != name {
+                return Err(GitIntegrationError::RecoveryUnexpectedEntry);
+            }
+            let Some(owned) = registered_owned.get(&name) else {
+                return Err(GitIntegrationError::RecoveryUnregisteredOwnedPath);
+            };
+            let metadata = fs::symlink_metadata(entry.path())?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+            }
+            let canonical = fs::canonicalize(entry.path())?;
+            if canonical != owned.canonical_path {
+                return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+            }
+            seen_owned.insert(name);
+        }
+
+        if seen_owned.len() != registered_owned.len() {
+            return Err(GitIntegrationError::RecoveryOwnedWorktreeMissing);
+        }
+        Ok(registered_owned)
+    }
+
+    fn revalidate_owned_recovery_path(
+        &self,
+        token: &str,
+        expected_canonical: &Path,
+    ) -> Result<(), GitIntegrationError> {
+        let action = ActionId::from_token(token)
+            .map_err(|_| GitIntegrationError::RecoveryOwnedPathMalformed)?;
+        if action.to_token() != token {
+            return Err(GitIntegrationError::RecoveryOwnedPathMalformed);
+        }
+        let path = self.integration_root.join(token);
+        let metadata = fs::symlink_metadata(&path).map_err(|error| match error.kind() {
+            io::ErrorKind::NotFound => GitIntegrationError::RecoveryOwnedWorktreeMissing,
+            _ => GitIntegrationError::Io(error),
+        })?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+        }
+        let canonical = fs::canonicalize(path)?;
+        if canonical != expected_canonical
+            || !canonical.starts_with(&self.integration_root)
+            || canonical.parent() != Some(self.integration_root.as_path())
+            || canonical.file_name().and_then(|value| value.to_str()) != Some(token)
+        {
+            return Err(GitIntegrationError::RecoveryOwnedPathUnsafe);
+        }
+        Ok(())
     }
 
     fn validate_target_ref(&self) -> Result<(), GitIntegrationError> {
@@ -289,22 +484,15 @@ impl GitIntegrationService {
     }
 
     fn remove_owned_worktree(&self, worktree_path: &Path) -> Result<(), GitIntegrationError> {
-        let unlock = self.run_status(
-            &self.repository_root,
-            [
-                OsString::from("worktree"),
-                OsString::from("unlock"),
-                git_path_arg(worktree_path),
-            ],
-        )?;
-        if !unlock.success() {
-            return Err(GitIntegrationError::WorktreeCleanupFailed);
-        }
+        // Keep the ownership lock in place until Git removes the worktree. Git
+        // requires --force twice for a locked worktree, which avoids an unlock /
+        // remove race window.
         let remove = self.run_status(
             &self.repository_root,
             [
                 OsString::from("worktree"),
                 OsString::from("remove"),
+                OsString::from("--force"),
                 OsString::from("--force"),
                 git_path_arg(worktree_path),
             ],
@@ -398,50 +586,212 @@ impl GitIntegrationService {
     where
         I: IntoIterator<Item = OsString>,
     {
-        let capture_id = ActionId::generate()?;
-        let capture_path = self
-            .integration_root
-            .join(format!("capture-{}.out", capture_id.to_token()));
-        let output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&capture_path)?;
-        let stdout = output.try_clone()?;
+        self.run_capture_bounded(context, args, CAPTURE_LIMIT_BYTES)
+    }
 
+    fn run_capture_bounded<I>(
+        &self,
+        context: &Path,
+        args: I,
+        output_limit: u64,
+    ) -> Result<(ExitStatus, Vec<u8>), GitIntegrationError>
+    where
+        I: IntoIterator<Item = OsString>,
+    {
+        if output_limit == 0 {
+            return Err(GitIntegrationError::CommandOutputTooLarge);
+        }
         let mut command = self.base_command(context);
         command
             .args(args)
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::null());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        let deadline = Instant::now() + self.command_timeout;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or(GitIntegrationError::MissingChildPipe)?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or(GitIntegrationError::MissingChildPipe)?;
+        let total = Arc::new(AtomicU64::new(0));
+        let exceeded = Arc::new(AtomicBool::new(false));
+        let stdout_reader = spawn_bounded_reader(
+            stdout,
+            Arc::clone(&total),
+            Arc::clone(&exceeded),
+            output_limit,
+        );
+        let stderr_reader =
+            spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), output_limit);
+
+        let started = Instant::now();
+        let mut timed_out = false;
         let status = loop {
+            if exceeded.load(Ordering::Acquire) {
+                let _ = child.kill();
+                break child.wait()?;
+            }
             if let Some(status) = child.try_wait()? {
                 break status;
             }
-            if Instant::now() >= deadline {
+            if started.elapsed() >= self.command_timeout {
+                timed_out = true;
                 let _ = child.kill();
-                let _ = child.wait();
-                drop(output);
-                let _ = fs::remove_file(&capture_path);
-                return Err(GitIntegrationError::CommandTimedOut);
+                break child.wait()?;
             }
             thread::sleep(CHILD_POLL_INTERVAL);
         };
-        drop(output);
 
-        let result = (|| {
-            let metadata = fs::metadata(&capture_path)?;
-            if metadata.len() > CAPTURE_LIMIT_BYTES {
-                return Err(GitIntegrationError::CommandOutputTooLarge);
-            }
-            let mut bytes = Vec::with_capacity(metadata.len() as usize);
-            File::open(&capture_path)?.read_to_end(&mut bytes)?;
-            Ok((status, bytes))
-        })();
-        let _ = fs::remove_file(&capture_path);
-        result
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| GitIntegrationError::ReaderThreadPanicked)??;
+        let _stderr = stderr_reader
+            .join()
+            .map_err(|_| GitIntegrationError::ReaderThreadPanicked)??;
+        if timed_out {
+            return Err(GitIntegrationError::CommandTimedOut);
+        }
+        if exceeded.load(Ordering::Acquire) {
+            return Err(GitIntegrationError::CommandOutputTooLarge);
+        }
+        Ok((status, stdout))
     }
+}
+
+fn spawn_bounded_reader<R>(
+    mut reader: R,
+    total: Arc<AtomicU64>,
+    exceeded: Arc<AtomicBool>,
+    limit: u64,
+) -> JoinHandle<io::Result<Vec<u8>>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut chunk = [0_u8; PIPE_READ_CHUNK_BYTES];
+        loop {
+            let read = reader.read(&mut chunk)?;
+            if read == 0 {
+                break;
+            }
+            let read_u64 = u64::try_from(read).unwrap_or(u64::MAX);
+            let previous = total.fetch_add(read_u64, Ordering::AcqRel);
+            if previous.saturating_add(read_u64) > limit {
+                exceeded.store(true, Ordering::Release);
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..read]);
+        }
+        Ok(bytes)
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RegisteredWorktree {
+    path: PathBuf,
+    locked: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OwnedRecoveryWorktree {
+    canonical_path: PathBuf,
+}
+
+fn parse_worktree_list(
+    bytes: &[u8],
+    entry_limit: u32,
+) -> Result<Vec<RegisteredWorktree>, GitIntegrationError> {
+    if bytes.is_empty() || !bytes.ends_with(b"\0\0") {
+        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
+    }
+
+    let mut records = Vec::new();
+    let mut fields: Vec<&[u8]> = Vec::new();
+    for field in bytes.split(|byte| *byte == 0) {
+        if field.is_empty() {
+            if fields.is_empty() {
+                continue;
+            }
+            if records.len() >= usize::try_from(entry_limit).unwrap_or(usize::MAX) {
+                return Err(GitIntegrationError::RecoveryEntryLimitExceeded);
+            }
+            records.push(parse_worktree_record(&fields)?);
+            fields.clear();
+        } else {
+            fields.push(field);
+        }
+    }
+    if !fields.is_empty() || records.is_empty() {
+        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
+    }
+    Ok(records)
+}
+
+fn parse_worktree_record(fields: &[&[u8]]) -> Result<RegisteredWorktree, GitIntegrationError> {
+    let first = fields
+        .first()
+        .ok_or(GitIntegrationError::RecoveryWorktreeListMalformed)?;
+    let raw_path = first
+        .strip_prefix(b"worktree ")
+        .ok_or(GitIntegrationError::RecoveryWorktreeListMalformed)?;
+    if raw_path.is_empty()
+        || fields[1..]
+            .iter()
+            .any(|field| field.starts_with(b"worktree "))
+    {
+        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
+    }
+    let path = std::str::from_utf8(raw_path)
+        .map_err(|_| GitIntegrationError::RecoveryWorktreeListMalformed)?;
+    let locked = fields[1..]
+        .iter()
+        .any(|field| *field == b"locked" || field.starts_with(b"locked "));
+    Ok(RegisteredWorktree {
+        path: PathBuf::from(path),
+        locked,
+    })
+}
+
+#[cfg(windows)]
+fn normalized_windows_path(path: &Path) -> String {
+    let mut value = path.as_os_str().to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        value = format!(r"\\{rest}");
+    } else if let Some(rest) = value.strip_prefix(r"\\?\") {
+        value = rest.to_owned();
+    }
+    while value.len() > 3 && value.ends_with('\\') {
+        value.pop();
+    }
+    value.to_lowercase()
+}
+
+#[cfg(windows)]
+fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
+    normalized_windows_path(left) == normalized_windows_path(right)
+}
+
+#[cfg(not(windows))]
+fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
+    left == right
+}
+
+#[cfg(windows)]
+fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
+    let root = normalized_windows_path(root);
+    let candidate = normalized_windows_path(candidate);
+    candidate == root
+        || candidate
+            .strip_prefix(&root)
+            .is_some_and(|suffix| suffix.starts_with('\\'))
+}
+
+#[cfg(not(windows))]
+fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
+    candidate.starts_with(root)
 }
 
 fn git_path_arg(path: &Path) -> OsString {
@@ -469,6 +819,11 @@ pub struct GitIntegrationResult {
     pub previous_target_head: GitObjectId,
     pub new_target_head: GitObjectId,
     pub mode: GitIntegrationMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GitIntegrationRecoveryReport {
+    pub removed_worktrees: u32,
 }
 
 #[derive(Debug, Error)]
@@ -514,6 +869,28 @@ pub enum GitIntegrationError {
     WorktreeHeadMismatch,
     #[error("isolated worktree cleanup failed; target ref was not advanced")]
     WorktreeCleanupFailed,
+    #[error("Git recovery worktree listing is malformed")]
+    RecoveryWorktreeListMalformed,
+    #[error("Git recovery entry count exceeded its hard ceiling")]
+    RecoveryEntryLimitExceeded,
+    #[error("Optic-owned recovery worktree count exceeded concurrent-request ceiling")]
+    RecoveryOwnedLimitExceeded,
+    #[error("registered Optic worktree path is malformed")]
+    RecoveryOwnedPathMalformed,
+    #[error("registered Optic worktree is missing from disk")]
+    RecoveryOwnedWorktreeMissing,
+    #[error("registered Optic worktree is not locked")]
+    RecoveryOwnedWorktreeUnlocked,
+    #[error("registered Optic worktree path is unsafe or escaped")]
+    RecoveryOwnedPathUnsafe,
+    #[error("integration root contains an unexpected entry")]
+    RecoveryUnexpectedEntry,
+    #[error("integration root contains an ActionId path that Git does not register")]
+    RecoveryUnregisteredOwnedPath,
+    #[error("Git child process did not expose the required output pipe")]
+    MissingChildPipe,
+    #[error("Git bounded-output reader thread panicked")]
+    ReaderThreadPanicked,
     #[error("Git command exceeded the hard request-duration ceiling")]
     CommandTimedOut,
     #[error("bounded Git command output exceeded its hard ceiling")]
@@ -739,6 +1116,218 @@ mod tests {
         assert!(!String::from_utf8_lossy(&worktrees).contains(&action.to_token()));
     }
 
+    fn add_locked_owned_worktree(fixture: &RepoFixture, action: &ActionId) -> PathBuf {
+        let path = fixture.integration_root.join(action.to_token());
+        let status = Command::new(&fixture.git)
+            .arg("-C")
+            .arg(&fixture.repo)
+            .args(["worktree", "add", "--detach", "--no-checkout", "--lock"])
+            .arg(&path)
+            .arg(fixture.initial.as_str())
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .expect("add owned worktree");
+        assert!(status.success(), "owned worktree creation failed");
+        path
+    }
+
+    #[test]
+    fn recovery_removes_only_registered_locked_action_worktrees() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-success");
+        let service = fixture.service();
+        let action = ActionId::generate().expect("action");
+        let owned = add_locked_owned_worktree(&fixture, &action);
+        let user_worktree = fixture.base.join("user-worktree");
+        let status = Command::new(&fixture.git)
+            .arg("-C")
+            .arg(&fixture.repo)
+            .args(["worktree", "add", "--detach", "--no-checkout"])
+            .arg(&user_worktree)
+            .arg(fixture.initial.as_str())
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .expect("add user worktree");
+        assert!(status.success());
+
+        let report = service.recover_owned_worktrees().expect("recovery");
+        assert_eq!(report.removed_worktrees, 1);
+        assert!(!owned.exists());
+        assert!(user_worktree.exists());
+        assert_eq!(
+            ref_head(&fixture.git, &fixture.repo, TARGET_REF),
+            fixture.initial
+        );
+        let worktrees = git_output(
+            &fixture.git,
+            &fixture.repo,
+            ["worktree", "list", "--porcelain", "-z"],
+        );
+        assert!(!String::from_utf8_lossy(&worktrees).contains(&action.to_token()));
+        assert!(String::from_utf8_lossy(&worktrees).contains("user-worktree"));
+    }
+
+    #[test]
+    fn recovery_rejects_unregistered_action_directory_without_deleting_it() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-unregistered");
+        let service = fixture.service();
+        let action = ActionId::generate().expect("action");
+        let path = fixture.integration_root.join(action.to_token());
+        fs::create_dir(&path).expect("unregistered action dir");
+
+        let error = service
+            .recover_owned_worktrees()
+            .expect_err("unregistered path must fail closed");
+        assert!(matches!(
+            error,
+            GitIntegrationError::RecoveryUnregisteredOwnedPath
+        ));
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn recovery_rejects_unlocked_registered_owned_worktree() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-unlocked");
+        let service = fixture.service();
+        let action = ActionId::generate().expect("action");
+        let path = fixture.integration_root.join(action.to_token());
+        let status = Command::new(&fixture.git)
+            .arg("-C")
+            .arg(&fixture.repo)
+            .args(["worktree", "add", "--detach", "--no-checkout"])
+            .arg(&path)
+            .arg(fixture.initial.as_str())
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .expect("add unlocked worktree");
+        assert!(status.success());
+
+        let error = service
+            .recover_owned_worktrees()
+            .expect_err("unlocked owned worktree must fail closed");
+        assert!(matches!(
+            error,
+            GitIntegrationError::RecoveryOwnedWorktreeUnlocked
+        ));
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn recovery_rejects_missing_registered_owned_worktree_without_pruning() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-missing");
+        let service = fixture.service();
+        let action = ActionId::generate().expect("action");
+        let path = add_locked_owned_worktree(&fixture, &action);
+        fs::remove_dir_all(&path).expect("simulate missing worktree directory");
+
+        let error = service
+            .recover_owned_worktrees()
+            .expect_err("missing registered worktree must fail closed");
+        assert!(matches!(
+            error,
+            GitIntegrationError::RecoveryOwnedWorktreeMissing
+        ));
+        let worktrees = git_output(
+            &fixture.git,
+            &fixture.repo,
+            ["worktree", "list", "--porcelain", "-z"],
+        );
+        assert!(String::from_utf8_lossy(&worktrees).contains(&action.to_token()));
+    }
+
+    #[test]
+    fn recovery_directory_scan_is_hard_bounded() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-limit");
+        let limits = HardLimits {
+            max_fs_directory_scan_entries: 1,
+            ..HardLimits::default()
+        };
+        let service = GitIntegrationService::from_hard_limits(
+            &fixture.repo,
+            &fixture.git,
+            &fixture.integration_root,
+            TARGET_REF,
+            limits,
+        )
+        .expect("integration service");
+        let action = ActionId::generate().expect("action");
+        let path = add_locked_owned_worktree(&fixture, &action);
+
+        let error = service
+            .recover_owned_worktrees()
+            .expect_err("scan ceiling must fail closed");
+        assert!(matches!(
+            error,
+            GitIntegrationError::RecoveryEntryLimitExceeded
+        ));
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn recovery_owned_worktree_count_is_bounded_before_cleanup() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-owned-limit");
+        let limits = HardLimits {
+            max_concurrent_requests: 1,
+            ..HardLimits::default()
+        };
+        let service = GitIntegrationService::from_hard_limits(
+            &fixture.repo,
+            &fixture.git,
+            &fixture.integration_root,
+            TARGET_REF,
+            limits,
+        )
+        .expect("integration service");
+        let first = ActionId::generate().expect("first action");
+        let second = ActionId::generate().expect("second action");
+        let first_path = add_locked_owned_worktree(&fixture, &first);
+        let second_path = add_locked_owned_worktree(&fixture, &second);
+
+        let error = service
+            .recover_owned_worktrees()
+            .expect_err("owned recovery ceiling must fail closed");
+        assert!(matches!(
+            error,
+            GitIntegrationError::RecoveryOwnedLimitExceeded
+        ));
+        assert!(first_path.exists());
+        assert!(second_path.exists());
+    }
+
+    #[test]
+    fn worktree_porcelain_parser_requires_bounded_complete_records() {
+        let raw = b"worktree /repo\0HEAD 1111111111111111111111111111111111111111\0\0worktree /owned\0HEAD 2222222222222222222222222222222222222222\0detached\0locked optic\0\0";
+        let parsed = parse_worktree_list(raw, 2).expect("parse");
+        assert_eq!(parsed.len(), 2);
+        assert!(!parsed[0].locked);
+        assert!(parsed[1].locked);
+        assert!(matches!(
+            parse_worktree_list(raw, 1),
+            Err(GitIntegrationError::RecoveryEntryLimitExceeded)
+        ));
+        assert!(matches!(
+            parse_worktree_list(&raw[..raw.len() - 1], 2),
+            Err(GitIntegrationError::RecoveryWorktreeListMalformed)
+        ));
+    }
+
     #[test]
     fn stale_target_is_rejected_before_integration() {
         let Some(git) = find_git_executable() else {
@@ -894,6 +1483,82 @@ mod tests {
             error,
             GitIntegrationError::TargetRefOutsideOpticNamespace
         ));
+    }
+
+    const RECOVERY_CHILD_ENV: &str = "OPTIC_GIT_RECOVERY_CHILD";
+    const RECOVERY_CHILD_REPO_ENV: &str = "OPTIC_GIT_RECOVERY_REPO";
+    const RECOVERY_CHILD_GIT_ENV: &str = "OPTIC_GIT_RECOVERY_GIT";
+    const RECOVERY_CHILD_ROOT_ENV: &str = "OPTIC_GIT_RECOVERY_ROOT";
+    const RECOVERY_CHILD_TARGET_ENV: &str = "OPTIC_GIT_RECOVERY_TARGET";
+    const RECOVERY_CHILD_EXPECTED_ENV: &str = "OPTIC_GIT_RECOVERY_EXPECTED";
+    const RECOVERY_CHILD_ACTION_ENV: &str = "OPTIC_GIT_RECOVERY_ACTION";
+
+    #[test]
+    fn forced_git_recovery_child_entrypoint() {
+        if env::var_os(RECOVERY_CHILD_ENV).is_none() {
+            return;
+        }
+        let repo = PathBuf::from(env::var_os(RECOVERY_CHILD_REPO_ENV).expect("child repo"));
+        let git = PathBuf::from(env::var_os(RECOVERY_CHILD_GIT_ENV).expect("child git"));
+        let root = PathBuf::from(env::var_os(RECOVERY_CHILD_ROOT_ENV).expect("child root"));
+        let target = env::var(RECOVERY_CHILD_TARGET_ENV).expect("child target");
+        let expected =
+            GitObjectId::parse(env::var(RECOVERY_CHILD_EXPECTED_ENV).expect("child expected"))
+                .expect("expected oid");
+        let action =
+            ActionId::from_token(&env::var(RECOVERY_CHILD_ACTION_ENV).expect("child action"))
+                .expect("action id");
+        let service =
+            GitIntegrationService::from_hard_limits(repo, git, root, target, HardLimits::default())
+                .expect("child service");
+        service
+            .create_locked_worktree(&service.integration_root.join(action.to_token()), &expected)
+            .expect("child worktree");
+        std::process::exit(91);
+    }
+
+    #[test]
+    fn process_termination_orphan_is_recovered_without_target_movement() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "recovery-process-crash");
+        let action = ActionId::generate().expect("action");
+        let current_exe = env::current_exe().expect("current test executable");
+        let status = Command::new(current_exe)
+            .args([
+                "--exact",
+                "git_integrate::tests::forced_git_recovery_child_entrypoint",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(RECOVERY_CHILD_ENV, "1")
+            .env(RECOVERY_CHILD_REPO_ENV, &fixture.repo)
+            .env(RECOVERY_CHILD_GIT_ENV, &fixture.git)
+            .env(RECOVERY_CHILD_ROOT_ENV, &fixture.integration_root)
+            .env(RECOVERY_CHILD_TARGET_ENV, TARGET_REF)
+            .env(RECOVERY_CHILD_EXPECTED_ENV, fixture.initial.as_str())
+            .env(RECOVERY_CHILD_ACTION_ENV, action.to_token())
+            .status()
+            .expect("spawn recovery child");
+        assert_eq!(status.code(), Some(91));
+        let orphan = fixture.integration_root.join(action.to_token());
+        assert!(orphan.exists());
+        assert_eq!(
+            ref_head(&fixture.git, &fixture.repo, TARGET_REF),
+            fixture.initial
+        );
+
+        let report = fixture
+            .service()
+            .recover_owned_worktrees()
+            .expect("recover orphan");
+        assert_eq!(report.removed_worktrees, 1);
+        assert!(!orphan.exists());
+        assert_eq!(
+            ref_head(&fixture.git, &fixture.repo, TARGET_REF),
+            fixture.initial
+        );
     }
 
     #[test]

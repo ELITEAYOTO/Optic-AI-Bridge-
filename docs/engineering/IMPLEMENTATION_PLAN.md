@@ -318,20 +318,23 @@ Status: **merged** in PR #40 (`22b34149`). Exact final head `96b30f94` passed de
 
 Status: **current**, split into B1/B2.
 
-**2D3B1 — internal authorization boundary (current branch):**
+**2D3B1 — internal authorization boundary — merged in PR #41 (`f3d0898f`):**
 
 1. `GitIntegrationAuthoritySet` mints no lease by default and, when enabled internally, exactly one `GitIntegrate` lease with `LeaseScope::Repository`;
 2. the lease contains only bounded resource ceiling, expiry and policy epoch owned by the application registry;
 3. `AuthorizedGitIntegrationService` resolves active session + exact active lease and applies `PolicyEngine` before the 2D3A runtime is reachable;
 4. negative coverage rejects missing lease, wrong scope, missing session capability and cross-session lease;
-5. no app startup flag and no MCP integration tool are added by B1.
+5. no app startup flag and no MCP integration tool are added by B1. Exact final head `be3ffd97` passed dependency policy plus Ubuntu/Windows CI.
 
-**2D3B2 — remaining recovery/startup gate:**
+**2D3B2 — bounded recovery — current branch:**
 
-1. add bounded fail-closed discovery/cleanup for an operation-owned worktree left by process termination;
-2. wire `GitIntegrate` only from explicit operator/application startup configuration after recovery succeeds;
-3. keep the authoritative lease mapping private from MCP callers;
-4. add forced-process-interruption coverage before proceeding to 2D3C.
+1. enumerate Git worktrees with machine-readable `--porcelain -z` under byte/record ceilings and separately cap Optic-owned recovery candidates by the concurrent-request ceiling;
+2. never use repository-global `worktree prune`; ignore user worktrees outside the Optic integration root;
+3. require every Optic-root candidate to be a direct ActionId-named, registered, locked, non-symlink, canonically contained worktree; malformed/missing/unregistered/unlocked state fails closed before cleanup;
+4. validate the complete snapshot before the first removal, then revalidate each path immediately before cleanup;
+5. remove locked owned worktrees directly with double `--force`, avoiding an unlock/remove race window;
+6. forced-process-termination coverage leaves a real locked orphan before target-ref mutation and proves restart cleanup does not move the target;
+7. startup/operator invocation remains a following sub-gate after this runtime recovery passes CI.
 
 ##### Phase 2D3C — thin MCP integration adapter
 

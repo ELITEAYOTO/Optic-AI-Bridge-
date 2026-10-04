@@ -123,17 +123,25 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - Git prompting/pagers/system/global config/replacement refs are disabled and the forced-empty hooks directory is revalidated before mutation-capable calls;
 - stale target, divergent history, invalid source, path collision, overlap and hook/ref redirection cases have negative regression coverage.
 
-**2D3B1 internal authorization (CURRENT DEVELOPMENT):**
+**2D3B1 internal authorization (COMPLETED — PR #41, `f3d0898f`):**
 
 - application-owned authority primitive mints no lease by default and, when enabled, exactly one `GitIntegrate` + `LeaseScope::Repository` task lease;
 - a transport-agnostic authorized integration service resolves active session + exact active lease and applies `PolicyEngine` before 2D3A runtime execution;
 - missing lease, wrong scope, missing session capability and cross-session authority fail before target update;
-- B1 intentionally adds neither startup flags nor MCP Git mutation tools.
+- B1 adds neither startup flags nor MCP Git mutation tools.
+
+**2D3B2 bounded recovery (CURRENT DEVELOPMENT):**
+
+- bounded `worktree list --porcelain -z` snapshot plus bounded integration-root scan, with Optic-owned candidates separately capped by the concurrent-request ceiling;
+- no global prune; user worktrees outside the Optic root are untouched;
+- only direct ActionId-named, registered, locked, non-symlink and canonically contained worktrees are cleanup candidates;
+- the full snapshot must validate before any removal and each candidate is revalidated immediately before removal;
+- locked worktrees are removed without an unlock gap using double `--force`;
+- process-termination recovery coverage proves an orphan left before ref mutation can be removed without moving the target.
 
 **Remaining before MCP exposure:**
 
-- 2D3B2 bounded process-crash cleanup/recovery for operation-owned worktrees;
-- explicit startup/operator provisioning and private authority mapping;
+- explicit startup/operator provisioning plus recovery-before-serve and private authority mapping;
 - 2D3C thin conditional MCP adapter with server-owned ActionId and no caller-selected repo/ref/path/argv/lease authority;
 - final disposable-repository ChatGPT smoke.
 
