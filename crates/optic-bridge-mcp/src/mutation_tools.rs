@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
@@ -134,27 +134,22 @@ impl ReadonlyMcpServer {
             + Send
             + 'static,
     {
-        let now = self.clock.now();
         let permit = self
             .transport_guard
-            .begin_execution(now)
+            .begin_execution(self.clock.now())
             .map_err(super::server::map_transport_error)?;
         let service = self.mutation_service.as_ref().cloned().ok_or_else(|| {
             ErrorData::invalid_request("optic.mutation_runtime_unavailable", None)
         })?;
-        let timeout_ms = permit
-            .deadline()
-            .as_millis()
-            .saturating_sub(now.as_millis())
-            .max(1);
-        let result = tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            tokio::task::spawn_blocking(move || operation(service)),
-        )
-        .await
-        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
-        .map_err(map_authorized_mutation_error)?;
+
+        // A started spawn_blocking task cannot be cancelled safely. Once a durable
+        // mutation is admitted, keep the transport permit and follow the operation
+        // to a known transactional/recovery outcome instead of returning a timeout
+        // while the filesystem effect may still commit in the background.
+        let result = tokio::task::spawn_blocking(move || operation(service))
+            .await
+            .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
+            .map_err(map_authorized_mutation_error)?;
         drop(permit);
         Ok(result)
     }
