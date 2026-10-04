@@ -6,11 +6,16 @@
 //! Public MCP inputs are normalized and authorized before runtime services are
 //! invoked, and stdio JSON-RPC framing is bounded independently of RMCP defaults.
 
+mod git_tools;
 mod mutation_tools;
 mod process_tools;
 mod server;
 mod transport;
 
+pub use git_tools::{
+    GitDiffRequest, GitDiffResponse, GitLogCursorRequest, GitLogCursorResponse,
+    GitLogEntryResponse, GitLogRequest, GitLogResponse, GitStatusResponse,
+};
 pub use mutation_tools::{
     ExpectedStateRequest, FsApplyPatchRequest, FsDeleteRequest, FsDeleteResponse,
     FsMutationResponse, FsWriteRequest,
