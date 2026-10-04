@@ -1,6 +1,6 @@
 # Policy and Capability Model
 
-Status: DECIDED and executable through the current Phase 2D2 public surface plus internal Phase 2D3 Git integration authorization/recovery; Phase 2D3B3 startup provisioning is the current implementation gate and MCP integration exposure remains disabled.
+Status: DECIDED and executable through merged Phase 2D3B3 startup authority; Phase 2D3C thin conditional MCP integration exposure is the current implementation gate.
 
 Policy is deny-by-default and target/capability based, not a command blacklist.
 
@@ -31,7 +31,7 @@ Current scope classes include workspace-all/workspace-prefix, repository, exact 
 
 The AI/MCP caller cannot mint, widen, renew or approve a task lease itself. Possession of an opaque handle never bypasses caller/project/policy validation.
 
-Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are registered only when their corresponding application-owned runtime/authority exists. Internal `GitIntegrate` authority may be provisioned during Phase 2D3B3, but no `git_integrate` router is registered until the separate 2D3C adapter gate.
+Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are registered only when their corresponding application-owned runtime/authority exists. `GitIntegrate` authority is provisioned only by B3 operator configuration. The 2D3C branch registers `git_integrate` only when that authority/runtime exists; registration itself still grants nothing and the adapter resolves the existing server-owned lease internally.
 
 ## Mutation preconditions
 
@@ -45,7 +45,7 @@ There is no implicit blind-write or blind-delete mode in the core effect model.
 - `FileWrite`: provisioned only from explicit write scopes and used for whole-file write plus deterministic patch.
 - `FileDelete`: provisioned separately from explicit delete scopes.
 - `GitRead`: provisioned only when the operator supplies one valid absolute `--git-executable` and the workspace validates as the exact repository root.
-- `GitIntegrate`: internal authority uses a distinct application-owned repository-scoped lease. During B3 it is provisioned only when the operator supplies the complete integration-only executable/root/ref tuple **and** explicit `--allow-git-integrate`; the integration tuple alone is recovery-only. The separate `--git-integration-executable` never implicitly grants `GitRead`. Public MCP exposure remains disabled until 2D3C.
+- `GitIntegrate`: uses a distinct application-owned repository-scoped lease, provisioned only when the operator supplies the complete integration-only executable/root/ref tuple **and** explicit `--allow-git-integrate`; the integration tuple alone is recovery-only. The separate `--git-integration-executable` never implicitly grants `GitRead`. In 2D3C the public tool can only consume this pre-existing authority; it cannot mint, select or widen the lease.
 
 ## Network
 

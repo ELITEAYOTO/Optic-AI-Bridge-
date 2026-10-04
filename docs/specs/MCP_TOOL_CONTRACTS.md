@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha public surface through Phase 2D2 plus conditional file mutation; Phase 2D3B internal integration runtime/authority/startup wiring remains intentionally unexposed. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha surface through Phase 2D3C development: file mutation and Git integration tools are conditional on distinct application-owned authority. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -11,7 +11,7 @@ Tool visibility and execution authority are intentionally distinct:
 - `fs_write` and `fs_apply_patch` are registered only when application-owned `FileWrite` authority was provisioned.
 - `fs_delete` is registered only when distinct application-owned `FileDelete` authority was provisioned.
 - `git_status`, `git_diff` and `git_log` are registered only when the operator supplied one valid absolute `--git-executable`, allowing the application to own a `GitReadService`.
-- Phase 2D3B may provision internal `GitIntegrate` authority from separate integration-only startup configuration, but it deliberately merges no `git_integrate` tool router. Internal authority readiness is not tool visibility.
+- `git_integrate` is registered only when application-owned `GitIntegrate` authority and its authorized runtime are present. Git integration authority does not register Git read tools, and Git read authority does not register `git_integrate`.
 
 A visible MCP tool never grants a capability, task lease or authority by itself.
 
@@ -88,14 +88,28 @@ Rules:
 - `git_log` is entry-bounded and cursor-based; a cursor contains the snapshot `head` plus an `offset` and must remain the current HEAD or a reachable ancestor;
 - Git subprocess output and runtime duration are hard-bounded.
 
-Not exposed through MCP yet:
+Implemented conditionally in the current Phase 2D3C branch:
 
 ```text
-git_worktree_status()
 git_integrate(source_head, expected_target_head)
 ```
 
-Phase 2D3A/B now own the internal fast-forward integration, repository-scoped application authority and bounded orphan-worktree recovery boundaries. B3 adds explicit startup configuration and recovery-before-serve: `--git-integration-executable`, integration root and internal ref must be supplied together, and `--allow-git-integrate` separately opts into the mutation capability/lease. `--git-executable` remains Git-read-only, so integration authority never silently grants `GitRead`. The normalized `GitIntegrate` effect still binds exact `source_head` and `expected_target_head`. None of these internal/startup gates registers a public MCP mutation tool; the thin conditional adapter remains Phase 2D3C.
+Rules:
+
+- both inputs must be full 40- or 64-character hexadecimal Git object ids; symbolic names such as `HEAD` are rejected;
+- unknown request fields are rejected; the caller cannot provide repository root, target ref, Git executable, integration root/worktree path, raw argv, task lease or ActionId;
+- the server generates ActionId, resolves its application-owned repository-scoped `GitIntegrate` lease and normalizes one `Effect::GitIntegrate`;
+- execution routes only through `AuthorizedGitIntegrationService` and the exact-head fast-forward runtime;
+- successful response contains server-generated `action_id`, previous target head, new target head and `fast_forward` mode; it does not reveal or let the caller choose the internal target ref;
+- stale target is `optic.precondition_failed`; divergence is `optic.git_non_fast_forward`;
+- a post-update state that cannot be proven after Git accepted the atomic ref update is `optic.git_integration_outcome_uncertain`, not success and not a safe retry signal;
+- a started blocking integration remains awaited to a known result while retaining its transport permit.
+
+Still not exposed:
+
+```text
+git_worktree_status()
+```
 
 ## Processes
 

@@ -105,7 +105,7 @@ Rules:
 - `--allow-git-integrate` requires the complete tuple and provisions exactly one application-owned repository-scoped `GitIntegrate` lease plus the corresponding session capability;
 - bounded orphan-worktree recovery runs before MCP serve and any unsafe/ambiguous recovery state fails startup closed;
 - the authorized integration runtime is retained only when authority was explicitly provisioned; the MCP server rejects runtime/authority mismatch;
-- Phase 2D3B3 still registers no public `git_integrate` MCP tool. Public adapter exposure remains Phase 2D3C.
+- in the current Phase 2D3C branch, `git_integrate` is registered only when this explicit authority exists; recovery-only startup still exposes no integration tool.
 
 ## Future configuration shape
 

@@ -140,19 +140,27 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - process-termination recovery coverage proves an orphan left before ref mutation can be removed without moving the target;
 - exact final head `0ff95b82` passed dependency policy plus Ubuntu/Windows CI.
 
-**2D3B3 startup/operator authority (CURRENT DEVELOPMENT):**
+**2D3B3 startup/operator authority (COMPLETED — PR #43, `73ade6e3`):**
 
 - integration recovery/runtime configuration is a complete tuple of separate `--git-integration-executable`, absolute integration root and operator-owned internal ref;
 - that tuple without `--allow-git-integrate` is recovery-only and grants no integration capability;
 - `--allow-git-integrate` explicitly provisions the application-owned repository-scoped `GitIntegrate` lease and session capability after recovery succeeds;
 - `--git-executable` remains the independent Git-read opt-in, so integration/recovery does not silently grant `GitRead`;
-- runtime/authority mismatch fails MCP server construction and no `git_integrate` tool is registered.
+- runtime/authority mismatch fails MCP server construction and B3 itself registers no `git_integrate` tool;
+- exact final head `c82059eb` passed dependency policy plus Ubuntu/Windows CI.
 
-**Remaining before MCP exposure:**
+**2D3C thin MCP integration adapter (CURRENT DEVELOPMENT):**
 
-- merge/CI validation of 2D3B3 startup/operator provisioning;
-- 2D3C thin conditional MCP adapter with server-owned ActionId and no caller-selected repo/ref/path/argv/lease authority;
-- final disposable-repository ChatGPT smoke.
+- conditionally exposes `git_integrate(source_head, expected_target_head)` only with application-owned `GitIntegrate` authority;
+- rejects unknown public fields and exposes no repository/ref/path/executable/raw-argv/lease/ActionId authority;
+- generates ActionId and resolves the repository lease server-side, then calls only the authorized runtime;
+- preserves exact stale-target and non-fast-forward failures; post-ref-update verification uncertainty is explicit and never a safe-retry response;
+- proves Git integration authority can exist without exposing Git read tools.
+
+**Remaining before Phase 2D3 closes:**
+
+- merge/CI validation of 2D3C;
+- final disposable-repository ChatGPT smoke and plugin allowlist update.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
 
