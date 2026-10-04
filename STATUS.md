@@ -7,7 +7,7 @@
 
 ## Current focus
 
-Phase 2C3C is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`) added the transport-agnostic authorized mutation boundary; PR #27 (`1b5a3393`, exact final head `ae05d6a2`) bound the authorized `ActionEnvelope.action_id` to the same durable journal/staging/commit/recovery operation; PR #29 (`75477c3b`) provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases; and PR #30 (`624e88da`, exact final head `f70e520b`) added the thin conditional MCP adapter for `fs_write`, `fs_apply_patch` and `fs_delete`. The PR #30 final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Mutation tools are absent when corresponding operator-owned authority is absent; callers cannot supply `TaskLeaseId` or `ActionId`. Startup performs bounded deterministic recovery before MCP is served. Started blocking durable mutations retain their transport execution permit and are followed to a known transaction/recovery outcome rather than returning a timeout while a non-cancellable blocking effect may still commit. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (exact green head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status`, `git_diff` and `git_log` is merged as `aee4f168` (exact green head `54951225`). Git read tools exist only when the operator supplies one absolute Git executable and the configured workspace validates as the exact canonical repository root. Phase 2D3 is now split into narrow gates; the current tranche is 2D3A, the exact-head integration runtime foundation. Application-owned `GitIntegrate` provisioning/recovery and MCP exposure remain later gates.
+Phase 2C3C is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`) added the transport-agnostic authorized mutation boundary; PR #27 (`1b5a3393`, exact final head `ae05d6a2`) bound the authorized `ActionEnvelope.action_id` to the same durable journal/staging/commit/recovery operation; PR #29 (`75477c3b`) provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases; and PR #30 (`624e88da`, exact final head `f70e520b`) added the thin conditional MCP adapter for `fs_write`, `fs_apply_patch` and `fs_delete`. The PR #30 final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Mutation tools are absent when corresponding operator-owned authority is absent; callers cannot supply `TaskLeaseId` or `ActionId`. Startup performs bounded deterministic recovery before MCP is served. Started blocking durable mutations retain their transport execution permit and are followed to a known transaction/recovery outcome rather than returning a timeout while a non-cancellable blocking effect may still commit. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (exact green head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status`, `git_diff` and `git_log` is merged as `aee4f168` (exact green head `54951225`). Git read tools exist only when the operator supplies one absolute Git executable and the configured workspace validates as the exact canonical repository root. Phase 2D3 is split into narrow gates. Phase 2D3A merged in PR #40 as `22b34149` after exact head `96b30f94` passed dependency policy plus Ubuntu/Windows CI. The current development tranche is 2D3B1: internal application-owned `GitIntegrate` lease provisioning primitives and a transport-agnostic authorized integration boundary. Startup/operator wiring, interruption recovery and MCP exposure remain later gates.
 
 ### ChatGPT Desktop local integration - validated 2026-10-04
 
@@ -17,11 +17,17 @@ A direct MCP smoke additionally proved Git status/diff/log, scoped transactional
 
 The local plugin packaging is compatibility-only (`.codex-plugin/plugin.json` + generated `.mcp.json`) because that is the form that successfully registered the local stdio server with the tested ChatGPT Desktop runtime. A user-scoped PowerShell installer, MCP doctor, uninstaller, and tag-driven Windows release-bundle workflow are now part of the repository. This is developer-preview operational readiness only; lifecycle remains pre-alpha and `Release: none` remains true until the first tagged bundle is published.
 
-### Phase 2D3A - exact-head integration runtime foundation
+### Phase 2D3A - exact-head integration runtime foundation — merged
 
-The current development tranche adds `GitIntegrationService` without exposing any new MCP tool. `Effect::GitIntegrate` binds an exact source commit and exact expected target head. The runtime accepts only operator-owned direct refs under `refs/optic/integration/`, rejects symbolic refs, validates fast-forward ancestry with replacement objects disabled, prepares through an ActionId-owned detached/locked `--no-checkout` worktree outside the repository checkout, requires cleanup before target movement, then advances the internal ref with atomic old-value comparison via `git update-ref --no-deref`.
+PR #40 merged to `main` as `22b34149`; exact final head `96b30f94` passed dependency policy plus Ubuntu format/Clippy/tests and Windows Clippy/tests. `GitIntegrationService` is merged without exposing any new MCP tool. `Effect::GitIntegrate` binds an exact source commit and exact expected target head. The runtime accepts only operator-owned direct refs under `refs/optic/integration/`, rejects symbolic refs, validates fast-forward ancestry with replacement objects disabled, prepares through an ActionId-owned detached/locked `--no-checkout` worktree outside the repository checkout, requires cleanup before target movement, then advances the internal ref with atomic old-value comparison via `git update-ref --no-deref`.
 
-The Windows/local gate currently covers successful fast-forward integration without changing caller workspace HEAD/files, stale target rejection, divergent/non-fast-forward rejection, non-commit source rejection, operation-path collision, integration-root overlap, missing/ordinary/symbolic target refs and post-construction hook-directory tampering. Policy tests additionally prove `GitIntegrate` still requires a repository-scoped task lease. Process-crash cleanup/recovery, application-owned authority provisioning and MCP exposure remain explicitly unimplemented gates.
+The Windows/local gate currently covers successful fast-forward integration without changing caller workspace HEAD/files, stale target rejection, divergent/non-fast-forward rejection, non-commit source rejection, operation-path collision, integration-root overlap, missing/ordinary/symbolic target refs and post-construction hook-directory tampering. Policy tests additionally prove `GitIntegrate` still requires a repository-scoped task lease. Process-crash cleanup/recovery, startup/operator authority wiring and MCP exposure remain explicitly unimplemented gates.
+
+### Phase 2D3B1 - internal Git integration authorization — current branch
+
+`GitIntegrationAuthoritySet` can mint exactly one `GitIntegrate` capability on exactly one `LeaseScope::Repository`, with bounded resources, expiry and policy epoch, or mint nothing when disabled. `AuthorizedGitIntegrationService` resolves the active application session and exact active task lease, applies the existing deterministic `PolicyEngine`, rejects effect/session/scope/capability mismatches, and only then can reach `GitIntegrationService`. The new negative tests cover missing lease, wrong scope, missing session capability and cross-session lease; the positive test reaches the fast-forward runtime only with matching repository authority.
+
+B1 deliberately does not add app CLI configuration or MCP tools. B2 will add bounded interruption recovery plus startup/operator provisioning before any MCP adapter exists. Local `cargo check` and runtime Clippy are green; local linking is currently blocked by the machine MSVC environment (`LNK1104: msvcrt.lib`), so executable test validation for this branch is delegated to GitHub CI rather than changing global toolchain state.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -194,9 +200,9 @@ The Windows/local gate currently covers successful fast-forward integration with
 - Status/diff raw bytes are base64-encoded inside the structured response budget; log cursors are validated before use.
 
 ### Current / next implementation
-- Phase 2D3 is current: implement separate `GitIntegrate` authority with exact validated `expected_target_head`, repository-scoped lease, isolated worktree ownership and deterministic stale-target/conflict/cleanup behavior before any Git mutation MCP tool is exposed.
-- Add Git integration only with an exact validated `expected_target_head`; stale target heads and conflicts must fail closed before integration.
-- Keep Git authority application-owned and separate read from integration capability; MCP Git exposure follows only after runtime/policy negative gates pass.
+- Phase 2D3B1 is current: validate the internal `GitIntegrate` authority/authorized-runtime boundary in CI.
+- Phase 2D3B2 then adds bounded interruption recovery and startup/operator-owned provisioning while keeping exact source/target preconditions and repository-only scope.
+- Keep Git authority application-owned and separate read from integration capability; MCP Git exposure follows only after recovery, startup wiring and authorization negative gates pass.
 - Preserve current file-mutation guarantees while Phase 2D is implemented; do not couple Git worktree lifecycle to mutation journals accidentally.
 - Evaluate an oplock/handle-based rename PoC only if it materially reduces the documented residual write/replace external-writer window without creating deadlock/compatibility complexity.
 
@@ -207,7 +213,7 @@ The Windows/local gate currently covers successful fast-forward integration with
 - Hardening research: restricted-token vs AppContainer/LPAC compatibility matrix.
 
 ### Not implemented yet
-- Git execution services and their stale-target/integration negative gates.
+- Git integration startup/operator provisioning, interruption-safe worktree recovery and public MCP adapter; the internal fast-forward runtime itself is implemented.
 - Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Installer/tunnel integration.
@@ -218,7 +224,7 @@ The Windows/local gate currently covers successful fast-forward integration with
 
 ## Main baseline
 
-`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`), Phase 2C3B1 (`f5eafc3a`), Phase 2C3B2 (`b346a7d9`), Phase 2C3C1 authorization (`ac381002`), Phase 2C3C1 ActionId binding (`1b5a3393`), Phase 2C3C2 authority provisioning (`75477c3b`) and Phase 2C3C3 MCP mutation adapter (`624e88da`). Phase 2D Git read/integration is the current implementation tranche.
+`main` includes Phase 1A (`d33a1e5`), Phase 1B (`681f939`), Phase 1C (`adf2e772`), Phase 1D (`69af07a`), Phase 2A (`71bdf082`), Phase 2B (`80f3aa9b`), Phase 2B closure docs (`c9590f5c`), Phase 2C1 (`85aec4c6`), Phase 2C2 (`0297406c`), Phase 2C3A (`4415a65c`), Phase 2C3B1 (`f5eafc3a`), Phase 2C3B2 (`b346a7d9`), Phase 2C3C1 authorization (`ac381002`), Phase 2C3C1 ActionId binding (`1b5a3393`), Phase 2C3C2 authority provisioning (`75477c3b`), Phase 2C3C3 MCP mutation adapter (`624e88da`), Phase 2D1 Git read (`1cb3cc03`), Phase 2D2 MCP Git read (`aee4f168`) and Phase 2D3A exact-head integration runtime (`22b34149`). Phase 2D3B authorization/recovery is the current implementation tranche.
 
 ## Health rule
 

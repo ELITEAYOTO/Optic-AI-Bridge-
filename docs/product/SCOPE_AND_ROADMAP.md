@@ -111,7 +111,7 @@ The first real Windows/ChatGPT Desktop integration smoke passed on 2026-10-04 ag
 
 Phase 2D3 is intentionally split so no Git mutation MCP surface appears before each lower boundary is proven.
 
-**2D3A runtime foundation (current tranche):**
+**2D3A runtime foundation (COMPLETED — PR #40, `22b34149`):**
 
 - `GitIntegrate` effects bind exact `source_head` and `expected_target_head` commit ids;
 - the first primitive is fast-forward-only and targets only a direct operator-owned ref under `refs/optic/integration/`;
@@ -123,12 +123,18 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - Git prompting/pagers/system/global config/replacement refs are disabled and the forced-empty hooks directory is revalidated before mutation-capable calls;
 - stale target, divergent history, invalid source, path collision, overlap and hook/ref redirection cases have negative regression coverage.
 
+**2D3B1 internal authorization (CURRENT DEVELOPMENT):**
+
+- application-owned authority primitive mints no lease by default and, when enabled, exactly one `GitIntegrate` + `LeaseScope::Repository` task lease;
+- a transport-agnostic authorized integration service resolves active session + exact active lease and applies `PolicyEngine` before 2D3A runtime execution;
+- missing lease, wrong scope, missing session capability and cross-session authority fail before target update;
+- B1 intentionally adds neither startup flags nor MCP Git mutation tools.
+
 **Remaining before MCP exposure:**
 
-- application-owned `GitIntegrate` authority and repository-scoped task lease provisioning;
-- bounded process-crash cleanup/recovery for any operation-owned worktree left registered by interruption;
-- transport-agnostic authorized integration service through `PolicyEngine`;
-- thin conditional MCP adapter with server-owned ActionId and no caller-selected repo/ref/path/argv/lease authority;
+- 2D3B2 bounded process-crash cleanup/recovery for operation-owned worktrees;
+- explicit startup/operator provisioning and private authority mapping;
+- 2D3C thin conditional MCP adapter with server-owned ActionId and no caller-selected repo/ref/path/argv/lease authority;
 - final disposable-repository ChatGPT smoke.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.

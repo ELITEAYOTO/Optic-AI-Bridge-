@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Phase 2D3B1 internal Git integration authorization foundation: application-owned `GitIntegrate` task lease restricted to `LeaseScope::Repository`, canonical bounded resource budget, and `AuthorizedGitIntegrationService` requiring active session + exact active lease + deterministic `PolicyEngine` approval before the 2D3A runtime is reachable; no startup flag or MCP mutation exposure yet.
 - Phase 2D3A exact-head Git integration runtime foundation: fast-forward-only integration to operator-owned direct refs under `refs/optic/integration/`, exact source/target object binding, detached locked `--no-checkout` worktree validation/cleanup, atomic `update-ref --no-deref <new> <expected>` compare-and-swap, symbolic-ref/hook/replacement-object hardening, and no MCP mutation exposure yet.
 - ADR-0010 documenting the internal-ref, exact-head, fast-forward-first Git integration boundary and its remaining recovery/authority/MCP gates.
 - Validated local ChatGPT Desktop integration through the compatibility plugin package: normal Chat starts the `optic` stdio MCP server and can invoke the intended file/Git tool surface.
