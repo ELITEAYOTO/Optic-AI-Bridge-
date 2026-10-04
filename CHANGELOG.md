@@ -5,6 +5,8 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Phase 2D1 bounded `GitReadService` with exact canonical repository binding, bounded status/diff/log, pinned reachable log cursors and read-only Git hardening; merged in PR #32 (`1cb3cc03`, validated head `ed3b5c43`).
+- Phase 2D2 operator-owned MCP Git read adapter exposing conditional `git_status`, `git_diff` and `git_log` without caller-controlled repository/executable/argv authority; merged in PR #33 (`aee4f168`, validated head `54951225`).
 - Canonical product, architecture, security, specification, engineering, operations and research documentation.
 - Multi-session and same-repository worktree isolation design.
 - Deterministic policy/capability model.

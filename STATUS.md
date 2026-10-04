@@ -7,7 +7,7 @@
 
 ## Current focus
 
-Phase 2C3C is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`) added the transport-agnostic authorized mutation boundary; PR #27 (`1b5a3393`, exact final head `ae05d6a2`) bound the authorized `ActionEnvelope.action_id` to the same durable journal/staging/commit/recovery operation; PR #29 (`75477c3b`) provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases; and PR #30 (`624e88da`, exact final head `f70e520b`) added the thin conditional MCP adapter for `fs_write`, `fs_apply_patch` and `fs_delete`. The PR #30 final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Mutation tools are absent when corresponding operator-owned authority is absent; callers cannot supply `TaskLeaseId` or `ActionId`. Startup performs bounded deterministic recovery before MCP is served. Started blocking durable mutations retain their transport execution permit and are followed to a known transaction/recovery outcome rather than returning a timeout while a non-cancellable blocking effect may still commit. The current tranche is Phase 2D: bounded Git read primitives followed by exact-head integration/conflict gates before any MCP Git exposure.
+Phase 2C3C is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`) added the transport-agnostic authorized mutation boundary; PR #27 (`1b5a3393`, exact final head `ae05d6a2`) bound the authorized `ActionEnvelope.action_id` to the same durable journal/staging/commit/recovery operation; PR #29 (`75477c3b`) provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases; and PR #30 (`624e88da`, exact final head `f70e520b`) added the thin conditional MCP adapter for `fs_write`, `fs_apply_patch` and `fs_delete`. The PR #30 final head passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Mutation tools are absent when corresponding operator-owned authority is absent; callers cannot supply `TaskLeaseId` or `ActionId`. Startup performs bounded deterministic recovery before MCP is served. Started blocking durable mutations retain their transport execution permit and are followed to a known transaction/recovery outcome rather than returning a timeout while a non-cancellable blocking effect may still commit. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (exact green head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status`, `git_diff` and `git_log` is merged as `aee4f168` (exact green head `54951225`). Git read tools exist only when the operator supplies one absolute Git executable and the configured workspace validates as the exact canonical repository root. The current tranche is Phase 2D3: separate `GitIntegrate` authority with exact target-head precondition, repository-scoped lease, isolated worktree ownership and deterministic conflict/cleanup gates.
 
 ### Completed
 - Documentation ownership and living governance.
@@ -167,8 +167,20 @@ Phase 2C3C is merged on `main`. PR #26 (`ac381002`, exact final head `fcd1a6aa`)
 - Recovery-required/ambiguous runtime outcomes map to explicit internal errors rather than success or blind-retry semantics. Non-Windows durable mutation remains fail-closed as unsupported.
 - Cancellation-safety hardening: started `spawn_blocking` durable mutations are not wrapped in a timeout that cannot cancel them. Their `TransportGuard` permit is retained until a known transaction/recovery outcome is returned, preventing a timeout response while an effect may still commit in the background.
 
+### Phase 2D1 — bounded Git read runtime merged
+- PR #32 merged to `main` as `1cb3cc03`; exact final head `ed3b5c43` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- `GitReadService` is bound to one exact canonical Git worktree top-level and one absolute/canonical Git executable.
+- `status`, literal-path `diff` and paginated `log` are byte/entry/deadline bounded and run with prompts, pager, external diff/textconv, fsmonitor/untracked cache and submodule traversal constrained or disabled.
+- Log cursors remain pinned to their original reachable HEAD and fail closed after incompatible history rewrites.
+
+### Phase 2D2 — operator-owned MCP Git read adapter merged
+- PR #33 merged to `main` as `aee4f168`; exact final head `54951225` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- `Capability::GitRead` and the `git_status`, `git_diff`, `git_log` tools are exposed only when the operator supplies one absolute `--git-executable`.
+- MCP callers cannot supply repository roots, Git executable paths, raw Git argv or authority identifiers.
+- Status/diff raw bytes are base64-encoded inside the structured response budget; log cursors are validated before use.
+
 ### Current / next implementation
-- Phase 2D is current: add bounded Git read primitives (`status`, `diff`, `log`) behind existing repository scope and resource contracts.
+- Phase 2D3 is current: implement separate `GitIntegrate` authority with exact validated `expected_target_head`, repository-scoped lease, isolated worktree ownership and deterministic stale-target/conflict/cleanup behavior before any Git mutation MCP tool is exposed.
 - Add Git integration only with an exact validated `expected_target_head`; stale target heads and conflicts must fail closed before integration.
 - Keep Git authority application-owned and separate read from integration capability; MCP Git exposure follows only after runtime/policy negative gates pass.
 - Preserve current file-mutation guarantees while Phase 2D is implemented; do not couple Git worktree lifecycle to mutation journals accidentally.

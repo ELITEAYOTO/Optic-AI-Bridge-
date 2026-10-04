@@ -274,17 +274,39 @@ Design constraints across Phase 2C:
 
 ### Phase 2D — Git read/integration
 
+Status: **in progress; read path merged, integration current**.
+
+#### Phase 2D1 — bounded Git read runtime
+
+Status: **merged** in PR #32 (`1cb3cc03`). Exact final head `ed3b5c43` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+
+- exact canonical repository root + absolute canonical Git executable;
+- bounded read-only `status`, literal-path/staged `diff`, and paginated `log`;
+- disabled prompting/pager/external diff/textconv and bounded command deadline/output;
+- log cursors pinned to their original reachable HEAD;
+- concurrent readers share no mutable runtime state.
+
+#### Phase 2D2 — operator-owned MCP Git read adapter
+
+Status: **merged** in PR #33 (`aee4f168`). Exact final head `54951225` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+
+- operator-owned `--git-executable` conditionally provisions `GitRead`;
+- MCP exposes `git_status`, `git_diff`, `git_log` only when that application-owned runtime exists;
+- callers cannot select repository paths, executable paths, raw Git argv or authority identifiers;
+- raw status/diff bytes remain exact via base64 within structured-response ceilings;
+- log cursors are validated as current HEAD or reachable ancestors.
+
+#### Phase 2D3 — exact-head Git integration
+
 Status: **current**.
 
-Implement in narrow gates:
+1. separate `GitIntegrate` authority with repository-scoped task lease;
+2. exact validated `expected_target_head` precondition before integration;
+3. isolated worktree/integration ownership rather than mutating the caller workspace directly;
+4. deterministic stale-target, conflict and cleanup semantics;
+5. no MCP Git mutation exposure until runtime/policy negative gates pass.
 
-1. bounded Git read primitives (`status`, `diff`, `log`) with repository-scoped authority and output ceilings;
-2. Git integration only with exact validated `expected_target_head`;
-3. explicit integration/conflict gate and stale-target rejection;
-4. application-owned Git authority; MCP cannot mint or freely select integration authority;
-5. MCP Git exposure only after runtime/policy negative tests pass.
-
-Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target rejection.
+Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict rejection.
 
 ## Phase 3 — multi-session
 
