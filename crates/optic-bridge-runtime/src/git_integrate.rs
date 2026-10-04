@@ -173,7 +173,9 @@ impl GitIntegrationService {
             return Err(GitIntegrationError::GitCommandFailed);
         }
 
-        let observed = self.target_head()?;
+        let observed = self
+            .target_head()
+            .map_err(|_| GitIntegrationError::PostUpdateVerificationUncertain)?;
         if &observed != source_head {
             return Err(GitIntegrationError::PostUpdateVerificationFailed);
         }
@@ -897,7 +899,11 @@ pub enum GitIntegrationError {
     CommandOutputTooLarge,
     #[error("Git command failed")]
     GitCommandFailed,
-    #[error("target ref update could not be verified")]
+    #[error("target ref update succeeded but post-update verification could not be completed")]
+    PostUpdateVerificationUncertain,
+    #[error(
+        "target ref update completed but the observed post-update head did not match the source"
+    )]
     PostUpdateVerificationFailed,
     #[error("operating-system entropy source is unavailable")]
     EntropyUnavailable,

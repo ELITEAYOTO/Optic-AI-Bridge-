@@ -24,7 +24,9 @@ Git integration also introduces two separate risks that do not exist in read-onl
 11. Recovery validates the complete bounded snapshot before cleanup, revalidates each filesystem path immediately before removal, and keeps the ownership lock until Git removes the worktree using double `--force`; ambiguous state fails closed.
 12. Git read and integration executable authority are explicitly separate: `--git-executable` provisions the read runtime, while `--git-integration-executable` belongs only to the integration/recovery runtime. Neither option silently grants the other's capability.
 13. Integration startup requires a complete executable/root/internal-ref tuple. Recovery runs before MCP serve whenever that tuple is present. `--allow-git-integrate` is a separate explicit opt-in that alone permits minting the repository-scoped `GitIntegrate` lease/session capability; recovery-only startup grants no mutation authority.
-14. The MCP server requires integration runtime and application-owned authority to agree when authority is retained, but no MCP Git mutation tool is exposed by B3. The thin adapter remains a later Phase 2D3C gate.
+14. The MCP server requires integration runtime and application-owned authority to agree when authority is retained.
+15. The thin MCP adapter exposes only exact `source_head` + `expected_target_head`. Repository/ref/path/executable/raw-argv/lease/ActionId authority remains application-owned; unknown public fields are rejected. The adapter generates ActionId, resolves the existing repository lease and calls only `AuthorizedGitIntegrationService`.
+16. Once an atomic ref update succeeds, inability to complete post-update verification is an explicit uncertain-outcome class. Public adapters must not map that condition to a pre-effect failure or safe retry.
 
 ## Consequences
 
@@ -36,10 +38,11 @@ Git integration also introduces two separate risks that do not exist in read-onl
 - Recovery does not mutate unrelated worktree administration through prune and refuses partial cleanup when its initial bounded snapshot is ambiguous.
 - A local actor with write access to the operator-owned integration state can still race external state; the runtime therefore revalidates each cleanup path immediately before removal and revalidates critical target state immediately before ref effects rather than treating earlier observations as authority.
 - An operator can run integration recovery without granting either `GitIntegrate` or `GitRead`; capability creation remains a distinct explicit startup decision.
+- Public integration input cannot redirect the internal target or select another Git executable/repository/lease.
+- If the atomic target update may already have occurred, the response contract preserves uncertainty rather than encouraging blind retry.
 
 ## Deferred
 
-- CI/merge validation of the B3 startup/operator wiring;
-- MCP `git_integrate` exposure;
+- CI/merge validation and disposable-repository smoke of the 2D3C adapter;
 - non-fast-forward merge/conflict production semantics;
 - multi-session same-repository worktree ownership/coordinator from Phase 4.

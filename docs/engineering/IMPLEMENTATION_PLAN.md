@@ -316,7 +316,7 @@ Status: **merged** in PR #40 (`22b34149`). Exact final head `96b30f94` passed de
 
 ##### Phase 2D3B — application-owned integration authority + recovery
 
-Status: **current**, split into B1/B2/B3.
+Status: **merged through B3**.
 
 **2D3B1 — internal authorization boundary — merged in PR #41 (`f3d0898f`):**
 
@@ -336,7 +336,7 @@ Status: **current**, split into B1/B2/B3.
 6. forced-process-termination coverage leaves a real locked orphan before target-ref mutation and proves restart cleanup does not move the target;
 7. exact final head `0ff95b82` passed dependency policy plus Ubuntu/Windows CI.
 
-**2D3B3 — startup/operator authority wiring — current branch:**
+**2D3B3 — startup/operator authority wiring — merged in PR #43 (`73ade6e3`):**
 
 1. require `--git-integration-executable`, `--git-integration-root` and `--git-integration-ref` as one complete integration-runtime tuple; partial tuples fail startup closed;
 2. run bounded B2 recovery before MCP serve whenever that tuple is present, even without mutation authority;
@@ -344,17 +344,22 @@ Status: **current**, split into B1/B2/B3.
 4. keep `--git-executable` exclusively tied to `GitRead` so integration/recovery does not implicitly grant read authority;
 5. retain the recovered `GitIntegrationService` behind `AuthorizedGitIntegrationService` only when integration authority exists; recovery-only startup drops the runtime afterward;
 6. reject MCP server construction when integration runtime/authority presence is inconsistent;
-7. expose no `git_integrate` router or public mutation schema in B3.
+7. expose no `git_integrate` router or public mutation schema in B3; exact final head `c82059eb` passed dependency policy plus Ubuntu/Windows CI.
 
 ##### Phase 2D3C — thin MCP integration adapter
 
-Remaining gate:
+Status: **current branch**.
 
-1. expose no repository/ref/path/raw-argv/lease/ActionId authority to MCP callers;
-2. generate ActionId server-side and resolve the application-owned integration lease internally;
-3. expose the tool only when `GitIntegrate` authority is provisioned;
-4. keep exact stale-target/non-fast-forward/cleanup outcomes structured and fail-closed;
-5. validate the final adapter in a disposable repository before adding it to the ChatGPT plugin tool allowlist.
+1. conditionally register exactly one `git_integrate` tool only when B3 application-owned integration authority is present;
+2. accept only `source_head` and `expected_target_head` as full Git object ids and reject unknown public fields;
+3. expose no repository/ref/path/raw-argv/lease/ActionId authority to MCP callers;
+4. generate ActionId server-side, resolve the authoritative integration lease internally and normalize to `Effect::GitIntegrate`;
+5. invoke only `AuthorizedGitIntegrationService`; no second Git mutation path exists in the adapter;
+6. retain the transport execution permit until a started blocking integration reaches a known runtime outcome;
+7. map stale target to explicit precondition failure and divergence to non-fast-forward; cleanup/recovery-required conditions remain fail-closed;
+8. classify any failure to prove state after a successful atomic ref update as `outcome_uncertain`, never as a safe retry;
+9. prove integration authority can expose `git_integrate` without implicitly exposing Git read tools;
+10. validate CI, then run the final adapter in a disposable repository before adding it to the ChatGPT plugin tool allowlist.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 

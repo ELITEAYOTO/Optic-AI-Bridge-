@@ -4,9 +4,9 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 
 **Last reviewed:** 2026-10-04  
 **Current phase:** Phase 2D3 — exact-head Git integration  
-**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3A and Phase 2D3B1–B2 are merged
+**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3A and Phase 2D3B1–B3 are merged
 **Release state:** no production-supported release  
-**Next gate:** Phase 2D3B2 bounded recovery is merged in PR #42 (`b74d563e`, exact green head `0ff95b82`). The current 2D3B3 branch wires recovery-before-serve plus explicit operator-owned `GitIntegrate` provisioning, while keeping Git read and Git integration executable authority separate. Only after this startup gate passes does 2D3C add a thin conditional MCP adapter. No Git mutation MCP tool is exposed yet.
+**Next gate:** Phase 2D3B3 startup/operator authority is merged in PR #43 (`73ade6e3`, exact green head `c82059eb`). The current Phase 2D3C branch adds the thin conditional `git_integrate` MCP adapter with only exact source/expected-target object ids as caller input. CI plus a disposable-repository ChatGPT smoke must pass before Phase 2D3 closes.
 
 The first real Windows developer smoke has now passed on a disposable repository through ChatGPT Desktop: MCP stdio initialization, file reads, bounded Git reads, scoped transactional write/patch/delete, stale-version rejection, scope denial and clean recovery retirement were all observed. This validates the current Phase 2D2 machine/integration surface only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
 

@@ -199,6 +199,9 @@ impl ReadonlyMcpServer {
         if git_service.is_some() {
             tool_router.merge(Self::git_read_tool_router());
         }
+        if git_integration_authorities.has_integrate() {
+            tool_router.merge(Self::git_integrate_tool_router());
+        }
 
         Ok(Self {
             tool_router,
@@ -231,6 +234,18 @@ impl ReadonlyMcpServer {
     #[must_use]
     pub fn git_integration_authority_ready(&self) -> bool {
         self.git_integration_service.is_some() && self.git_integration_authorities.has_integrate()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn registered_tool_names(&self) -> Vec<String> {
+        let mut names = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
     }
 
     #[tool(
