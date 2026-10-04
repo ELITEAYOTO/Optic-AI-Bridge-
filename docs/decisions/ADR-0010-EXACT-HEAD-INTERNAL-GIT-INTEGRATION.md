@@ -22,7 +22,9 @@ Git integration also introduces two separate risks that do not exist in read-onl
 9. Windows canonical `\\?\` paths remain authoritative for Optic containment checks but are converted to an equivalent non-verbatim representation only when passed to Git, because Git for Windows does not consistently accept verbatim paths as worktree destinations.
 10. Recovery never uses broad `git worktree prune`. Git registration is read through bounded machine-readable `worktree list --porcelain -z`, user worktrees outside the canonical Optic integration root are ignored, and Optic-owned candidates are separately capped by the concurrent-request ceiling. An owned candidate must be a direct canonically encoded ActionId-named, registered, locked, non-symlink, canonically contained worktree.
 11. Recovery validates the complete bounded snapshot before cleanup, revalidates each filesystem path immediately before removal, and keeps the ownership lock until Git removes the worktree using double `--force`; ambiguous state fails closed.
-12. No MCP Git mutation tool is exposed by these runtime tranches. Explicit startup/operator provisioning and the thin MCP adapter are later Phase 2D3 gates.
+12. Git read and integration executable authority are explicitly separate: `--git-executable` provisions the read runtime, while `--git-integration-executable` belongs only to the integration/recovery runtime. Neither option silently grants the other's capability.
+13. Integration startup requires a complete executable/root/internal-ref tuple. Recovery runs before MCP serve whenever that tuple is present. `--allow-git-integrate` is a separate explicit opt-in that alone permits minting the repository-scoped `GitIntegrate` lease/session capability; recovery-only startup grants no mutation authority.
+14. The MCP server requires integration runtime and application-owned authority to agree when authority is retained, but no MCP Git mutation tool is exposed by B3. The thin adapter remains a later Phase 2D3C gate.
 
 ## Consequences
 
@@ -33,10 +35,11 @@ Git integration also introduces two separate risks that do not exist in read-onl
 - Worktree administrative state is temporary and operation-owned. Because cleanup occurs before target-ref mutation, a process-termination orphan is a pre-ref-effect artifact; bounded recovery can remove only a proven owned orphan without inferring whether integration committed.
 - Recovery does not mutate unrelated worktree administration through prune and refuses partial cleanup when its initial bounded snapshot is ambiguous.
 - A local actor with write access to the operator-owned integration state can still race external state; the runtime therefore revalidates each cleanup path immediately before removal and revalidates critical target state immediately before ref effects rather than treating earlier observations as authority.
+- An operator can run integration recovery without granting either `GitIntegrate` or `GitRead`; capability creation remains a distinct explicit startup decision.
 
 ## Deferred
 
-- explicit startup/operator wiring of the merged internal `GitIntegrate` authority and recovery-before-serve;
+- CI/merge validation of the B3 startup/operator wiring;
 - MCP `git_integrate` exposure;
 - non-fast-forward merge/conflict production semantics;
 - multi-session same-repository worktree ownership/coordinator from Phase 4.

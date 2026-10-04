@@ -14,9 +14,11 @@ use optic_bridge_core::{
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
-    AuthorizedFileMutationService, Clock, GitReadService, MutationAuthoritySet,
-    MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock, TaskLeaseRegistry,
-    TransactionalFileService, mutation_resource_budget,
+    AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
+    GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService,
+    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock,
+    TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
+    mutation_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -77,6 +79,47 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .transpose()?
         .map(Arc::new);
 
+    let git_integration_runtime = match (
+        args.git_integration_executable.as_ref(),
+        args.git_integration_root.as_ref(),
+        args.git_integration_ref.as_ref(),
+    ) {
+        (Some(git), Some(integration_root), Some(target_ref)) => {
+            let runtime = GitIntegrationService::from_hard_limits(
+                &args.workspace,
+                git,
+                integration_root,
+                target_ref.clone(),
+                limits,
+            )?;
+            let report = runtime.recover_owned_worktrees()?;
+            if report.removed_worktrees != 0 {
+                eprintln!(
+                    "Optic AI Bridge startup Git recovery removed {} owned worktree(s)",
+                    report.removed_worktrees
+                );
+            }
+            Some(runtime)
+        }
+        (None, None, None) => None,
+        _ => {
+            return Err(
+                std::io::Error::other("invalid Git integration startup configuration").into(),
+            );
+        }
+    };
+
+    let git_integration_authorities = GitIntegrationAuthoritySet::provision(
+        &task_leases,
+        &session,
+        GitIntegrationAuthoritySpec {
+            enabled: args.allow_git_integrate,
+        },
+        git_integration_resource_budget(limits),
+        expires_at,
+        1,
+    )?;
+
     let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
     if !process_leases.is_empty() {
         capabilities.insert(Capability::ProcessRun);
@@ -89,6 +132,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     if git_service.is_some() {
         capabilities.insert(Capability::GitRead);
+    }
+    if git_integration_authorities.has_integrate() {
+        capabilities.insert(Capability::GitIntegrate);
     }
     let grant = SessionGrant {
         handle: session.clone(),
@@ -103,6 +149,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let sessions = Arc::new(SessionRegistry::new());
     sessions.register(grant)?;
+
+    let git_integration_service = match (
+        git_integration_runtime,
+        git_integration_authorities.has_integrate(),
+    ) {
+        (Some(runtime), true) => Some(Arc::new(AuthorizedGitIntegrationService::from_runtime(
+            runtime,
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            Arc::clone(&clock) as Arc<dyn Clock>,
+        ))),
+        (Some(_), false) | (None, false) => None,
+        (None, true) => {
+            return Err(std::io::Error::other(
+                "Git integration authority exists without an integration runtime",
+            )
+            .into());
+        }
+    };
 
     let mutation_service = if let Some(state_root) = &args.mutation_state_dir {
         let recovery =
@@ -128,7 +193,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     let git_read_enabled = git_service.is_some();
-    let server = ReadonlyMcpServer::new_with_git_runtime(
+    let server = ReadonlyMcpServer::new_with_git_integration_runtime(
         &args.workspace,
         sessions,
         session,
@@ -140,7 +205,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         mutation_service,
         mutation_authorities,
         git_service,
+        git_integration_service,
+        git_integration_authorities,
     )?;
+    let git_integrate_authority_ready = server.git_integration_authority_ready();
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
         .map_err(|_| std::io::Error::other("request hard limit does not fit usize"))?;
@@ -154,12 +222,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
 
     eprintln!(
-        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} write scope(s), {} delete scope(s), Git read {})",
+        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} write scope(s), {} delete scope(s), Git read {}, Git integrate authority {})",
         env!("CARGO_PKG_VERSION"),
         args.allowed_executables.len(),
         args.write_scopes.len(),
         args.delete_scopes.len(),
         if git_read_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if git_integrate_authority_ready {
             "enabled"
         } else {
             "disabled"
@@ -179,6 +252,10 @@ struct AppArgs {
     delete_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
     git_executable: Option<PathBuf>,
+    git_integration_executable: Option<PathBuf>,
+    allow_git_integrate: bool,
+    git_integration_root: Option<PathBuf>,
+    git_integration_ref: Option<String>,
 }
 
 impl AppArgs {
@@ -197,6 +274,10 @@ impl AppArgs {
         let mut delete_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
         let mut git_executable = None;
+        let mut git_integration_executable = None;
+        let mut allow_git_integrate = false;
+        let mut git_integration_root = None;
+        let mut git_integration_ref = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -254,6 +335,44 @@ impl AppArgs {
                     )
                 })?;
                 set_git_executable(&mut git_executable, PathBuf::from(value))?;
+            } else if arg == "--git-integration-executable" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--git-integration-executable requires an absolute path",
+                    )
+                })?;
+                set_git_integration_executable(
+                    &mut git_integration_executable,
+                    PathBuf::from(value),
+                )?;
+            } else if arg == "--allow-git-integrate" {
+                if allow_git_integrate {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-git-integrate may be supplied only once",
+                    ));
+                }
+                allow_git_integrate = true;
+            } else if arg == "--git-integration-root" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--git-integration-root requires an absolute path outside the repository",
+                    )
+                })?;
+                set_git_integration_root(&mut git_integration_root, PathBuf::from(value))?;
+            } else if arg == "--git-integration-ref" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--git-integration-ref requires refs/optic/integration/<name>",
+                    )
+                })?;
+                set_git_integration_ref(
+                    &mut git_integration_ref,
+                    os_string_to_utf8(value, "Git integration ref")?,
+                )?;
             } else if let Some(value) = option_value(&arg, "--allow-executable=")? {
                 allowed_executables.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
@@ -266,6 +385,15 @@ impl AppArgs {
                 set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--git-executable=")? {
                 set_git_executable(&mut git_executable, PathBuf::from(value))?;
+            } else if let Some(value) = option_value(&arg, "--git-integration-executable=")? {
+                set_git_integration_executable(
+                    &mut git_integration_executable,
+                    PathBuf::from(value),
+                )?;
+            } else if let Some(value) = option_value(&arg, "--git-integration-root=")? {
+                set_git_integration_root(&mut git_integration_root, PathBuf::from(value))?;
+            } else if let Some(value) = option_value(&arg, "--git-integration-ref=")? {
+                set_git_integration_ref(&mut git_integration_ref, value)?;
             } else if arg.to_string_lossy().starts_with('-') {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -285,6 +413,21 @@ impl AppArgs {
                 "mutation authority requires --mutation-state-dir",
             ));
         }
+        let integration_parts = usize::from(git_integration_executable.is_some())
+            + usize::from(git_integration_root.is_some())
+            + usize::from(git_integration_ref.is_some());
+        if integration_parts != 0 && integration_parts != 3 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Git integration recovery requires --git-integration-executable, --git-integration-root and --git-integration-ref together",
+            ));
+        }
+        if allow_git_integrate && integration_parts != 3 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--allow-git-integrate requires --git-integration-executable, --git-integration-root and --git-integration-ref",
+            ));
+        }
 
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
@@ -294,6 +437,10 @@ impl AppArgs {
             delete_scopes,
             mutation_state_dir,
             git_executable,
+            git_integration_executable,
+            allow_git_integrate,
+            git_integration_root,
+            git_integration_ref,
         })
     }
 }
@@ -328,6 +475,60 @@ fn set_git_executable(slot: &mut Option<PathBuf>, value: PathBuf) -> Result<(), 
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "--git-executable may be supplied only once",
+        ));
+    }
+    Ok(())
+}
+
+fn set_git_integration_executable(
+    slot: &mut Option<PathBuf>,
+    value: PathBuf,
+) -> Result<(), std::io::Error> {
+    if !value.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-executable must be an absolute path",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-executable may be supplied only once",
+        ));
+    }
+    Ok(())
+}
+
+fn set_git_integration_root(
+    slot: &mut Option<PathBuf>,
+    value: PathBuf,
+) -> Result<(), std::io::Error> {
+    if !value.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-root must be an absolute path",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-root may be supplied only once",
+        ));
+    }
+    Ok(())
+}
+
+fn set_git_integration_ref(slot: &mut Option<String>, value: String) -> Result<(), std::io::Error> {
+    if value.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-ref must not be empty",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--git-integration-ref may be supplied only once",
         ));
     }
     Ok(())
@@ -389,6 +590,10 @@ mod tests {
         assert!(parsed.delete_scopes.is_empty());
         assert!(parsed.mutation_state_dir.is_none());
         assert!(parsed.git_executable.is_none());
+        assert!(parsed.git_integration_executable.is_none());
+        assert!(!parsed.allow_git_integrate);
+        assert!(parsed.git_integration_root.is_none());
+        assert!(parsed.git_integration_ref.is_none());
     }
 
     #[test]
@@ -490,6 +695,104 @@ mod tests {
                 git.clone().into_os_string(),
                 OsString::from("--git-executable"),
                 git.into_os_string(),
+                OsString::from("workspace"),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn git_integration_recovery_only_requires_complete_explicit_config() {
+        let git = std::env::temp_dir().join("optic-git-integration-placeholder");
+        let root = std::env::temp_dir().join("optic-git-integration-state");
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--git-integration-executable"),
+            git.clone().into_os_string(),
+            OsString::from("--git-integration-root"),
+            root.clone().into_os_string(),
+            OsString::from("--git-integration-ref=refs/optic/integration/default"),
+            OsString::from("workspace"),
+        ])
+        .expect("recovery-only Git integration config");
+        assert!(!parsed.allow_git_integrate);
+        assert!(parsed.git_executable.is_none());
+        assert!(parsed.git_integration_executable.is_some());
+        assert_eq!(parsed.git_integration_root, Some(root));
+        assert_eq!(
+            parsed.git_integration_ref.as_deref(),
+            Some("refs/optic/integration/default")
+        );
+
+        assert!(
+            AppArgs::parse_from(vec![
+                OsString::from("--git-integration-executable"),
+                git.clone().into_os_string(),
+                OsString::from("--git-integration-root"),
+                std::env::temp_dir()
+                    .join("optic-root-only")
+                    .into_os_string(),
+                OsString::from("workspace"),
+            ])
+            .is_err()
+        );
+        assert!(
+            AppArgs::parse_from(vec![
+                OsString::from("--git-integration-root"),
+                std::env::temp_dir().join("optic-no-git").into_os_string(),
+                OsString::from("--git-integration-ref=refs/optic/integration/default"),
+                OsString::from("workspace"),
+            ])
+            .is_err()
+        );
+        assert!(
+            AppArgs::parse_from(args(&[
+                "--git-integration-executable=/absolute-placeholder",
+                "--git-integration-root=relative-root",
+                "--git-integration-ref=refs/optic/integration/default",
+                "workspace",
+            ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn git_integrate_authority_requires_explicit_allow_and_recovery_config() {
+        assert!(AppArgs::parse_from(args(&["--allow-git-integrate", "workspace"])).is_err());
+
+        let git = std::env::temp_dir().join("optic-git-integrate-placeholder");
+        let root = std::env::temp_dir().join("optic-git-integrate-root");
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--allow-git-integrate"),
+            OsString::from("--git-integration-executable"),
+            git.into_os_string(),
+            OsString::from("--git-integration-root"),
+            root.clone().into_os_string(),
+            OsString::from("--git-integration-ref"),
+            OsString::from("refs/optic/integration/default"),
+            OsString::from("workspace"),
+        ])
+        .expect("explicit integrate authority");
+        assert!(parsed.allow_git_integrate);
+        assert_eq!(parsed.git_integration_root, Some(root));
+        assert_eq!(
+            parsed.git_integration_ref.as_deref(),
+            Some("refs/optic/integration/default")
+        );
+    }
+
+    #[test]
+    fn git_integrate_allow_flag_is_not_repeatable() {
+        let git = std::env::temp_dir().join("optic-git-integrate-repeat");
+        let root = std::env::temp_dir().join("optic-git-integrate-repeat-root");
+        assert!(
+            AppArgs::parse_from(vec![
+                OsString::from("--allow-git-integrate"),
+                OsString::from("--allow-git-integrate"),
+                OsString::from("--git-integration-executable"),
+                git.into_os_string(),
+                OsString::from("--git-integration-root"),
+                root.into_os_string(),
+                OsString::from("--git-integration-ref=refs/optic/integration/default"),
                 OsString::from("workspace"),
             ])
             .is_err()

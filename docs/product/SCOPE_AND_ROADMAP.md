@@ -130,18 +130,27 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - missing lease, wrong scope, missing session capability and cross-session authority fail before target update;
 - B1 adds neither startup flags nor MCP Git mutation tools.
 
-**2D3B2 bounded recovery (CURRENT DEVELOPMENT):**
+**2D3B2 bounded recovery (COMPLETED — PR #42, `b74d563e`):**
 
 - bounded `worktree list --porcelain -z` snapshot plus bounded integration-root scan, with Optic-owned candidates separately capped by the concurrent-request ceiling;
 - no global prune; user worktrees outside the Optic root are untouched;
 - only direct ActionId-named, registered, locked, non-symlink and canonically contained worktrees are cleanup candidates;
 - the full snapshot must validate before any removal and each candidate is revalidated immediately before removal;
 - locked worktrees are removed without an unlock gap using double `--force`;
-- process-termination recovery coverage proves an orphan left before ref mutation can be removed without moving the target.
+- process-termination recovery coverage proves an orphan left before ref mutation can be removed without moving the target;
+- exact final head `0ff95b82` passed dependency policy plus Ubuntu/Windows CI.
+
+**2D3B3 startup/operator authority (CURRENT DEVELOPMENT):**
+
+- integration recovery/runtime configuration is a complete tuple of separate `--git-integration-executable`, absolute integration root and operator-owned internal ref;
+- that tuple without `--allow-git-integrate` is recovery-only and grants no integration capability;
+- `--allow-git-integrate` explicitly provisions the application-owned repository-scoped `GitIntegrate` lease and session capability after recovery succeeds;
+- `--git-executable` remains the independent Git-read opt-in, so integration/recovery does not silently grant `GitRead`;
+- runtime/authority mismatch fails MCP server construction and no `git_integrate` tool is registered.
 
 **Remaining before MCP exposure:**
 
-- explicit startup/operator provisioning plus recovery-before-serve and private authority mapping;
+- merge/CI validation of 2D3B3 startup/operator provisioning;
 - 2D3C thin conditional MCP adapter with server-owned ActionId and no caller-selected repo/ref/path/argv/lease authority;
 - final disposable-repository ChatGPT smoke.
 

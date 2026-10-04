@@ -7,9 +7,10 @@ use optic_bridge_core::{
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
-    AuthorizedFileMutationService, BoundedFileSystem, Clock, EntryKind, FileSystemError,
-    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
+    AuthorizedFileMutationService, AuthorizedGitIntegrationService, BoundedFileSystem, Clock,
+    EntryKind, FileSystemError, GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet,
+    ProcessError, ProcessManager, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
+    TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -41,6 +42,8 @@ pub struct ReadonlyMcpServer {
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
     pub(crate) git_service: Option<Arc<GitReadService>>,
+    pub(crate) git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
+    pub(crate) git_integration_authorities: Arc<GitIntegrationAuthoritySet>,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -136,6 +139,39 @@ impl ReadonlyMcpServer {
         mutation_authorities: MutationAuthoritySet,
         git_service: Option<Arc<GitReadService>>,
     ) -> Result<Self, ServerBuildError> {
+        Self::new_with_git_integration_runtime(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            process_leases,
+            mutation_service,
+            mutation_authorities,
+            git_service,
+            None,
+            GitIntegrationAuthoritySet::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_git_integration_runtime(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+        mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+        mutation_authorities: MutationAuthoritySet,
+        git_service: Option<Arc<GitReadService>>,
+        git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
+        git_integration_authorities: GitIntegrationAuthoritySet,
+    ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
@@ -145,6 +181,9 @@ impl ReadonlyMcpServer {
             && mutation_service.is_none()
         {
             return Err(ServerBuildError::MutationRuntimeMissing);
+        }
+        if git_integration_authorities.has_integrate() != git_integration_service.is_some() {
+            return Err(ServerBuildError::GitIntegrationRuntimeAuthorityMismatch);
         }
 
         let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);
@@ -176,12 +215,22 @@ impl ReadonlyMcpServer {
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),
             git_service,
+            git_integration_service,
+            git_integration_authorities: Arc::new(git_integration_authorities),
         })
     }
 
     #[must_use]
     pub const fn limits(&self) -> HardLimits {
         self.limits
+    }
+
+    /// Reports only whether application-owned Git integration authority and its
+    /// authorized runtime are both provisioned. No lease, ref, repository path,
+    /// executable path, or other authority-bearing detail is exposed.
+    #[must_use]
+    pub fn git_integration_authority_ready(&self) -> bool {
+        self.git_integration_service.is_some() && self.git_integration_authorities.has_integrate()
     }
 
     #[tool(
@@ -487,6 +536,8 @@ pub enum ServerBuildError {
     Process(#[from] ProcessError),
     #[error("mutation authority requires an initialized authorized mutation runtime")]
     MutationRuntimeMissing,
+    #[error("Git integration runtime and application-owned authority must be provisioned together")]
+    GitIntegrationRuntimeAuthorityMismatch,
     #[error("response hard limit is too small for the MCP envelope reserve")]
     ResponseLimitTooSmall,
 }
@@ -572,6 +623,7 @@ mod tests {
     use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
     use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId};
+    use optic_bridge_runtime::{GitIntegrationAuthoritySpec, git_integration_resource_budget};
 
     use super::*;
 
@@ -668,9 +720,62 @@ mod tests {
     }
 
     #[test]
+    fn git_integration_authority_without_runtime_fails_server_build() {
+        let root = workspace("git-integrate-mismatch");
+        let limits = HardLimits::default();
+        let clock: Arc<dyn Clock> = Arc::new(FixedClock(MonotonicTime::from_millis(10)));
+        let session = SessionHandle::generate().expect("test entropy");
+        let grant = SessionGrant {
+            handle: session.clone(),
+            principal: PrincipalId::new("test-principal").expect("principal"),
+            project: ProjectId::new("test-project").expect("project"),
+            capabilities: BTreeSet::from([Capability::GitIntegrate]),
+            expires_at: MonotonicTime::from_millis(1_000),
+            policy_epoch: 1,
+        };
+        let sessions = Arc::new(SessionRegistry::new());
+        sessions.register(grant).expect("register session");
+        let task_leases = Arc::new(TaskLeaseRegistry::new());
+        let authority = GitIntegrationAuthoritySet::provision(
+            &task_leases,
+            &session,
+            GitIntegrationAuthoritySpec { enabled: true },
+            git_integration_resource_budget(limits),
+            MonotonicTime::from_millis(1_000),
+            1,
+        )
+        .expect("provision authority");
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("process runtime"));
+
+        let result = ReadonlyMcpServer::new_with_git_integration_runtime(
+            &root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            BTreeMap::new(),
+            None,
+            MutationAuthoritySet::default(),
+            None,
+            None,
+            authority,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ServerBuildError::GitIntegrationRuntimeAuthorityMismatch)
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn tool_surface_matches_phase1c_contract() {
         let root = workspace("tools");
         let server = server(&root, &[Capability::FileRead, Capability::FileSearch]);
+        assert!(!server.git_integration_authority_ready());
         let mut names = server
             .tool_router
             .list_all()

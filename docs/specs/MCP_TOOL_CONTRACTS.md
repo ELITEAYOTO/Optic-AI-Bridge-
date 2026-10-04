@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha surface through Phase 2D2. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha public surface through Phase 2D2 plus conditional file mutation; Phase 2D3B internal integration runtime/authority/startup wiring remains intentionally unexposed. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -11,6 +11,7 @@ Tool visibility and execution authority are intentionally distinct:
 - `fs_write` and `fs_apply_patch` are registered only when application-owned `FileWrite` authority was provisioned.
 - `fs_delete` is registered only when distinct application-owned `FileDelete` authority was provisioned.
 - `git_status`, `git_diff` and `git_log` are registered only when the operator supplied one valid absolute `--git-executable`, allowing the application to own a `GitReadService`.
+- Phase 2D3B may provision internal `GitIntegrate` authority from separate integration-only startup configuration, but it deliberately merges no `git_integrate` tool router. Internal authority readiness is not tool visibility.
 
 A visible MCP tool never grants a capability, task lease or authority by itself.
 
@@ -94,7 +95,7 @@ git_worktree_status()
 git_integrate(source_head, expected_target_head)
 ```
 
-Phase 2D3A now owns a runtime-only fast-forward integration foundation. The normalized `GitIntegrate` effect binds both exact `source_head` and `expected_target_head`; the runtime is restricted to operator-owned direct refs under `refs/optic/integration/`, an isolated locked `--no-checkout` worktree and atomic expected-old-value ref update. It does **not** register a public MCP mutation tool. Application-owned `GitIntegrate` authority, repository-scoped lease resolution, interruption cleanup/recovery and the thin conditional MCP adapter must pass their own gates first.
+Phase 2D3A/B now own the internal fast-forward integration, repository-scoped application authority and bounded orphan-worktree recovery boundaries. B3 adds explicit startup configuration and recovery-before-serve: `--git-integration-executable`, integration root and internal ref must be supplied together, and `--allow-git-integrate` separately opts into the mutation capability/lease. `--git-executable` remains Git-read-only, so integration authority never silently grants `GitRead`. The normalized `GitIntegrate` effect still binds exact `source_head` and `expected_target_head`. None of these internal/startup gates registers a public MCP mutation tool; the thin conditional adapter remains Phase 2D3C.
 
 ## Processes
 
@@ -167,7 +168,7 @@ system_info()
 - No opaque shell command as the base process API.
 - All potentially large responses are bounded/paginated.
 - Mutations carry explicit concurrency preconditions.
-- Git integration will carry an exact expected target head before any integration effect.
+- Git integration carries an exact expected target head before any integration effect; the internal runtime enforces exact-head compare-and-swap semantics before any public adapter exists.
 - Tool arguments normalize into one typed core `Effect` before authorization when they represent an executable effect.
 - Side-effecting effects must fit the active task lease's explicit scope.
 - Errors are typed/stable at the public adapter boundary.
