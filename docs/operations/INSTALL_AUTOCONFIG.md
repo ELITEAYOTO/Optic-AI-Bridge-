@@ -74,7 +74,7 @@ The logo is stored as base64 text in Git so release/install automation can mater
 2. builds `optic-bridge-app` with `--locked --release`;
 3. creates a Windows x64 bundle containing the executable, installer/doctor/uninstaller scripts, and plugin template;
 4. writes a SHA-256 checksum;
-5. publishes the ZIP and checksum as a GitHub Release using the repository `GITHUB_TOKEN`.
+5. publishes the ZIP and checksum as a GitHub **prerelease** using the repository `GITHUB_TOKEN`.
 
 This removes Rust compilation from the end-user install path.
 

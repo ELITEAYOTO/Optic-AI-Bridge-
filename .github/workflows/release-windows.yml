@@ -64,5 +64,6 @@ jobs:
             'dist\Optic-AI-Bridge-windows-x64.zip.sha256' `
             --repo "${{ github.repository }}" `
             --verify-tag `
+            --prerelease `
             --generate-notes `
             --title "Optic AI Bridge ${{ github.ref_name }}"
