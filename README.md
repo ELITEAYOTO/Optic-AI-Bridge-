@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2C3C1 internal authorization + ActionId binding merged in PRs #26/#27; Phase 2C3C2 application-owned mutation authority provisioning current
+**Status:** pre-alpha — Phase 2C3C authorized MCP file mutation merged through PR #30; Phase 2D Git read/integration current
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C1 is also merged internally: PR #26 added the transport-agnostic authorized mutation service as `ac381002` after exact final head `fcd1a6aa` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393` after exact final head `ae05d6a2` passed the same full gate. Public durable file mutation is still intentionally not exposed through MCP; Phase 2C3C2 application-owned mutation authority provisioning is current.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C is now merged as well: PR #26 added the transport-agnostic authorized mutation service as `ac381002`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393`; PR #29 provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases as `75477c3b`; and PR #30 exposed the thin conditional MCP mutation adapter as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Durable MCP file mutation is therefore available only when the operator explicitly provisions corresponding authority and a recovery state directory; without that authority the historical read/process tool surface remains unchanged. Phase 2D Git read/integration is current.
 
 ## Implemented Phase 1 surface
 
@@ -86,18 +86,20 @@ Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 ge
 
 ### Phase 2C3C — authorization / adapter gate
 
-Phase 2C3C1 is merged through PR #26 (`ac381002`) and PR #27 (`1b5a3393`):
+Phase 2C3C is merged through PRs #26, #27, #29 and #30:
 
 - `AuthorizedFileMutationService` is a transport-agnostic runtime boundary that resolves the active application session and exact active task lease, evaluates the normalized `ActionEnvelope` through `PolicyEngine`, rejects primitive/effect mismatch, and only then reaches `TransactionalFileService`;
 - write and patch require `FileWrite`; delete requires the distinct `FileDelete` capability; workspace scope, session ownership, policy epoch, resource budget and lease state remain deterministic policy inputs;
 - negative tests cover missing lease, cross-session lease, missing capability, stale policy epoch, scope escape, effect mismatch, stale expected state, mutation byte ceiling and symlink containment;
-- the already-normalized `ActionEnvelope.action_id` is now reused as the durable transaction identity: journal key, deterministic write-staging owner, commit result ID and recovery operation key;
+- the already-normalized `ActionEnvelope.action_id` is reused as the durable transaction identity: journal key, deterministic write-staging owner, commit result ID and recovery operation key;
 - an already-active journal/temp slot for the same `ActionId` fails closed instead of being reused; the general replay/idempotency ledger remains a later Phase 3 concern;
-- exact final heads `fcd1a6aa` (#26) and `ae05d6a2` (#27) each passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
+- PR #29 (`75477c3b`) provisions mutation authority only from application/operator-owned startup configuration. Write and delete receive distinct task leases containing only explicitly configured `WorkspaceAll` / structural `WorkspacePrefix` scopes, and the session receives each capability only when corresponding authority exists;
+- PR #30 (`624e88da`) conditionally registers `fs_write` / `fs_apply_patch` only for provisioned `FileWrite` authority and `fs_delete` only for provisioned `FileDelete` authority; callers cannot supply `TaskLeaseId` or `ActionId`;
+- `--mutation-state-dir` is required when mutation authority is configured and may also be supplied alone for recovery-only startup; bounded deterministic recovery runs before MCP is served and unresolved recovery fails startup closed;
+- started blocking durable mutations are intentionally followed to a known transaction/recovery outcome while retaining their transport execution permit. The adapter does not return a timeout while a non-cancellable `spawn_blocking` filesystem effect may still commit in the background;
+- exact final heads `fcd1a6aa` (#26), `ae05d6a2` (#27) and `f70e520b` (#30) passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
-Phase 2C3C2 is current: provision mutation capabilities and exact workspace-scoped task leases from application/operator-owned configuration, with MCP unable to mint, widen or freely select authority. Only after those negative gates pass may MCP `fs_write`/patch/delete be added as a thin adapter over the proven internal contract. Those MCP mutation tools remain disabled today.
-
-The implementation remains pre-alpha. Installer/tunnel integration, public mutation/Git tools, multi-session orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+The implementation remains pre-alpha. Phase 2D Git read/integration is the current implementation tranche. Installer/tunnel integration, multi-session public orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 
