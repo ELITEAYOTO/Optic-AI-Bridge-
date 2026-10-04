@@ -76,10 +76,7 @@ impl GitReadService {
         self.status_with_max_bytes(self.max_read_bytes)
     }
 
-    pub fn status_with_max_bytes(
-        &self,
-        max_bytes: u64,
-    ) -> Result<GitStatusSnapshot, GitReadError> {
+    pub fn status_with_max_bytes(&self, max_bytes: u64) -> Result<GitStatusSnapshot, GitReadError> {
         let limit = self.requested_byte_limit(Some(max_bytes))?;
         let args = os_args([
             "status",

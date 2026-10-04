@@ -352,23 +352,40 @@ mod tests {
             let base = env::temp_dir().join(format!("optic-mcp-git-{label}-{token}"));
             let repo = base.join("repo");
             fs::create_dir_all(&repo).expect("repo dir");
-            run_git(&git, None, [OsStr::new("init"), OsStr::new("--quiet"), repo.as_os_str()]);
             run_git(
                 &git,
-                Some(&repo),
-                [OsStr::new("config"), OsStr::new("user.email"), OsStr::new("optic@example.invalid")],
+                None,
+                [OsStr::new("init"), OsStr::new("--quiet"), repo.as_os_str()],
             );
             run_git(
                 &git,
                 Some(&repo),
-                [OsStr::new("config"), OsStr::new("user.name"), OsStr::new("Optic Test")],
+                [
+                    OsStr::new("config"),
+                    OsStr::new("user.email"),
+                    OsStr::new("optic@example.invalid"),
+                ],
+            );
+            run_git(
+                &git,
+                Some(&repo),
+                [
+                    OsStr::new("config"),
+                    OsStr::new("user.name"),
+                    OsStr::new("Optic Test"),
+                ],
             );
             fs::write(repo.join("tracked.txt"), b"alpha\n").expect("fixture");
             run_git(&git, Some(&repo), [OsStr::new("add"), OsStr::new(".")]);
             run_git(
                 &git,
                 Some(&repo),
-                [OsStr::new("commit"), OsStr::new("--quiet"), OsStr::new("-m"), OsStr::new("initial")],
+                [
+                    OsStr::new("commit"),
+                    OsStr::new("--quiet"),
+                    OsStr::new("-m"),
+                    OsStr::new("initial"),
+                ],
             );
             Self { base, repo, git }
         }
@@ -436,7 +453,10 @@ mod tests {
         if let Some(repo) = repo {
             command.arg("-C").arg(repo);
         }
-        let status = command.args(args).status().expect("run Git fixture command");
+        let status = command
+            .args(args)
+            .status()
+            .expect("run Git fixture command");
         assert!(status.success(), "Git fixture command failed");
     }
 
@@ -452,7 +472,10 @@ mod tests {
         let raw = STANDARD
             .decode(response.porcelain_v2_base64)
             .expect("base64 status");
-        assert!(raw.windows(b"tracked.txt".len()).any(|window| window == b"tracked.txt"));
+        assert!(
+            raw.windows(b"tracked.txt".len())
+                .any(|window| window == b"tracked.txt")
+        );
     }
 
     #[tokio::test]

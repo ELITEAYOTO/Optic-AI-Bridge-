@@ -159,7 +159,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         args.allowed_executables.len(),
         args.write_scopes.len(),
         args.delete_scopes.len(),
-        if git_read_enabled { "enabled" } else { "disabled" },
+        if git_read_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
     );
     let service = server.serve(transport).await?;
     service.waiting().await?;
@@ -313,10 +317,7 @@ fn set_mutation_state_dir(
     Ok(())
 }
 
-fn set_git_executable(
-    slot: &mut Option<PathBuf>,
-    value: PathBuf,
-) -> Result<(), std::io::Error> {
+fn set_git_executable(slot: &mut Option<PathBuf>, value: PathBuf) -> Result<(), std::io::Error> {
     if !value.is_absolute() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -472,9 +473,7 @@ mod tests {
 
     #[test]
     fn git_executable_must_be_absolute_and_unique() {
-        assert!(
-            AppArgs::parse_from(args(&["--git-executable=git", "workspace"])).is_err()
-        );
+        assert!(AppArgs::parse_from(args(&["--git-executable=git", "workspace"])).is_err());
 
         let git = std::env::temp_dir().join("optic-git-placeholder");
         let parsed = AppArgs::parse_from(vec![
