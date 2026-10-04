@@ -79,6 +79,7 @@ impl GitReadService {
             "-z",
             "--branch",
             "--untracked-files=all",
+            "--ignore-submodules=all",
         ]);
         let output = self.run_success(&args, self.max_read_bytes)?;
         let head = parse_status_head(&output.stdout)?;
@@ -101,6 +102,7 @@ impl GitReadService {
             "--no-textconv",
             "--no-color",
             "--no-renames",
+            "--ignore-submodules=all",
         ]);
         if staged {
             args.push(OsString::from("--cached"));
@@ -246,6 +248,7 @@ impl GitReadService {
         let mut command = Command::new(&self.git_executable);
         command
             .arg("--no-pager")
+            .arg("--literal-pathspecs")
             .arg("-c")
             .arg("core.fsmonitor=false")
             .arg("-c")
@@ -556,7 +559,7 @@ mod tests {
         None
     }
 
-    fn run_git<'a, const N: usize>(git: &Path, repo: Option<&Path>, args: [&'a OsStr; N]) {
+    fn run_git<const N: usize>(git: &Path, repo: Option<&Path>, args: [&OsStr; N]) {
         let mut command = Command::new(git);
         if let Some(repo) = repo {
             command.arg("-C").arg(repo);
@@ -627,6 +630,22 @@ mod tests {
         let text = String::from_utf8(diff.bytes).expect("git diff utf8 fixture");
         assert!(text.contains("a.txt"));
         assert!(!text.contains("b.txt"));
+    }
+
+    #[test]
+    fn diff_treats_workspace_path_as_literal_pathspec() {
+        let fixture = RepoFixture::new("diff-literal");
+        let literal = "literal[1].txt";
+        fs::write(fixture.repo.join(literal), b"one\n").expect("literal fixture");
+        commit_all(&fixture.git, &fixture.repo, "literal path");
+        fs::write(fixture.repo.join(literal), b"two\n").expect("modify literal");
+
+        let diff = fixture
+            .service()
+            .diff(Some(&path(literal)), false, None)
+            .expect("literal diff");
+        let text = String::from_utf8(diff.bytes).expect("git diff utf8 fixture");
+        assert!(text.contains(literal));
     }
 
     #[test]
