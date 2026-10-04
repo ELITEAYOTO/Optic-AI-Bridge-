@@ -5,6 +5,9 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Validated local ChatGPT Desktop integration through the compatibility plugin package: normal Chat starts the `optic` stdio MCP server and can invoke the intended file/Git tool surface.
+- Developer-preview Windows quick installer (`Install-OpticAIBridge.ps1`), MCP doctor, uninstaller, canonical compatibility-plugin template, and under-three-minute release-bundle installation path.
+- Tag-driven Windows release workflow that builds the pinned Rust binary with `--locked`, packages the user installer/plugin, publishes a ZIP, and emits a SHA-256 checksum.
 - Phase 2D1 bounded `GitReadService` with exact canonical repository binding, bounded status/diff/log, pinned reachable log cursors and read-only Git hardening; merged in PR #32 (`1cb3cc03`, validated head `ed3b5c43`).
 - Phase 2D2 operator-owned MCP Git read adapter exposing conditional `git_status`, `git_diff` and `git_log` without caller-controlled repository/executable/argv authority; merged in PR #33 (`aee4f168`, validated head `54951225`).
 - Canonical product, architecture, security, specification, engineering, operations and research documentation.
@@ -84,6 +87,9 @@ All notable project changes are recorded here.
 - Recovery-only startup through `--mutation-state-dir` without mutation authority, with bounded deterministic recovery before MCP serve and fail-closed unresolved conflicts.
 
 ### Changed
+- CI now uses `--locked` for Clippy/tests and validates PowerShell installer syntax on Windows, preventing dependency-manifest drift from silently rewriting `Cargo.lock`.
+- Refreshed the checked-in lockfile so `optic-bridge-runtime` records its declared `optic-bridge-policy` dependency.
+- Windows manual smoke commands now preserve an absolute bridge path instead of changing into the disposable repository and then referencing a nonexistent relative `target\release` path.
 - Architecture updated for MCP 2026-07-28 stateless protocol semantics.
 - Security goal changed from impossible “100% secure” wording to testable invariants plus defense in depth.
 - Project lifecycle advanced from documentation-only through executable Phase 0/0.1, completed Phase 1A–1D, Phase 2A/2B mutation foundations, Phase 2C1 recovery state, merged Phase 2C2 journal-wrapped crash recovery (`0297406c`), Phase 2C3A transactional write/patch (`4415a65c`), Phase 2C3B1 intended-state recovery (`f5eafc3a`), Phase 2C3B2 transactional delete (`b346a7d9`), Phase 2C3C1 internal mutation authorization/ActionId binding (`ac381002`, `1b5a3393`), Phase 2C3C2 application-owned authority provisioning (`75477c3b`) and Phase 2C3C3 conditional MCP mutation adapter (`624e88da`); Phase 2D Git read/integration is current.

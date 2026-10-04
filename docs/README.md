@@ -17,8 +17,9 @@ This directory is the canonical engineering knowledge base for Optic AI Bridge.
 11. [Memory & Output](architecture/MEMORY_OUTPUT.md)
 12. [Implementation Plan](engineering/IMPLEMENTATION_PLAN.md)
 13. [Test & CI Strategy](engineering/TEST_AND_CI_STRATEGY.md)
-14. [Windows Manual Smoke Test](operations/WINDOWS_MANUAL_SMOKE.md)
-15. [AI Handoff](../AI_HANDOFF.md)
+14. [ChatGPT Desktop Quick Install](operations/CHATGPT_DESKTOP_QUICK_INSTALL.md)
+15. [Windows Manual Smoke Test](operations/WINDOWS_MANUAL_SMOKE.md)
+16. [AI Handoff](../AI_HANDOFF.md)
 
 Repository-level living documents: [ROADMAP](../ROADMAP.md), [STATUS](../STATUS.md), [CHANGELOG](../CHANGELOG.md), [SECURITY](../SECURITY.md), [MAINTENANCE](../MAINTENANCE.md).
 

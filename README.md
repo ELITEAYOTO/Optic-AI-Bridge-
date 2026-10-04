@@ -9,6 +9,20 @@ Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later
 
 The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C is now merged as well: PR #26 added the transport-agnostic authorized mutation service as `ac381002`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393`; PR #29 provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases as `75477c3b`; and PR #30 exposed the thin conditional MCP mutation adapter as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Durable MCP file mutation is therefore available only when the operator explicitly provisions corresponding authority and a recovery state directory; without that authority the historical read/process tool surface remains unchanged. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (validated head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status` / `git_diff` / `git_log` is merged as `aee4f168` (validated head `54951225`). Phase 2D3 exact-head Git integration and worktree/conflict isolation is current.
 
+## Quick install ? ChatGPT Desktop (developer preview)
+
+The local ChatGPT Desktop path was integration-tested on Windows on 2026-10-04: normal Chat successfully started the `optic` MCP server and used `fs_read` against the configured workspace. The compatibility plugin exposes the intended eight file/Git tools while process/session routes remain outside the ChatGPT tool surface.
+
+The end-user installation target is **under 3 minutes** using a prebuilt Windows release bundle:
+
+```powershell
+.\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\repository"
+```
+
+No OpenAI API key, API credits, public tunnel, Node.js, Python, Docker, or Rust compiler is required by that release-bundle path. The installer is user-scoped, detects Git, generates the local MCP configuration, registers the ChatGPT Desktop plugin, and runs an MCP self-test. Mutations are limited to `scratch/` by default and a `-ReadOnly` mode is available.
+
+There is not yet a production-supported release; the tag-driven Windows release workflow added in this tranche is the mechanism for publishing the first prebuilt bundle. See [`docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md`](docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md).
+
 ## Implemented Phase 1 surface
 
 - application-owned sessions, monotonic expiry and revocation;
@@ -99,7 +113,7 @@ Phase 2C3C is merged through PRs #26, #27, #29 and #30:
 - started blocking durable mutations are intentionally followed to a known transaction/recovery outcome while retaining their transport execution permit. The adapter does not return a timeout while a non-cancellable `spawn_blocking` filesystem effect may still commit in the background;
 - exact final heads `fcd1a6aa` (#26), `ae05d6a2` (#27) and `f70e520b` (#30) passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
-The implementation remains pre-alpha. Phase 2D Git read/integration is the current implementation tranche. Installer/tunnel integration, multi-session public orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+The implementation remains pre-alpha. Phase 2D Git read/integration is the current implementation tranche. A developer-preview local ChatGPT Desktop installer and tag-driven Windows release bundle now exist, but a signed production installer/updater, tunnel integration, multi-session public orchestration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 

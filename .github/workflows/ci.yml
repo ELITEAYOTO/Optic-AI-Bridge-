@@ -30,10 +30,17 @@ jobs:
       - name: Format
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
+      - name: Validate PowerShell installer scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --locked --workspace --all-features
 
   dependency-policy:
     name: Dependency policy

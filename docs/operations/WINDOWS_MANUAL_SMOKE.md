@@ -39,6 +39,8 @@ From the repository root in PowerShell:
 ```powershell
 $env:CARGO_BUILD_JOBS = "1"
 cargo build -p optic-bridge-app --release -j 1
+$Bridge = (Resolve-Path ".\target\release\optic-bridge.exe").Path
+$SmokeRepo = "C:\optic-smoke\repo"
 ```
 
 Expected binary:
@@ -59,14 +61,13 @@ This local verification is useful, but GitHub Actions remains the exact-SHA CI g
 ## Prepare a disposable Git workspace
 
 ```powershell
-New-Item -ItemType Directory -Force C:\optic-smoke\repo | Out-Null
-Set-Location C:\optic-smoke\repo
-git init
-git config user.name "Optic Smoke"
-git config user.email "optic-smoke@example.invalid"
-"alpha" | Set-Content tracked.txt
-git add tracked.txt
-git commit -m "initial"
+New-Item -ItemType Directory -Force $SmokeRepo | Out-Null
+git -C $SmokeRepo init
+git -C $SmokeRepo config user.name "Optic Smoke"
+git -C $SmokeRepo config user.email "optic-smoke@example.invalid"
+"alpha" | Set-Content (Join-Path $SmokeRepo "tracked.txt")
+git -C $SmokeRepo add tracked.txt
+git -C $SmokeRepo commit -m "initial"
 where.exe git
 ```
 
@@ -77,7 +78,7 @@ Use an absolute path returned by `where.exe git` for `--git-executable`. The Git
 Start with no process executable, mutation scope or Git authority:
 
 ```powershell
-.\target\release\optic-bridge.exe C:\optic-smoke\repo
+& $Bridge $SmokeRepo
 ```
 
 The process uses MCP over stdio and normally waits for its client.
@@ -98,7 +99,7 @@ That last point is important: for processes, the security gate is exact applicat
 Stop the bridge, then restart it with an absolute Git path:
 
 ```powershell
-.\target\release\optic-bridge.exe --git-executable="C:\Program Files\Git\cmd\git.exe" C:\optic-smoke\repo
+& $Bridge --git-executable="C:\Program Files\Git\cmd\git.exe" $SmokeRepo
 ```
 
 Adjust the Git path to the real canonical executable on the machine.
@@ -116,7 +117,7 @@ Expected MCP behavior:
 Choose one harmless absolute executable, for example the real path of `cmd.exe` or another dedicated test executable. Restart the bridge with only that executable allowed:
 
 ```powershell
-.\target\release\optic-bridge.exe --allow-executable="C:\Windows\System32\cmd.exe" C:\optic-smoke\repo
+& $Bridge --allow-executable="C:\Windows\System32\cmd.exe" $SmokeRepo
 ```
 
 Verify that:
@@ -140,11 +141,11 @@ New-Item -ItemType Directory -Force C:\optic-smoke\state | Out-Null
 Prefer a narrow prefix first:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\optic-smoke\repo\scratch | Out-Null
-.\target\release\optic-bridge.exe `
+New-Item -ItemType Directory -Force $SmokeRepo\scratch | Out-Null
+& $Bridge `
   --mutation-state-dir="C:\optic-smoke\state" `
   --allow-write-scope="prefix:scratch" `
-  C:\optic-smoke\repo
+  $SmokeRepo
 ```
 
 Verify that:
@@ -160,11 +161,11 @@ Verify that:
 Only after Test 4 succeeds, add a separate delete scope:
 
 ```powershell
-.\target\release\optic-bridge.exe `
+& $Bridge `
   --mutation-state-dir="C:\optic-smoke\state" `
   --allow-write-scope="prefix:scratch" `
   --allow-delete-scope="prefix:scratch" `
-  C:\optic-smoke\repo
+  $SmokeRepo
 ```
 
 Verify that delete requires the exact current content version and cannot be performed as a blind delete. After a successful operation, restart the bridge with the same state directory and confirm startup recovery is clean.
@@ -174,13 +175,13 @@ Verify that delete requires the exact current content version and cannot be perf
 After the isolated tests pass, combine only the authorities actually needed:
 
 ```powershell
-.\target\release\optic-bridge.exe `
+& $Bridge `
   --git-executable="C:\Program Files\Git\cmd\git.exe" `
   --allow-executable="C:\Windows\System32\cmd.exe" `
   --mutation-state-dir="C:\optic-smoke\state" `
   --allow-write-scope="prefix:scratch" `
   --allow-delete-scope="prefix:scratch" `
-  C:\optic-smoke\repo
+  $SmokeRepo
 ```
 
 Do not broaden to `--allow-write-scope=all` or `--allow-delete-scope=all` until narrow-scope behavior has been observed on the target PC.
