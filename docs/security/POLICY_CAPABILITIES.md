@@ -1,6 +1,6 @@
 # Policy and Capability Model
 
-Status: DECIDED and executable through the current Phase 2D2 read/mutation surface; Phase 2D3 Git integration authority remains the current implementation gate.
+Status: DECIDED and executable through the current Phase 2D2 public surface plus internal Phase 2D3 Git integration authorization/recovery; Phase 2D3B3 startup provisioning is the current implementation gate and MCP integration exposure remains disabled.
 
 Policy is deny-by-default and target/capability based, not a command blacklist.
 
@@ -31,11 +31,11 @@ Current scope classes include workspace-all/workspace-prefix, repository, exact 
 
 The AI/MCP caller cannot mint, widen, renew or approve a task lease itself. Possession of an opaque handle never bypasses caller/project/policy validation.
 
-Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are currently registered only when their corresponding application-owned runtime/authority exists.
+Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are registered only when their corresponding application-owned runtime/authority exists. Internal `GitIntegrate` authority may be provisioned during Phase 2D3B3, but no `git_integrate` router is registered until the separate 2D3C adapter gate.
 
 ## Mutation preconditions
 
-File writes use an explicit expected state: either the target must be absent or its content must match the supplied ContentVersion. Delete requires the expected current content version. Git integration will carry an exact expected target object id.
+File writes use an explicit expected state: either the target must be absent or its content must match the supplied ContentVersion. Delete requires the expected current content version. Git integration carries an exact expected target object id and the runtime repeats that precondition at the atomic ref update boundary.
 
 There is no implicit blind-write or blind-delete mode in the core effect model.
 
@@ -44,8 +44,8 @@ There is no implicit blind-write or blind-delete mode in the core effect model.
 - `ProcessRun`: provisioned only from operator `--allow-executable` configuration; exact executable task leases are application-owned.
 - `FileWrite`: provisioned only from explicit write scopes and used for whole-file write plus deterministic patch.
 - `FileDelete`: provisioned separately from explicit delete scopes.
-- `GitRead`: provisioned only when the operator supplies one valid absolute Git executable and the workspace validates as the exact repository root.
-- `GitIntegrate`: not implemented/exposed yet; Phase 2D3 must add it separately with repository scope and exact target-head gating.
+- `GitRead`: provisioned only when the operator supplies one valid absolute `--git-executable` and the workspace validates as the exact repository root.
+- `GitIntegrate`: internal authority uses a distinct application-owned repository-scoped lease. During B3 it is provisioned only when the operator supplies the complete integration-only executable/root/ref tuple **and** explicit `--allow-git-integrate`; the integration tuple alone is recovery-only. The separate `--git-integration-executable` never implicitly grants `GitRead`. Public MCP exposure remains disabled until 2D3C.
 
 ## Network
 

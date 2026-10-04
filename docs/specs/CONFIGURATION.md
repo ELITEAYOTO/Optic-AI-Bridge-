@@ -87,6 +87,26 @@ Rules:
 - `GitRead` plus `git_status`, `git_diff` and `git_log` exist only when that runtime is successfully provisioned;
 - callers cannot replace the repository root, Git executable or Git argv through MCP.
 
+### Git integration recovery and authority
+
+```text
+--git-integration-executable <absolute-path>
+--git-integration-root <absolute-path-outside-repository>
+--git-integration-ref refs/optic/integration/<name>
+--allow-git-integrate
+```
+
+Rules:
+
+- `--git-integration-executable`, `--git-integration-root` and `--git-integration-ref` form one complete runtime tuple and must be supplied together; partial configuration fails closed;
+- the integration executable is intentionally separate from `--git-executable`: integration/recovery configuration does not provision `GitRead`, and Git-read configuration does not provision `GitIntegrate`;
+- the runtime canonicalizes the integration Git executable, requires the integration root to remain outside the canonical repository, and accepts only a direct operator-owned ref under `refs/optic/integration/`;
+- supplying the complete tuple without `--allow-git-integrate` performs bounded recovery-only startup and creates no `GitIntegrate` session capability or task lease;
+- `--allow-git-integrate` requires the complete tuple and provisions exactly one application-owned repository-scoped `GitIntegrate` lease plus the corresponding session capability;
+- bounded orphan-worktree recovery runs before MCP serve and any unsafe/ambiguous recovery state fails startup closed;
+- the authorized integration runtime is retained only when authority was explicitly provisioned; the MCP server rejects runtime/authority mismatch;
+- Phase 2D3B3 still registers no public `git_integrate` MCP tool. Public adapter exposure remains Phase 2D3C.
+
 ## Future configuration shape
 
 A layered file-based configuration may later expose smaller operator-selected values while retaining the compiled ceilings as non-widenable maxima. A future shape may include categories such as transport, session, filesystem, output and process settings, but that surface is not implemented today.

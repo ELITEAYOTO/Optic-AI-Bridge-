@@ -316,7 +316,7 @@ Status: **merged** in PR #40 (`22b34149`). Exact final head `96b30f94` passed de
 
 ##### Phase 2D3B — application-owned integration authority + recovery
 
-Status: **current**, split into B1/B2.
+Status: **current**, split into B1/B2/B3.
 
 **2D3B1 — internal authorization boundary — merged in PR #41 (`f3d0898f`):**
 
@@ -326,15 +326,25 @@ Status: **current**, split into B1/B2.
 4. negative coverage rejects missing lease, wrong scope, missing session capability and cross-session lease;
 5. no app startup flag and no MCP integration tool are added by B1. Exact final head `be3ffd97` passed dependency policy plus Ubuntu/Windows CI.
 
-**2D3B2 — bounded recovery — current branch:**
+**2D3B2 — bounded recovery — merged in PR #42 (`b74d563e`):**
 
 1. enumerate Git worktrees with machine-readable `--porcelain -z` under byte/record ceilings and separately cap Optic-owned recovery candidates by the concurrent-request ceiling;
 2. never use repository-global `worktree prune`; ignore user worktrees outside the Optic integration root;
-3. require every Optic-root candidate to be a direct ActionId-named, registered, locked, non-symlink, canonically contained worktree; malformed/missing/unregistered/unlocked state fails closed before cleanup;
+3. require every Optic-root candidate to be a direct canonically encoded ActionId-named, registered, locked, non-symlink, canonically contained worktree; malformed/missing/unregistered/unlocked state fails closed before cleanup;
 4. validate the complete snapshot before the first removal, then revalidate each path immediately before cleanup;
 5. remove locked owned worktrees directly with double `--force`, avoiding an unlock/remove race window;
 6. forced-process-termination coverage leaves a real locked orphan before target-ref mutation and proves restart cleanup does not move the target;
-7. startup/operator invocation remains a following sub-gate after this runtime recovery passes CI.
+7. exact final head `0ff95b82` passed dependency policy plus Ubuntu/Windows CI.
+
+**2D3B3 — startup/operator authority wiring — current branch:**
+
+1. require `--git-integration-executable`, `--git-integration-root` and `--git-integration-ref` as one complete integration-runtime tuple; partial tuples fail startup closed;
+2. run bounded B2 recovery before MCP serve whenever that tuple is present, even without mutation authority;
+3. require separate `--allow-git-integrate` before minting the application-owned repository-scoped `GitIntegrate` task lease and session capability;
+4. keep `--git-executable` exclusively tied to `GitRead` so integration/recovery does not implicitly grant read authority;
+5. retain the recovered `GitIntegrationService` behind `AuthorizedGitIntegrationService` only when integration authority exists; recovery-only startup drops the runtime afterward;
+6. reject MCP server construction when integration runtime/authority presence is inconsistent;
+7. expose no `git_integrate` router or public mutation schema in B3.
 
 ##### Phase 2D3C — thin MCP integration adapter
 

@@ -42,13 +42,28 @@ impl AuthorizedGitIntegrationService {
             target_ref,
             limits,
         )?;
-        Ok(Self {
+        Ok(Self::from_runtime(
+            integration,
+            sessions,
+            task_leases,
+            clock,
+        ))
+    }
+
+    #[must_use]
+    pub fn from_runtime(
+        integration: GitIntegrationService,
+        sessions: Arc<SessionRegistry>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
             integration,
             sessions,
             task_leases,
             clock,
             policy: PolicyEngine,
-        })
+        }
     }
 
     #[must_use]
