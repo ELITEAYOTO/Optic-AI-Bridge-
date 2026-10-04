@@ -1,13 +1,13 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2C3C authorized MCP file mutation merged through PR #30; Phase 2D Git read/integration current
+**Status:** pre-alpha — Phase 2D2 operator-owned MCP Git read merged through PR #33; Phase 2D3 Git integration current
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
 
 Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C is now merged as well: PR #26 added the transport-agnostic authorized mutation service as `ac381002`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393`; PR #29 provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases as `75477c3b`; and PR #30 exposed the thin conditional MCP mutation adapter as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Durable MCP file mutation is therefore available only when the operator explicitly provisions corresponding authority and a recovery state directory; without that authority the historical read/process tool surface remains unchanged. Phase 2D Git read/integration is current.
+The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C is now merged as well: PR #26 added the transport-agnostic authorized mutation service as `ac381002`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393`; PR #29 provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases as `75477c3b`; and PR #30 exposed the thin conditional MCP mutation adapter as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Durable MCP file mutation is therefore available only when the operator explicitly provisions corresponding authority and a recovery state directory; without that authority the historical read/process tool surface remains unchanged. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (validated head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status` / `git_diff` / `git_log` is merged as `aee4f168` (validated head `54951225`). Phase 2D3 exact-head Git integration and worktree/conflict isolation is current.
 
 ## Implemented Phase 1 surface
 
