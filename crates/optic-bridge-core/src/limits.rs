@@ -42,6 +42,8 @@ pub struct HardLimits {
     pub max_mutation_recovery_records: u32,
     pub max_fs_list_page_entries: u32,
     pub max_fs_directory_scan_entries: u32,
+    pub max_git_read_bytes: u64,
+    pub max_git_log_entries: u32,
     pub max_active_process_jobs: u32,
     pub max_process_records: u32,
     pub max_process_read_bytes: u64,
@@ -62,6 +64,8 @@ impl Default for HardLimits {
             max_mutation_recovery_records: 256,
             max_fs_list_page_entries: 256,
             max_fs_directory_scan_entries: 4096,
+            max_git_read_bytes: 256 * 1024,
+            max_git_log_entries: 256,
             max_active_process_jobs: 8,
             max_process_records: 64,
             max_process_read_bytes: 64 * 1024,
@@ -88,6 +92,8 @@ impl HardLimits {
             || self.max_mutation_recovery_records == 0
             || self.max_fs_list_page_entries == 0
             || self.max_fs_directory_scan_entries == 0
+            || self.max_git_read_bytes == 0
+            || self.max_git_log_entries == 0
             || self.max_active_process_jobs == 0
             || self.max_process_records == 0
             || self.max_process_read_bytes == 0
@@ -170,6 +176,30 @@ mod tests {
     fn hard_limits_reject_zero_recovery_record_ceiling() {
         let limits = HardLimits {
             max_mutation_recovery_records: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_git_read_ceiling() {
+        let limits = HardLimits {
+            max_git_read_bytes: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_git_log_entries() {
+        let limits = HardLimits {
+            max_git_log_entries: 0,
             ..HardLimits::default()
         };
         assert_eq!(

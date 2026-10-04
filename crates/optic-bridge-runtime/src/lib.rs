@@ -4,12 +4,13 @@
 //!
 //! This crate owns application runtime state and hard limits. MCP remains an
 //! adapter outside this boundary, so SDK defaults cannot silently weaken
-//! session, transport, filesystem, process, mutation-precondition, recovery,
-//! or output constraints.
+//! session, transport, filesystem, Git, process, mutation-precondition,
+//! recovery, or output constraints.
 
 mod authorized_file_mutation;
 mod clock;
 mod filesystem;
+mod git_read;
 mod journaled_mutation;
 mod mutation;
 mod mutation_authority;
@@ -25,6 +26,10 @@ pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation,
+};
+pub use git_read::{
+    GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
+    GitStatusSnapshot,
 };
 pub use journaled_mutation::{
     JournaledDeleteCommit, JournaledMutationCommit, JournaledMutationError,
