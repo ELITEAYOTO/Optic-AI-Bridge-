@@ -1,0 +1,69 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+
+      - name: Build release binary
+        shell: pwsh
+        run: cargo build --locked --release -p optic-bridge-app
+
+      - name: Build user bundle
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'dist\Optic-AI-Bridge-windows-x64'
+          New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+          Copy-Item 'target\release\optic-bridge.exe' $bundle
+          Copy-Item 'scripts\Install-OpticAIBridge.ps1' $bundle
+          Copy-Item 'scripts\Test-OpticAIBridge.ps1' $bundle
+          Copy-Item 'scripts\Uninstall-OpticAIBridge.ps1' $bundle
+          Copy-Item 'packaging\chatgpt-plugin' (Join-Path $bundle 'plugin') -Recurse
+          @'
+          Optic AI Bridge - Windows / ChatGPT Desktop
+
+          1. Extract this ZIP.
+          2. Open PowerShell in this folder.
+          3. Run:
+             .\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\git-repository"
+          4. Fully restart ChatGPT Desktop.
+          5. In a new normal Chat, type:
+             @Optic AI Bridge Inspect the current workspace without modifying anything.
+
+          No OpenAI API key, tunnel, Node.js, Python or Rust compiler is required for this release bundle.
+          Mutating tools are limited to the workspace scratch/ prefix by default and still require ChatGPT approval.
+          '@ | Set-Content -LiteralPath (Join-Path $bundle 'README-FIRST.txt') -Encoding UTF8
+
+          $zip = Join-Path $PWD 'dist\Optic-AI-Bridge-windows-x64.zip'
+          Compress-Archive -Path "$bundle\*" -DestinationPath $zip -Force
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          "$hash  Optic-AI-Bridge-windows-x64.zip" | Set-Content -LiteralPath 'dist\Optic-AI-Bridge-windows-x64.zip.sha256' -Encoding ascii
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            'dist\Optic-AI-Bridge-windows-x64.zip' `
+            'dist\Optic-AI-Bridge-windows-x64.zip.sha256' `
+            --repo "${{ github.repository }}" `
+            --verify-tag `
+            --prerelease `
+            --generate-notes `
+            --title "Optic AI Bridge ${{ github.ref_name }}"

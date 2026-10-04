@@ -447,6 +447,7 @@ name = "optic-bridge-runtime"
 version = "0.0.1"
 dependencies = [
  "optic-bridge-core",
+ "optic-bridge-policy",
  "optic-bridge-windows",
  "process-wrap",
  "serde",
