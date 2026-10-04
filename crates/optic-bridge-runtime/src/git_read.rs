@@ -73,6 +73,11 @@ impl GitReadService {
     }
 
     pub fn status(&self) -> Result<GitStatusSnapshot, GitReadError> {
+        self.status_with_max_bytes(self.max_read_bytes)
+    }
+
+    pub fn status_with_max_bytes(&self, max_bytes: u64) -> Result<GitStatusSnapshot, GitReadError> {
+        let limit = self.requested_byte_limit(Some(max_bytes))?;
         let args = os_args([
             "status",
             "--porcelain=v2",
@@ -81,7 +86,7 @@ impl GitReadService {
             "--untracked-files=all",
             "--ignore-submodules=all",
         ]);
-        let output = self.run_success(&args, self.max_read_bytes)?;
+        let output = self.run_success(&args, limit)?;
         let head = parse_status_head(&output.stdout)?;
         Ok(GitStatusSnapshot {
             head,
@@ -132,9 +137,16 @@ impl GitReadService {
             });
         }
 
+        let current_head = self.resolve_head()?;
         let (snapshot_head, offset) = match cursor {
-            Some(cursor) => (Some(cursor.head.clone()), cursor.offset),
-            None => (self.resolve_head()?, 0),
+            Some(cursor) => {
+                let current_head = current_head
+                    .as_ref()
+                    .ok_or(GitReadError::LogCursorNotReachable)?;
+                self.ensure_log_cursor_reachable(&cursor.head, current_head)?;
+                (Some(cursor.head.clone()), cursor.offset)
+            }
+            None => (current_head, 0),
         };
         let Some(snapshot_head) = snapshot_head else {
             return Ok(GitLogPage {
@@ -208,6 +220,28 @@ impl GitReadService {
             return Ok(None);
         }
         Err(command_failed(output.status, &output.stderr))
+    }
+
+    fn ensure_log_cursor_reachable(
+        &self,
+        cursor_head: &GitObjectId,
+        current_head: &GitObjectId,
+    ) -> Result<(), GitReadError> {
+        if cursor_head == current_head {
+            return Ok(());
+        }
+        let args = vec![
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            OsString::from(cursor_head.as_str()),
+            OsString::from(current_head.as_str()),
+        ];
+        let output = self.run_command(&args, self.max_read_bytes.min(REPOSITORY_PROBE_BYTES))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(GitReadError::LogCursorNotReachable)
+        }
     }
 
     fn requested_byte_limit(&self, requested: Option<u64>) -> Result<u64, GitReadError> {
@@ -381,6 +415,8 @@ pub enum GitReadError {
     OutputLimitExceeded { limit: u64 },
     #[error("Git command exceeded its hard deadline")]
     CommandTimedOut,
+    #[error("Git log cursor does not point to the current HEAD or a reachable ancestor")]
+    LogCursorNotReachable,
     #[error("Git command failed with exit code {code:?}: {stderr}")]
     CommandFailed { code: Option<i32>, stderr: String },
     #[error("Git command child pipe was unavailable")]
@@ -681,6 +717,21 @@ mod tests {
         assert_eq!(second.snapshot_head, Some(pinned_head));
         assert_eq!(second.entries.len(), 1);
         assert!(second.next_cursor.is_none());
+    }
+
+    #[test]
+    fn log_rejects_unreachable_cursor_head() {
+        let fixture = RepoFixture::new("log-unreachable");
+        let service = fixture.service();
+        let cursor = GitLogCursor {
+            head: GitObjectId::parse("0000000000000000000000000000000000000000".to_owned())
+                .expect("syntactically valid object id"),
+            offset: 0,
+        };
+        assert!(matches!(
+            service.log(Some(&cursor), 1),
+            Err(GitReadError::LogCursorNotReachable)
+        ));
     }
 
     #[test]

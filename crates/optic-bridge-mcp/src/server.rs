@@ -8,8 +8,8 @@ use optic_bridge_core::{
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     AuthorizedFileMutationService, BoundedFileSystem, Clock, EntryKind, FileSystemError,
-    MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry, SessionRegistryError,
-    TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
+    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -23,7 +23,7 @@ use thiserror::Error;
 const DEFAULT_READ_BYTES: u64 = 64 * 1024;
 const DEFAULT_LIST_ENTRIES: u32 = 64;
 const MCP_ENVELOPE_RESERVE_BYTES: u64 = 8 * 1024;
-const STRUCTURED_VALUE_RESERVE_BYTES: u64 = 1024;
+pub(crate) const STRUCTURED_VALUE_RESERVE_BYTES: u64 = 1024;
 
 #[derive(Clone)]
 pub struct ReadonlyMcpServer {
@@ -40,6 +40,7 @@ pub struct ReadonlyMcpServer {
     pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
+    pub(crate) git_service: Option<Arc<GitReadService>>,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -106,6 +107,35 @@ impl ReadonlyMcpServer {
         mutation_service: Option<Arc<AuthorizedFileMutationService>>,
         mutation_authorities: MutationAuthoritySet,
     ) -> Result<Self, ServerBuildError> {
+        Self::new_with_git_runtime(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            process_leases,
+            mutation_service,
+            mutation_authorities,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_git_runtime(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+        mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+        mutation_authorities: MutationAuthoritySet,
+        git_service: Option<Arc<GitReadService>>,
+    ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
@@ -127,6 +157,9 @@ impl ReadonlyMcpServer {
         if mutation_authorities.has_delete() {
             tool_router.merge(Self::mutation_delete_tool_router());
         }
+        if git_service.is_some() {
+            tool_router.merge(Self::git_read_tool_router());
+        }
 
         Ok(Self {
             tool_router,
@@ -142,6 +175,7 @@ impl ReadonlyMcpServer {
             process_leases: Arc::new(process_leases),
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),
+            git_service,
         })
     }
 
@@ -346,7 +380,7 @@ impl ReadonlyMcpServer {
         }
     }
 
-    fn structured_payload_budget(&self) -> u64 {
+    pub(crate) fn structured_payload_budget(&self) -> u64 {
         self.limits
             .max_response_bytes
             .saturating_sub(MCP_ENVELOPE_RESERVE_BYTES)
