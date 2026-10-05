@@ -44,7 +44,7 @@ Implemented and merged through PR #7:
 
 Phase 1 gate passed. Job Objects are containment, not a complete sandbox.
 
-## Phase 2 — Safe mutation and Git (CURRENT)
+## Phase 2 — Safe mutation and Git (COMPLETED)
 
 Phase 2 is intentionally split into narrow security gates.
 
@@ -84,7 +84,7 @@ Merged through PR #30 (`624e88da`).
 
 This proves the documented process-termination/restart model, not sudden-power-loss ACID durability.
 
-### Phase 2D — Git read/integration (CURRENT)
+### Phase 2D — Git read/integration (COMPLETED)
 
 #### Phase 2D1 — bounded Git read runtime (COMPLETED)
 
@@ -107,7 +107,7 @@ Merged in PR #33 (`aee4f168`).
 
 The first real Windows/ChatGPT Desktop integration smoke passed on 2026-10-04 against this Phase 2D2 surface. It proved MCP stdio initialization, file reads, Git status/diff/log, scoped transactional write/patch/delete, stale-version rejection, scope denial, unallowlisted-process denial and clean recovery retirement on a disposable repository. This is machine/integration validation only, not a production-readiness claim.
 
-#### Phase 2D3 — exact-head Git integration (CURRENT GATE)
+#### Phase 2D3 — exact-head Git integration (COMPLETED)
 
 Phase 2D3 is intentionally split so no Git mutation MCP surface appears before each lower boundary is proven.
 
@@ -178,13 +178,18 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - Windows CI proves default denial, incompatible read-only mode, symbolic-ref rejection, create-only ref bootstrap, existing-ref preservation, generated tool/approval config, doctor startup, guarded install-root ownership and explicit uninstall cleanup without touching a real ChatGPT profile;
 - exact final head `4ff720b2` passed dependency policy, Ubuntu/Windows CI, native real-binary integration smoke and the installer-profile smoke.
 
-**Remaining before Phase 2D3 closes:**
+**Final Phase 2D3 desktop gate (COMPLETED — 2026-10-05):**
 
-- final disposable-repository ChatGPT Desktop smoke under explicit operator authorization.
+- real ChatGPT Desktop loaded the installed opt-in profile from a disposable repository;
+- `git_integration_status` observed the exact initial internal target `a76941d0545ce0b1a4359e808feb31d6a97362a0`;
+- prompt-gated `git_integrate` fast-forwarded to descendant `2e7462c0150858d18b31fc9b46cc26ea1a25304f`;
+- a second status observed the new target;
+- reuse of the stale old target was rejected with `optic.precondition_failed`;
+- independent Git verification proved caller `main`/files were unchanged, no operation worktree remained, and recovery state was empty.
 
-Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
+Non-fast-forward merge production semantics remain deliberately deferred; Phase 2D3 proves the fast-forward exact-head boundary and recovery model.
 
-## Phase 3 — Multi-session runtime
+## Phase 3 — Multi-session runtime (CURRENT)
 
 Independent sessions/projects, per-session jobs/resources/capabilities, with adversarial cross-session tests.
 

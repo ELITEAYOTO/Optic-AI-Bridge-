@@ -1,6 +1,6 @@
 # Policy and Capability Model
 
-Status: DECIDED and executable through merged Phase 2D3D plus native real-binary smoke; explicit ChatGPT installer/plugin integration packaging is the current closure gate.
+Status: DECIDED and executable through completed Phase 2D3. Native real-binary, installer-profile and real ChatGPT Desktop exact-head integration smokes are validated; Phase 3 multi-session isolation is the current development focus.
 
 Policy is deny-by-default and target/capability based, not a command blacklist.
 

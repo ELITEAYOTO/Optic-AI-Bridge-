@@ -70,7 +70,7 @@ Status: **merged** in PR #7 (`69af07a`).
 
 ## Phase 2 — safe mutation/Git
 
-Status: **in progress**.
+Status: **complete** through Phase 2D3 exact-head Git integration and the final ChatGPT Desktop smoke.
 
 Start narrow rather than exposing all write/Git tools at once.
 
@@ -274,7 +274,7 @@ Design constraints across Phase 2C:
 
 ### Phase 2D — Git read/integration
 
-Status: **in progress; read path merged, integration current**.
+Status: **complete** through Phase 2D3 and the final real ChatGPT Desktop smoke.
 
 #### Phase 2D1 — bounded Git read runtime
 
@@ -298,7 +298,7 @@ Status: **merged** in PR #33 (`aee4f168`). Exact final head `54951225` passed Ub
 
 #### Phase 2D3 — exact-head Git integration
 
-Status: **current**, split into narrow gates.
+Status: **complete**. All narrow runtime/authorization/recovery/MCP/packaging gates and the final ChatGPT Desktop smoke passed.
 
 ##### Phase 2D3A — exact-head integration runtime foundation
 
@@ -383,11 +383,13 @@ Status: **merged** in PR #47 (`1e42b1ff`). Exact final head `4ff720b2` passed de
 5. keep read-only mode incompatible with integration mutation authority;
 6. exercise generated configs and doctor startup in Windows CI under the runner workspace, with no ChatGPT user-profile mutation;
 7. never remove repository state during normal uninstall; require explicit workspace + cleanup switch and CAS-delete the direct Optic ref when requested;
-8. perform the final disposable-repository ChatGPT Desktop smoke under explicit operator authorization; this is the only remaining Phase 2D3 closure gate.
+8. final disposable-repository ChatGPT Desktop smoke completed on 2026-10-05: observe initial target → prompt-gated fast-forward → observe new target → reject stale old target; independent verification confirmed unchanged caller workspace/branch, no orphan worktree and empty recovery state.
 
-Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
+Phase 2 gate passed: stale-write tests, path/reparse escape tests, forced-crash recovery tests, Git stale-target/conflict/cleanup rejection, native real-binary smoke, installer-profile smoke and the final real ChatGPT Desktop exact-head integration smoke all passed. Non-fast-forward merge production semantics remain deliberately deferred beyond Phase 2D3.
 
 ## Phase 3 — multi-session
+
+Status: **current**.
 
 Independent sessions/projects, per-session jobs/spools/capabilities.
 
