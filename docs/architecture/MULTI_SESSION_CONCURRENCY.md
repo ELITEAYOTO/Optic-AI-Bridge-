@@ -1,21 +1,21 @@
 # Multi-session and Same-Repository Concurrency
 
-Status: DECIDED concept; detailed merge protocol PROPOSED.
+Status: Phase 3 current; session/resource isolation partially executable, detailed same-repository merge protocol remains PROPOSED.
 
 Multi-session is a first-class invariant, not a later optimization.
 
 ## Session identity
 
-Each connection receives a SessionId and a scoped SessionContext. A session owns:
+Optic owns an opaque application `SessionHandle`; transport connections are not session authority and must not become the ownership key. A session owns or binds:
 - project/repository grant;
-- worktree or workspace root;
-- capability set/lease;
-- process Job Object(s);
+- workspace/worktree root;
+- capability set and task leases;
+- process jobs / Windows Job Objects;
 - output/spool namespace;
-- journal namespace;
+- journal/recovery authority where applicable;
 - quotas and cancellation tree.
 
-Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs must be unguessable and authorization must still validate ownership.
+Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs remain unguessable and authorization must still validate ownership. Phase 3A already enforces owner-bound `JobId` access plus global-and-per-session process quotas and owner-only terminal-record eviction. Phase 3B will add the bounded lifecycle needed to keep multiple application sessions active simultaneously.
 
 ## Different projects
 

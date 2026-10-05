@@ -391,11 +391,21 @@ Phase 2 gate passed: stale-write tests, path/reparse escape tests, forced-crash 
 
 Status: **current**.
 
-Independent sessions/projects, per-session jobs/spools/capabilities.
+### Phase 3A — bounded shared-runtime resource isolation
+
+1. Add a compiled hard ceiling for retained application sessions; zero is never unlimited and capacity failure is fail-closed.
+2. Retain bridge-wide process ceilings while adding smaller per-session ceilings for active jobs, retained records and reserved stdout/stderr RAM.
+3. Keep every `JobId` owner-bound and make record eviction owner-only: a session may retire only its own terminal history, even when the bridge-wide record/output ceiling is under pressure.
+4. Preserve explicit global-limit errors separately from per-session-limit errors at the MCP adapter boundary.
+5. Gate with adversarial A/B Windows tests proving per-session active-job and output exhaustion do not consume B's corresponding quota and record pressure cannot evict B's terminal result.
+
+### Phase 3B — application-managed multi-session lifecycle / authority
+
+Move beyond the current one startup-provisioned `SessionHandle`: support multiple simultaneously active sessions/projects with bounded lifecycle, independent grants/task leases/authority sets and deterministic revoke/cancel cleanup. Do not expose public session creation until cross-session negative tests prove jobs, leases, capabilities and private runtime state cannot cross ownership boundaries.
 
 Evaluate a bounded ActionId idempotency ledger/replay service once stateful resources and retries exist.
 
-Gate: adversarial cross-session access tests.
+Phase 3 gate: adversarial cross-session access and resource-interference tests.
 
 ## Phase 4 — same-repo parallelism
 

@@ -193,7 +193,15 @@ Non-fast-forward merge production semantics remain deliberately deferred; Phase 
 
 Independent sessions/projects, per-session jobs/resources/capabilities, with adversarial cross-session tests.
 
-Evaluate a bounded ActionId idempotency/replay ledger once stateful retries justify it.
+### Phase 3A — bounded shared-runtime isolation
+
+The first executable gate keeps bridge-wide ceilings while adding smaller per-session ceilings. The session registry has a hard capacity. Process execution keeps opaque session-owned `JobId`s and now enforces both global and per-session active-job, retained-record and reserved-output-RAM limits. Under record/output pressure a start request may retire only terminal history owned by the requesting session; another session's retained process result is never evicted to make room. Adversarial A/B tests prove a session exhausting its own active-job or output reservation does not consume the other session's corresponding quota, and owner-only record eviction preserves the other session's result.
+
+### Phase 3B — application-managed multi-session lifecycle and authority
+
+Move from the current single startup-provisioned session to multiple simultaneously active application sessions/projects with explicit bounded create/revoke/cancel lifecycle, independent capability/task-lease ownership and cancellation of session-owned jobs. Prove cross-session authority/state isolation before exposing any public multi-session orchestration surface.
+
+Evaluate a bounded ActionId idempotency/replay ledger only once stateful retries justify it.
 
 ## Phase 4 — Same-repository parallelism
 

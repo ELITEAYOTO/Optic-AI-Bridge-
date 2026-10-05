@@ -14,7 +14,8 @@ There is no general TOML configuration loader yet. The compiled `HardLimits` plu
 - response body: 256 KiB;
 - request lifetime: 30 s;
 - concurrent requests: 16;
-- active output RAM: 16 MiB;
+- retained application sessions: 16;
+- active/reserved process output RAM: 16 MiB bridge-wide, 8 MiB per session;
 - single filesystem read: 256 KiB;
 - single filesystem mutation payload/result ceiling: 8 MiB;
 - mutation recovery journal file: 64 KiB;
@@ -23,15 +24,15 @@ There is no general TOML configuration loader yet. The compiled `HardLimits` plu
 - deterministic directory scan ceiling: 4096 entries;
 - Git read bytes: 256 KiB;
 - Git log page hard ceiling: 256 entries;
-- active process jobs: 8;
-- retained process records: 64;
+- active process jobs: 8 bridge-wide, 4 per session;
+- retained process records: 64 bridge-wide, 32 per session;
 - single process output read: 64 KiB;
 - process timeout: 1 h;
-- process output: 16 MiB;
+- process output per job: 8 MiB;
 - process memory: 8 GiB;
 - process count: 32.
 
-Zero is rejected for every hard safety limit; it never means unlimited.
+Zero is rejected for every hard safety limit; it never means unlimited. Phase 3A additionally requires every per-session process ceiling to fit within its corresponding bridge-wide ceiling, the per-session retained-record ceiling to cover the per-session active-job ceiling, and the per-job output budget ceiling to fit within the per-session reserved-output ceiling.
 
 ## Current startup surface
 
@@ -105,7 +106,7 @@ Rules:
 - `--allow-git-integrate` requires the complete tuple and provisions exactly one application-owned repository-scoped `GitIntegrate` lease plus the corresponding session capability;
 - bounded orphan-worktree recovery runs before MCP serve and any unsafe/ambiguous recovery state fails startup closed;
 - the authorized integration runtime is retained only when authority was explicitly provisioned; the MCP server rejects runtime/authority mismatch;
-- in the current Phase 2D3C branch, `git_integrate` is registered only when this explicit authority exists; recovery-only startup still exposes no integration tool.
+- `git_integrate` and `git_integration_status` are registered only when this explicit authority exists; recovery-only startup still exposes no integration tools.
 
 ## Future configuration shape
 

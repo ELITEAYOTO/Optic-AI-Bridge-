@@ -309,6 +309,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         | ProcessError::RequestShapeTooLarge => {
             ErrorData::invalid_params("optic.process_budget_exceeded", None)
         }
+        ProcessError::OutputMemoryLimitExceededForSession => {
+            ErrorData::invalid_params("optic.process_session_output_memory_limit", None)
+        }
         ProcessError::ReadLimitExceeded => {
             ErrorData::invalid_params("optic.process_read_limit_exceeded", None)
         }
@@ -318,6 +321,12 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
         ProcessError::TooManyActiveJobs | ProcessError::ProcessRecordLimitExceeded => {
             ErrorData::internal_error("optic.process_runtime_busy", None)
+        }
+        ProcessError::TooManyActiveJobsForSession => {
+            ErrorData::internal_error("optic.process_session_active_limit", None)
+        }
+        ProcessError::ProcessRecordLimitExceededForSession => {
+            ErrorData::internal_error("optic.process_session_record_limit", None)
         }
         ProcessError::InvalidLimits(_)
         | ProcessError::RootNotDirectory
@@ -409,6 +418,8 @@ pub struct SessionCancelResponse {
 
 #[cfg(test)]
 mod tests {
+    use optic_bridge_core::HardLimits;
+
     use super::*;
 
     #[test]
@@ -445,5 +456,42 @@ mod tests {
         assert!(budget.output_bytes > 0);
         assert!(budget.memory_bytes > 0);
         assert!(budget.process_count > 0);
+    }
+
+    #[test]
+    fn default_budget_fits_default_session_output_ceiling() {
+        let request = ProcessStartRequest {
+            executable: "x".to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            env_allowlist: Vec::new(),
+            network: None,
+            timeout_ms: None,
+            output_budget: None,
+            memory_bytes: None,
+            process_count: None,
+        };
+        let budget = requested_budget(&request).expect("default budget");
+        let limits = HardLimits::default()
+            .validate_nonzero()
+            .expect("default limits");
+        assert!(budget.fits_within(limits.max_process_budget));
+        assert!(budget.output_bytes <= limits.max_active_output_ram_bytes_per_session);
+    }
+
+    #[test]
+    fn session_resource_errors_have_distinct_mcp_codes() {
+        assert_eq!(
+            map_process_error(ProcessError::TooManyActiveJobsForSession).message,
+            "optic.process_session_active_limit"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::ProcessRecordLimitExceededForSession).message,
+            "optic.process_session_record_limit"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::OutputMemoryLimitExceededForSession).message,
+            "optic.process_session_output_memory_limit"
+        );
     }
 }

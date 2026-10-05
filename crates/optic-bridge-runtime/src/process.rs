@@ -158,6 +158,9 @@ impl ProcessManager {
         if resources.output_bytes > self.limits.max_active_output_ram_bytes {
             return Err(ProcessError::OutputMemoryLimitExceeded);
         }
+        if resources.output_bytes > self.limits.max_active_output_ram_bytes_per_session {
+            return Err(ProcessError::OutputMemoryLimitExceededForSession);
+        }
         self.validate_request_shape(&spec)?;
         let executable = self.canonicalize_executable(&spec.executable)?;
         let cwd = self.resolve_cwd(spec.cwd.as_ref())?;
@@ -166,6 +169,7 @@ impl ProcessManager {
 
         let job_id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
         let sequence = self.sequence.fetch_add(1, Ordering::AcqRel);
+        let owner = spec.session.clone();
         let record = Arc::new(JobRecord {
             owner: spec.session,
             sequence,
@@ -189,7 +193,7 @@ impl ProcessManager {
                 .jobs
                 .lock()
                 .map_err(|_| ProcessError::StateUnavailable)?;
-            self.prepare_store_for_start(&mut store, resources.output_bytes)?;
+            self.prepare_store_for_start(&mut store, &owner, resources.output_bytes)?;
             store.jobs.insert(job_id.clone(), Arc::clone(&record));
         }
 
@@ -426,6 +430,7 @@ impl ProcessManager {
     fn prepare_store_for_start(
         &self,
         store: &mut JobStore,
+        session: &SessionHandle,
         requested_output_bytes: u64,
     ) -> Result<(), ProcessError> {
         loop {
@@ -433,18 +438,43 @@ impl ProcessManager {
             if active >= self.limits.max_active_process_jobs {
                 return Err(ProcessError::TooManyActiveJobs);
             }
+            let session_active = active_job_count_for_session(store, session)?;
+            if session_active >= self.limits.max_active_process_jobs_per_session {
+                return Err(ProcessError::TooManyActiveJobsForSession);
+            }
+
             let reserved = reserved_output_bytes(store);
-            let record_limit_reached = store.jobs.len()
+            let session_reserved = reserved_output_bytes_for_session(store, session);
+            let global_record_limit_reached = store.jobs.len()
                 >= usize::try_from(self.limits.max_process_records)
                     .map_err(|_| ProcessError::InvalidLimits(LimitError::InvalidRelationship))?;
-            let output_limit_reached = reserved.saturating_add(requested_output_bytes)
+            let session_record_limit_reached = job_count_for_session(store, session)
+                >= usize::try_from(self.limits.max_process_records_per_session)
+                    .map_err(|_| ProcessError::InvalidLimits(LimitError::InvalidRelationship))?;
+            let global_output_limit_reached = reserved.saturating_add(requested_output_bytes)
                 > self.limits.max_active_output_ram_bytes;
-            if !record_limit_reached && !output_limit_reached {
+            let session_output_limit_reached = session_reserved
+                .saturating_add(requested_output_bytes)
+                > self.limits.max_active_output_ram_bytes_per_session;
+
+            if !global_record_limit_reached
+                && !session_record_limit_reached
+                && !global_output_limit_reached
+                && !session_output_limit_reached
+            {
                 return Ok(());
             }
-            let Some(oldest_terminal) = oldest_terminal_job(store)? else {
-                return Err(if output_limit_reached {
+
+            // A start request may only retire history owned by the same session.
+            // Cross-session eviction would let one session destroy another session's
+            // observable process result even though JobId access itself is owner-bound.
+            let Some(oldest_terminal) = oldest_terminal_job_for_session(store, session)? else {
+                return Err(if session_output_limit_reached {
+                    ProcessError::OutputMemoryLimitExceededForSession
+                } else if global_output_limit_reached {
                     ProcessError::OutputMemoryLimitExceeded
+                } else if session_record_limit_reached {
+                    ProcessError::ProcessRecordLimitExceededForSession
                 } else {
                     ProcessError::ProcessRecordLimitExceeded
                 });
@@ -472,14 +502,29 @@ fn normalize_env_name(name: &str) -> Result<String, ProcessError> {
 }
 
 fn active_job_count(store: &JobStore) -> Result<u32, ProcessError> {
+    active_job_count_matching(store, |_| true)
+}
+
+fn active_job_count_for_session(
+    store: &JobStore,
+    session: &SessionHandle,
+) -> Result<u32, ProcessError> {
+    active_job_count_matching(store, |record| &record.owner == session)
+}
+
+fn active_job_count_matching(
+    store: &JobStore,
+    matches: impl Fn(&JobRecord) -> bool,
+) -> Result<u32, ProcessError> {
     let mut active = 0_u32;
     for record in store.jobs.values() {
-        if record
-            .state
-            .lock()
-            .map_err(|_| ProcessError::StateUnavailable)?
-            .status
-            == ProcessStatus::Running
+        if matches(record)
+            && record
+                .state
+                .lock()
+                .map_err(|_| ProcessError::StateUnavailable)?
+                .status
+                == ProcessStatus::Running
         {
             active = active.saturating_add(1);
         }
@@ -493,9 +538,33 @@ fn reserved_output_bytes(store: &JobStore) -> u64 {
     })
 }
 
-fn oldest_terminal_job(store: &JobStore) -> Result<Option<JobId>, ProcessError> {
+fn reserved_output_bytes_for_session(store: &JobStore, session: &SessionHandle) -> u64 {
+    store.jobs.values().fold(0_u64, |sum, record| {
+        if &record.owner == session {
+            sum.saturating_add(record.reserved_output_bytes)
+        } else {
+            sum
+        }
+    })
+}
+
+fn job_count_for_session(store: &JobStore, session: &SessionHandle) -> usize {
+    store
+        .jobs
+        .values()
+        .filter(|record| &record.owner == session)
+        .count()
+}
+
+fn oldest_terminal_job_for_session(
+    store: &JobStore,
+    session: &SessionHandle,
+) -> Result<Option<JobId>, ProcessError> {
     let mut oldest: Option<(&JobId, u64)> = None;
     for (job_id, record) in &store.jobs {
+        if &record.owner != session {
+            continue;
+        }
         let status = record
             .state
             .lock()
@@ -626,10 +695,16 @@ pub enum ProcessError {
     RequestShapeTooLarge,
     #[error("too many process jobs are already active")]
     TooManyActiveJobs,
+    #[error("this session already has too many active process jobs")]
+    TooManyActiveJobsForSession,
     #[error("bounded process record history is full")]
     ProcessRecordLimitExceeded,
+    #[error("this session's bounded process record history is full")]
+    ProcessRecordLimitExceededForSession,
     #[error("reserved process output would exceed the hard in-memory ceiling")]
     OutputMemoryLimitExceeded,
+    #[error("this session's reserved process output would exceed its hard in-memory ceiling")]
+    OutputMemoryLimitExceededForSession,
     #[error("process output read exceeds the hard per-call byte ceiling")]
     ReadLimitExceeded,
     #[error("process output cursor is out of range")]
@@ -798,6 +873,126 @@ mod tests {
             .expect("read bounded stdout");
         assert!(stdout.bytes.len() <= 1024);
         assert!(stdout.truncated);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn per_session_active_job_limit_does_not_block_other_session() {
+        let root = workspace("session-active-limit");
+        fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
+        let limits = HardLimits {
+            max_active_process_jobs: 2,
+            max_active_process_jobs_per_session: 1,
+            ..HardLimits::default()
+        };
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+
+        let a1 = manager
+            .start(spec(&root, session_a.clone(), budget(5000, 1024)))
+            .expect("start A1");
+        assert!(matches!(
+            manager.start(spec(&root, session_a.clone(), budget(5000, 1024))),
+            Err(ProcessError::TooManyActiveJobsForSession)
+        ));
+        let b1 = manager
+            .start(spec(&root, session_b.clone(), budget(5000, 1024)))
+            .expect("B must retain its own active slot");
+
+        assert!(manager.stop(&session_a, &a1).expect("stop A1"));
+        assert!(manager.stop(&session_b, &b1).expect("stop B1"));
+        assert_eq!(
+            await_terminal(&manager, &session_a, &a1).await.status,
+            ProcessStatus::Stopped
+        );
+        assert_eq!(
+            await_terminal(&manager, &session_b, &b1).await.status,
+            ProcessStatus::Stopped
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn per_session_output_reservation_does_not_block_other_session() {
+        let root = workspace("session-output-limit");
+        fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
+        let limits = HardLimits {
+            max_active_output_ram_bytes: 2048,
+            max_active_output_ram_bytes_per_session: 1024,
+            max_process_budget: ResourceBudget {
+                output_bytes: 1024,
+                ..HardLimits::default().max_process_budget
+            },
+            ..HardLimits::default()
+        };
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+
+        let a1 = manager
+            .start(spec(&root, session_a.clone(), budget(5000, 1024)))
+            .expect("start A1");
+        assert!(matches!(
+            manager.start(spec(&root, session_a.clone(), budget(5000, 1024))),
+            Err(ProcessError::OutputMemoryLimitExceededForSession)
+        ));
+        let b1 = manager
+            .start(spec(&root, session_b.clone(), budget(5000, 1024)))
+            .expect("B must retain its own output reservation");
+
+        assert!(manager.stop(&session_a, &a1).expect("stop A1"));
+        assert!(manager.stop(&session_b, &b1).expect("stop B1"));
+        let _ = await_terminal(&manager, &session_a, &a1).await;
+        let _ = await_terminal(&manager, &session_b, &b1).await;
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn record_pressure_never_evicts_another_sessions_terminal_job() {
+        let root = workspace("session-record-isolation");
+        fs::write(root.join("fixture-output"), b"1").expect("write fixture mode");
+        let limits = HardLimits {
+            max_active_process_jobs: 2,
+            max_active_process_jobs_per_session: 1,
+            max_process_records: 2,
+            max_process_records_per_session: 1,
+            ..HardLimits::default()
+        };
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+
+        let b1 = manager
+            .start(spec(&root, session_b.clone(), budget(2000, 1024)))
+            .expect("start B1");
+        assert_eq!(
+            await_terminal(&manager, &session_b, &b1).await.status,
+            ProcessStatus::Exited
+        );
+        let a1 = manager
+            .start(spec(&root, session_a.clone(), budget(2000, 1024)))
+            .expect("start A1");
+        assert_eq!(
+            await_terminal(&manager, &session_a, &a1).await.status,
+            ProcessStatus::Exited
+        );
+
+        let a2 = manager
+            .start(spec(&root, session_a.clone(), budget(2000, 1024)))
+            .expect("A may retire only its own terminal history");
+        assert!(matches!(
+            manager.result(&session_a, &a1),
+            Err(ProcessError::UnknownJob)
+        ));
+        assert_eq!(
+            manager
+                .result(&session_b, &b1)
+                .expect("B1 must remain observable")
+                .status,
+            ProcessStatus::Exited
+        );
+        let _ = await_terminal(&manager, &session_a, &a2).await;
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }
