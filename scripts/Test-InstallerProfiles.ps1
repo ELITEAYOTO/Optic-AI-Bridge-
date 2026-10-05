@@ -121,7 +121,9 @@ try {
         throw 'Default installer profile unexpectedly emitted Git integration startup authority.'
     }
     & $git -C $repo show-ref --verify --quiet $targetRef
-    if ($LASTEXITCODE -eq 0) {
+    $defaultRefExists = $LASTEXITCODE -eq 0
+    $global:LASTEXITCODE = 0
+    if ($defaultRefExists) {
         throw 'Default installer profile unexpectedly created the integration ref.'
     }
 
@@ -248,7 +250,9 @@ try {
         throw 'Explicit uninstall did not remove its installation root.'
     }
     & $git -C $repo show-ref --verify --quiet $targetRef
-    if ($LASTEXITCODE -eq 0) {
+    $remainingRefExists = $LASTEXITCODE -eq 0
+    $global:LASTEXITCODE = 0
+    if ($remainingRefExists) {
         throw 'Explicit uninstall did not remove the operator-owned Git integration ref.'
     }
 

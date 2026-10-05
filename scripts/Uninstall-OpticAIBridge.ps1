@@ -104,7 +104,9 @@ if ($RemoveGitIntegrationRef) {
         }
 
         $observed = (& $git @gitBaseArgs show-ref --verify --hash $gitIntegrationRef 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $observed) {
+        $integrationRefExists = $LASTEXITCODE -eq 0 -and $observed
+        if (-not $integrationRefExists) { $global:LASTEXITCODE = 0 }
+        if ($integrationRefExists) {
             $observed = ([string]$observed).Trim()
             if (($observed.Length -ne 40 -and $observed.Length -ne 64) -or
                 $observed -notmatch '^[0-9a-fA-F]+$') {
