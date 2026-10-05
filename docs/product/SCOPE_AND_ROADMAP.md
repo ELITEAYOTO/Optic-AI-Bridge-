@@ -163,16 +163,24 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - native Windows CI builds the real `optic-bridge.exe`, starts it over stdio MCP with integration-only authority, performs an exact-head fast-forward and proves reuse of the stale precondition is rejected without moving the target;
 - exact final head `fa760213` passed Ubuntu/Windows/dependency policy and the Windows binary smoke.
 
-**2D3D integration-target observation (CURRENT DEVELOPMENT):**
+**2D3D integration-target observation (COMPLETED — PR #46, `c44ba567`):**
 
 - conditional `git_integration_status()` returns only the exact current target commit under existing repository-scoped `GitIntegrate` authority;
 - the observation is typed read-only and does not grant or depend on generic `GitRead`;
-- clients use the returned commit as the explicit `expected_target_head`, preserving exact-head optimistic concurrency across reconnects without exposing the internal ref.
+- clients use the returned commit as the explicit `expected_target_head`, preserving exact-head optimistic concurrency across reconnects without exposing the internal ref;
+- exact final head `f4d04c3` passed dependency policy, Ubuntu/Windows CI and the native real-binary status/integrate/status/stale smoke.
+
+**ChatGPT integration packaging (CURRENT DEVELOPMENT):**
+
+- keep the default profile unchanged and Git integration off by default;
+- require explicit `-EnableGitIntegration` on an exact repository root with `HEAD`;
+- generate only the fixed internal-ref/root/executable authority and allowlist `git_integration_status` + prompt-gated `git_integrate`;
+- CI-test default denial, incompatible read-only mode, create-only ref bootstrap, generated tool/approval config, doctor startup and explicit uninstall cleanup without touching a real ChatGPT profile.
 
 **Remaining before Phase 2D3 closes:**
 
-- merge/CI validation of 2D3D;
-- explicit ChatGPT installer/plugin opt-in and final disposable-repository ChatGPT Desktop smoke.
+- merge/CI validation of the explicit installer/plugin profile;
+- final disposable-repository ChatGPT Desktop smoke.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
 

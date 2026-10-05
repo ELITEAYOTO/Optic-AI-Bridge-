@@ -1,12 +1,12 @@
 {
   "name": "optic-ai-bridge-local",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Local MCP bridge for controlled file, Git, and scoped mutation access on this Windows PC.",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Optic AI Bridge",
     "shortDescription": "Secure local bridge for files, Git, and scoped edits.",
-    "longDescription": "Local MCP bridge for controlled access to files, Git, and tightly scoped mutations on this Windows PC.",
+    "longDescription": "Local MCP bridge for controlled access to files, Git reads, tightly scoped file mutations, and optional exact-head Git integration on this Windows PC.",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "brandColor": "#6C5CE7",

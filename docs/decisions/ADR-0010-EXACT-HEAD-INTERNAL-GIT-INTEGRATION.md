@@ -45,6 +45,6 @@ Git integration also introduces two separate risks that do not exist in read-onl
 
 ## Deferred
 
-- CI/merge validation of the 2D3D target-observation companion and final ChatGPT Desktop integration smoke;
+- explicit ChatGPT installer/plugin opt-in validation and final disposable-repository ChatGPT Desktop integration smoke;
 - non-fast-forward merge/conflict production semantics;
 - multi-session same-repository worktree ownership/coordinator from Phase 4.

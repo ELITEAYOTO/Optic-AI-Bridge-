@@ -9,6 +9,7 @@ param(
     [string]$WritePrefix = 'scratch',
     [string]$DeletePrefix = 'scratch',
     [switch]$ReadOnly,
+    [switch]$EnableGitIntegration,
     [switch]$SkipDoctor,
     [switch]$SkipPluginRegistration
 )
@@ -57,6 +58,50 @@ function Normalize-PathText {
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
     throw 'This installer currently supports Windows only.'
 }
+if ($ReadOnly -and $EnableGitIntegration) {
+    throw '-EnableGitIntegration is a mutating Git capability and cannot be combined with -ReadOnly.'
+}
+
+$defaultInstallRoot = Normalize-PathText (Join-Path $env:LOCALAPPDATA 'OpticAIBridge')
+$installFullPath = [IO.Path]::GetFullPath($InstallRoot)
+$installPathRoot = [IO.Path]::GetPathRoot($installFullPath)
+if ($installPathRoot -and
+    (Normalize-PathText $installPathRoot) -ieq (Normalize-PathText $installFullPath)) {
+    throw 'InstallRoot must not be a filesystem root.'
+}
+$InstallRoot = Normalize-PathText $installFullPath
+if (Test-Path -LiteralPath $InstallRoot -PathType Leaf) {
+    throw 'InstallRoot must be a directory path, not a file.'
+}
+$installMarkerPath = Join-Path $InstallRoot '.optic-ai-bridge-install.json'
+if (Test-Path -LiteralPath $InstallRoot -PathType Container) {
+    $hasExistingEntries = $null -ne (Get-ChildItem -LiteralPath $InstallRoot -Force | Select-Object -First 1)
+    if ($hasExistingEntries) {
+        if (Test-Path -LiteralPath $installMarkerPath -PathType Leaf) {
+            try {
+                $existingMarker = Get-Content -Raw -LiteralPath $installMarkerPath | ConvertFrom-Json
+                $markerRoot = Normalize-PathText ([string]$existingMarker.install_root)
+                if ([string]$existingMarker.product -ne 'optic-ai-bridge' -or
+                    [int]$existingMarker.schema_version -ne 1 -or
+                    $markerRoot -ine $InstallRoot) {
+                    throw 'marker mismatch'
+                }
+            }
+            catch {
+                throw 'InstallRoot contains an invalid Optic installation marker; refusing to overwrite it.'
+            }
+        }
+        else {
+            $legacyDefault = $InstallRoot -ieq $defaultInstallRoot -and (
+                (Test-Path -LiteralPath (Join-Path $InstallRoot 'bin\optic-bridge.exe') -PathType Leaf) -or
+                (Test-Path -LiteralPath (Join-Path $InstallRoot 'marketplace\plugins\optic-ai-bridge-local\.codex-plugin\plugin.json') -PathType Leaf)
+            )
+            if (-not $legacyDefault) {
+                throw 'InstallRoot is non-empty and is not a recognized Optic AI Bridge installation root.'
+            }
+        }
+    }
+}
 
 Write-Step 'Validating workspace and installation bundle...'
 $Workspace = (Resolve-Path -LiteralPath $Workspace).Path
@@ -85,7 +130,10 @@ $logoBase64 = Join-Path $PluginTemplatePath 'assets\optic-ai-bridge.png.b64'
 if (-not (Test-Path -LiteralPath $manifestTemplate -PathType Leaf)) { throw "Missing plugin manifest: $manifestTemplate" }
 if (-not (Test-Path -LiteralPath $logoBase64 -PathType Leaf)) { throw "Missing plugin logo payload: $logoBase64" }
 
-$codex = Get-CodexCommand
+$codex = $null
+if (-not $SkipPluginRegistration) {
+    $codex = Get-CodexCommand
+}
 $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue | Select-Object -First 1
 $gitPath = $null
 $enableGit = $false
@@ -99,6 +147,9 @@ if ($gitCommand) {
 
 $binDir = Join-Path $InstallRoot 'bin'
 $stateDir = Join-Path $InstallRoot 'state'
+$gitIntegrationRoot = Join-Path $InstallRoot 'git-integration'
+$gitBootstrapHooks = Join-Path $InstallRoot 'git-bootstrap-hooks'
+$gitIntegrationRef = 'refs/optic/integration/chatgpt'
 $marketplaceRoot = Join-Path $InstallRoot 'marketplace'
 $pluginSource = Join-Path $marketplaceRoot 'plugins\optic-ai-bridge-local'
 $pluginManifestDir = Join-Path $pluginSource '.codex-plugin'
@@ -106,8 +157,86 @@ $pluginAssetsDir = Join-Path $pluginSource 'assets'
 $marketplaceManifestDir = Join-Path $marketplaceRoot '.agents\plugins'
 $installedBridge = Join-Path $binDir 'optic-bridge.exe'
 
+# Mark ownership before creating any integration bootstrap state/ref. If a later
+# install step fails, the partial user-scoped root remains safely identifiable.
+New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$installMarker = [ordered]@{
+    product = 'optic-ai-bridge'
+    schema_version = 1
+    install_root = $InstallRoot
+}
+[IO.File]::WriteAllText(
+    $installMarkerPath,
+    ($installMarker | ConvertTo-Json -Compress),
+    $utf8NoBom
+)
+
+if ($EnableGitIntegration) {
+    if (-not $enableGit -or -not $gitPath) {
+        throw '-EnableGitIntegration requires Git and a workspace that is exactly the Git repository root.'
+    }
+
+    $workspaceNormalized = Normalize-PathText $Workspace
+    $integrationNormalized = Normalize-PathText $gitIntegrationRoot
+    if ($integrationNormalized -ieq $workspaceNormalized -or
+        $integrationNormalized.StartsWith($workspaceNormalized + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $workspaceNormalized.StartsWith($integrationNormalized + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Git integration root must remain outside and non-overlapping with the configured workspace/repository.'
+    }
+
+    New-Item -ItemType Directory -Force -Path $gitBootstrapHooks | Out-Null
+    if (Get-ChildItem -LiteralPath $gitBootstrapHooks -Force | Select-Object -First 1) {
+        throw 'Git integration bootstrap hooks directory must be empty.'
+    }
+
+    $previousGitNoSystem = [Environment]::GetEnvironmentVariable('GIT_CONFIG_NOSYSTEM', 'Process')
+    $previousGitGlobal = [Environment]::GetEnvironmentVariable('GIT_CONFIG_GLOBAL', 'Process')
+    $previousGitPrompt = [Environment]::GetEnvironmentVariable('GIT_TERMINAL_PROMPT', 'Process')
+    $previousGitReplace = [Environment]::GetEnvironmentVariable('GIT_NO_REPLACE_OBJECTS', 'Process')
+    try {
+        $env:GIT_CONFIG_NOSYSTEM = '1'
+        $env:GIT_CONFIG_GLOBAL = 'NUL'
+        $env:GIT_TERMINAL_PROMPT = '0'
+        $env:GIT_NO_REPLACE_OBJECTS = '1'
+
+        $gitBaseArgs = @('--no-pager', '--literal-pathspecs', '-c', "core.hooksPath=$gitBootstrapHooks", '-c', 'commit.gpgSign=false', '-C', $Workspace)
+        $head = (& $gitPath @gitBaseArgs rev-parse --verify HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $head) {
+            throw '-EnableGitIntegration requires a repository with an existing HEAD commit.'
+        }
+        $head = ([string]$head).Trim()
+        if ($head.Length -ne 40 -and $head.Length -ne 64) {
+            throw 'Git returned an unsupported HEAD object id length.'
+        }
+
+        & $gitPath @gitBaseArgs symbolic-ref -q $gitIntegrationRef 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            throw "Refusing symbolic Git integration ref $gitIntegrationRef."
+        }
+
+        & $gitPath @gitBaseArgs show-ref --verify --quiet $gitIntegrationRef
+        if ($LASTEXITCODE -ne 0) {
+            $zeroOld = '0' * $head.Length
+            & $gitPath @gitBaseArgs update-ref --no-deref $gitIntegrationRef $head $zeroOld
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to create operator-owned Git integration ref $gitIntegrationRef without overwriting concurrent state."
+            }
+        }
+    }
+    finally {
+        if ($null -eq $previousGitNoSystem) { Remove-Item Env:GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_NOSYSTEM = $previousGitNoSystem }
+        if ($null -eq $previousGitGlobal) { Remove-Item Env:GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_GLOBAL = $previousGitGlobal }
+        if ($null -eq $previousGitPrompt) { Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $previousGitPrompt }
+        if ($null -eq $previousGitReplace) { Remove-Item Env:GIT_NO_REPLACE_OBJECTS -ErrorAction SilentlyContinue } else { $env:GIT_NO_REPLACE_OBJECTS = $previousGitReplace }
+    }
+}
+
 Write-Step 'Installing Optic AI Bridge in the current user profile...'
 New-Item -ItemType Directory -Force -Path $binDir, $stateDir, $pluginManifestDir, $pluginAssetsDir, $marketplaceManifestDir | Out-Null
+if ($EnableGitIntegration) {
+    New-Item -ItemType Directory -Force -Path $gitIntegrationRoot | Out-Null
+}
 Copy-Item -LiteralPath $BinaryPath -Destination $installedBridge -Force
 Copy-Item -LiteralPath $manifestTemplate -Destination (Join-Path $pluginManifestDir 'plugin.json') -Force
 [IO.File]::WriteAllBytes(
@@ -134,6 +263,15 @@ if ($enableGit) {
     $enabledTools.Add('git_log')
 }
 
+if ($EnableGitIntegration) {
+    $mcpArgs.Add("--git-integration-executable=$gitPath")
+    $mcpArgs.Add("--git-integration-root=$gitIntegrationRoot")
+    $mcpArgs.Add("--git-integration-ref=$gitIntegrationRef")
+    $mcpArgs.Add('--allow-git-integrate')
+    $enabledTools.Add('git_integration_status')
+    $enabledTools.Add('git_integrate')
+}
+
 if (-not $ReadOnly) {
     $mcpArgs.Add("--mutation-state-dir=$stateDir")
     if ($WritePrefix) {
@@ -156,6 +294,9 @@ if (-not $ReadOnly -and $WritePrefix) {
 if (-not $ReadOnly -and $DeletePrefix) {
     $toolApprovals.fs_delete = [ordered]@{ approval_mode = 'prompt' }
 }
+if ($EnableGitIntegration) {
+    $toolApprovals.git_integrate = [ordered]@{ approval_mode = 'prompt' }
+}
 
 $mcpConfig = [ordered]@{
     mcpServers = [ordered]@{
@@ -171,7 +312,6 @@ $mcpConfig = [ordered]@{
         }
     }
 }
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $mcpJson = $mcpConfig | ConvertTo-Json -Depth 12
 [IO.File]::WriteAllText((Join-Path $pluginSource '.mcp.json'), $mcpJson, $utf8NoBom)
 
@@ -218,6 +358,12 @@ if (-not $SkipDoctor) {
         Workspace = $Workspace
     }
     if ($enableGit) { $doctorParams.GitPath = $gitPath }
+    if ($EnableGitIntegration) {
+        $doctorParams.GitIntegrationPath = $gitPath
+        $doctorParams.GitIntegrationRoot = $gitIntegrationRoot
+        $doctorParams.GitIntegrationRef = $gitIntegrationRef
+        $doctorParams.EnableGitIntegrate = $true
+    }
     if (-not $ReadOnly) {
         $doctorParams.StateDir = $stateDir
         $doctorParams.WritePrefix = $WritePrefix
@@ -244,8 +390,9 @@ if (-not $SkipPluginRegistration) {
 Write-Host ''
 Write-Host 'Optic AI Bridge is ready.' -ForegroundColor Green
 Write-Host "Workspace : $Workspace"
-Write-Host "Git tools : $enableGit"
-Write-Host "Mode      : $(if ($ReadOnly) { 'read-only' } else { 'read + Git + scratch mutations' })"
+Write-Host "Git read  : $enableGit"
+Write-Host "Git integrate: $EnableGitIntegration"
+Write-Host "Mode      : $(if ($ReadOnly) { 'read-only' } elseif ($EnableGitIntegration) { 'read + Git + scratch mutations + explicit Git integration' } else { 'read + Git + scratch mutations' })"
 Write-Host ''
 Write-Host 'Final step: fully close and reopen ChatGPT Desktop, create a new normal Chat, then type:' -ForegroundColor Yellow
 Write-Host '@Optic AI Bridge Inspect the current workspace without modifying anything.' -ForegroundColor White

@@ -1,6 +1,6 @@
 # Policy and Capability Model
 
-Status: DECIDED and executable through merged Phase 2D3C plus native real-binary smoke; Phase 2D3D authorized integration-target observation is the current implementation gate.
+Status: DECIDED and executable through merged Phase 2D3D plus native real-binary smoke; explicit ChatGPT installer/plugin integration packaging is the current closure gate.
 
 Policy is deny-by-default and target/capability based, not a command blacklist.
 
@@ -31,7 +31,7 @@ Current scope classes include workspace-all/workspace-prefix, repository, exact 
 
 The AI/MCP caller cannot mint, widen, renew or approve a task lease itself. Possession of an opaque handle never bypasses caller/project/policy validation.
 
-Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are registered only when their corresponding application-owned runtime/authority exists. `GitIntegrate` authority is provisioned only by B3 operator configuration. Merged 2D3C registers `git_integrate` only when that authority/runtime exists. Phase 2D3D adds `git_integration_status` under the same condition; registration grants nothing and both adapters resolve the existing server-owned lease internally.
+Tool registration is not authority. In particular, the process tool router may be visible while the session has no `ProcessRun` capability or executable lease; `process_start` still fails closed until the operator authorizes the exact canonical executable. Mutation and Git read routers are registered only when their corresponding application-owned runtime/authority exists. `GitIntegrate` authority is provisioned only by B3 operator configuration. Merged 2D3C registers `git_integrate` only when that authority/runtime exists, and merged 2D3D adds `git_integration_status` under the same condition; registration grants nothing and both adapters resolve the existing server-owned lease internally. The ChatGPT packaging profile keeps this authority absent by default and enables it only through explicit operator opt-in.
 
 ## Mutation preconditions
 

@@ -7,6 +7,10 @@ param(
     [string]$Workspace,
 
     [string]$GitPath,
+    [string]$GitIntegrationPath,
+    [string]$GitIntegrationRoot,
+    [string]$GitIntegrationRef,
+    [switch]$EnableGitIntegrate,
     [string]$StateDir,
     [string]$WritePrefix,
     [string]$DeletePrefix,
@@ -56,6 +60,18 @@ $BridgePath = (Resolve-Path -LiteralPath $BridgePath).Path
 $Workspace = (Resolve-Path -LiteralPath $Workspace).Path
 
 if ($GitPath) { $GitPath = (Resolve-Path -LiteralPath $GitPath).Path }
+$integrationParts = @($GitIntegrationPath, $GitIntegrationRoot, $GitIntegrationRef | Where-Object { $_ }).Count
+if ($integrationParts -ne 0 -and $integrationParts -ne 3) {
+    throw 'Git integration doctor configuration requires path, root, and ref together.'
+}
+if ($EnableGitIntegrate -and $integrationParts -ne 3) {
+    throw '-EnableGitIntegrate requires GitIntegrationPath, GitIntegrationRoot, and GitIntegrationRef.'
+}
+if ($GitIntegrationPath) { $GitIntegrationPath = (Resolve-Path -LiteralPath $GitIntegrationPath).Path }
+if ($GitIntegrationRoot) {
+    New-Item -ItemType Directory -Force -Path $GitIntegrationRoot | Out-Null
+    $GitIntegrationRoot = (Resolve-Path -LiteralPath $GitIntegrationRoot).Path
+}
 if (($WritePrefix -or $DeletePrefix) -and -not $StateDir) {
     throw 'StateDir is required when write or delete authority is enabled.'
 }
@@ -66,6 +82,12 @@ if ($StateDir) {
 
 $bridgeArgs = New-Object System.Collections.Generic.List[string]
 if ($GitPath) { $bridgeArgs.Add("--git-executable=$GitPath") }
+if ($integrationParts -eq 3) {
+    $bridgeArgs.Add("--git-integration-executable=$GitIntegrationPath")
+    $bridgeArgs.Add("--git-integration-root=$GitIntegrationRoot")
+    $bridgeArgs.Add("--git-integration-ref=$GitIntegrationRef")
+}
+if ($EnableGitIntegrate) { $bridgeArgs.Add('--allow-git-integrate') }
 if ($StateDir) { $bridgeArgs.Add("--mutation-state-dir=$StateDir") }
 if ($WritePrefix) { $bridgeArgs.Add("--allow-write-scope=prefix:$WritePrefix") }
 if ($DeletePrefix) { $bridgeArgs.Add("--allow-delete-scope=prefix:$DeletePrefix") }
@@ -137,6 +159,10 @@ try {
         $required.Add('git_status')
         $required.Add('git_diff')
         $required.Add('git_log')
+    }
+    if ($EnableGitIntegrate) {
+        $required.Add('git_integration_status')
+        $required.Add('git_integrate')
     }
     if ($WritePrefix) {
         $required.Add('fs_write')
