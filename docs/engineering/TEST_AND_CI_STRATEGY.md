@@ -36,7 +36,7 @@ Commit Cargo.lock for the application. Review dependency diffs. Pin third-party 
 
 ## Windows-native CI
 
-Job Object/token/path security behavior must run on native Windows. Wine is not the security oracle.
+Job Object/token/path security behavior must run on native Windows. Wine is not the security oracle. Phase 2D3 closure additionally builds the real `optic-bridge.exe` and drives it over stdio MCP against a disposable Git repository, proving integration-only tool exposure, exact-head fast-forward and stale-target rejection at the application binary boundary.
 
 ## Soak and chaos
 
