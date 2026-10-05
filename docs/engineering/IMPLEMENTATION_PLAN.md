@@ -374,7 +374,7 @@ Status: **merged** in PR #46 (`c44ba567`). Exact final head `f4d04c3` passed dep
 
 ##### Phase 2D3 ChatGPT packaging closure
 
-Status: **current branch**.
+Status: **merged** in PR #47 (`1e42b1ff`). Exact final head `4ff720b2` passed dependency policy, Ubuntu/Windows CI, the native real-binary integration smoke and the dedicated installer-profile smoke.
 
 1. keep the default ChatGPT tool profile unchanged and integration authority absent;
 2. require an explicit installer opt-in for the complete integration executable/root/ref + `--allow-git-integrate` tuple;
@@ -383,7 +383,7 @@ Status: **current branch**.
 5. keep read-only mode incompatible with integration mutation authority;
 6. exercise generated configs and doctor startup in Windows CI under the runner workspace, with no ChatGPT user-profile mutation;
 7. never remove repository state during normal uninstall; require explicit workspace + cleanup switch and CAS-delete the direct Optic ref when requested;
-8. after CI/merge, perform the final disposable-repository ChatGPT Desktop smoke under explicit operator authorization.
+8. perform the final disposable-repository ChatGPT Desktop smoke under explicit operator authorization; this is the only remaining Phase 2D3 closure gate.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 
