@@ -170,17 +170,17 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - clients use the returned commit as the explicit `expected_target_head`, preserving exact-head optimistic concurrency across reconnects without exposing the internal ref;
 - exact final head `f4d04c3` passed dependency policy, Ubuntu/Windows CI and the native real-binary status/integrate/status/stale smoke.
 
-**ChatGPT integration packaging (CURRENT DEVELOPMENT):**
+**ChatGPT integration packaging (COMPLETED — PR #47, `1e42b1ff`):**
 
-- keep the default profile unchanged and Git integration off by default;
-- require explicit `-EnableGitIntegration` on an exact repository root with `HEAD`;
-- generate only the fixed internal-ref/root/executable authority and allowlist `git_integration_status` + prompt-gated `git_integrate`;
-- CI-test default denial, incompatible read-only mode, create-only ref bootstrap, generated tool/approval config, doctor startup and explicit uninstall cleanup without touching a real ChatGPT profile.
+- keeps the default profile unchanged and Git integration off by default;
+- requires explicit `-EnableGitIntegration` on an exact repository root with `HEAD`;
+- generates only the fixed internal-ref/root/executable authority and allowlists `git_integration_status` + prompt-gated `git_integrate`;
+- Windows CI proves default denial, incompatible read-only mode, symbolic-ref rejection, create-only ref bootstrap, existing-ref preservation, generated tool/approval config, doctor startup, guarded install-root ownership and explicit uninstall cleanup without touching a real ChatGPT profile;
+- exact final head `4ff720b2` passed dependency policy, Ubuntu/Windows CI, native real-binary integration smoke and the installer-profile smoke.
 
 **Remaining before Phase 2D3 closes:**
 
-- merge/CI validation of the explicit installer/plugin profile;
-- final disposable-repository ChatGPT Desktop smoke.
+- final disposable-repository ChatGPT Desktop smoke under explicit operator authorization.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
 
