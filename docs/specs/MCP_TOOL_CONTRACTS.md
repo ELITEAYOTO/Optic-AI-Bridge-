@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha surface through Phase 2D3C development: file mutation and Git integration tools are conditional on distinct application-owned authority. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha surface through Phase 2D3D development: file mutation and Git integration tools are conditional on distinct application-owned authority. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -11,7 +11,7 @@ Tool visibility and execution authority are intentionally distinct:
 - `fs_write` and `fs_apply_patch` are registered only when application-owned `FileWrite` authority was provisioned.
 - `fs_delete` is registered only when distinct application-owned `FileDelete` authority was provisioned.
 - `git_status`, `git_diff` and `git_log` are registered only when the operator supplied one valid absolute `--git-executable`, allowing the application to own a `GitReadService`.
-- `git_integrate` is registered only when application-owned `GitIntegrate` authority and its authorized runtime are present. Git integration authority does not register Git read tools, and Git read authority does not register `git_integrate`.
+- `git_integration_status` and `git_integrate` are registered only when application-owned `GitIntegrate` authority and its authorized runtime are present. Git integration authority does not register Git read tools, and Git read authority does not register integration tools.
 
 A visible MCP tool never grants a capability, task lease or authority by itself.
 
@@ -88,13 +88,18 @@ Rules:
 - `git_log` is entry-bounded and cursor-based; a cursor contains the snapshot `head` plus an `offset` and must remain the current HEAD or a reachable ancestor;
 - Git subprocess output and runtime duration are hard-bounded.
 
-Implemented conditionally in the current Phase 2D3C branch:
+Implemented conditionally through Phase 2D3C/2D3D:
 
 ```text
+git_integration_status()
 git_integrate(source_head, expected_target_head)
 ```
 
 Rules:
+
+- `git_integration_status` returns only `{ target_head }`, the exact current commit of the operator-owned internal integration target; it never returns the target ref name, repository path, Git executable, worktree path or authority identifiers;
+- target observation normalizes to read-only `Effect::GitIntegrationObserve` but still requires the existing application-owned `GitIntegrate` capability, exact task lease and repository scope;
+- callers use the observed `target_head` as the explicit `expected_target_head` precondition for a later integration; observation does not weaken the compare-and-swap requirement;
 
 - both inputs must be full 40- or 64-character hexadecimal Git object ids; symbolic names such as `HEAD` are rejected;
 - unknown request fields are rejected; the caller cannot provide repository root, target ref, Git executable, integration root/worktree path, raw argv, task lease or ActionId;

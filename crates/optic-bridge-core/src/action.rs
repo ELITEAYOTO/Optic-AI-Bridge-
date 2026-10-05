@@ -74,6 +74,7 @@ pub enum Effect {
         expected: ContentVersion,
     },
     GitRead,
+    GitIntegrationObserve,
     GitIntegrate {
         source_head: GitObjectId,
         expected_target_head: GitObjectId,
@@ -98,7 +99,9 @@ impl Effect {
             Self::FileWrite { .. } => Some(Capability::FileWrite),
             Self::FileDelete { .. } => Some(Capability::FileDelete),
             Self::GitRead => Some(Capability::GitRead),
-            Self::GitIntegrate { .. } => Some(Capability::GitIntegrate),
+            Self::GitIntegrationObserve | Self::GitIntegrate { .. } => {
+                Some(Capability::GitIntegrate)
+            }
             Self::ProcessRun { .. } => Some(Capability::ProcessRun),
             Self::NetworkAccess { .. } => Some(Capability::NetworkAccess),
             Self::PolicyChange | Self::PrivilegeElevation => None,
@@ -111,6 +114,7 @@ impl Effect {
             self,
             Self::FileWrite { .. }
                 | Self::FileDelete { .. }
+                | Self::GitIntegrationObserve
                 | Self::GitIntegrate { .. }
                 | Self::ProcessRun { .. }
                 | Self::NetworkAccess { .. }
@@ -131,9 +135,10 @@ impl Effect {
     #[must_use]
     pub const fn reversibility(&self) -> Reversibility {
         match self {
-            Self::FileRead { .. } | Self::FileSearch { .. } | Self::GitRead => {
-                Reversibility::ReadOnly
-            }
+            Self::FileRead { .. }
+            | Self::FileSearch { .. }
+            | Self::GitRead
+            | Self::GitIntegrationObserve => Reversibility::ReadOnly,
             Self::FileWrite { .. } | Self::FileDelete { .. } | Self::GitIntegrate { .. } => {
                 Reversibility::Transactional
             }
@@ -172,6 +177,14 @@ mod tests {
         let parsed = GitObjectId::parse(sha1).expect("valid SHA-1 object id");
         assert_eq!(parsed.as_str(), sha1.to_ascii_lowercase());
         assert!(GitObjectId::parse("main").is_err());
+    }
+
+    #[test]
+    fn git_integration_observation_is_read_only_but_uses_integration_authority() {
+        let effect = Effect::GitIntegrationObserve;
+        assert_eq!(effect.required_capability(), Some(Capability::GitIntegrate));
+        assert!(effect.requires_task_lease());
+        assert_eq!(effect.reversibility(), Reversibility::ReadOnly);
     }
 
     #[test]

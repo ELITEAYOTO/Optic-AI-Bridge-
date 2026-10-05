@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use optic_bridge_core::{ActionEnvelope, Effect, HardLimits};
+use optic_bridge_core::{ActionEnvelope, Effect, GitObjectId, HardLimits};
 use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use thiserror::Error;
 
@@ -81,6 +81,17 @@ impl AuthorizedGitIntegrationService {
         self.integration.target_ref()
     }
 
+    pub fn observe_target_head(
+        &self,
+        envelope: &ActionEnvelope,
+    ) -> Result<GitObjectId, AuthorizedGitIntegrationError> {
+        if !matches!(&envelope.effect, Effect::GitIntegrationObserve) {
+            return Err(AuthorizedGitIntegrationError::EffectMismatch);
+        }
+        self.authorize(envelope)?;
+        Ok(self.integration.target_head()?)
+    }
+
     pub fn integrate_fast_forward(
         &self,
         envelope: &ActionEnvelope,
@@ -131,7 +142,7 @@ pub enum AuthorizedGitIntegrationError {
     MissingTaskLease,
     #[error("Git integration policy denied the normalized action: {0:?}")]
     PolicyDenied(PolicyReason),
-    #[error("normalized effect does not match GitIntegrate")]
+    #[error("normalized effect does not match the requested Git integration operation")]
     EffectMismatch,
     #[error("Git integration runtime failed: {0}")]
     Integration(#[from] GitIntegrationError),
@@ -283,6 +294,17 @@ mod tests {
         }
     }
 
+    fn observe_envelope(session: &SessionGrant, lease: Option<&TaskLease>) -> ActionEnvelope {
+        ActionEnvelope {
+            action_id: ActionId::generate().expect("action entropy"),
+            session: session.handle.clone(),
+            task_lease: lease.map(|value| value.id.clone()),
+            effect: Effect::GitIntegrationObserve,
+            resources: budget(),
+            policy_epoch: session.policy_epoch,
+        }
+    }
+
     fn envelope(
         session: &SessionGrant,
         lease: Option<&TaskLease>,
@@ -419,6 +441,31 @@ mod tests {
                 TaskLeaseRegistryError::WrongSession
             ))
         ));
+        assert_eq!(fixture.target_head(), fixture.initial);
+    }
+
+    #[test]
+    fn matching_integration_lease_can_observe_target_without_mutation() {
+        let Some(fixture) = RepoFixture::new("observe") else {
+            return;
+        };
+        let sessions = Arc::new(SessionRegistry::new());
+        let leases = Arc::new(TaskLeaseRegistry::new());
+        let grant = session(&[Capability::GitIntegrate]);
+        sessions.register(grant.clone()).expect("session");
+        let task = lease(
+            &grant,
+            &[Capability::GitIntegrate],
+            &[LeaseScope::Repository],
+        );
+        leases.register(task.clone()).expect("lease");
+        let service = service(&fixture, sessions, leases);
+        let action = observe_envelope(&grant, Some(&task));
+
+        let observed = service
+            .observe_target_head(&action)
+            .expect("authorized observation");
+        assert_eq!(observed, fixture.initial);
         assert_eq!(fixture.target_head(), fixture.initial);
     }
 
