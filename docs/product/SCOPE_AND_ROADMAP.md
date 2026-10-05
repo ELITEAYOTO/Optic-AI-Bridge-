@@ -1,6 +1,6 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Last reviewed: 2026-10-04.
+Status: LIVING DOCUMENT. Last reviewed: 2026-10-05.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
@@ -149,18 +149,19 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - runtime/authority mismatch fails MCP server construction and B3 itself registers no `git_integrate` tool;
 - exact final head `c82059eb` passed dependency policy plus Ubuntu/Windows CI.
 
-**2D3C thin MCP integration adapter (CURRENT DEVELOPMENT):**
+**2D3C thin MCP integration adapter (COMPLETED — PR #44, `b9766e4a`):**
 
 - conditionally exposes `git_integrate(source_head, expected_target_head)` only with application-owned `GitIntegrate` authority;
 - rejects unknown public fields and exposes no repository/ref/path/executable/raw-argv/lease/ActionId authority;
 - generates ActionId and resolves the repository lease server-side, then calls only the authorized runtime;
 - preserves exact stale-target and non-fast-forward failures; post-ref-update verification uncertainty is explicit and never a safe-retry response;
-- proves Git integration authority can exist without exposing Git read tools.
+- proves Git integration authority can exist without exposing Git read tools;
+- exact final head `55c4f3f2` passed dependency policy plus Ubuntu/Windows CI.
 
 **Remaining before Phase 2D3 closes:**
 
-- merge/CI validation of 2D3C;
-- final disposable-repository ChatGPT smoke and plugin allowlist update.
+- real Windows `optic-bridge.exe` stdio/MCP smoke on a disposable repository, including stale-target rejection after a successful integration;
+- final disposable-repository ChatGPT Desktop smoke and plugin allowlist update.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
 

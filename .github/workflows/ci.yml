@@ -41,6 +41,20 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --locked --workspace --all-features
+      - name: Build bridge binary for Git integration MCP smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo build --locked -p optic-bridge-app -j 1
+      - name: Smoke real Git integration MCP binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = (Get-Command git.exe -ErrorAction Stop).Source
+          $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\git-integration-mcp-smoke'
+          .\scripts\Test-GitIntegrationMcp.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -GitPath $git `
+            -FixtureRoot $fixtureRoot
 
   dependency-policy:
     name: Dependency policy

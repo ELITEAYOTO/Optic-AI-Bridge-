@@ -348,7 +348,7 @@ Status: **merged through B3**.
 
 ##### Phase 2D3C — thin MCP integration adapter
 
-Status: **current branch**.
+Status: **merged** in PR #44 (`b9766e4a`). Exact final head `55c4f3f2` passed dependency policy, Ubuntu format/Clippy/tests and Windows installer/Clippy/tests.
 
 1. conditionally register exactly one `git_integrate` tool only when B3 application-owned integration authority is present;
 2. accept only `source_head` and `expected_target_head` as full Git object ids and reject unknown public fields;
@@ -359,7 +359,7 @@ Status: **current branch**.
 7. map stale target to explicit precondition failure and divergence to non-fast-forward; cleanup/recovery-required conditions remain fail-closed;
 8. classify any failure to prove state after a successful atomic ref update as `outcome_uncertain`, never as a safe retry;
 9. prove integration authority can expose `git_integrate` without implicitly exposing Git read tools;
-10. validate CI, then run the final adapter in a disposable repository before adding it to the ChatGPT plugin tool allowlist.
+10. CI validation passed on the exact PR head. The remaining closure gate is a real Windows binary/stdio MCP smoke followed by the final disposable-repository ChatGPT Desktop smoke before updating the plugin allowlist.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 
