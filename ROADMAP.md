@@ -4,9 +4,9 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 
 **Last reviewed:** 2026-10-05
 **Current phase:** Phase 2D3 — exact-head Git integration closure
-**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3C are merged
+**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3C plus the real-binary closure smoke are merged
 **Release state:** no production-supported release
-**Next gate:** Phase 2D3C is merged in PR #44 (`b9766e4a`, exact green head `55c4f3f2`) after Ubuntu/Windows tests plus dependency policy passed. The current closure branch adds a real Windows `optic-bridge.exe` MCP smoke that proves explicit integration authority, exact-head fast-forward and stale-target rejection through stdio. A final ChatGPT Desktop smoke remains before Phase 2D3 is declared complete.
+**Next gate:** PR #45 (`99837439`, exact green head `fa760213`) merged the native Windows real-binary/stdin MCP smoke. The current Phase 2D3D gate adds `git_integration_status`, a repository-scoped read-only observation under existing `GitIntegrate` authority, so clients can obtain the exact current internal target head without learning its ref/path. After its CI gate, only the explicit ChatGPT installer opt-in and final disposable-repository ChatGPT Desktop smoke remain before Phase 2D3 closes.
 
 The first real Windows developer smoke has now passed on a disposable repository through ChatGPT Desktop: MCP stdio initialization, file reads, bounded Git reads, scoped transactional write/patch/delete, stale-version rejection, scope denial and clean recovery retirement were all observed. This validates the current Phase 2D2 machine/integration surface only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
 

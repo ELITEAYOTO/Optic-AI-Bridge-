@@ -158,10 +158,21 @@ Phase 2D3 is intentionally split so no Git mutation MCP surface appears before e
 - proves Git integration authority can exist without exposing Git read tools;
 - exact final head `55c4f3f2` passed dependency policy plus Ubuntu/Windows CI.
 
+**2D3 closure smoke (COMPLETED — PR #45, `99837439`):**
+
+- native Windows CI builds the real `optic-bridge.exe`, starts it over stdio MCP with integration-only authority, performs an exact-head fast-forward and proves reuse of the stale precondition is rejected without moving the target;
+- exact final head `fa760213` passed Ubuntu/Windows/dependency policy and the Windows binary smoke.
+
+**2D3D integration-target observation (CURRENT DEVELOPMENT):**
+
+- conditional `git_integration_status()` returns only the exact current target commit under existing repository-scoped `GitIntegrate` authority;
+- the observation is typed read-only and does not grant or depend on generic `GitRead`;
+- clients use the returned commit as the explicit `expected_target_head`, preserving exact-head optimistic concurrency across reconnects without exposing the internal ref.
+
 **Remaining before Phase 2D3 closes:**
 
-- real Windows `optic-bridge.exe` stdio/MCP smoke on a disposable repository, including stale-target rejection after a successful integration;
-- final disposable-repository ChatGPT Desktop smoke and plugin allowlist update.
+- merge/CI validation of 2D3D;
+- explicit ChatGPT installer/plugin opt-in and final disposable-repository ChatGPT Desktop smoke.
 
 Non-fast-forward merge production semantics are deliberately deferred until this fast-forward exact-head boundary and recovery model are proven. The successful Phase 2D2 Windows smoke does not substitute for this gate.
 

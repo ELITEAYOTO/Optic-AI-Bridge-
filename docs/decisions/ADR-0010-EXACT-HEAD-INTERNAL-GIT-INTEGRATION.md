@@ -27,6 +27,7 @@ Git integration also introduces two separate risks that do not exist in read-onl
 14. The MCP server requires integration runtime and application-owned authority to agree when authority is retained.
 15. The thin MCP adapter exposes only exact `source_head` + `expected_target_head`. Repository/ref/path/executable/raw-argv/lease/ActionId authority remains application-owned; unknown public fields are rejected. The adapter generates ActionId, resolves the existing repository lease and calls only `AuthorizedGitIntegrationService`.
 16. Once an atomic ref update succeeds, inability to complete post-update verification is an explicit uncertain-outcome class. Public adapters must not map that condition to a pre-effect failure or safe retry.
+17. A client must be able to obtain a fresh exact target precondition without learning the internal ref. `Effect::GitIntegrationObserve` is therefore read-only but requires the same `GitIntegrate` capability, exact application-owned task lease and repository scope. `git_integration_status` returns only the current `target_head`; it exposes no ref/repository/path/executable/argv/lease authority and does not weaken the later exact-head compare-and-swap.
 
 ## Consequences
 
@@ -40,9 +41,10 @@ Git integration also introduces two separate risks that do not exist in read-onl
 - An operator can run integration recovery without granting either `GitIntegrate` or `GitRead`; capability creation remains a distinct explicit startup decision.
 - Public integration input cannot redirect the internal target or select another Git executable/repository/lease.
 - If the atomic target update may already have occurred, the response contract preserves uncertainty rather than encouraging blind retry.
+- Reconnected clients can refresh only the opaque target commit needed for optimistic concurrency without learning or selecting the internal integration ref.
 
 ## Deferred
 
-- CI/merge validation and disposable-repository smoke of the 2D3C adapter;
+- CI/merge validation of the 2D3D target-observation companion and final ChatGPT Desktop integration smoke;
 - non-fast-forward merge/conflict production semantics;
 - multi-session same-repository worktree ownership/coordinator from Phase 4.

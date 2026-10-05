@@ -124,7 +124,9 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
                     matches!(scope, LeaseScope::WorkspacePrefix(prefix) if path.is_within(prefix))
                 })
         }
-        Effect::GitIntegrate { .. } => lease.has_scope(&LeaseScope::Repository),
+        Effect::GitIntegrationObserve | Effect::GitIntegrate { .. } => {
+            lease.has_scope(&LeaseScope::Repository)
+        }
         Effect::ProcessRun { executable, .. } => {
             lease.has_scope(&LeaseScope::ProcessExecutable(executable.clone()))
         }
@@ -254,6 +256,32 @@ mod tests {
         assert_eq!(
             PolicyEngine.evaluate(&action, &session, Some(&wrong_scope), now()),
             PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn git_integration_observe_requires_repository_scoped_integration_lease() {
+        let session = session(&[Capability::GitIntegrate]);
+        let wrong_scope = lease(
+            &session,
+            &[Capability::GitIntegrate],
+            &[LeaseScope::WorkspaceAll],
+        );
+        let denied = envelope(&session, Effect::GitIntegrationObserve, Some(&wrong_scope));
+        assert_eq!(
+            PolicyEngine.evaluate(&denied, &session, Some(&wrong_scope), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+
+        let repository = lease(
+            &session,
+            &[Capability::GitIntegrate],
+            &[LeaseScope::Repository],
+        );
+        let allowed = envelope(&session, Effect::GitIntegrationObserve, Some(&repository));
+        assert_eq!(
+            PolicyEngine.evaluate(&allowed, &session, Some(&repository), now()),
+            PolicyDecision::Allow
         );
     }
 

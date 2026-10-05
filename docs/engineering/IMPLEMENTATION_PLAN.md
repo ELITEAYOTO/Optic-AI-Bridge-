@@ -359,7 +359,18 @@ Status: **merged** in PR #44 (`b9766e4a`). Exact final head `55c4f3f2` passed de
 7. map stale target to explicit precondition failure and divergence to non-fast-forward; cleanup/recovery-required conditions remain fail-closed;
 8. classify any failure to prove state after a successful atomic ref update as `outcome_uncertain`, never as a safe retry;
 9. prove integration authority can expose `git_integrate` without implicitly exposing Git read tools;
-10. CI validation passed on the exact PR head. The remaining closure gate is a real Windows binary/stdio MCP smoke followed by the final disposable-repository ChatGPT Desktop smoke before updating the plugin allowlist.
+10. CI validation passed on the exact PR head; PR #45 (`99837439`, exact green head `fa760213`) then passed a native Windows real-binary/stdin MCP smoke for integration-only authority, exact-head fast-forward and stale-target rejection.
+
+##### Phase 2D3D — integration-target observation companion
+
+Status: **current branch**.
+
+1. add read-only `Effect::GitIntegrationObserve` mapped to `Capability::GitIntegrate`;
+2. require the same active application-owned task lease and `LeaseScope::Repository`;
+3. expose conditional `git_integration_status()` only alongside integration authority;
+4. return only the exact current `target_head`, never the internal ref/repository/path/executable/argv/lease;
+5. use the observation as the explicit `expected_target_head` for later integration rather than weakening or auto-filling the precondition;
+6. extend the native real-binary smoke to observe target → integrate → observe new target → reject stale old observation.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 

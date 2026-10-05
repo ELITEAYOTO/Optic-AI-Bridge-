@@ -13,7 +13,9 @@ mod process_tools;
 mod server;
 mod transport;
 
-pub use git_integrate_tools::{GitIntegrateRequest, GitIntegrateResponse};
+pub use git_integrate_tools::{
+    GitIntegrateRequest, GitIntegrateResponse, GitIntegrationStatusResponse,
+};
 pub use git_tools::{
     GitDiffRequest, GitDiffResponse, GitLogCursorRequest, GitLogCursorResponse,
     GitLogEntryResponse, GitLogRequest, GitLogResponse, GitStatusResponse,

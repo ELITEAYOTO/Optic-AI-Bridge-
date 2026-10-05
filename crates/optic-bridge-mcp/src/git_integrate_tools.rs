@@ -14,6 +14,24 @@ use crate::server::ReadonlyMcpServer;
 #[tool_router(router = git_integrate_tool_router, vis = "pub")]
 impl ReadonlyMcpServer {
     #[tool(
+        name = "git_integration_status",
+        description = "Return only the exact current head of the operator-owned internal Git integration target. The internal ref name, repository path, Git executable and lease remain application-owned."
+    )]
+    pub async fn git_integration_status(
+        &self,
+    ) -> Result<Json<GitIntegrationStatusResponse>, ErrorData> {
+        let envelope = self.git_integration_envelope(Effect::GitIntegrationObserve)?;
+        let target_head = self
+            .run_git_integration(move |service| service.observe_target_head(&envelope))
+            .await?;
+        let response = GitIntegrationStatusResponse {
+            target_head: target_head.as_str().to_owned(),
+        };
+        self.ensure_structured_payload_fits(&response)?;
+        Ok(Json(response))
+    }
+
+    #[tool(
         name = "git_integrate",
         description = "Fast-forward the operator-owned internal Optic integration ref from an exact expected target commit to an exact source commit. Repository, target ref, Git executable, worktree path, lease and ActionId are application-owned and cannot be supplied by the caller."
     )]
@@ -77,10 +95,10 @@ impl ReadonlyMcpServer {
                 ErrorData::invalid_request("optic.git_integration_authority_unavailable", None)
             })?;
 
-        // Once a blocking Git mutation has started it cannot be safely cancelled
-        // by dropping its JoinHandle. Keep the execution permit and follow the
-        // operation to a known result. The Git runtime itself owns bounded command
-        // deadlines and exact-head/cleanup semantics.
+        // Keep the execution permit until the blocking Git integration operation
+        // reaches a known result. Mutation calls cannot be safely cancelled by
+        // dropping their JoinHandle, while read-only target observation shares the
+        // same bounded Git runtime and authorization path.
         let result = tokio::task::spawn_blocking(move || operation(service))
             .await
             .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
@@ -88,6 +106,11 @@ impl ReadonlyMcpServer {
         drop(permit);
         Ok(result)
     }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GitIntegrationStatusResponse {
+    pub target_head: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -436,10 +459,39 @@ mod tests {
         let fixture = RepoFixture::new("surface");
         let server = fixture.server();
         let names = server.registered_tool_names();
+        assert!(names.iter().any(|name| name == "git_integration_status"));
         assert!(names.iter().any(|name| name == "git_integrate"));
         assert!(!names.iter().any(|name| name == "git_status"));
         assert!(!names.iter().any(|name| name == "git_diff"));
         assert!(!names.iter().any(|name| name == "git_log"));
+    }
+
+    #[tokio::test]
+    async fn integration_status_supplies_exact_precondition_snapshot_before_and_after_update() {
+        let fixture = RepoFixture::new("status");
+        let server = fixture.server();
+        let before = server
+            .git_integration_status()
+            .await
+            .expect("integration status")
+            .0;
+        assert_eq!(before.target_head, fixture.initial.as_str());
+
+        let integrated = server
+            .git_integrate(Parameters(GitIntegrateRequest {
+                source_head: fixture.source.as_str().to_owned(),
+                expected_target_head: before.target_head,
+            }))
+            .await
+            .expect("integration")
+            .0;
+        let after = server
+            .git_integration_status()
+            .await
+            .expect("integration status after update")
+            .0;
+        assert_eq!(after.target_head, integrated.new_target_head);
+        assert_eq!(after.target_head, fixture.source.as_str());
     }
 
     #[tokio::test]

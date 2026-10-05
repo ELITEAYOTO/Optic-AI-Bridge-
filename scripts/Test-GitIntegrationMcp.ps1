@@ -73,6 +73,45 @@ function Invoke-Git {
     }
 }
 
+function Get-ToolJsonProperty {
+    param(
+        [Parameter(Mandatory = $true)]$Response,
+        [Parameter(Mandatory = $true)][string]$Property
+    )
+
+    if ($Response.PSObject.Properties.Name -contains 'error') {
+        throw "MCP tool call failed: $($Response.error.message)"
+    }
+    if ($Response.result.PSObject.Properties.Name -contains 'isError' -and $Response.result.isError) {
+        throw 'MCP tool returned an error result.'
+    }
+
+    foreach ($structuredName in @('structuredContent', 'structured_content')) {
+        if ($Response.result.PSObject.Properties.Name -contains $structuredName) {
+            $structured = $Response.result.$structuredName
+            if ($structured -and $structured.PSObject.Properties.Name -contains $Property) {
+                return [string]$structured.$Property
+            }
+        }
+    }
+
+    foreach ($item in @($Response.result.content)) {
+        if ($item -and $item.PSObject.Properties.Name -contains 'text') {
+            try {
+                $decoded = $item.text | ConvertFrom-Json
+                if ($decoded.PSObject.Properties.Name -contains $Property) {
+                    return [string]$decoded.$Property
+                }
+            }
+            catch {
+                # Ignore non-JSON text content and continue searching.
+            }
+        }
+    }
+
+    throw "MCP tool result did not contain property '$Property'."
+}
+
 $BridgePath = (Resolve-Path -LiteralPath $BridgePath).Path
 $GitPath = (Resolve-Path -LiteralPath $GitPath).Path
 
@@ -164,8 +203,10 @@ try {
         throw "MCP tools/list failed: $($toolsResponse.error.message)"
     }
     $toolNames = @($toolsResponse.result.tools | ForEach-Object { [string]$_.name })
-    if ('git_integrate' -notin $toolNames) {
-        throw 'git_integrate was not exposed with explicit integration authority.'
+    foreach ($integrationTool in @('git_integration_status', 'git_integrate')) {
+        if ($integrationTool -notin $toolNames) {
+            throw "$integrationTool was not exposed with explicit integration authority."
+        }
     }
     foreach ($readTool in @('git_status', 'git_diff', 'git_log')) {
         if ($readTool -in $toolNames) {
@@ -173,36 +214,21 @@ try {
         }
     }
 
-    $integrate = [ordered]@{
+    $statusBeforeCall = [ordered]@{
         jsonrpc = '2.0'
         id = 3
         method = 'tools/call'
-        params = [ordered]@{
-            name = 'git_integrate'
-            arguments = [ordered]@{
-                source_head = $source
-                expected_target_head = $initial
-            }
-        }
+        params = [ordered]@{ name = 'git_integration_status'; arguments = @{} }
     } | ConvertTo-Json -Depth 8 -Compress
-    $process.StandardInput.WriteLine($integrate)
+    $process.StandardInput.WriteLine($statusBeforeCall)
     $process.StandardInput.Flush()
-
-    $integrationResponse = Read-McpResponse -Process $process -Id 3 -Timeout $TimeoutMs
-    if ($integrationResponse.PSObject.Properties.Name -contains 'error') {
-        throw "git_integrate failed: $($integrationResponse.error.message)"
-    }
-    if ($integrationResponse.result.PSObject.Properties.Name -contains 'isError' -and $integrationResponse.result.isError) {
-        throw 'git_integrate returned an MCP tool error result.'
+    $statusBeforeResponse = Read-McpResponse -Process $process -Id 3 -Timeout $TimeoutMs
+    $statusBefore = Get-ToolJsonProperty -Response $statusBeforeResponse -Property 'target_head'
+    if ($statusBefore -ne $initial) {
+        throw "Integration status returned unexpected initial target. expected=$initial observed=$statusBefore"
     }
 
-    $observed = Invoke-Git -Git $GitPath -Repository $repo -Arguments @('rev-parse', '--verify', $targetRef) -Capture
-    if ($observed -ne $source) {
-        throw "Integration ref mismatch. expected=$source observed=$observed"
-    }
-
-    # Reusing the now-stale precondition must fail closed and must not move the ref.
-    $staleIntegrate = [ordered]@{
+    $integrate = [ordered]@{
         jsonrpc = '2.0'
         id = 4
         method = 'tools/call'
@@ -210,14 +236,57 @@ try {
             name = 'git_integrate'
             arguments = [ordered]@{
                 source_head = $source
-                expected_target_head = $initial
+                expected_target_head = $statusBefore
+            }
+        }
+    } | ConvertTo-Json -Depth 8 -Compress
+    $process.StandardInput.WriteLine($integrate)
+    $process.StandardInput.Flush()
+
+    $integrationResponse = Read-McpResponse -Process $process -Id 4 -Timeout $TimeoutMs
+    if ($integrationResponse.PSObject.Properties.Name -contains 'error') {
+        throw "git_integrate failed: $($integrationResponse.error.message)"
+    }
+    if ($integrationResponse.result.PSObject.Properties.Name -contains 'isError' -and $integrationResponse.result.isError) {
+        throw 'git_integrate returned an MCP tool error result.'
+    }
+
+    $statusAfterCall = [ordered]@{
+        jsonrpc = '2.0'
+        id = 5
+        method = 'tools/call'
+        params = [ordered]@{ name = 'git_integration_status'; arguments = @{} }
+    } | ConvertTo-Json -Depth 8 -Compress
+    $process.StandardInput.WriteLine($statusAfterCall)
+    $process.StandardInput.Flush()
+    $statusAfterResponse = Read-McpResponse -Process $process -Id 5 -Timeout $TimeoutMs
+    $statusAfter = Get-ToolJsonProperty -Response $statusAfterResponse -Property 'target_head'
+    if ($statusAfter -ne $source) {
+        throw "Integration status did not observe the new target. expected=$source observed=$statusAfter"
+    }
+
+    $observed = Invoke-Git -Git $GitPath -Repository $repo -Arguments @('rev-parse', '--verify', $targetRef) -Capture
+    if ($observed -ne $source) {
+        throw "Integration ref mismatch. expected=$source observed=$observed"
+    }
+
+    # Reusing the now-stale observed precondition must fail closed and must not move the ref.
+    $staleIntegrate = [ordered]@{
+        jsonrpc = '2.0'
+        id = 6
+        method = 'tools/call'
+        params = [ordered]@{
+            name = 'git_integrate'
+            arguments = [ordered]@{
+                source_head = $source
+                expected_target_head = $statusBefore
             }
         }
     } | ConvertTo-Json -Depth 8 -Compress
     $process.StandardInput.WriteLine($staleIntegrate)
     $process.StandardInput.Flush()
 
-    $staleResponse = Read-McpResponse -Process $process -Id 4 -Timeout $TimeoutMs
+    $staleResponse = Read-McpResponse -Process $process -Id 6 -Timeout $TimeoutMs
     $staleRejected = $false
     if ($staleResponse.PSObject.Properties.Name -contains 'error') {
         $staleRejected = $true
@@ -244,8 +313,11 @@ try {
         SourceHead = $source
         PreviousTargetHead = $initial
         ObservedTargetHead = $observed
+        IntegrationStatusToolPresent = $true
         IntegrationToolPresent = $true
         GitReadToolsAbsent = $true
+        StatusBeforeHead = $statusBefore
+        StatusAfterHead = $statusAfter
         StaleTargetRejected = $true
     }
 }
