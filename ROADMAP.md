@@ -3,12 +3,12 @@
 The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md).
 
 **Last reviewed:** 2026-10-05
-**Current phase:** Phase 2D3 — exact-head Git integration closure
+**Current phase:** Phase 3 — multi-session runtime
 **Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3D, the real-binary closure smoke and the explicit ChatGPT integration packaging gate are merged
 **Release state:** no production-supported release
-**Next gate:** PR #47 (`1e42b1ff`, exact green head `4ff720b2`) merged the explicit, default-off ChatGPT installer/plugin integration profile after Windows CI proved default denial, installer/root/ref hardening, generated tool approval policy, doctor startup, reinstall preservation and explicit CAS cleanup. The only remaining Phase 2D3 closure gate is a disposable-repository ChatGPT Desktop smoke under explicit operator authorization.
+**Next gate:** Phase 3 begins with multi-session runtime isolation: independent application sessions/projects/resources/capabilities plus adversarial cross-session tests proving one session cannot use another session's leases/jobs/state. Phase 2D3 is complete after the 2026-10-05 real ChatGPT Desktop smoke validated status → exact-head fast-forward → status → stale-precondition rejection on a disposable repository.
 
-The first real Windows developer smoke has now passed on a disposable repository through ChatGPT Desktop: MCP stdio initialization, file reads, bounded Git reads, scoped transactional write/patch/delete, stale-version rejection, scope denial and clean recovery retirement were all observed. This validates the current Phase 2D2 machine/integration surface only; it is not a production-readiness claim and does not replace the Phase 2D3 security gate.
+The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
 
 The user-scoped Windows quick installer, MCP doctor, uninstaller and tag-driven prerelease bundle workflow have also been pulled forward as developer-preview Phase 5 groundwork. No public release has been tagged yet, so the repository remains pre-alpha with release state `none`.
 

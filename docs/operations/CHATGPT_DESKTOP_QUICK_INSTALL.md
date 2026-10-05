@@ -1,6 +1,6 @@
 # ChatGPT Desktop quick install (Windows)
 
-**Status:** developer preview. The default Phase 2D2 ChatGPT Desktop profile was validated end-to-end on 2026-10-04. Phase 2D3 exact-head integration is merged and native-binary/installer-profile validated; the optional Git-integration profile still awaits its final real ChatGPT Desktop smoke.
+**Status:** developer preview. The default Phase 2D2 ChatGPT Desktop profile was validated end-to-end on 2026-10-04. The optional Phase 2D3 exact-head Git-integration profile was validated end-to-end in a real normal ChatGPT Desktop chat on 2026-10-05, in addition to native-binary and installer-profile CI validation.
 
 This is the intended end-user path. It does **not** require an OpenAI API key, API credits, a tunnel, Node.js, Python, Docker, or a Rust compiler. The release bundle contains a prebuilt Windows `optic-bridge.exe` plus the local ChatGPT plugin package and installer.
 
@@ -134,7 +134,7 @@ cargo +1.99.0 build --locked -p optic-bridge-app --release -j 1
 
 This path is for development and is not expected to fit the end-user 3-minute target.
 
-## Verified integration evidence (2026-10-04)
+## Verified integration evidence (2026-10-04 and 2026-10-05)
 
 The current Windows smoke validated:
 
@@ -149,4 +149,4 @@ The current Windows smoke validated:
 - an unallowlisted process failed with `optic.process_executable_not_allowed`;
 - the mutation recovery directory was empty after successful retirement.
 
-This validates the default developer-preview local integration. Separately, Phase 2D3 CI now validates the real Windows bridge binary and the generated opt-in installer profile without touching a ChatGPT user profile. The optional integration profile is not declared ChatGPT-Desktop-validated until the final disposable-repository desktop smoke is run. None of this changes the lifecycle to production-supported or claims power-loss ACID durability.
+This validates the default developer-preview local integration. Phase 2D3 CI additionally validates the real Windows bridge binary and generated opt-in installer profile, and the 2026-10-05 real ChatGPT Desktop smoke validated `git_integration_status` → prompt-gated `git_integrate` → refreshed status → stale-precondition rejection on a disposable repository. Independent post-smoke Git inspection confirmed the caller branch/workspace did not move, no integration worktree remained, and recovery state was empty. None of this changes the lifecycle to production-supported or claims power-loss ACID durability.
