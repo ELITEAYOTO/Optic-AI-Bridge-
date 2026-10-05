@@ -19,6 +19,7 @@ mod mutation;
 mod mutation_authority;
 mod process;
 mod recovery;
+mod session_lifecycle;
 mod session_registry;
 mod task_lease_registry;
 mod transactional_file;
@@ -63,6 +64,10 @@ pub use process::{
 pub use recovery::{
     JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
     RecoveryReport,
+};
+pub use session_lifecycle::{
+    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionReapReport,
+    SessionRevokeReport,
 };
 pub use session_registry::{SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};

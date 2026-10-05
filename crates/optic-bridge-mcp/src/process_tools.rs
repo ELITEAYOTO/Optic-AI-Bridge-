@@ -5,7 +5,8 @@ use optic_bridge_core::{
 };
 use optic_bridge_policy::PolicyDecision;
 use optic_bridge_runtime::{
-    ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, TaskLeaseRegistryError,
+    ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, SessionLifecycleError,
+    SessionLifecycleManager, TaskLeaseRegistryError,
 };
 use rmcp::{ErrorData, Json, handler::server::wrapper::Parameters, tool, tool_router};
 use schemars::JsonSchema;
@@ -207,20 +208,17 @@ impl ReadonlyMcpServer {
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
         self.active_grant(now)?;
-        let revoked_leases = self
-            .task_leases
-            .revoke_session(&self.session)
-            .map_err(map_task_lease_error)?;
-        let cancelled_jobs = self
-            .processes
-            .cancel_session(&self.session)
-            .map_err(map_process_error)?;
-        self.sessions
+        let lifecycle = SessionLifecycleManager::new(
+            self.sessions.clone(),
+            self.task_leases.clone(),
+            self.processes.clone(),
+        );
+        let report = lifecycle
             .revoke(&self.session)
-            .map_err(super::server::map_session_error)?;
+            .map_err(map_session_lifecycle_error)?;
         let response = SessionCancelResponse {
-            revoked_leases: u64::try_from(revoked_leases).unwrap_or(u64::MAX),
-            cancelled_jobs: u64::try_from(cancelled_jobs).unwrap_or(u64::MAX),
+            revoked_leases: u64::try_from(report.revoked_leases).unwrap_or(u64::MAX),
+            cancelled_jobs: u64::try_from(report.cancellation_requests).unwrap_or(u64::MAX),
         };
         self.ensure_structured_payload_fits(&response)?;
         drop(permit);
@@ -288,6 +286,17 @@ fn parse_job_id(value: &str) -> Result<JobId, ErrorData> {
 
 fn map_task_lease_error(_error: TaskLeaseRegistryError) -> ErrorData {
     ErrorData::invalid_request("optic.task_lease_inactive", None)
+}
+
+fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
+    match error {
+        SessionLifecycleError::SessionRegistry(error) => super::server::map_session_error(error),
+        SessionLifecycleError::TaskLeaseRegistry(error) => map_task_lease_error(error),
+        SessionLifecycleError::Process(error) => map_process_error(error),
+        SessionLifecycleError::ExpiredAtProvision | SessionLifecycleError::HandleGeneration(_) => {
+            ErrorData::internal_error("optic.session_lifecycle_error", None)
+        }
+    }
 }
 
 fn map_process_error(error: ProcessError) -> ErrorData {
@@ -477,6 +486,14 @@ mod tests {
             .expect("default limits");
         assert!(budget.fits_within(limits.max_process_budget));
         assert!(budget.output_bytes <= limits.max_active_output_ram_bytes_per_session);
+    }
+
+    #[test]
+    fn lifecycle_session_errors_preserve_inactive_mcp_code() {
+        let error = map_session_lifecycle_error(SessionLifecycleError::SessionRegistry(
+            optic_bridge_runtime::SessionRegistryError::Revoked,
+        ));
+        assert_eq!(error.message, "optic.session_inactive");
     }
 
     #[test]

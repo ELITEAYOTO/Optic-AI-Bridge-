@@ -389,23 +389,38 @@ Phase 2 gate passed: stale-write tests, path/reparse escape tests, forced-crash 
 
 ## Phase 3 — multi-session
 
-Status: **current**.
+Status: **current**. Phase 3A is merged; Phase 3B is split into lifecycle and admission gates before public multi-session orchestration.
 
 ### Phase 3A — bounded shared-runtime resource isolation
 
-1. Add a compiled hard ceiling for retained application sessions; zero is never unlimited and capacity failure is fail-closed.
-2. Retain bridge-wide process ceilings while adding smaller per-session ceilings for active jobs, retained records and reserved stdout/stderr RAM.
-3. Keep every `JobId` owner-bound and make record eviction owner-only: a session may retire only its own terminal history, even when the bridge-wide record/output ceiling is under pressure.
-4. Preserve explicit global-limit errors separately from per-session-limit errors at the MCP adapter boundary.
-5. Gate with adversarial A/B Windows tests proving per-session active-job and output exhaustion do not consume B's corresponding quota and record pressure cannot evict B's terminal result.
+Status: **merged** in PR #50 (`661c1604`), exact head `3c0c4448`; pull-request and post-merge `main` CI passed Ubuntu, Windows and dependency policy.
 
-### Phase 3B — application-managed multi-session lifecycle / authority
+1. Compiled hard ceiling for retained application sessions; zero is never unlimited and capacity failure is fail-closed.
+2. Bridge-wide process ceilings remain final guards while smaller per-session ceilings bound active jobs, retained records and reserved stdout/stderr RAM.
+3. Every `JobId` remains owner-bound and record eviction is owner-only: a session may retire only its own terminal history.
+4. Global-limit and per-session-limit errors remain distinct at the MCP adapter boundary.
+5. Adversarial A/B tests prove one session's active-job/output exhaustion does not consume the other's quota and record pressure cannot evict the other session's terminal result.
 
-Move beyond the current one startup-provisioned `SessionHandle`: support multiple simultaneously active sessions/projects with bounded lifecycle, independent grants/task leases/authority sets and deterministic revoke/cancel cleanup. Do not expose public session creation until cross-session negative tests prove jobs, leases, capabilities and private runtime state cannot cross ownership boundaries.
+### Phase 3B1 — application-owned session lifecycle and bounded reap
+
+Status: **current implementation gate**.
+
+1. `SessionLifecycleManager` owns future session provisioning from `SessionGrantSpec` and generates opaque `SessionHandle`s inside the application boundary.
+2. Revoke is fail-closed in order: invalidate the session first, then revoke all owned task leases, then request termination of all owned process jobs.
+3. Revoked or expired sessions remain in `SessionRegistry` while any owned process job is still active, so capacity cannot be reclaimed early.
+4. Reap removes only terminal process records owned by that session, removes its leases, then removes the already-inactive session record.
+5. Existing MCP `session_cancel` delegates to the lifecycle manager without changing its response schema.
+6. No public MCP session creation/minting tool is introduced by B1.
+
+### Phase 3B2 — atomic admission versus revoke/reap
+
+Before wiring multiple simultaneously active sessions to clients, serialize session-scoped effect admission against lifecycle shutdown. An operation that validated session/lease/policy immediately before revoke must not be able to start a new process or other owned effect after cleanup has observed the session as quiescent. Add adversarial revoke/start races and prove no orphan job/resource can appear after reap.
+
+Only after B2 passes should application-managed multi-session creation/binding and independent per-project authority sets be exposed to orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service once stateful resources and retries exist.
 
-Phase 3 gate: adversarial cross-session access and resource-interference tests.
+Phase 3 gate: adversarial cross-session access, lifecycle/admission races and resource-interference tests.
 
 ## Phase 4 — same-repo parallelism
 

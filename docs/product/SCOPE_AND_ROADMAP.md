@@ -191,17 +191,21 @@ Non-fast-forward merge production semantics remain deliberately deferred; Phase 
 
 ## Phase 3 — Multi-session runtime (CURRENT)
 
-Independent sessions/projects, per-session jobs/resources/capabilities, with adversarial cross-session tests.
+Independent sessions/projects, per-session jobs/resources/capabilities, with adversarial cross-session and lifecycle-race tests before orchestration expands.
 
-### Phase 3A — bounded shared-runtime isolation
+### Phase 3A — bounded shared-runtime isolation (COMPLETED)
 
-The first executable gate keeps bridge-wide ceilings while adding smaller per-session ceilings. The session registry has a hard capacity. Process execution keeps opaque session-owned `JobId`s and now enforces both global and per-session active-job, retained-record and reserved-output-RAM limits. Under record/output pressure a start request may retire only terminal history owned by the requesting session; another session's retained process result is never evicted to make room. Adversarial A/B tests prove a session exhausting its own active-job or output reservation does not consume the other session's corresponding quota, and owner-only record eviction preserves the other session's result.
+Merged in PR #50 (`661c1604`, exact green head `3c0c4448`). The first executable gate keeps bridge-wide ceilings while adding smaller per-session ceilings. The session registry has a hard capacity. Process execution keeps opaque session-owned `JobId`s and enforces both global and per-session active-job, retained-record and reserved-output-RAM limits. Under record/output pressure a start request may retire only terminal history owned by the requesting session; another session's retained process result is never evicted to make room. Adversarial A/B tests prove a session exhausting its own active-job or output reservation does not consume the other session's corresponding quota, and owner-only record eviction preserves the other session's result.
 
-### Phase 3B — application-managed multi-session lifecycle and authority
+### Phase 3B1 — application-owned lifecycle and bounded reap (CURRENT)
 
-Move from the current single startup-provisioned session to multiple simultaneously active application sessions/projects with explicit bounded create/revoke/cancel lifecycle, independent capability/task-lease ownership and cancellation of session-owned jobs. Prove cross-session authority/state isolation before exposing any public multi-session orchestration surface.
+`SessionLifecycleManager` provides the internal lifecycle boundary for future multi-session orchestration. It generates opaque application-owned handles from `SessionGrantSpec`, rejects already-expired provisioning, invalidates a session before revoking its task leases and requesting termination of its process jobs, and retains inactive session capacity until those jobs are terminal. Reap removes only owner-scoped terminal process history and leases before deleting the inactive session record. Existing MCP `session_cancel` now delegates to this lifecycle boundary without adding any public session creation tool.
 
-Evaluate a bounded ActionId idempotency/replay ledger only once stateful retries justify it.
+### Phase 3B2 — admission/revocation serialization (NEXT)
+
+Close the remaining concurrent admission window before wiring multiple live sessions to clients. Session/lease/policy validation and effect admission must be serialized with revoke/reap so an operation authorized just before shutdown cannot create a new process/resource after cleanup has considered the session quiescent. Gate with adversarial start/revoke races and prove no orphan resource appears after reap.
+
+Only after B2 should multiple simultaneously active application sessions/projects and independent authority sets be bound to client orchestration. Evaluate a bounded ActionId idempotency/replay ledger only once stateful retries justify it.
 
 ## Phase 4 — Same-repository parallelism
 
