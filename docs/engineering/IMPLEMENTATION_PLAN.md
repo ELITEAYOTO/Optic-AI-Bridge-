@@ -363,7 +363,7 @@ Status: **merged** in PR #44 (`b9766e4a`). Exact final head `55c4f3f2` passed de
 
 ##### Phase 2D3D — integration-target observation companion
 
-Status: **current branch**.
+Status: **merged** in PR #46 (`c44ba567`). Exact final head `f4d04c3` passed dependency policy, Ubuntu/Windows CI and the native real-binary MCP smoke.
 
 1. add read-only `Effect::GitIntegrationObserve` mapped to `Capability::GitIntegrate`;
 2. require the same active application-owned task lease and `LeaseScope::Repository`;
@@ -371,6 +371,19 @@ Status: **current branch**.
 4. return only the exact current `target_head`, never the internal ref/repository/path/executable/argv/lease;
 5. use the observation as the explicit `expected_target_head` for later integration rather than weakening or auto-filling the precondition;
 6. extend the native real-binary smoke to observe target → integrate → observe new target → reject stale old observation.
+
+##### Phase 2D3 ChatGPT packaging closure
+
+Status: **current branch**.
+
+1. keep the default ChatGPT tool profile unchanged and integration authority absent;
+2. require an explicit installer opt-in for the complete integration executable/root/ref + `--allow-git-integrate` tuple;
+3. reject symbolic internal refs and create the fixed direct ref only when absent, using disabled hooks/prompts/system+global config/replacement objects plus `update-ref --no-deref` create-only old-OID comparison; never reset an existing direct ref;
+4. allowlist `git_integration_status` plus prompt-gated `git_integrate` only in the opt-in profile;
+5. keep read-only mode incompatible with integration mutation authority;
+6. exercise generated configs and doctor startup in Windows CI under the runner workspace, with no ChatGPT user-profile mutation;
+7. never remove repository state during normal uninstall; require explicit workspace + cleanup switch and CAS-delete the direct Optic ref when requested;
+8. after CI/merge, perform the final disposable-repository ChatGPT Desktop smoke under explicit operator authorization.
 
 Phase 2 gate: stale-write tests, path/reparse escape tests, forced-crash recovery tests and Git stale-target/conflict/cleanup rejection. Non-fast-forward merge production semantics remain deferred until the fast-forward exact-head boundary and its recovery gate are proven.
 

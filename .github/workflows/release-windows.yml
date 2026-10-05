@@ -46,7 +46,8 @@ jobs:
              @Optic AI Bridge Inspect the current workspace without modifying anything.
 
           No OpenAI API key, tunnel, Node.js, Python or Rust compiler is required for this release bundle.
-          Mutating tools are limited to the workspace scratch/ prefix by default and still require ChatGPT approval.
+          Mutating file tools are limited to the workspace scratch/ prefix by default and still require ChatGPT approval.
+          Exact-head Git integration is off by default. On an exact Git repository root, add -EnableGitIntegration to enable git_integration_status plus prompt-gated git_integrate.
           '@ | Set-Content -LiteralPath (Join-Path $bundle 'README-FIRST.txt') -Encoding UTF8
 
           $zip = Join-Path $PWD 'dist\Optic-AI-Bridge-windows-x64.zip'

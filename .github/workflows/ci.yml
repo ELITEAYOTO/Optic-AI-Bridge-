@@ -55,6 +55,15 @@ jobs:
             -BridgePath '.\target\debug\optic-bridge.exe' `
             -GitPath $git `
             -FixtureRoot $fixtureRoot
+      - name: Validate ChatGPT installer Git integration profiles
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\installer-profile-smoke'
+          .\scripts\Test-InstallerProfiles.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -PluginTemplatePath '.\packaging\chatgpt-plugin' `
+            -FixtureRoot $fixtureRoot
 
   dependency-policy:
     name: Dependency policy

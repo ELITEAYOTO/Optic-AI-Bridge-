@@ -1,6 +1,6 @@
 # ChatGPT Desktop quick install (Windows)
 
-**Status:** developer preview, validated on 2026-10-04 against ChatGPT Desktop and the current Optic Phase 2D2 runtime.
+**Status:** developer preview. The default Phase 2D2 ChatGPT Desktop profile was validated end-to-end on 2026-10-04. Phase 2D3 exact-head integration is merged and native-binary/installer-profile validated; the optional Git-integration profile still awaits its final real ChatGPT Desktop smoke.
 
 This is the intended end-user path. It does **not** require an OpenAI API key, API credits, a tunnel, Node.js, Python, Docker, or a Rust compiler. The release bundle contains a prebuilt Windows `optic-bridge.exe` plus the local ChatGPT plugin package and installer.
 
@@ -45,7 +45,7 @@ The quick installer is deliberately conservative:
 - `fs_delete` is also limited to `scratch/`.
 - ChatGPT is configured to prompt for mutation tools.
 - No process executable is allowlisted, so `process_start` remains unusable from the plugin.
-- The plugin exposes only the 8 intended file/Git tools even though the bridge has additional internal session/process routes.
+- The default plugin exposes only the same 8 intended file/Git tools even though the bridge has additional internal session/process/integration routes. Git integration is **not** silently enabled.
 
 The installer creates `scratch/` when the default mutation profile is used.
 
@@ -57,6 +57,23 @@ To expose only file reads and optional Git reads:
 .\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\repository" -ReadOnly
 ```
 
+### Optional exact-head Git integration preview
+
+Git integration is deliberately **off by default**. On a workspace that is exactly a Git repository root with an existing `HEAD`, enable the preview explicitly:
+
+```powershell
+.\Install-OpticAIBridge.ps1 `
+  -Workspace "C:\path\to\your\repository" `
+  -EnableGitIntegration
+```
+
+This option cannot be combined with `-ReadOnly`. It keeps the existing Git read tools and additionally exposes:
+
+- `git_integration_status` — read-only; returns only the exact current internal target commit needed as the optimistic-concurrency precondition;
+- `git_integrate` — prompt-gated; fast-forwards only the fixed operator-owned internal Optic ref when the supplied `expected_target_head` still matches.
+
+The client cannot choose or learn the internal ref, repository path, Git executable, worktree path, raw Git argv, lease, or ActionId through these tools. The installer uses a dedicated integration root under the user-scoped Optic install directory, disables Git prompts/system+global config/replacement objects for bootstrap, forces an empty hooks directory, rejects a symbolic `refs/optic/integration/chatgpt`, and creates that direct ref only when absent using `update-ref --no-deref` with a zero old OID. An existing direct ref is never reset by the installer.
+
 ## What the installer does
 
 The installation is user-scoped under:
@@ -67,7 +84,7 @@ The installation is user-scoped under:
 
 It:
 
-1. validates the workspace and bundled executable;
+1. validates the workspace, bundled executable and installation root ownership; a new install writes `.optic-ai-bridge-install.json`, while a non-empty custom path without a valid Optic marker is refused rather than adopted;
 2. detects the ChatGPT Desktop/Codex plugin manager;
 3. detects Git and verifies whether the workspace is the exact Git root;
 4. copies the bridge executable into the user-scoped install directory;
@@ -91,7 +108,15 @@ From a release bundle:
 .\Uninstall-OpticAIBridge.ps1
 ```
 
-Then restart ChatGPT Desktop.
+The normal uninstall never mutates a repository. Recursive removal is also fail-closed: a non-empty custom `InstallRoot` must carry the matching Optic installation marker, so an arbitrary unrelated directory cannot be passed to the uninstaller and recursively erased. The historical default `%LOCALAPPDATA%\OpticAIBridge` path retains limited compatibility only when recognizable Optic installation artifacts are present. If the optional Git-integration profile was enabled and you also want to remove its internal Optic ref, request that repository mutation explicitly:
+
+```powershell
+.\Uninstall-OpticAIBridge.ps1 `
+  -Workspace "C:\path\to\your\repository" `
+  -RemoveGitIntegrationRef
+```
+
+The cleanup verifies the exact Git root, rejects a symbolic integration ref, disables hooks/prompts/system+global config, observes the direct ref OID, and deletes it with an expected-old-value comparison. Then restart ChatGPT Desktop.
 
 ## Developer/source install
 
@@ -124,4 +149,4 @@ The current Windows smoke validated:
 - an unallowlisted process failed with `optic.process_executable_not_allowed`;
 - the mutation recovery directory was empty after successful retirement.
 
-This validates the developer-preview local integration. It does **not** change the project lifecycle to production-supported or claim power-loss ACID durability.
+This validates the default developer-preview local integration. Separately, Phase 2D3 CI now validates the real Windows bridge binary and the generated opt-in installer profile without touching a ChatGPT user profile. The optional integration profile is not declared ChatGPT-Desktop-validated until the final disposable-repository desktop smoke is run. None of this changes the lifecycle to production-supported or claims power-loss ACID durability.
