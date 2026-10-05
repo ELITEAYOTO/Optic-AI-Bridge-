@@ -6,7 +6,7 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 **Current phase:** Phase 3 — multi-session runtime
 **Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3D, the real-binary closure smoke and the explicit ChatGPT integration packaging gate are merged
 **Release state:** no production-supported release
-**Next gate:** Phase 3 begins with multi-session runtime isolation: independent application sessions/projects/resources/capabilities plus adversarial cross-session tests proving one session cannot use another session's leases/jobs/state. Phase 2D3 is complete after the 2026-10-05 real ChatGPT Desktop smoke validated status → exact-head fast-forward → status → stale-precondition rejection on a disposable repository.
+**Next gate:** Phase 3A establishes bounded shared-runtime isolation first: hard session capacity, global + per-session process quotas, and owner-only retained-job eviction with adversarial A/B tests. The following Phase 3B gate will introduce application-managed lifecycle/authority for multiple simultaneously active sessions/projects before any public multi-session orchestration is exposed. Phase 2D3 remains complete after the 2026-10-05 real ChatGPT Desktop smoke validated status → exact-head fast-forward → status → stale-precondition rejection on a disposable repository.
 
 The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
 

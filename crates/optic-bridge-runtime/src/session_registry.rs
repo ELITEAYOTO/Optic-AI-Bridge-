@@ -1,11 +1,21 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use optic_bridge_core::{MonotonicTime, SessionGrant, SessionHandle};
+use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<SessionHandle, SessionRecord>>,
+    max_sessions: u32,
+}
+
+impl Default for SessionRegistry {
+    fn default() -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            max_sessions: HardLimits::default().max_sessions,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -20,6 +30,14 @@ impl SessionRegistry {
         Self::default()
     }
 
+    pub fn from_hard_limits(limits: HardLimits) -> Result<Self, LimitError> {
+        let limits = limits.validate_nonzero()?;
+        Ok(Self {
+            sessions: Mutex::new(HashMap::new()),
+            max_sessions: limits.max_sessions,
+        })
+    }
+
     pub fn register(&self, grant: SessionGrant) -> Result<(), SessionRegistryError> {
         let mut sessions = self
             .sessions
@@ -27,6 +45,11 @@ impl SessionRegistry {
             .map_err(|_| SessionRegistryError::StateUnavailable)?;
         if sessions.contains_key(&grant.handle) {
             return Err(SessionRegistryError::AlreadyRegistered);
+        }
+        let max_sessions = usize::try_from(self.max_sessions)
+            .map_err(|_| SessionRegistryError::CapacityExceeded)?;
+        if sessions.len() >= max_sessions {
+            return Err(SessionRegistryError::CapacityExceeded);
         }
         sessions.insert(
             grant.handle.clone(),
@@ -101,6 +124,8 @@ pub enum SessionRegistryError {
     StateUnavailable,
     #[error("session handle is already registered")]
     AlreadyRegistered,
+    #[error("session registry reached its hard session capacity")]
+    CapacityExceeded,
     #[error("session handle is unknown")]
     UnknownSession,
     #[error("session has been revoked")]
@@ -175,5 +200,23 @@ mod tests {
             registry.register(grant).expect_err("duplicate must fail"),
             SessionRegistryError::AlreadyRegistered
         );
+    }
+
+    #[test]
+    fn registration_is_bounded_by_hard_session_capacity() {
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let registry = SessionRegistry::from_hard_limits(limits).expect("valid limits");
+        registry.register(grant(100)).expect("first session");
+        registry.register(grant(100)).expect("second session");
+        assert_eq!(
+            registry
+                .register(grant(100))
+                .expect_err("capacity must fail closed"),
+            SessionRegistryError::CapacityExceeded
+        );
+        assert_eq!(registry.len().expect("registry length"), 2);
     }
 }

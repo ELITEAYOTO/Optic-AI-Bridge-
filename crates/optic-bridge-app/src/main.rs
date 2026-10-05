@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         policy_epoch: 1,
     };
 
-    let sessions = Arc::new(SessionRegistry::new());
+    let sessions = Arc::new(SessionRegistry::from_hard_limits(limits)?);
     sessions.register(grant)?;
 
     let git_integration_service = match (

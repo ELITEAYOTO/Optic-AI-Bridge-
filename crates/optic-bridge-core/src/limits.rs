@@ -35,7 +35,9 @@ pub struct HardLimits {
     pub max_response_bytes: u64,
     pub max_request_duration_ms: u64,
     pub max_concurrent_requests: u32,
+    pub max_sessions: u32,
     pub max_active_output_ram_bytes: u64,
+    pub max_active_output_ram_bytes_per_session: u64,
     pub max_fs_read_bytes: u64,
     pub max_fs_mutation_bytes: u64,
     pub max_mutation_journal_file_bytes: u64,
@@ -45,7 +47,9 @@ pub struct HardLimits {
     pub max_git_read_bytes: u64,
     pub max_git_log_entries: u32,
     pub max_active_process_jobs: u32,
+    pub max_active_process_jobs_per_session: u32,
     pub max_process_records: u32,
+    pub max_process_records_per_session: u32,
     pub max_process_read_bytes: u64,
     pub max_process_budget: ResourceBudget,
 }
@@ -57,7 +61,9 @@ impl Default for HardLimits {
             max_response_bytes: 256 * 1024,
             max_request_duration_ms: 30_000,
             max_concurrent_requests: 16,
+            max_sessions: 16,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
+            max_active_output_ram_bytes_per_session: 8 * 1024 * 1024,
             max_fs_read_bytes: 256 * 1024,
             max_fs_mutation_bytes: 8 * 1024 * 1024,
             max_mutation_journal_file_bytes: 64 * 1024,
@@ -67,11 +73,13 @@ impl Default for HardLimits {
             max_git_read_bytes: 256 * 1024,
             max_git_log_entries: 256,
             max_active_process_jobs: 8,
+            max_active_process_jobs_per_session: 4,
             max_process_records: 64,
+            max_process_records_per_session: 32,
             max_process_read_bytes: 64 * 1024,
             max_process_budget: ResourceBudget {
                 timeout_ms: 60 * 60 * 1000,
-                output_bytes: 16 * 1024 * 1024,
+                output_bytes: 8 * 1024 * 1024,
                 memory_bytes: 8 * 1024 * 1024 * 1024,
                 process_count: 32,
             },
@@ -85,7 +93,9 @@ impl HardLimits {
             || self.max_response_bytes == 0
             || self.max_request_duration_ms == 0
             || self.max_concurrent_requests == 0
+            || self.max_sessions == 0
             || self.max_active_output_ram_bytes == 0
+            || self.max_active_output_ram_bytes_per_session == 0
             || self.max_fs_read_bytes == 0
             || self.max_fs_mutation_bytes == 0
             || self.max_mutation_journal_file_bytes == 0
@@ -95,12 +105,20 @@ impl HardLimits {
             || self.max_git_read_bytes == 0
             || self.max_git_log_entries == 0
             || self.max_active_process_jobs == 0
+            || self.max_active_process_jobs_per_session == 0
             || self.max_process_records == 0
+            || self.max_process_records_per_session == 0
             || self.max_process_read_bytes == 0
         {
             return Err(LimitError::ZeroIsNotUnlimited);
         }
-        if self.max_process_records < self.max_active_process_jobs {
+        if self.max_process_records < self.max_active_process_jobs
+            || self.max_active_process_jobs_per_session > self.max_active_process_jobs
+            || self.max_process_records_per_session > self.max_process_records
+            || self.max_process_records_per_session < self.max_active_process_jobs_per_session
+            || self.max_active_output_ram_bytes_per_session > self.max_active_output_ram_bytes
+            || self.max_process_budget.output_bytes > self.max_active_output_ram_bytes_per_session
+        {
             return Err(LimitError::InvalidRelationship);
         }
         self.max_process_budget.validate_nonzero()?;
@@ -219,6 +237,54 @@ mod tests {
             limits
                 .validate_nonzero()
                 .expect_err("relationship must fail"),
+            LimitError::InvalidRelationship
+        );
+    }
+
+    #[test]
+    fn per_session_process_limits_must_fit_global_limits() {
+        let limits = HardLimits {
+            max_active_process_jobs_per_session: 9,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits
+                .validate_nonzero()
+                .expect_err("relationship must fail"),
+            LimitError::InvalidRelationship
+        );
+
+        let limits = HardLimits {
+            max_process_records_per_session: 3,
+            max_active_process_jobs_per_session: 4,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits
+                .validate_nonzero()
+                .expect_err("relationship must fail"),
+            LimitError::InvalidRelationship
+        );
+
+        let limits = HardLimits {
+            max_active_output_ram_bytes_per_session: 17 * 1024 * 1024,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits
+                .validate_nonzero()
+                .expect_err("relationship must fail"),
+            LimitError::InvalidRelationship
+        );
+
+        let limits = HardLimits {
+            max_active_output_ram_bytes_per_session: 4 * 1024 * 1024,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits
+                .validate_nonzero()
+                .expect_err("per-job output budget must fit the session ceiling"),
             LimitError::InvalidRelationship
         );
     }

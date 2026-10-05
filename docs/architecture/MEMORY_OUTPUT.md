@@ -22,6 +22,10 @@ Large output belongs on disk, not permanently in bridge RAM or one MCP response.
 
 These are not measured performance claims and must be tuned from benchmarks.
 
+## Current executable Phase 3A bounds
+
+The current runtime keeps 16 MiB of bridge-wide reserved process-output capacity and adds an 8 MiB per-session ceiling. Active process jobs are capped at 8 bridge-wide / 4 per session; retained process records are capped at 64 bridge-wide / 32 per session. Retained output reservation counts against these limits until its record is retired. When capacity pressure requires retirement, a session may evict only its own terminal record; it never reclaims another session's retained output/result. The application session registry is also hard-bounded to 16 retained sessions. Disk spooling/TTL remains a later design item and is not claimed as implemented.
+
 ## Cursor model
 
 process_read(job_id, stream, cursor, max_bytes) returns bounded data plus next_cursor, EOF/truncation metadata and total byte counters.
