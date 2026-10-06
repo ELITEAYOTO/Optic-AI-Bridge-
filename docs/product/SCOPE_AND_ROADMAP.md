@@ -220,7 +220,7 @@ PR #53 merged as `25a40e7` from exact green head `2337651`; post-merge `main` CI
 
 ### Phase 3C - process/resource safety before wider autonomy
 
-**3C1 bounded termination (CURRENT PR #55).** Exact code/test head `7c01b78` passed Ubuntu, Windows and dependency policy. Stop/timeout/output-overflow and process-observation failures request owned-tree termination and wait within a separate two-second confirmation bound. If process-tree death cannot be proven, the record becomes `termination_uncertain`: output is marked truncated, the record retains ownership/quota, and physical session reap/terminal-history eviction remains blocked. This is a quarantine state, not proof that the process is alive or dead. Final documentation-head CI, exact-head merge and post-merge `main` CI remain required before 3C1 is declared merged.
+**3C1 bounded termination (COMPLETED).** PR #55 merged as `bacac76` from exact green head `bfb38a5`; post-merge `main` CI run #265 passed Ubuntu, Windows and dependency policy. Stop/timeout/output-overflow and process-observation failures request owned-tree termination and wait within a separate two-second confirmation bound. If process-tree death cannot be proven, the record becomes `termination_uncertain`: output is marked truncated, the record retains ownership/quota, and physical session reap/terminal-history eviction remains blocked. This is a quarantine state, not proof that the process is alive or dead.
 
 Later Phase 3C gates remain open: machine-level CPU/headroom governance, truthful network containment semantics, executable/tool identity, repository-code execution classification and evidence-backed Windows sandboxing. Public multi-session orchestration remains behind these safety gates.
 
