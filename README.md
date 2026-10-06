@@ -1,6 +1,6 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2D3 exact-head Git integration is complete and validated end-to-end in ChatGPT Desktop; Phase 3 multi-session runtime is current, with Phase 3A establishing bounded cross-session resource isolation
+**Status:** pre-alpha — Phase 2D3 exact-head Git integration is complete and validated end-to-end in ChatGPT Desktop; Phase 3 multi-session runtime is current, with Phase 3A resource isolation complete and Phase 3B lifecycle/admission isolation in progress
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
@@ -113,7 +113,7 @@ Phase 2C3C is merged through PRs #26, #27, #29 and #30:
 - started blocking durable mutations are intentionally followed to a known transaction/recovery outcome while retaining their transport execution permit. The adapter does not return a timeout while a non-cancellable `spawn_blocking` filesystem effect may still commit in the background;
 - exact final heads `fcd1a6aa` (#26), `ae05d6a2` (#27) and `f70e520b` (#30) passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
 
-The implementation remains pre-alpha. Phase 2D Git read/integration is complete. Phase 3A now establishes a bounded session registry plus global-and-per-session process ceilings for active jobs, retained job records and reserved output RAM; process-history eviction is owner-only so one session cannot destroy another session's terminal job result. The next Phase 3 tranche is application-managed multi-session lifecycle/authority orchestration; public multi-session MCP orchestration is still not exposed. A developer-preview local ChatGPT Desktop installer and tag-driven Windows release bundle exist, but a signed production installer/updater, tunnel integration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+The implementation remains pre-alpha. Phase 2D Git read/integration is complete. Phase 3A establishes a bounded session registry plus global-and-per-session process ceilings for active jobs, retained job records and reserved output RAM; process-history eviction is owner-only so one session cannot destroy another session's terminal job result. Phase 3B1 adds an application-owned `SessionLifecycleManager`: future sessions can be provisioned from server-owned grants and revoke invalidates the session before revoking leases/requesting owned-job termination. Existing MCP `session_cancel` now routes through this lifecycle boundary. No public session-minting MCP surface or physical inactive-session reap is exposed by B1. Phase 3B2 must close the authorize/start versus revoke race before safe reap/capacity reclamation and true concurrent session creation are wired. A developer-preview local ChatGPT Desktop installer and tag-driven Windows release bundle exist, but a signed production installer/updater, tunnel integration and stronger restricted-token/AppContainer-style hardening are not complete yet. See [`STATUS.md`](STATUS.md) for the precise implementation state.
 
 ## Canonical documentation
 
