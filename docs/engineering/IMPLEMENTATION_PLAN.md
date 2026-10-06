@@ -401,9 +401,9 @@ Status: **merged** in PR #50 (`661c1604`), exact head `3c0c4448`; pull-request a
 4. Global-limit and per-session-limit errors remain distinct at the MCP adapter boundary.
 5. Adversarial A/B tests prove one session's active-job/output exhaustion does not consume the other's quota and record pressure cannot evict the other session's terminal result.
 
-### Phase 3B1 — application-owned session lifecycle and coordinated revoke
+### Phase 3B1 - application-owned session lifecycle and coordinated revoke
 
-Status: **current implementation gate**.
+Status: **merged** in PR #51 (`78ae66f`), exact head `db20e4f`.
 
 1. `SessionLifecycleManager` owns future session provisioning from `SessionGrantSpec` and generates opaque `SessionHandle`s inside the application boundary.
 2. Revoke is fail-closed in order: invalidate the session first, then revoke all owned task leases, then request termination of all owned process jobs.
@@ -411,9 +411,18 @@ Status: **current implementation gate**.
 4. Existing MCP `session_cancel` delegates to the lifecycle manager without changing its response schema.
 5. No public MCP session creation/minting tool is introduced by B1.
 
-### Phase 3B2 — atomic admission versus revoke and safe reap
+### Phase 3B2 - atomic admission versus revoke and safe reap
 
-Before wiring multiple simultaneously active sessions to clients, serialize session-scoped effect admission against lifecycle shutdown. An operation that validated session/lease/policy immediately before revoke must not be able to start a new process or other owned effect after shutdown begins. Only after that barrier exists may inactive session/lease/process records be reaped and capacity reclaimed. Add adversarial revoke/start races and prove no orphan job/resource can appear across cleanup.
+Status: **current implementation gate**.
+
+1. `SessionAdmissionPermit` is acquired while the session is active and held through the sensitive sink for process start, durable file mutation and Git integration.
+2. Revoke marks the session inactive first, blocks new admissions and waits for already-admitted sensitive effects to drain before revoking task leases and cancelling owned jobs.
+3. `try_reap` refuses active sessions, in-flight admissions and active jobs. Once quiescent it removes only owner-scoped terminal process records, then owned leases, then the session record.
+4. Direct task-lease `remove_expired` purge is removed; cleanup is centralized behind the lifecycle boundary.
+5. MCP `session_cancel` no longer requires an active grant, so explicit cleanup remains available after natural expiry.
+6. Adversarial Windows tests cover revoke while a pre-admitted process start is in flight, safe capacity reuse and preservation of an independent session.
+
+Full Ubuntu/Windows/dependency-policy CI is the merge gate. Automatic expiry supervision remains a separate follow-up because no background lifecycle sweep exists yet.
 
 Only after B2 passes should application-managed multi-session creation/binding and independent per-project authority sets be exposed to orchestration.
 

@@ -5,9 +5,9 @@ use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use thiserror::Error;
 
 use crate::{
-    BytePatch, Clock, JournaledDeleteCommit, JournaledMutationCommit, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError, TransactionalFileError,
-    TransactionalFileService,
+    BytePatch, Clock, JournaledDeleteCommit, JournaledMutationCommit, SessionAdmissionPermit,
+    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
+    TransactionalFileError, TransactionalFileService,
 };
 
 /// Transport-agnostic authorization boundary for durable file mutation.
@@ -52,7 +52,7 @@ impl AuthorizedFileMutationService {
         let Effect::FileWrite { path, expected } = &envelope.effect else {
             return Err(AuthorizedFileMutationError::EffectMismatch);
         };
-        self.authorize(envelope)?;
+        let _admission = self.authorize(envelope)?;
         Ok(self
             .transactions
             .write_for_action(&envelope.action_id, path, *expected, content)?)
@@ -69,7 +69,7 @@ impl AuthorizedFileMutationService {
         let ExpectedState::Content(expected) = expected else {
             return Err(AuthorizedFileMutationError::PatchRequiresContentState);
         };
-        self.authorize(envelope)?;
+        let _admission = self.authorize(envelope)?;
         Ok(self
             .transactions
             .apply_patch_for_action(&envelope.action_id, path, *expected, patch)?)
@@ -82,15 +82,18 @@ impl AuthorizedFileMutationService {
         let Effect::FileDelete { path, expected } = &envelope.effect else {
             return Err(AuthorizedFileMutationError::EffectMismatch);
         };
-        self.authorize(envelope)?;
+        let _admission = self.authorize(envelope)?;
         Ok(self
             .transactions
             .delete_for_action(&envelope.action_id, path, *expected)?)
     }
 
-    fn authorize(&self, envelope: &ActionEnvelope) -> Result<(), AuthorizedFileMutationError> {
+    fn authorize<'a>(
+        &'a self,
+        envelope: &ActionEnvelope,
+    ) -> Result<SessionAdmissionPermit<'a>, AuthorizedFileMutationError> {
         let now = self.clock.now();
-        let session = self.sessions.get_active(&envelope.session, now)?;
+        let admission = self.sessions.begin_admission(&envelope.session, now)?;
         let lease_id = envelope
             .task_lease
             .as_ref()
@@ -99,8 +102,11 @@ impl AuthorizedFileMutationService {
             .task_leases
             .get_active(lease_id, &envelope.session, now)?;
 
-        match self.policy.evaluate(envelope, &session, Some(&lease), now) {
-            PolicyDecision::Allow => Ok(()),
+        match self
+            .policy
+            .evaluate(envelope, admission.grant(), Some(&lease), now)
+        {
+            PolicyDecision::Allow => Ok(admission),
             PolicyDecision::RequireApproval(reason) | PolicyDecision::Deny(reason) => {
                 Err(AuthorizedFileMutationError::PolicyDenied(reason))
             }

@@ -66,9 +66,10 @@ pub use recovery::{
     RecoveryReport,
 };
 pub use session_lifecycle::{
-    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionRevokeReport,
+    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionReapReport,
+    SessionRevokeReport,
 };
-pub use session_registry::{SessionRegistry, SessionRegistryError};
+pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};
