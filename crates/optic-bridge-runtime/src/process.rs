@@ -351,46 +351,6 @@ impl ProcessManager {
         Ok(changed)
     }
 
-    pub(crate) fn active_session_job_count(
-        &self,
-        session: &SessionHandle,
-    ) -> Result<u32, ProcessError> {
-        let store = self
-            .jobs
-            .lock()
-            .map_err(|_| ProcessError::StateUnavailable)?;
-        active_job_count_for_session(&store, session)
-    }
-
-    pub(crate) fn remove_terminal_session_records(
-        &self,
-        session: &SessionHandle,
-    ) -> Result<usize, ProcessError> {
-        let mut store = self
-            .jobs
-            .lock()
-            .map_err(|_| ProcessError::StateUnavailable)?;
-        let mut terminal = Vec::new();
-        for (job_id, record) in &store.jobs {
-            if &record.owner != session {
-                continue;
-            }
-            let status = record
-                .state
-                .lock()
-                .map_err(|_| ProcessError::StateUnavailable)?
-                .status;
-            if status != ProcessStatus::Running {
-                terminal.push(job_id.clone());
-            }
-        }
-        let removed = terminal.len();
-        for job_id in terminal {
-            store.jobs.remove(&job_id);
-        }
-        Ok(removed)
-    }
-
     #[must_use]
     pub const fn limits(&self) -> HardLimits {
         self.limits
@@ -913,68 +873,6 @@ mod tests {
             .expect("read bounded stdout");
         assert!(stdout.bytes.len() <= 1024);
         assert!(stdout.truncated);
-        fs::remove_dir_all(root).expect("remove fixture");
-    }
-
-    #[tokio::test]
-    async fn terminal_session_record_reap_is_owner_scoped_and_preserves_running_jobs() {
-        let root = workspace("session-lifecycle-reap");
-        fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
-        let manager =
-            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
-        let session_a = SessionHandle::generate().expect("session A");
-        let session_b = SessionHandle::generate().expect("session B");
-
-        let a_running = manager
-            .start(spec(&root, session_a.clone(), budget(5000, 1024)))
-            .expect("start A running");
-        let b_running = manager
-            .start(spec(&root, session_b.clone(), budget(5000, 1024)))
-            .expect("start B running");
-
-        assert_eq!(
-            manager
-                .active_session_job_count(&session_a)
-                .expect("A count"),
-            1
-        );
-        assert_eq!(
-            manager
-                .remove_terminal_session_records(&session_a)
-                .expect("reap A"),
-            0
-        );
-        manager
-            .result(&session_a, &a_running)
-            .expect("A running job must remain");
-        manager
-            .result(&session_b, &b_running)
-            .expect("B running job must remain");
-
-        assert!(manager.stop(&session_a, &a_running).expect("stop A"));
-        let _ = await_terminal(&manager, &session_a, &a_running).await;
-        assert_eq!(
-            manager
-                .active_session_job_count(&session_a)
-                .expect("A count"),
-            0
-        );
-        assert_eq!(
-            manager
-                .remove_terminal_session_records(&session_a)
-                .expect("reap A"),
-            1
-        );
-        assert!(matches!(
-            manager.result(&session_a, &a_running),
-            Err(ProcessError::UnknownJob)
-        ));
-        manager
-            .result(&session_b, &b_running)
-            .expect("B job must remain after A reap");
-
-        assert!(manager.stop(&session_b, &b_running).expect("stop B"));
-        let _ = await_terminal(&manager, &session_b, &b_running).await;
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

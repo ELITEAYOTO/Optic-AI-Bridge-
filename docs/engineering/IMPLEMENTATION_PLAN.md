@@ -401,20 +401,19 @@ Status: **merged** in PR #50 (`661c1604`), exact head `3c0c4448`; pull-request a
 4. Global-limit and per-session-limit errors remain distinct at the MCP adapter boundary.
 5. Adversarial A/B tests prove one session's active-job/output exhaustion does not consume the other's quota and record pressure cannot evict the other session's terminal result.
 
-### Phase 3B1 — application-owned session lifecycle and bounded reap
+### Phase 3B1 — application-owned session lifecycle and coordinated revoke
 
 Status: **current implementation gate**.
 
 1. `SessionLifecycleManager` owns future session provisioning from `SessionGrantSpec` and generates opaque `SessionHandle`s inside the application boundary.
 2. Revoke is fail-closed in order: invalidate the session first, then revoke all owned task leases, then request termination of all owned process jobs.
-3. Revoked or expired sessions remain in `SessionRegistry` while any owned process job is still active, so capacity cannot be reclaimed early.
-4. Reap removes only terminal process records owned by that session, removes its leases, then removes the already-inactive session record.
-5. Existing MCP `session_cancel` delegates to the lifecycle manager without changing its response schema.
-6. No public MCP session creation/minting tool is introduced by B1.
+3. B1 does not physically remove revoked/expired session, lease or process records; capacity reclamation is deferred until admission can be serialized with revoke.
+4. Existing MCP `session_cancel` delegates to the lifecycle manager without changing its response schema.
+5. No public MCP session creation/minting tool is introduced by B1.
 
-### Phase 3B2 — atomic admission versus revoke/reap
+### Phase 3B2 — atomic admission versus revoke and safe reap
 
-Before wiring multiple simultaneously active sessions to clients, serialize session-scoped effect admission against lifecycle shutdown. An operation that validated session/lease/policy immediately before revoke must not be able to start a new process or other owned effect after cleanup has observed the session as quiescent. Add adversarial revoke/start races and prove no orphan job/resource can appear after reap.
+Before wiring multiple simultaneously active sessions to clients, serialize session-scoped effect admission against lifecycle shutdown. An operation that validated session/lease/policy immediately before revoke must not be able to start a new process or other owned effect after shutdown begins. Only after that barrier exists may inactive session/lease/process records be reaped and capacity reclaimed. Add adversarial revoke/start races and prove no orphan job/resource can appear across cleanup.
 
 Only after B2 passes should application-managed multi-session creation/binding and independent per-project authority sets be exposed to orchestration.
 

@@ -95,38 +95,14 @@ impl SessionRegistry {
         Ok(changed)
     }
 
-    pub(crate) fn inactive_handles(
-        &self,
-        now: MonotonicTime,
-    ) -> Result<Vec<SessionHandle>, SessionRegistryError> {
-        let sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| SessionRegistryError::StateUnavailable)?;
-        Ok(sessions
-            .iter()
-            .filter(|(_, record)| record.revoked || record.grant.is_expired_at(now))
-            .map(|(handle, _)| handle.clone())
-            .collect())
-    }
-
-    pub(crate) fn remove_inactive(
-        &self,
-        handle: &SessionHandle,
-        now: MonotonicTime,
-    ) -> Result<bool, SessionRegistryError> {
+    pub fn remove_expired(&self, now: MonotonicTime) -> Result<usize, SessionRegistryError> {
         let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| SessionRegistryError::StateUnavailable)?;
-        let Some(record) = sessions.get(handle) else {
-            return Ok(false);
-        };
-        if !record.revoked && !record.grant.is_expired_at(now) {
-            return Err(SessionRegistryError::StillActive);
-        }
-        sessions.remove(handle);
-        Ok(true)
+        let before = sessions.len();
+        sessions.retain(|_, record| !record.grant.is_expired_at(now));
+        Ok(before - sessions.len())
     }
 
     pub fn len(&self) -> Result<usize, SessionRegistryError> {
@@ -156,8 +132,6 @@ pub enum SessionRegistryError {
     Revoked,
     #[error("session has expired")]
     Expired,
-    #[error("session is still active and cannot be removed")]
-    StillActive,
 }
 
 #[cfg(test)]
@@ -226,41 +200,6 @@ mod tests {
             registry.register(grant).expect_err("duplicate must fail"),
             SessionRegistryError::AlreadyRegistered
         );
-    }
-
-    #[test]
-    fn inactive_removal_refuses_active_session() {
-        let registry = SessionRegistry::new();
-        let grant = grant(100);
-        registry.register(grant.clone()).expect("register session");
-        assert_eq!(
-            registry
-                .remove_inactive(&grant.handle, MonotonicTime::from_millis(99))
-                .expect_err("active session must not be removed"),
-            SessionRegistryError::StillActive
-        );
-        registry
-            .get_active(&grant.handle, MonotonicTime::from_millis(99))
-            .expect("active session must remain registered");
-    }
-
-    #[test]
-    fn inactive_handles_include_revoked_and_expired_sessions() {
-        let registry = SessionRegistry::new();
-        let revoked = grant(1000);
-        let expired = grant(10);
-        let active = grant(1000);
-        registry.register(revoked.clone()).expect("revoked session");
-        registry.register(expired.clone()).expect("expired session");
-        registry.register(active.clone()).expect("active session");
-        registry.revoke(&revoked.handle).expect("revoke session");
-
-        let inactive = registry
-            .inactive_handles(MonotonicTime::from_millis(100))
-            .expect("inactive handles");
-        assert!(inactive.contains(&revoked.handle));
-        assert!(inactive.contains(&expired.handle));
-        assert!(!inactive.contains(&active.handle));
     }
 
     #[test]

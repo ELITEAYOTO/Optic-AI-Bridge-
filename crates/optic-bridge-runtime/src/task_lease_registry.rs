@@ -89,19 +89,6 @@ impl TaskLeaseRegistry {
         Ok(changed)
     }
 
-    pub(crate) fn remove_session(
-        &self,
-        session: &SessionHandle,
-    ) -> Result<usize, TaskLeaseRegistryError> {
-        let mut leases = self
-            .leases
-            .lock()
-            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
-        let before = leases.len();
-        leases.retain(|_, record| &record.lease.session != session);
-        Ok(before - leases.len())
-    }
-
     pub fn remove_expired(&self, now: MonotonicTime) -> Result<usize, TaskLeaseRegistryError> {
         let mut leases = self
             .leases
@@ -169,33 +156,6 @@ mod tests {
                 .expect_err("cross-session access must fail"),
             TaskLeaseRegistryError::WrongSession
         );
-    }
-
-    #[test]
-    fn remove_session_only_removes_owned_leases() {
-        let registry = TaskLeaseRegistry::new();
-        let owner = SessionHandle::generate().expect("owner session");
-        let other = SessionHandle::generate().expect("other session");
-        let owned = lease(owner.clone(), 100);
-        let foreign = lease(other.clone(), 100);
-        registry.register(owned.clone()).expect("owned lease");
-        registry.register(foreign.clone()).expect("foreign lease");
-
-        assert_eq!(
-            registry
-                .remove_session(&owner)
-                .expect("remove owner leases"),
-            1
-        );
-        assert_eq!(
-            registry
-                .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
-                .expect_err("owned lease must be removed"),
-            TaskLeaseRegistryError::UnknownLease
-        );
-        registry
-            .get_active(&foreign.id, &other, MonotonicTime::from_millis(1))
-            .expect("foreign lease must remain");
     }
 
     #[test]

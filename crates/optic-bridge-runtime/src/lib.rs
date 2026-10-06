@@ -66,8 +66,7 @@ pub use recovery::{
     RecoveryReport,
 };
 pub use session_lifecycle::{
-    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionReapReport,
-    SessionRevokeReport,
+    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionRevokeReport,
 };
 pub use session_registry::{SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
