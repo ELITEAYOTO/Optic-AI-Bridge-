@@ -52,7 +52,7 @@ For every Windows process job:
 7. Only after successful assignment are the child threads resumed.
 8. stdout/stderr are drained asynchronously while the runtime monitors timeout, stop and output overflow.
 9. `try_wait` / `wait` keep the process job non-terminal while any descendant remains active in the Job Object.
-10. Stop, timeout or overflow terminates the Job Object tree; dropping the final live Job Object handle is the kill-on-close backstop.
+10. Stop, timeout, overflow or a process-observation failure requests Job Object tree termination. The runtime then waits at most two seconds for `wait()` to confirm root exit plus zero active Job Object descendants. If that proof is unavailable, the job becomes `TerminationUncertain`; dropping the final live Job Object handle remains the kill-on-close backstop.
 
 This ordering closes the ordinary root-process spawn-before-assignment window for the owned child. Job Objects provide lifecycle/resource containment; they are not a complete security sandbox or a substitute for a restricted token, AppContainer, VM or Windows Sandbox.
 
@@ -68,14 +68,16 @@ Development/CI uses a process-group wrapper plus kill-on-drop. This preserves li
 - if a child exits naturally before the monitor observes overflow, the terminal status is corrected after the drain tasks complete so overflow cannot be misclassified as a normal exit;
 - `process_read` is cursor-based and independently capped per call (64 KiB by the current default HardLimits);
 - active jobs and retained terminal records are both bounded;
-- retained terminal records may be evicted deterministically to admit later work without allowing an unbounded history;
+- retained proven-terminal records may be evicted deterministically to admit later work without allowing an unbounded history; `TerminationUncertain` is deliberately not terminal for quota/eviction/reap purposes;
 - total reserved output RAM is checked before admitting a new job.
 
 ## Time and cancellation
 
-Timeout is a hard runtime deadline for the job. Explicit stop and `session_cancel` use the same owned-tree termination path.
+Timeout is a hard runtime deadline for normal execution, followed by a separately bounded two-second termination-confirmation window. Explicit stop, `session_cancel`, output overflow and process-observation failure use the same owned-tree termination/confirmation path.
 
-Cancellation propagates session → task lease/job → process tree. Timeout, explicit stop and output-overflow paths are covered by native Windows and Linux tests.
+If termination cannot be proven in that window, `process_result` reports `termination_uncertain`, output is marked truncated, drain tasks are aborted/closed, and the record continues to hold its active-job/output reservation and session ownership. It cannot be evicted or physically reaped as a terminal record. This is a quarantine state: it proves neither that the process tree is alive nor that it is dead.
+
+Cancellation propagates session → task lease/job → process tree. Normal timeout, explicit stop and output-overflow paths plus bounded confirmation/uncertain ownership are covered by CI tests.
 
 ## Kernel-enforced Windows budgets
 
