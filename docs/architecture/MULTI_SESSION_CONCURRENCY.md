@@ -1,6 +1,6 @@
 # Multi-session and Same-Repository Concurrency
 
-Status: Phase 3 current; Phase 3A resource isolation, Phase 3B1 application-owned lifecycle and Phase 3B2 admission-vs-revoke serialization/quiescent reap are merged. Phase 3B3 lifecycle closure is implemented in PR #53 and is completing final gates. Client-visible session creation/renewal remains disabled; same-repository merge coordination remains PROPOSED for Phase 4.
+Status: Phase 3 current; Phase 3A through Phase 3B3 are merged and post-merge validated. Client-visible session creation/renewal remains disabled; Phase 3C process/resource hardening is next, while same-repository merge coordination remains PROPOSED for Phase 4.
 
 Multi-session is a first-class invariant, not a later optimization.
 
