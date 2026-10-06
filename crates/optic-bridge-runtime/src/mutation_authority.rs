@@ -62,7 +62,8 @@ impl MutationAuthoritySet {
             Ok(value) => value,
             Err(error) => {
                 if let Some(id) = &write_lease {
-                    let _ = registry.revoke(id);
+                    registry.revoke(id)?;
+                    registry.remove_revoked(id)?;
                 }
                 return Err(error);
             }
@@ -256,6 +257,48 @@ mod tests {
                 .expect_err("must reject redundant broad scope"),
             MutationAuthorityError::RedundantWorkspaceAll
         );
+    }
+
+    #[test]
+    fn partial_provision_failure_reclaims_unpublished_lease_capacity() {
+        let limits = HardLimits {
+            max_task_leases: 1,
+            max_task_leases_per_session: 1,
+            ..HardLimits::default()
+        };
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("valid limits");
+        let session = SessionHandle::generate().expect("session entropy");
+        let both = MutationAuthoritySpec {
+            write_scopes: BTreeSet::from([prefix("src")]),
+            delete_scopes: BTreeSet::from([prefix("generated")]),
+        };
+        assert!(matches!(
+            MutationAuthoritySet::provision(
+                &registry,
+                &session,
+                &both,
+                budget(),
+                MonotonicTime::from_millis(100),
+                7,
+            ),
+            Err(MutationAuthorityError::Registry(
+                TaskLeaseRegistryError::CapacityExceeded
+            ))
+        ));
+
+        let write_only = MutationAuthoritySpec {
+            write_scopes: BTreeSet::from([prefix("src")]),
+            delete_scopes: BTreeSet::new(),
+        };
+        MutationAuthoritySet::provision(
+            &registry,
+            &session,
+            &write_only,
+            budget(),
+            MonotonicTime::from_millis(100),
+            7,
+        )
+        .expect("failed batch must not leak registry capacity");
     }
 
     #[test]
