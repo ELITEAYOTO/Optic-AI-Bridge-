@@ -205,7 +205,7 @@ Merged in PR #51 (`78ae66f`, exact green head `db20e4f`). `SessionLifecycleManag
 
 Merged in PR #52 (`2748f688`, exact green head `c44c89ec`). Sensitive effect admission is serialized with revoke through `SessionAdmissionPermit`; revoke blocks new admissions, drains already-admitted effects, then revokes leases/cancels owned jobs. Physical reap is owner-scoped and allowed only when no admission/job remains active.
 
-### Phase 3B3 - lifecycle closure and bounded leases (CURRENT PR #53)
+### Phase 3B3 - lifecycle closure and bounded leases (COMPLETED)
 
 Implemented and code/test-validated on exact head `5d39f5b`:
 
@@ -216,11 +216,11 @@ Implemented and code/test-validated on exact head `5d39f5b`:
 - an internal five-second supervisor scans only the bounded inactive-session set and reuses the existing admission/revoke/quiescent-reap boundary;
 - no public MCP `session_create`, arbitrary orchestration, or renewal protocol is added.
 
-Ubuntu, Windows and dependency-policy CI passed on the code/test head. Final documentation-head CI, exact-head merge and post-merge `main` CI remain required before Phase 3B3 is declared merged.
+PR #53 merged as `25a40e7` from exact green head `2337651`; post-merge `main` CI run #260 passed Ubuntu, Windows and dependency policy.
 
 ### Phase 3C - process/resource safety before wider autonomy
 
-Next only after Phase 3B3 post-merge validation. Priorities include bounded termination, machine-level CPU/headroom governance, truthful network containment semantics, executable/tool identity, repository-code execution classification and evidence-backed Windows sandboxing. Public multi-session orchestration remains behind these safety gates.
+Current next gate after Phase 3B3 post-merge validation. Priorities include bounded termination, machine-level CPU/headroom governance, truthful network containment semantics, executable/tool identity, repository-code execution classification and evidence-backed Windows sandboxing. Public multi-session orchestration remains behind these safety gates.
 
 ## Phase 4 — Same-repository parallelism
 

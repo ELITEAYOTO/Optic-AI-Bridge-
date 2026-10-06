@@ -422,7 +422,7 @@ Status: **merged** in PR #52 (`2748f688`), exact head `c44c89ec`.
 
 ### Phase 3B3 - lifecycle closure and bounded leases
 
-Status: **implemented in PR #53; final merge gates current**. Exact code/test head `5d39f5b` passed Ubuntu, Windows and dependency policy.
+Status: **merged and post-merge validated** in PR #53 (`25a40e7`), exact green head `2337651`; `main` CI run #260 passed Ubuntu, Windows and dependency policy.
 
 1. Add `HardLimits::max_task_leases` and `max_task_leases_per_session`, with fail-closed global/per-session registration.
 2. Keep revoked leases counted until owner-scoped physical cleanup; allow individual physical removal only for unpublished revoked rollback state.
@@ -432,11 +432,11 @@ Status: **implemented in PR #53; final merge gates current**. Exact code/test he
 6. Run a five-second internal expiry supervisor through the same lifecycle path using a bounded scan and blocking cleanup off the async executor.
 7. Keep public session creation and renewal out of this gate.
 
-Final gate: documentation-head Ubuntu/Windows/dependency-policy CI, exact-head merge, then post-merge `main` CI.
+Gate passed: exact-head Ubuntu/Windows/dependency-policy CI, exact-head merge, and post-merge `main` CI.
 
 ### Phase 3C - process/resource safety before wider autonomy
 
-Status: **next after Phase 3B3 post-merge validation**.
+Status: **next implementation gate** after Phase 3B3 post-merge validation.
 
 Prioritize bounded process termination, machine ResourceGovernor/CPU/headroom, ToolProfile/ToolIdentity, truthful network semantics, environment/repository-code execution classification and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
