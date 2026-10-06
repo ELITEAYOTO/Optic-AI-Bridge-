@@ -1,8 +1,9 @@
 use std::{
     collections::{BTreeSet, HashMap},
     fs,
+    future::Future,
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{ExitStatus, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -27,6 +28,7 @@ use tokio::{
 };
 
 const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const TERMINATION_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 const DRAIN_CHUNK_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Debug)]
@@ -52,6 +54,7 @@ pub enum ProcessStatus {
     Stopped,
     TimedOut,
     OutputLimitExceeded,
+    TerminationUncertain,
     Failed,
 }
 
@@ -380,7 +383,7 @@ impl ProcessManager {
                 .lock()
                 .map_err(|_| ProcessError::StateUnavailable)?
                 .status;
-            if status != ProcessStatus::Running {
+            if !status_holds_process_ownership(status) {
                 terminal.push(job_id.clone());
             }
         }
@@ -558,18 +561,23 @@ fn active_job_count_matching(
 ) -> Result<u32, ProcessError> {
     let mut active = 0_u32;
     for record in store.jobs.values() {
-        if matches(record)
-            && record
-                .state
-                .lock()
-                .map_err(|_| ProcessError::StateUnavailable)?
-                .status
-                == ProcessStatus::Running
-        {
+        let status = record
+            .state
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?
+            .status;
+        if matches(record) && status_holds_process_ownership(status) {
             active = active.saturating_add(1);
         }
     }
     Ok(active)
+}
+
+const fn status_holds_process_ownership(status: ProcessStatus) -> bool {
+    matches!(
+        status,
+        ProcessStatus::Running | ProcessStatus::TerminationUncertain
+    )
 }
 
 fn reserved_output_bytes(store: &JobStore) -> u64 {
@@ -610,7 +618,7 @@ fn oldest_terminal_job_for_session(
             .lock()
             .map_err(|_| ProcessError::StateUnavailable)?
             .status;
-        if status == ProcessStatus::Running {
+        if status_holds_process_ownership(status) {
             continue;
         }
         if oldest.is_none_or(|(_, sequence)| record.sequence < sequence) {
@@ -672,13 +680,15 @@ async fn monitor_child(
 ) {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let (status, exit_code) = loop {
-        match child.try_wait() {
+        let observation_failure = match child.try_wait() {
             Ok(Some(exit)) => break (ProcessStatus::Exited, exit.code()),
-            Err(_) => break (ProcessStatus::Failed, None),
-            Ok(None) => {}
-        }
+            Err(_) => true,
+            Ok(None) => false,
+        };
 
-        let reason = if record.stop_requested.load(Ordering::Acquire) {
+        let reason = if observation_failure {
+            Some(ProcessStatus::Failed)
+        } else if record.stop_requested.load(Ordering::Acquire) {
             Some(ProcessStatus::Stopped)
         } else if record.output_overflow.load(Ordering::Acquire) {
             Some(ProcessStatus::OutputLimitExceeded)
@@ -689,15 +699,35 @@ async fn monitor_child(
         };
 
         if let Some(reason) = reason {
-            let _ = child.start_kill();
-            let exit_code = child.wait().await.ok().and_then(|status| status.code());
-            break (reason, exit_code);
+            // A failed kill request is not sufficient evidence that the process is still alive,
+            // and a successful request is not sufficient evidence that it is dead. In both cases
+            // require bounded OS confirmation before releasing process ownership.
+            let kill_request = child.start_kill();
+            let confirmation =
+                wait_for_termination_confirmation(child.wait(), TERMINATION_CONFIRM_TIMEOUT).await;
+            match (kill_request, confirmation) {
+                (_, Some(exit)) => break (reason, exit.code()),
+                (Ok(()), None) | (Err(_), None) => {
+                    break (ProcessStatus::TerminationUncertain, None);
+                }
+            }
         }
         tokio::time::sleep(MONITOR_POLL_INTERVAL).await;
     };
 
+    if status == ProcessStatus::TerminationUncertain {
+        // Do not let inherited/hostile pipe handles turn a bounded termination failure back into an
+        // unbounded monitor task. Aborting the drains deliberately reports truncated output.
+        record.output_overflow.store(true, Ordering::Release);
+        stdout_task.abort();
+        stderr_task.abort();
+    }
     let _ = stdout_task.await;
     let _ = stderr_task.await;
+    if status == ProcessStatus::TerminationUncertain {
+        mark_stream_closed(&record, ProcessStream::Stdout);
+        mark_stream_closed(&record, ProcessStream::Stderr);
+    }
     let status =
         if status == ProcessStatus::Exited && record.output_overflow.load(Ordering::Acquire) {
             ProcessStatus::OutputLimitExceeded
@@ -706,6 +736,16 @@ async fn monitor_child(
         };
     if let Ok(mut state) = record.state.lock() {
         *state = JobState { status, exit_code };
+    }
+}
+
+async fn wait_for_termination_confirmation<F>(wait: F, timeout: Duration) -> Option<ExitStatus>
+where
+    F: Future<Output = std::io::Result<ExitStatus>>,
+{
+    match tokio::time::timeout(timeout, wait).await {
+        Ok(Ok(status)) => Some(status),
+        Ok(Err(_)) | Err(_) => None,
     }
 }
 
@@ -860,6 +900,87 @@ mod tests {
             .expect("read stdout");
         assert!(String::from_utf8_lossy(&stdout.bytes).contains("fixture-stdout"));
         assert!(stdout.eof);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn termination_confirmation_wait_is_bounded_and_fail_closed() {
+        let started = Instant::now();
+        let confirmation = wait_for_termination_confirmation(
+            std::future::pending::<std::io::Result<ExitStatus>>(),
+            Duration::from_millis(20),
+        )
+        .await;
+        assert!(confirmation.is_none());
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        let failed = wait_for_termination_confirmation(
+            std::future::ready(Err(std::io::Error::other("wait failed"))),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(failed.is_none());
+    }
+
+    #[tokio::test]
+    async fn termination_uncertain_holds_capacity_and_cannot_be_reaped() {
+        let root = workspace("termination-uncertain");
+        fs::write(root.join("fixture-sleep"), b"1").expect("write fixture mode");
+        let limits = HardLimits {
+            max_active_process_jobs: 2,
+            max_active_process_jobs_per_session: 1,
+            ..HardLimits::default()
+        };
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+        let owner = SessionHandle::generate().expect("owner session");
+        let uncertain_job = JobId::generate().expect("uncertain job id");
+        {
+            let mut store = manager.jobs.lock().expect("job store");
+            store.jobs.insert(
+                uncertain_job.clone(),
+                Arc::new(JobRecord {
+                    owner: owner.clone(),
+                    sequence: 0,
+                    reserved_output_bytes: 1024,
+                    output: Mutex::new(OutputState {
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        stdout_closed: true,
+                        stderr_closed: true,
+                    }),
+                    state: Mutex::new(JobState {
+                        status: ProcessStatus::TerminationUncertain,
+                        exit_code: None,
+                    }),
+                    stop_requested: AtomicBool::new(true),
+                    output_overflow: AtomicBool::new(true),
+                }),
+            );
+        }
+
+        assert_eq!(
+            manager
+                .active_session_job_count(&owner)
+                .expect("active count"),
+            1
+        );
+        assert_eq!(
+            manager
+                .remove_terminal_session_records(&owner)
+                .expect("owner-scoped reap"),
+            0
+        );
+        assert_eq!(
+            manager
+                .result(&owner, &uncertain_job)
+                .expect("uncertain result")
+                .status,
+            ProcessStatus::TerminationUncertain
+        );
+        assert!(matches!(
+            manager.start(spec(&root, owner.clone(), budget(5000, 1024))),
+            Err(ProcessError::TooManyActiveJobsForSession)
+        ));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

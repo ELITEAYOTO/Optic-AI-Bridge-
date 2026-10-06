@@ -360,6 +360,7 @@ fn process_status_name(status: ProcessStatus) -> &'static str {
         ProcessStatus::Stopped => "stopped",
         ProcessStatus::TimedOut => "timed_out",
         ProcessStatus::OutputLimitExceeded => "output_limit_exceeded",
+        ProcessStatus::TerminationUncertain => "termination_uncertain",
         ProcessStatus::Failed => "failed",
     }
 }

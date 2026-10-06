@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha surface through Phase 2D3D development: file mutation and Git integration tools are conditional on distinct application-owned authority. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha surface through the Phase 3C1 candidate: file mutation and Git integration tools remain conditional on distinct application-owned authority; process results include explicit bounded-termination uncertainty. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -160,7 +160,7 @@ process_send_input(job_id, data)
 - Both accept only an opaque session-owned `job_id`.
 - Unknown and cross-session JobIds fail closed as not found to the caller.
 - `process_stop` requests termination of the owned process tree; no arbitrary PID kill tool exists.
-- `process_result` returns bounded lifecycle metadata.
+- `process_result` returns bounded lifecycle metadata. Current status values include `running`, `exited`, `stopped`, `timed_out`, `output_limit_exceeded`, `termination_uncertain` and `failed`. `termination_uncertain` means Optic requested termination but could not prove OS process-tree termination within its bounded confirmation window; the job intentionally retains ownership/quota and blocks session reap rather than being treated as safely terminal.
 
 ## Session/system
 

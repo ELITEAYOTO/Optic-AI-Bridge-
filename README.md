@@ -1,6 +1,6 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha - Phase 2D3 is complete; Phase 3A through Phase 3B3 are merged and post-merge validated. Phase 3C process/resource safety is next; public multi-session creation/renewal remains disabled.
+**Status:** pre-alpha - Phase 2D3 and Phase 3A through Phase 3B3 are merged and post-merge validated. Phase 3C1 bounded process termination is implemented in PR #55 and is completing final merge gates; CPU/headroom governance, ToolIdentity, OS network containment and sandboxing remain open.
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.

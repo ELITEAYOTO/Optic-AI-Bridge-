@@ -38,7 +38,7 @@ Status: DECIDED baseline. Every invariant must eventually have an executable tes
 
 **INV-022 — Bounded everything.** Request bodies, protocol frames, queues, stdout/stderr, MCP responses, caches, completed-job retention, audit logs and spool disk have hard ceilings/TTL/quota.
 
-**INV-023 — Cleanup after cancellation/crash.** Owned process trees terminate or are recoverably quarantined; cleanup is idempotent.
+**INV-023 — Cleanup after cancellation/crash.** Owned process trees terminate or are recoverably quarantined; cleanup is idempotent. A process tree whose termination cannot be proven remains explicitly `TerminationUncertain`, retains ownership/resource capacity and cannot be evicted or session-reaped as if it were terminal.
 
 **INV-024 — Process network is dual-authorized.** A leased process receives network only when both its session and its task lease carry `NetworkAccess` and the task lease also contains an explicit network scope.
 
