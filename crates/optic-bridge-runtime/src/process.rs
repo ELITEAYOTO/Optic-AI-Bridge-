@@ -351,6 +351,46 @@ impl ProcessManager {
         Ok(changed)
     }
 
+    pub(crate) fn active_session_job_count(
+        &self,
+        session: &SessionHandle,
+    ) -> Result<u32, ProcessError> {
+        let store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
+        active_job_count_for_session(&store, session)
+    }
+
+    pub(crate) fn remove_terminal_session_records(
+        &self,
+        session: &SessionHandle,
+    ) -> Result<usize, ProcessError> {
+        let mut store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
+        let mut terminal = Vec::new();
+        for (job_id, record) in &store.jobs {
+            if &record.owner != session {
+                continue;
+            }
+            let status = record
+                .state
+                .lock()
+                .map_err(|_| ProcessError::StateUnavailable)?
+                .status;
+            if status != ProcessStatus::Running {
+                terminal.push(job_id.clone());
+            }
+        }
+        let removed = terminal.len();
+        for job_id in terminal {
+            store.jobs.remove(&job_id);
+        }
+        Ok(removed)
+    }
+
     #[must_use]
     pub const fn limits(&self) -> HardLimits {
         self.limits

@@ -1,6 +1,6 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha — Phase 2D3 exact-head Git integration is complete and validated end-to-end in ChatGPT Desktop; Phase 3 multi-session runtime is current, with Phase 3A resource isolation complete and Phase 3B lifecycle/admission isolation in progress
+**Status:** pre-alpha - Phase 2D3 exact-head Git integration is complete; Phase 3A resource isolation and Phase 3B1 lifecycle foundation are merged, while Phase 3B2 admission-vs-revoke serialization and quiescent reap are current.
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.

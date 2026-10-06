@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Condvar, Mutex},
+};
 
 use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
@@ -6,6 +9,7 @@ use thiserror::Error;
 #[derive(Debug)]
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<SessionHandle, SessionRecord>>,
+    admissions_drained: Condvar,
     max_sessions: u32,
 }
 
@@ -13,6 +17,7 @@ impl Default for SessionRegistry {
     fn default() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            admissions_drained: Condvar::new(),
             max_sessions: HardLimits::default().max_sessions,
         }
     }
@@ -22,6 +27,7 @@ impl Default for SessionRegistry {
 struct SessionRecord {
     grant: SessionGrant,
     revoked: bool,
+    active_admissions: u32,
 }
 
 impl SessionRegistry {
@@ -34,6 +40,7 @@ impl SessionRegistry {
         let limits = limits.validate_nonzero()?;
         Ok(Self {
             sessions: Mutex::new(HashMap::new()),
+            admissions_drained: Condvar::new(),
             max_sessions: limits.max_sessions,
         })
     }
@@ -56,6 +63,7 @@ impl SessionRegistry {
             SessionRecord {
                 grant,
                 revoked: false,
+                active_admissions: 0,
             },
         );
         Ok(())
@@ -82,6 +90,36 @@ impl SessionRegistry {
         Ok(record.grant.clone())
     }
 
+    pub fn begin_admission(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<SessionAdmissionPermit<'_>, SessionRegistryError> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get_mut(handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        if record.revoked {
+            return Err(SessionRegistryError::Revoked);
+        }
+        if record.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::Expired);
+        }
+        record.active_admissions = record
+            .active_admissions
+            .checked_add(1)
+            .ok_or(SessionRegistryError::AdmissionCounterOverflow)?;
+        let grant = record.grant.clone();
+        Ok(SessionAdmissionPermit {
+            registry: self,
+            handle: handle.clone(),
+            grant,
+        })
+    }
+
     pub fn revoke(&self, handle: &SessionHandle) -> Result<bool, SessionRegistryError> {
         let mut sessions = self
             .sessions
@@ -92,17 +130,60 @@ impl SessionRegistry {
         };
         let changed = !record.revoked;
         record.revoked = true;
+
+        loop {
+            let active_admissions = sessions
+                .get(handle)
+                .ok_or(SessionRegistryError::UnknownSession)?
+                .active_admissions;
+            if active_admissions == 0 {
+                break;
+            }
+            sessions = self
+                .admissions_drained
+                .wait(sessions)
+                .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        }
         Ok(changed)
     }
 
-    pub fn remove_expired(&self, now: MonotonicTime) -> Result<usize, SessionRegistryError> {
+    pub(crate) fn remove_quiescent_inactive(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<bool, SessionRegistryError> {
         let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| SessionRegistryError::StateUnavailable)?;
-        let before = sessions.len();
-        sessions.retain(|_, record| !record.grant.is_expired_at(now));
-        Ok(before - sessions.len())
+        let Some(record) = sessions.get(handle) else {
+            return Ok(false);
+        };
+        if !record.revoked && !record.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::StillActive);
+        }
+        if record.active_admissions != 0 {
+            return Err(SessionRegistryError::AdmissionsInFlight);
+        }
+        sessions.remove(handle);
+        Ok(true)
+    }
+
+    fn finish_admission(&self, handle: &SessionHandle) {
+        let Ok(mut sessions) = self.sessions.lock() else {
+            return;
+        };
+        let Some(record) = sessions.get_mut(handle) else {
+            return;
+        };
+        if record.active_admissions == 0 {
+            debug_assert!(false, "session admission counter underflow");
+            return;
+        }
+        record.active_admissions -= 1;
+        if record.active_admissions == 0 {
+            self.admissions_drained.notify_all();
+        }
     }
 
     pub fn len(&self) -> Result<usize, SessionRegistryError> {
@@ -132,11 +213,41 @@ pub enum SessionRegistryError {
     Revoked,
     #[error("session has expired")]
     Expired,
+    #[error("session admission counter reached its representable limit")]
+    AdmissionCounterOverflow,
+    #[error("session still has admitted effects in flight")]
+    AdmissionsInFlight,
+    #[error("session is still active and cannot be removed")]
+    StillActive,
+}
+
+pub struct SessionAdmissionPermit<'a> {
+    registry: &'a SessionRegistry,
+    handle: SessionHandle,
+    grant: SessionGrant,
+}
+
+impl SessionAdmissionPermit<'_> {
+    #[must_use]
+    pub fn grant(&self) -> &SessionGrant {
+        &self.grant
+    }
+}
+
+impl Drop for SessionAdmissionPermit<'_> {
+    fn drop(&mut self) {
+        self.registry.finish_admission(&self.handle);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{
+        collections::BTreeSet,
+        sync::{Arc, mpsc},
+        thread,
+        time::Duration,
+    };
 
     use optic_bridge_core::{Capability, PrincipalId, ProjectId};
 
@@ -200,6 +311,55 @@ mod tests {
             registry.register(grant).expect_err("duplicate must fail"),
             SessionRegistryError::AlreadyRegistered
         );
+    }
+
+    #[test]
+    fn revoke_closes_new_admissions_and_waits_for_existing_permit() {
+        let registry = Arc::new(SessionRegistry::new());
+        let grant = grant(1_000);
+        registry.register(grant.clone()).expect("register session");
+        let now = MonotonicTime::from_millis(1);
+        let permit = registry
+            .begin_admission(&grant.handle, now)
+            .expect("admit effect");
+
+        let worker_registry = Arc::clone(&registry);
+        let worker_handle = grant.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = worker_registry.revoke(&worker_handle);
+            done_tx.send(result).expect("send revoke result");
+        });
+
+        let mut observed_revoked = false;
+        for _ in 0..100 {
+            if matches!(
+                registry.get_active(&grant.handle, now),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                observed_revoked = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            observed_revoked,
+            "revoke must close admission before waiting"
+        );
+        assert!(matches!(
+            registry.begin_admission(&grant.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+        drop(permit);
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("revoke must drain after permit drop")
+                .expect("revoke result")
+        );
+        worker.join().expect("revoke thread");
     }
 
     #[test]

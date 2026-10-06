@@ -2,11 +2,11 @@
 
 The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md).
 
-**Last reviewed:** 2026-10-05
+**Last reviewed:** 2026-10-06
 **Current phase:** Phase 3 — multi-session runtime
 **Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3D, the real-binary closure smoke and the explicit ChatGPT integration packaging gate are merged
 **Release state:** no production-supported release
-**Next gate:** Phase 3A is complete: hard session capacity, global + per-session process quotas, and owner-only retained-job eviction are merged and post-merge CI is green. Phase 3B is split deliberately. Phase 3B1 adds the application-owned session lifecycle manager and coordinated fail-closed revoke/cancel semantics without adding public session creation. Phase 3B2 must serialize session-scoped admission against revoke before physical reap/capacity reclamation or any real multi-session creation/orchestration surface is wired. Phase 2D3 remains complete after the 2026-10-05 real ChatGPT Desktop smoke validated status → exact-head fast-forward → status → stale-precondition rejection on a disposable repository.
+**Next gate:** Phase 3B1 is merged in PR #51 (`78ae66f`, exact green head `db20e4f`). Phase 3B2 is current: sensitive session-scoped effects acquire an admission permit before authorization reaches the sink; revoke closes new admission first and waits for already-admitted effects before revoking leases/cancelling jobs; only quiescent owner-scoped state may then be reaped. Local format/check/Clippy and adversarial Windows revoke/start + safe-reap tests are green; full CI remains the merge gate. Automatic expiry supervision remains a separate follow-up after B2.
 
 The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
 

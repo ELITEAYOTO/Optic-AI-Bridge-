@@ -43,7 +43,11 @@ impl ReadonlyMcpServer {
             .transport_guard
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
-        let grant = self.active_grant(now)?;
+        let admission = self
+            .sessions
+            .begin_admission(&self.session, now)
+            .map_err(super::server::map_session_error)?;
+        let grant = admission.grant();
         let executable = self
             .processes
             .canonicalize_executable(&params.0.executable)
@@ -64,7 +68,7 @@ impl ReadonlyMcpServer {
             executable: executable.clone(),
             network: NetworkAccess::Denied,
         };
-        authorize_process(self, &grant, &lease.id, &lease, effect, resources, now)?;
+        authorize_process(self, grant, &lease.id, &lease, effect, resources, now)?;
         let cwd = params
             .0
             .cwd
@@ -82,6 +86,7 @@ impl ReadonlyMcpServer {
                 resources,
             })
             .map_err(map_process_error)?;
+        drop(admission);
         let response = ProcessStartResponse {
             job_id: job_id.to_token(),
         };
@@ -207,7 +212,6 @@ impl ReadonlyMcpServer {
             .transport_guard
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
-        self.active_grant(now)?;
         let lifecycle = SessionLifecycleManager::new(
             self.sessions.clone(),
             self.task_leases.clone(),
@@ -293,6 +297,9 @@ fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
         SessionLifecycleError::SessionRegistry(error) => super::server::map_session_error(error),
         SessionLifecycleError::TaskLeaseRegistry(error) => map_task_lease_error(error),
         SessionLifecycleError::Process(error) => map_process_error(error),
+        SessionLifecycleError::SessionStillActive => {
+            ErrorData::invalid_request("optic.session_still_active", None)
+        }
         SessionLifecycleError::ExpiredAtProvision | SessionLifecycleError::HandleGeneration(_) => {
             ErrorData::internal_error("optic.session_lifecycle_error", None)
         }

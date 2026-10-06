@@ -26,6 +26,16 @@ pub struct SessionRevokeReport {
     pub cancellation_requests: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SessionReapReport {
+    pub session_removed: bool,
+    pub revoked_leases: usize,
+    pub cancellation_requests: usize,
+    pub active_jobs: u32,
+    pub removed_process_records: usize,
+    pub removed_leases: usize,
+}
+
 pub struct SessionLifecycleManager {
     sessions: Arc<SessionRegistry>,
     task_leases: Arc<TaskLeaseRegistry>,
@@ -71,8 +81,9 @@ impl SessionLifecycleManager {
         &self,
         session: &SessionHandle,
     ) -> Result<SessionRevokeReport, SessionLifecycleError> {
-        // Invalidate the session first so any later partial failure still fails closed
-        // for new authorization checks.
+        // Invalidate the session and wait for already-admitted effects to leave their
+        // admission critical section before touching leases or process jobs. New
+        // admissions fail immediately once the revoked bit is set.
         let session_changed = self.sessions.revoke(session)?;
 
         // Attempt both owner-scoped cleanup operations before propagating either error.
@@ -88,12 +99,59 @@ impl SessionLifecycleManager {
             cancellation_requests,
         })
     }
+
+    pub fn try_reap(
+        &self,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<SessionReapReport, SessionLifecycleError> {
+        match self.sessions.get_active(session, now) {
+            Ok(_) => return Err(SessionLifecycleError::SessionStillActive),
+            Err(SessionRegistryError::Revoked | SessionRegistryError::Expired) => {}
+            Err(SessionRegistryError::UnknownSession) => return Ok(SessionReapReport::default()),
+            Err(error) => return Err(error.into()),
+        }
+
+        // This is idempotent for an already-revoked session. For an expired session it
+        // closes admission first, waits for admitted effects to drain, revokes leases,
+        // and requests termination for every owned process job.
+        let revoke = self.revoke(session)?;
+        let active_jobs = self.processes.active_session_job_count(session)?;
+        if active_jobs != 0 {
+            return Ok(SessionReapReport {
+                session_removed: false,
+                revoked_leases: revoke.revoked_leases,
+                cancellation_requests: revoke.cancellation_requests,
+                active_jobs,
+                removed_process_records: 0,
+                removed_leases: 0,
+            });
+        }
+
+        // Once admission is closed and no job is active, only owner-scoped terminal
+        // history remains. Remove process records first, then leases, and finally the
+        // session record so capacity is reclaimed only after subordinate state is gone.
+        let removed_process_records = self.processes.remove_terminal_session_records(session)?;
+        let removed_leases = self.task_leases.remove_session(session)?;
+        let session_removed = self.sessions.remove_quiescent_inactive(session, now)?;
+
+        Ok(SessionReapReport {
+            session_removed,
+            revoked_leases: revoke.revoked_leases,
+            cancellation_requests: revoke.cancellation_requests,
+            active_jobs: 0,
+            removed_process_records,
+            removed_leases,
+        })
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum SessionLifecycleError {
     #[error("session expiry must be later than the provisioning time")]
     ExpiredAtProvision,
+    #[error("active sessions cannot be physically reaped")]
+    SessionStillActive,
     #[error("failed to generate application-owned session handle: {0}")]
     HandleGeneration(IdError),
     #[error(transparent)]
@@ -106,9 +164,19 @@ pub enum SessionLifecycleError {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, path::Path, path::PathBuf};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        sync::{Arc, mpsc},
+        thread,
+        time::Duration,
+    };
 
-    use optic_bridge_core::{HardLimits, LeaseScope, ResourceBudget, TaskLease, TaskLeaseId};
+    use optic_bridge_core::{
+        HardLimits, JobId, LeaseScope, ResourceBudget, TaskLease, TaskLeaseId,
+    };
+
+    use crate::{ProcessResult, ProcessStartSpec, ProcessStatus};
 
     use super::*;
 
@@ -152,6 +220,7 @@ mod tests {
         SessionLifecycleManager,
         Arc<SessionRegistry>,
         Arc<TaskLeaseRegistry>,
+        Arc<ProcessManager>,
     ) {
         let sessions = Arc::new(SessionRegistry::new());
         let task_leases = Arc::new(TaskLeaseRegistry::new());
@@ -161,15 +230,64 @@ mod tests {
         let lifecycle = SessionLifecycleManager::new(
             Arc::clone(&sessions),
             Arc::clone(&task_leases),
-            processes,
+            Arc::clone(&processes),
         );
-        (lifecycle, sessions, task_leases)
+        (lifecycle, sessions, task_leases, processes)
+    }
+
+    fn process_spec(session: SessionHandle) -> ProcessStartSpec {
+        let executable = env::current_exe()
+            .expect("current test executable")
+            .canonicalize()
+            .expect("canonical test executable")
+            .to_string_lossy()
+            .into_owned();
+        ProcessStartSpec {
+            session,
+            executable,
+            args: vec![
+                "--exact".to_owned(),
+                "session_lifecycle::tests::process_fixture_child".to_owned(),
+                "--nocapture".to_owned(),
+            ],
+            cwd: None,
+            env_allowlist: Vec::new(),
+            resources: ResourceBudget {
+                timeout_ms: 5_000,
+                output_bytes: 1024,
+                memory_bytes: 64 * 1024 * 1024,
+                process_count: 1,
+            },
+        }
+    }
+
+    async fn await_terminal(
+        processes: &ProcessManager,
+        session: &SessionHandle,
+        job: &JobId,
+    ) -> ProcessResult {
+        for _ in 0..300 {
+            let result = processes.result(session, job).expect("process result");
+            if result.status != ProcessStatus::Running {
+                return result;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("process did not become terminal");
+    }
+
+    #[test]
+    fn process_fixture_child() {
+        let cwd = env::current_dir().expect("fixture cwd");
+        if cwd.join("fixture-sleep").exists() {
+            thread::sleep(Duration::from_secs(2));
+        }
     }
 
     #[test]
     fn provision_generates_and_registers_application_owned_session() {
         let root = workspace("provision");
-        let (lifecycle, sessions, _) = manager(&root);
+        let (lifecycle, sessions, _, _) = manager(&root);
         let now = MonotonicTime::from_millis(10);
         let grant = lifecycle
             .provision(spec(100), now)
@@ -187,7 +305,7 @@ mod tests {
     #[test]
     fn provision_rejects_already_expired_session() {
         let root = workspace("expired-provision");
-        let (lifecycle, sessions, _) = manager(&root);
+        let (lifecycle, sessions, _, _) = manager(&root);
         assert!(matches!(
             lifecycle.provision(spec(10), MonotonicTime::from_millis(10)),
             Err(SessionLifecycleError::ExpiredAtProvision)
@@ -196,10 +314,144 @@ mod tests {
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
 
+    #[tokio::test]
+    async fn admitted_job_is_visible_to_revoke_then_reaped_without_cross_session_damage() {
+        let root = workspace("admission-race");
+        fs::write(root.join("fixture-sleep"), b"1").expect("write sleep marker");
+        let (lifecycle, sessions, task_leases, processes) = manager(&root);
+        let now = MonotonicTime::from_millis(1);
+        let session_a = lifecycle.provision(spec(1_000), now).expect("session A");
+        let session_b = lifecycle.provision(spec(1_000), now).expect("session B");
+        let lease_a = lease(session_a.handle.clone(), 1_000);
+        let lease_b = lease(session_b.handle.clone(), 1_000);
+        task_leases.register(lease_a.clone()).expect("lease A");
+        task_leases.register(lease_b.clone()).expect("lease B");
+
+        let admission = sessions
+            .begin_admission(&session_a.handle, now)
+            .expect("admit A effect");
+        let lifecycle = Arc::new(lifecycle);
+        let revoke_lifecycle = Arc::clone(&lifecycle);
+        let revoke_handle = session_a.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoke_thread = thread::spawn(move || {
+            let result = revoke_lifecycle.revoke(&revoke_handle);
+            done_tx.send(result).expect("send revoke result");
+        });
+
+        let mut revoke_started = false;
+        for _ in 0..100 {
+            if matches!(
+                sessions.get_active(&session_a.handle, now),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                revoke_started = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(revoke_started, "revoke must close new admissions first");
+        assert!(matches!(
+            sessions.begin_admission(&session_a.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+        // Simulate an effect that was admitted immediately before revoke. The job is
+        // inserted while revoke is blocked on this permit, so cancel_session must see it
+        // after the permit is released.
+        let job = processes
+            .start(process_spec(session_a.handle.clone()))
+            .expect("start pre-revoke admitted job");
+        drop(admission);
+
+        let report = done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("revoke must finish after admission drains")
+            .expect("revoke result");
+        revoke_thread.join().expect("revoke thread");
+        assert!(report.session_changed);
+        assert_eq!(report.revoked_leases, 1);
+        assert_eq!(report.cancellation_requests, 1);
+
+        let result = await_terminal(&processes, &session_a.handle, &job).await;
+        assert_eq!(result.status, ProcessStatus::Stopped);
+
+        let reap = lifecycle
+            .try_reap(&session_a.handle, now)
+            .expect("reap quiescent A");
+        assert!(reap.session_removed);
+        assert_eq!(reap.active_jobs, 0);
+        assert_eq!(reap.removed_process_records, 1);
+        assert_eq!(reap.removed_leases, 1);
+        assert!(matches!(
+            processes.result(&session_a.handle, &job),
+            Err(ProcessError::UnknownJob)
+        ));
+        assert_eq!(
+            sessions
+                .get_active(&session_a.handle, now)
+                .expect_err("A must be physically removed"),
+            SessionRegistryError::UnknownSession
+        );
+
+        // B is independent and survives A's revoke/reap unchanged.
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session must remain");
+        task_leases
+            .get_active(&lease_b.id, &session_b.handle, now)
+            .expect("B lease must remain");
+
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn reap_reclaims_session_capacity_only_after_inactivation() {
+        let root = workspace("capacity-reclaim");
+        let limits = HardLimits {
+            max_sessions: 1,
+            ..HardLimits::default()
+        };
+        let sessions =
+            Arc::new(SessionRegistry::from_hard_limits(limits).expect("session registry"));
+        let task_leases = Arc::new(TaskLeaseRegistry::new());
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("process manager"));
+        let lifecycle = SessionLifecycleManager::new(
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            Arc::clone(&processes),
+        );
+        let now = MonotonicTime::from_millis(1);
+        let first = lifecycle
+            .provision(spec(1_000), now)
+            .expect("first session");
+        assert!(matches!(
+            lifecycle.provision(spec(1_000), now),
+            Err(SessionLifecycleError::SessionRegistry(
+                SessionRegistryError::CapacityExceeded
+            ))
+        ));
+        assert!(matches!(
+            lifecycle.try_reap(&first.handle, now),
+            Err(SessionLifecycleError::SessionStillActive)
+        ));
+
+        lifecycle.revoke(&first.handle).expect("revoke first");
+        let reap = lifecycle.try_reap(&first.handle, now).expect("reap first");
+        assert!(reap.session_removed);
+        assert_eq!(sessions.len().expect("registry length"), 0);
+        lifecycle
+            .provision(spec(1_000), now)
+            .expect("capacity must be reusable after safe reap");
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
     #[test]
     fn revoke_is_fail_closed_and_owner_scoped() {
         let root = workspace("revoke");
-        let (lifecycle, sessions, task_leases) = manager(&root);
+        let (lifecycle, sessions, task_leases, _) = manager(&root);
         let now = MonotonicTime::from_millis(1);
         let session_a = lifecycle.provision(spec(100), now).expect("session A");
         let session_b = lifecycle.provision(spec(100), now).expect("session B");

@@ -1,6 +1,6 @@
 # Multi-session and Same-Repository Concurrency
 
-Status: Phase 3 current; Phase 3A resource isolation is executable, Phase 3B1 application-owned provisioning/revoke coordination is executable, atomic admission versus revoke plus safe reap remains the Phase 3B2 gate, and detailed same-repository merge protocol remains PROPOSED.
+Status: Phase 3 current; Phase 3A resource isolation and Phase 3B1 application-owned lifecycle are merged. Phase 3B2 admission-vs-revoke serialization plus quiescent owner-scoped reap is current; automatic expiry supervision and client-visible multi-session orchestration remain follow-up gates, while detailed same-repository merge coordination remains PROPOSED.
 
 Multi-session is a first-class invariant, not a later optimization.
 
@@ -15,7 +15,7 @@ Optic owns an opaque application `SessionHandle`; transport connections are not 
 - journal/recovery authority where applicable;
 - quotas and cancellation tree.
 
-Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs remain unguessable and authorization must still validate ownership. Phase 3A enforces owner-bound `JobId` access plus global-and-per-session process quotas and owner-only terminal-record eviction. Phase 3B1 adds an application-owned lifecycle manager: future grants receive server-generated `SessionHandle`s and revoke invalidates the session before revoking leases and requesting owned-job termination. B1 intentionally retains inactive session/lease/process records because admission is not yet serialized with revoke. No public MCP session-creation tool exists. Phase 3B2 must serialize admission of new session-scoped effects against revoke before safe owner-scoped reap/capacity reclamation and before multiple live sessions are wired to clients.
+Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs remain unguessable and authorization must still validate ownership. Phase 3A enforces owner-bound `JobId` access plus global-and-per-session process quotas and owner-only terminal-record eviction. Phase 3B1 adds application-owned provisioning and coordinated revoke. Phase 3B2 adds the admission barrier for sensitive sinks: new admissions fail once revoke begins, already-admitted effects drain before lease/job cleanup, and physical reap is allowed only after quiescence. No public MCP session-creation tool exists yet.
 
 ## Different projects
 
@@ -48,4 +48,4 @@ Default: private. A session may receive minimal repository events such as Target
 
 ## Failure
 
-Crash/reconnect must not transfer ownership implicitly. Expired or explicitly revoked sessions first become unauthorized, then their task leases are revoked and owned process jobs receive termination requests. Phase 3B1 does not release their retained capacity. Phase 3B2 must prevent an authorization that began before revoke from admitting new activity, then introduce owner-scoped reap only after quiescence can be proven. Recoverable worktrees remain preserved/quarantined according to journal state until safe cleanup.
+Crash/reconnect must not transfer ownership implicitly. Expired or explicitly revoked sessions first become unauthorized. Phase 3B2 then blocks new sensitive admissions, waits for already-admitted effects, revokes owned leases, requests owned-job termination, and permits owner-scoped reap only when no admission/job remains active. Natural expiry can use the same lifecycle path once invoked; an automatic expiry supervisor is still required before client-visible multi-session orchestration. Recoverable worktrees remain preserved/quarantined according to journal state until safe cleanup.

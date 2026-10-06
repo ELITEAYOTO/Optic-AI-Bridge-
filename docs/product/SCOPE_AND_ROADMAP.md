@@ -197,16 +197,15 @@ Independent sessions/projects, per-session jobs/resources/capabilities, with adv
 
 Merged in PR #50 (`661c1604`, exact green head `3c0c4448`). The first executable gate keeps bridge-wide ceilings while adding smaller per-session ceilings. The session registry has a hard capacity. Process execution keeps opaque session-owned `JobId`s and enforces both global and per-session active-job, retained-record and reserved-output-RAM limits. Under record/output pressure a start request may retire only terminal history owned by the requesting session; another session's retained process result is never evicted to make room. Adversarial A/B tests prove a session exhausting its own active-job or output reservation does not consume the other session's corresponding quota, and owner-only record eviction preserves the other session's result.
 
-### Phase 3B1 — application-owned lifecycle and coordinated revoke (CURRENT)
+### Phase 3B1 - application-owned lifecycle and coordinated revoke (COMPLETED)
 
-`SessionLifecycleManager` provides the internal lifecycle boundary for future multi-session orchestration. It generates opaque application-owned handles from `SessionGrantSpec`, rejects already-expired provisioning, and invalidates a session before revoking its task leases and requesting termination of its process jobs. B1 deliberately keeps inactive session/lease/process records retained; it does not reclaim capacity until Phase 3B2 can prove quiescent admission. Existing MCP `session_cancel` delegates to this lifecycle boundary without adding any public session creation tool.
+Merged in PR #51 (`78ae66f`, exact green head `db20e4f`). `SessionLifecycleManager` is the internal lifecycle boundary for future multi-session orchestration. It generates opaque application-owned `SessionHandle`s from `SessionGrantSpec`, rejects already-expired provisioning, invalidates the session before revoking its task leases, and requests termination of all owned process jobs. Existing MCP `session_cancel` delegates to this lifecycle boundary and no public MCP session-creation tool exists.
 
-### Phase 3B2 — admission/revocation serialization and safe reap (NEXT)
+### Phase 3B2 - admission/revocation serialization and safe reap (CURRENT)
 
-Close the remaining concurrent admission window before wiring multiple live sessions to clients. Session/lease/policy validation and effect admission must be serialized with revoke so an operation authorized just before shutdown cannot create a new process/resource after cleanup begins. Once that barrier is proven, add owner-scoped reap/capacity reclamation. Gate with adversarial start/revoke races and prove no orphan resource appears across cleanup.
+Sensitive effect admission is serialized with revoke through `SessionAdmissionPermit`: process start, durable file mutation and Git integration hold a session admission permit across authorization and sink entry. Revoke marks the session inactive first, blocks new admission, waits for in-flight permits, then revokes leases and requests termination of owned jobs. `try_reap` removes only quiescent owner-scoped terminal process records, owned leases and finally the inactive session record; active sessions, in-flight admissions and active jobs fail closed. Adversarial Windows tests prove a pre-revoke admitted process is visible to cleanup and another session survives unchanged. Direct lease expiry purge is no longer a public primitive, and explicit `session_cancel` remains usable after natural session expiry.
 
-Only after B2 should multiple simultaneously active application sessions/projects and independent authority sets be bound to client orchestration. Evaluate a bounded ActionId idempotency/replay ledger only once stateful retries justify it.
-
+The remaining lifecycle follow-up is an automatic expiry supervisor that invokes the same barrier/cleanup path without requiring an explicit cancel. Public multi-session orchestration remains disabled until that gate and the audit-prioritized resource/process hardening are completed.
 ## Phase 4 — Same-repository parallelism
 
 Git worktrees, deterministic coordinator and integration/conflict gates for concurrent same-repository sessions.

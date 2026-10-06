@@ -5,8 +5,9 @@ use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use thiserror::Error;
 
 use crate::{
-    Clock, GitIntegrationError, GitIntegrationResult, GitIntegrationService, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
+    Clock, GitIntegrationError, GitIntegrationResult, GitIntegrationService,
+    SessionAdmissionPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
+    TaskLeaseRegistryError,
 };
 
 /// Transport-agnostic authorization boundary for Git integration.
@@ -88,7 +89,7 @@ impl AuthorizedGitIntegrationService {
         if !matches!(&envelope.effect, Effect::GitIntegrationObserve) {
             return Err(AuthorizedGitIntegrationError::EffectMismatch);
         }
-        self.authorize(envelope)?;
+        let _admission = self.authorize(envelope)?;
         Ok(self.integration.target_head()?)
     }
 
@@ -104,7 +105,7 @@ impl AuthorizedGitIntegrationService {
             return Err(AuthorizedGitIntegrationError::EffectMismatch);
         };
 
-        self.authorize(envelope)?;
+        let _admission = self.authorize(envelope)?;
         Ok(self.integration.integrate_fast_forward(
             &envelope.action_id,
             source_head,
@@ -112,9 +113,12 @@ impl AuthorizedGitIntegrationService {
         )?)
     }
 
-    fn authorize(&self, envelope: &ActionEnvelope) -> Result<(), AuthorizedGitIntegrationError> {
+    fn authorize<'a>(
+        &'a self,
+        envelope: &ActionEnvelope,
+    ) -> Result<SessionAdmissionPermit<'a>, AuthorizedGitIntegrationError> {
         let now = self.clock.now();
-        let session = self.sessions.get_active(&envelope.session, now)?;
+        let admission = self.sessions.begin_admission(&envelope.session, now)?;
         let lease_id = envelope
             .task_lease
             .as_ref()
@@ -123,8 +127,11 @@ impl AuthorizedGitIntegrationService {
             .task_leases
             .get_active(lease_id, &envelope.session, now)?;
 
-        match self.policy.evaluate(envelope, &session, Some(&lease), now) {
-            PolicyDecision::Allow => Ok(()),
+        match self
+            .policy
+            .evaluate(envelope, admission.grant(), Some(&lease), now)
+        {
+            PolicyDecision::Allow => Ok(admission),
             PolicyDecision::RequireApproval(reason) | PolicyDecision::Deny(reason) => {
                 Err(AuthorizedGitIntegrationError::PolicyDenied(reason))
             }
