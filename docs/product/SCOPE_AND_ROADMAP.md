@@ -1,6 +1,6 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Last reviewed: 2026-10-05.
+Status: LIVING DOCUMENT. Last reviewed: 2026-10-07.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
@@ -201,11 +201,27 @@ Merged in PR #50 (`661c1604`, exact green head `3c0c4448`). The first executable
 
 Merged in PR #51 (`78ae66f`, exact green head `db20e4f`). `SessionLifecycleManager` is the internal lifecycle boundary for future multi-session orchestration. It generates opaque application-owned `SessionHandle`s from `SessionGrantSpec`, rejects already-expired provisioning, invalidates the session before revoking its task leases, and requests termination of all owned process jobs. Existing MCP `session_cancel` delegates to this lifecycle boundary and no public MCP session-creation tool exists.
 
-### Phase 3B2 - admission/revocation serialization and safe reap (CURRENT)
+### Phase 3B2 - admission/revocation serialization and safe reap (COMPLETED)
 
-Sensitive effect admission is serialized with revoke through `SessionAdmissionPermit`: process start, durable file mutation and Git integration hold a session admission permit across authorization and sink entry. Revoke marks the session inactive first, blocks new admission, waits for in-flight permits, then revokes leases and requests termination of owned jobs. `try_reap` removes only quiescent owner-scoped terminal process records, owned leases and finally the inactive session record; active sessions, in-flight admissions and active jobs fail closed. Adversarial Windows tests prove a pre-revoke admitted process is visible to cleanup and another session survives unchanged. Direct lease expiry purge is no longer a public primitive, and explicit `session_cancel` remains usable after natural session expiry.
+Merged in PR #52 (`2748f688`, exact green head `c44c89ec`). Sensitive effect admission is serialized with revoke through `SessionAdmissionPermit`; revoke blocks new admissions, drains already-admitted effects, then revokes leases/cancels owned jobs. Physical reap is owner-scoped and allowed only when no admission/job remains active.
 
-The remaining lifecycle follow-up is an automatic expiry supervisor that invokes the same barrier/cleanup path without requiring an explicit cancel. Public multi-session orchestration remains disabled until that gate and the audit-prioritized resource/process hardening are completed.
+### Phase 3B3 - lifecycle closure and bounded leases (CURRENT PR #53)
+
+Implemented and code/test-validated on exact head `5d39f5b`:
+
+- `TaskLeaseRegistry` has hard global and per-session capacity; zero is never unlimited;
+- revoked leases keep their storage slot until owner-scoped physical reap, so revocation cannot masquerade as reclamation;
+- partial unpublished authority provisioning removes its rollback lease rather than leaking bounded registry capacity;
+- application startup uses `SessionLifecycleManager::provision()` so the initial `SessionHandle` is server-generated through the canonical lifecycle path;
+- an internal five-second supervisor scans only the bounded inactive-session set and reuses the existing admission/revoke/quiescent-reap boundary;
+- no public MCP `session_create`, arbitrary orchestration, or renewal protocol is added.
+
+Ubuntu, Windows and dependency-policy CI passed on the code/test head. Final documentation-head CI, exact-head merge and post-merge `main` CI remain required before Phase 3B3 is declared merged.
+
+### Phase 3C - process/resource safety before wider autonomy
+
+Next only after Phase 3B3 post-merge validation. Priorities include bounded termination, machine-level CPU/headroom governance, truthful network containment semantics, executable/tool identity, repository-code execution classification and evidence-backed Windows sandboxing. Public multi-session orchestration remains behind these safety gates.
+
 ## Phase 4 — Same-repository parallelism
 
 Git worktrees, deterministic coordinator and integration/conflict gates for concurrent same-repository sessions.
