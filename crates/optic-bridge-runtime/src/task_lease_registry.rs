@@ -1,11 +1,26 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use optic_bridge_core::{MonotonicTime, SessionHandle, TaskLease, TaskLeaseId};
+use optic_bridge_core::{
+    HardLimits, LimitError, MonotonicTime, SessionHandle, TaskLease, TaskLeaseId,
+};
 use thiserror::Error;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TaskLeaseRegistry {
     leases: Mutex<HashMap<TaskLeaseId, LeaseRecord>>,
+    max_leases: u32,
+    max_leases_per_session: u32,
+}
+
+impl Default for TaskLeaseRegistry {
+    fn default() -> Self {
+        let limits = HardLimits::default();
+        Self {
+            leases: Mutex::new(HashMap::new()),
+            max_leases: limits.max_task_leases,
+            max_leases_per_session: limits.max_task_leases_per_session,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -20,6 +35,15 @@ impl TaskLeaseRegistry {
         Self::default()
     }
 
+    pub fn from_hard_limits(limits: HardLimits) -> Result<Self, LimitError> {
+        let limits = limits.validate_nonzero()?;
+        Ok(Self {
+            leases: Mutex::new(HashMap::new()),
+            max_leases: limits.max_task_leases,
+            max_leases_per_session: limits.max_task_leases_per_session,
+        })
+    }
+
     pub fn register(&self, lease: TaskLease) -> Result<(), TaskLeaseRegistryError> {
         let mut leases = self
             .leases
@@ -27,6 +51,20 @@ impl TaskLeaseRegistry {
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         if leases.contains_key(&lease.id) {
             return Err(TaskLeaseRegistryError::AlreadyRegistered);
+        }
+        let max_leases = usize::try_from(self.max_leases)
+            .map_err(|_| TaskLeaseRegistryError::CapacityExceeded)?;
+        if leases.len() >= max_leases {
+            return Err(TaskLeaseRegistryError::CapacityExceeded);
+        }
+        let session_count = leases
+            .values()
+            .filter(|record| record.lease.session == lease.session)
+            .count();
+        let max_leases_per_session = usize::try_from(self.max_leases_per_session)
+            .map_err(|_| TaskLeaseRegistryError::SessionCapacityExceeded)?;
+        if session_count >= max_leases_per_session {
+            return Err(TaskLeaseRegistryError::SessionCapacityExceeded);
         }
         leases.insert(
             lease.id.clone(),
@@ -89,6 +127,21 @@ impl TaskLeaseRegistry {
         Ok(changed)
     }
 
+    pub(crate) fn remove_revoked(&self, id: &TaskLeaseId) -> Result<bool, TaskLeaseRegistryError> {
+        let mut leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let Some(record) = leases.get(id) else {
+            return Ok(false);
+        };
+        if !record.revoked {
+            return Err(TaskLeaseRegistryError::LeaseStillActive);
+        }
+        leases.remove(id);
+        Ok(true)
+    }
+
     pub(crate) fn remove_session(
         &self,
         session: &SessionHandle,
@@ -109,6 +162,10 @@ pub enum TaskLeaseRegistryError {
     StateUnavailable,
     #[error("task lease is already registered")]
     AlreadyRegistered,
+    #[error("task lease registry reached its hard global capacity")]
+    CapacityExceeded,
+    #[error("session reached its hard task lease capacity")]
+    SessionCapacityExceeded,
     #[error("task lease is unknown")]
     UnknownLease,
     #[error("task lease has been revoked")]
@@ -117,6 +174,8 @@ pub enum TaskLeaseRegistryError {
     WrongSession,
     #[error("task lease has expired")]
     Expired,
+    #[error("active task lease cannot be physically removed")]
+    LeaseStillActive,
 }
 
 #[cfg(test)]
@@ -147,6 +206,71 @@ mod tests {
     }
 
     #[test]
+    fn registration_is_bounded_globally_and_per_session() {
+        let limits = HardLimits {
+            max_task_leases: 3,
+            max_task_leases_per_session: 2,
+            ..HardLimits::default()
+        };
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("valid limits");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+
+        registry
+            .register(lease(session_a.clone(), 100))
+            .expect("A1");
+        registry
+            .register(lease(session_a.clone(), 100))
+            .expect("A2");
+        assert_eq!(
+            registry
+                .register(lease(session_a, 100))
+                .expect_err("A must hit its per-session ceiling"),
+            TaskLeaseRegistryError::SessionCapacityExceeded
+        );
+
+        registry
+            .register(lease(session_b.clone(), 100))
+            .expect("B1");
+        assert_eq!(
+            registry
+                .register(lease(session_b, 100))
+                .expect_err("global ceiling must fail closed"),
+            TaskLeaseRegistryError::CapacityExceeded
+        );
+    }
+
+    #[test]
+    fn revoked_leases_hold_capacity_until_owner_scoped_removal() {
+        let limits = HardLimits {
+            max_task_leases: 1,
+            max_task_leases_per_session: 1,
+            ..HardLimits::default()
+        };
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("valid limits");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+        let owned = lease(session_a.clone(), 100);
+        registry.register(owned.clone()).expect("A lease");
+        assert!(registry.revoke(&owned.id).expect("revoke A lease"));
+        assert_eq!(
+            registry
+                .register(lease(session_b.clone(), 100))
+                .expect_err("revocation alone must not reclaim storage"),
+            TaskLeaseRegistryError::CapacityExceeded
+        );
+
+        assert_eq!(registry.remove_session(&session_a).expect("remove A"), 1);
+        let foreign = lease(session_b.clone(), 100);
+        registry
+            .register(foreign.clone())
+            .expect("B lease after reap");
+        registry
+            .get_active(&foreign.id, &session_b, MonotonicTime::from_millis(1))
+            .expect("B lease remains active");
+    }
+
+    #[test]
     fn cross_session_access_fails_closed() {
         let registry = TaskLeaseRegistry::new();
         let owner = SessionHandle::generate().expect("test entropy");
@@ -158,6 +282,28 @@ mod tests {
                 .get_active(&lease.id, &other, MonotonicTime::from_millis(1))
                 .expect_err("cross-session access must fail"),
             TaskLeaseRegistryError::WrongSession
+        );
+    }
+
+    #[test]
+    fn only_revoked_lease_can_be_physically_removed_individually() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner session");
+        let owned = lease(owner.clone(), 100);
+        registry.register(owned.clone()).expect("owned lease");
+        assert_eq!(
+            registry
+                .remove_revoked(&owned.id)
+                .expect_err("active lease removal must fail"),
+            TaskLeaseRegistryError::LeaseStillActive
+        );
+        assert!(registry.revoke(&owned.id).expect("revoke lease"));
+        assert!(registry.remove_revoked(&owned.id).expect("remove revoked"));
+        assert_eq!(
+            registry
+                .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
+                .expect_err("removed lease must be unknown"),
+            TaskLeaseRegistryError::UnknownLease
         );
     }
 

@@ -100,6 +100,17 @@ impl SessionLifecycleManager {
         })
     }
 
+    pub fn reap_inactive(&self, now: MonotonicTime) -> Result<usize, SessionLifecycleError> {
+        let handles = self.sessions.inactive_handles(now)?;
+        let mut removed_sessions = 0;
+        for handle in handles {
+            if self.try_reap(&handle, now)?.session_removed {
+                removed_sessions += 1;
+            }
+        }
+        Ok(removed_sessions)
+    }
+
     pub fn try_reap(
         &self,
         session: &SessionHandle,
@@ -445,6 +456,98 @@ mod tests {
         lifecycle
             .provision(spec(1_000), now)
             .expect("capacity must be reusable after safe reap");
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn reap_inactive_cleans_expired_owner_state_without_touching_active_session() {
+        let root = workspace("expired-sweep");
+        let (lifecycle, sessions, task_leases, _) = manager(&root);
+        let start = MonotonicTime::from_millis(1);
+        let session_a = lifecycle.provision(spec(10), start).expect("session A");
+        let session_b = lifecycle.provision(spec(1_000), start).expect("session B");
+        let lease_a = lease(session_a.handle.clone(), 10);
+        let lease_b = lease(session_b.handle.clone(), 1_000);
+        task_leases.register(lease_a.clone()).expect("lease A");
+        task_leases.register(lease_b.clone()).expect("lease B");
+
+        let now = MonotonicTime::from_millis(10);
+        assert_eq!(lifecycle.reap_inactive(now).expect("reap expired"), 1);
+        assert_eq!(
+            sessions
+                .get_active(&session_a.handle, now)
+                .expect_err("A must be removed"),
+            SessionRegistryError::UnknownSession
+        );
+        assert_eq!(
+            task_leases
+                .get_active(&lease_a.id, &session_a.handle, start)
+                .expect_err("A lease must be removed"),
+            TaskLeaseRegistryError::UnknownLease
+        );
+
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session must remain active");
+        task_leases
+            .get_active(&lease_b.id, &session_b.handle, now)
+            .expect("B lease must remain active");
+        assert_eq!(
+            lifecycle
+                .reap_inactive(now)
+                .expect("second sweep is idempotent"),
+            0
+        );
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn reap_reclaims_task_lease_capacity_without_touching_other_session() {
+        let root = workspace("lease-capacity-reclaim");
+        let limits = HardLimits {
+            max_sessions: 2,
+            max_task_leases: 1,
+            max_task_leases_per_session: 1,
+            ..HardLimits::default()
+        };
+        let sessions =
+            Arc::new(SessionRegistry::from_hard_limits(limits).expect("session registry"));
+        let task_leases =
+            Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("lease registry"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("process manager"));
+        let lifecycle = SessionLifecycleManager::new(
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            Arc::clone(&processes),
+        );
+        let now = MonotonicTime::from_millis(1);
+        let session_a = lifecycle.provision(spec(1_000), now).expect("session A");
+        let session_b = lifecycle.provision(spec(1_000), now).expect("session B");
+        let lease_a = lease(session_a.handle.clone(), 1_000);
+        task_leases.register(lease_a).expect("A lease");
+
+        lifecycle.revoke(&session_a.handle).expect("revoke A");
+        assert_eq!(
+            task_leases
+                .register(lease(session_b.handle.clone(), 1_000))
+                .expect_err("revoked A must still hold storage before reap"),
+            TaskLeaseRegistryError::CapacityExceeded
+        );
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session remains active");
+
+        let reap = lifecycle.try_reap(&session_a.handle, now).expect("reap A");
+        assert!(reap.session_removed);
+        assert_eq!(reap.removed_leases, 1);
+        let lease_b = lease(session_b.handle.clone(), 1_000);
+        task_leases
+            .register(lease_b.clone())
+            .expect("B can reuse capacity after A reap");
+        task_leases
+            .get_active(&lease_b.id, &session_b.handle, now)
+            .expect("B lease remains active");
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
 

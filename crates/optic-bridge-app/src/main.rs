@@ -6,71 +6,50 @@ use std::{
     ffi::OsString,
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use optic_bridge_core::{
-    Capability, HardLimits, LeaseScope, PrincipalId, ProjectId, SessionGrant, SessionHandle,
-    TaskLease, TaskLeaseId, WorkspacePath,
+    Capability, HardLimits, LeaseScope, PrincipalId, ProjectId, TaskLease, TaskLeaseId,
+    WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
     AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
     GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService,
-    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionRegistry, StdClock,
-    TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
-    mutation_resource_budget,
+    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionGrantSpec,
+    SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
+    TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
 };
 use rmcp::ServiceExt;
 
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
+const SESSION_REAP_INTERVAL_MS: u64 = 5_000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = AppArgs::parse()?;
     let limits = HardLimits::default().validate_nonzero()?;
-    let clock = Arc::new(StdClock::new());
+    let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
     let expires_at = now.saturating_add_millis(INITIAL_SESSION_TTL_MS);
-    let session = SessionHandle::generate()
-        .map_err(|_| std::io::Error::other("failed to create application session handle"))?;
-
     let processes = Arc::new(ProcessManager::new(
         &args.workspace,
         limits,
         args.allowed_env.clone(),
     )?);
-    let task_leases = Arc::new(TaskLeaseRegistry::new());
-    let mut process_leases = BTreeMap::new();
+    let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
+
+    let mut canonical_process_executables = BTreeSet::new();
     for executable in &args.allowed_executables {
-        let canonical = processes.canonicalize_executable(executable)?;
-        if process_leases.contains_key(&canonical) {
-            continue;
-        }
-        let id = TaskLeaseId::generate()
-            .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
-        task_leases.register(TaskLease {
-            id: id.clone(),
-            session: session.clone(),
-            capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable(canonical.clone())]),
-            resource_ceiling: limits.max_process_budget,
-            expires_at,
-            policy_epoch: 1,
-        })?;
-        process_leases.insert(canonical, id);
+        canonical_process_executables.insert(processes.canonicalize_executable(executable)?);
     }
 
-    let mutation_authorities = MutationAuthoritySet::provision(
-        &task_leases,
-        &session,
-        &MutationAuthoritySpec {
-            write_scopes: args.write_scopes.clone(),
-            delete_scopes: args.delete_scopes.clone(),
-        },
-        mutation_resource_budget(limits),
-        expires_at,
-        1,
-    )?;
+    let mutation_spec = MutationAuthoritySpec {
+        write_scopes: args.write_scopes.clone(),
+        delete_scopes: args.delete_scopes.clone(),
+    };
+    mutation_spec.validate()?;
 
     let git_service = args
         .git_executable
@@ -109,6 +88,68 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
+    let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
+    if !canonical_process_executables.is_empty() {
+        capabilities.insert(Capability::ProcessRun);
+    }
+    if !mutation_spec.write_scopes.is_empty() {
+        capabilities.insert(Capability::FileWrite);
+    }
+    if !mutation_spec.delete_scopes.is_empty() {
+        capabilities.insert(Capability::FileDelete);
+    }
+    if git_service.is_some() {
+        capabilities.insert(Capability::GitRead);
+    }
+    if args.allow_git_integrate {
+        capabilities.insert(Capability::GitIntegrate);
+    }
+
+    let sessions = Arc::new(SessionRegistry::from_hard_limits(limits)?);
+    let lifecycle = Arc::new(SessionLifecycleManager::new(
+        Arc::clone(&sessions),
+        Arc::clone(&task_leases),
+        Arc::clone(&processes),
+    ));
+    let grant = lifecycle.provision(
+        SessionGrantSpec {
+            principal: PrincipalId::new("local-stdio")
+                .ok_or_else(|| std::io::Error::other("invalid local principal id"))?,
+            project: ProjectId::new("local-workspace")
+                .ok_or_else(|| std::io::Error::other("invalid local project id"))?,
+            capabilities,
+            expires_at,
+            policy_epoch: 1,
+        },
+        now,
+    )?;
+    let session = grant.handle;
+
+    let mut process_leases = BTreeMap::new();
+    for canonical in canonical_process_executables {
+        let id = TaskLeaseId::generate()
+            .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
+        task_leases.register(TaskLease {
+            id: id.clone(),
+            session: session.clone(),
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable(canonical.clone())]),
+            resource_ceiling: limits.max_process_budget,
+            expires_at,
+            policy_epoch: 1,
+        })?;
+        process_leases.insert(canonical, id);
+    }
+
+    let mutation_authorities = MutationAuthoritySet::provision(
+        &task_leases,
+        &session,
+        &mutation_spec,
+        mutation_resource_budget(limits),
+        expires_at,
+        1,
+    )?;
+
     let git_integration_authorities = GitIntegrationAuthoritySet::provision(
         &task_leases,
         &session,
@@ -120,36 +161,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         1,
     )?;
 
-    let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
-    if !process_leases.is_empty() {
-        capabilities.insert(Capability::ProcessRun);
-    }
-    if mutation_authorities.has_write() {
-        capabilities.insert(Capability::FileWrite);
-    }
-    if mutation_authorities.has_delete() {
-        capabilities.insert(Capability::FileDelete);
-    }
-    if git_service.is_some() {
-        capabilities.insert(Capability::GitRead);
-    }
-    if git_integration_authorities.has_integrate() {
-        capabilities.insert(Capability::GitIntegrate);
-    }
-    let grant = SessionGrant {
-        handle: session.clone(),
-        principal: PrincipalId::new("local-stdio")
-            .ok_or_else(|| std::io::Error::other("invalid local principal id"))?,
-        project: ProjectId::new("local-workspace")
-            .ok_or_else(|| std::io::Error::other("invalid local project id"))?,
-        capabilities,
-        expires_at,
-        policy_epoch: 1,
-    };
-
-    let sessions = Arc::new(SessionRegistry::from_hard_limits(limits)?);
-    sessions.register(grant)?;
-
     let git_integration_service = match (
         git_integration_runtime,
         git_integration_authorities.has_integrate(),
@@ -158,7 +169,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             runtime,
             Arc::clone(&sessions),
             Arc::clone(&task_leases),
-            Arc::clone(&clock) as Arc<dyn Clock>,
+            Arc::clone(&clock),
         ))),
         (Some(_), false) | (None, false) => None,
         (None, true) => {
@@ -186,7 +197,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             limits,
             Arc::clone(&sessions),
             Arc::clone(&task_leases),
-            Arc::clone(&clock) as Arc<dyn Clock>,
+            Arc::clone(&clock),
         )?))
     } else {
         None
@@ -197,7 +208,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &args.workspace,
         sessions,
         session,
-        clock,
+        Arc::clone(&clock),
         limits,
         processes,
         task_leases,
@@ -239,8 +250,42 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service = server.serve(transport).await?;
-    service.waiting().await?;
+    tokio::select! {
+        result = service.waiting() => {
+            result?;
+        }
+        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock)) => {
+            result?;
+            return Err(std::io::Error::other(
+                "session expiry supervisor stopped unexpectedly",
+            )
+            .into());
+        }
+    }
     Ok(())
+}
+
+async fn supervise_session_expiry(
+    lifecycle: Arc<SessionLifecycleManager>,
+    clock: Arc<dyn Clock>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut interval = tokio::time::interval(Duration::from_millis(SESSION_REAP_INTERVAL_MS));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        let now = clock.now();
+        let lifecycle = Arc::clone(&lifecycle);
+        let removed_sessions = tokio::task::spawn_blocking(move || lifecycle.reap_inactive(now))
+            .await
+            .map_err(|error| {
+                std::io::Error::other(format!("session expiry cleanup task failed: {error}"))
+            })??;
+        if removed_sessions != 0 {
+            eprintln!(
+                "Optic AI Bridge session expiry cleanup reaped {removed_sessions} session(s)"
+            );
+        }
+    }
 }
 
 #[derive(Debug)]

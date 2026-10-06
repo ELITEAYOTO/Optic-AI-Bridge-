@@ -413,22 +413,36 @@ Status: **merged** in PR #51 (`78ae66f`), exact head `db20e4f`.
 
 ### Phase 3B2 - atomic admission versus revoke and safe reap
 
-Status: **current implementation gate**.
+Status: **merged** in PR #52 (`2748f688`), exact head `c44c89ec`.
 
-1. `SessionAdmissionPermit` is acquired while the session is active and held through the sensitive sink for process start, durable file mutation and Git integration.
-2. Revoke marks the session inactive first, blocks new admissions and waits for already-admitted sensitive effects to drain before revoking task leases and cancelling owned jobs.
-3. `try_reap` refuses active sessions, in-flight admissions and active jobs. Once quiescent it removes only owner-scoped terminal process records, then owned leases, then the session record.
-4. Direct task-lease `remove_expired` purge is removed; cleanup is centralized behind the lifecycle boundary.
-5. MCP `session_cancel` no longer requires an active grant, so explicit cleanup remains available after natural expiry.
-6. Adversarial Windows tests cover revoke while a pre-admitted process start is in flight, safe capacity reuse and preservation of an independent session.
+1. Acquire `SessionAdmissionPermit` while the session is active and hold it through sensitive sink entry.
+2. Revoke closes new admission first and waits for admitted effects before lease/job cleanup.
+3. `try_reap` refuses active/in-flight sessions and active jobs; quiescent cleanup removes owner-scoped terminal process records, then leases, then session.
+4. Direct task-lease expired purge is removed and explicit `session_cancel` remains usable after natural expiry.
 
-Full Ubuntu/Windows/dependency-policy CI is the merge gate. Automatic expiry supervision remains a separate follow-up because no background lifecycle sweep exists yet.
+### Phase 3B3 - lifecycle closure and bounded leases
 
-Only after B2 passes should application-managed multi-session creation/binding and independent per-project authority sets be exposed to orchestration.
+Status: **implemented in PR #53; final merge gates current**. Exact code/test head `5d39f5b` passed Ubuntu, Windows and dependency policy.
 
-Evaluate a bounded ActionId idempotency ledger/replay service once stateful resources and retries exist.
+1. Add `HardLimits::max_task_leases` and `max_task_leases_per_session`, with fail-closed global/per-session registration.
+2. Keep revoked leases counted until owner-scoped physical cleanup; allow individual physical removal only for unpublished revoked rollback state.
+3. Prove partial multi-lease authority failure does not leak capacity.
+4. Add bounded `inactive_handles(now)` and `SessionLifecycleManager::reap_inactive(now)` using the existing quiescent reap contract.
+5. Route the initial stdio session through `SessionLifecycleManager::provision()` and derive its capabilities only from validated operator startup configuration.
+6. Run a five-second internal expiry supervisor through the same lifecycle path using a bounded scan and blocking cleanup off the async executor.
+7. Keep public session creation and renewal out of this gate.
 
-Phase 3 gate: adversarial cross-session access, lifecycle/admission races and resource-interference tests.
+Final gate: documentation-head Ubuntu/Windows/dependency-policy CI, exact-head merge, then post-merge `main` CI.
+
+### Phase 3C - process/resource safety before wider autonomy
+
+Status: **next after Phase 3B3 post-merge validation**.
+
+Prioritize bounded process termination, machine ResourceGovernor/CPU/headroom, ToolProfile/ToolIdentity, truthful network semantics, environment/repository-code execution classification and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+
+Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
+
+Phase 3 gate: adversarial cross-session access, lifecycle/admission races, bounded registry/resource pressure and process/tool containment.
 
 ## Phase 4 — same-repo parallelism
 

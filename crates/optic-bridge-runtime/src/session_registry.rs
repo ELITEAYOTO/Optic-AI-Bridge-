@@ -147,6 +147,21 @@ impl SessionRegistry {
         Ok(changed)
     }
 
+    pub(crate) fn inactive_handles(
+        &self,
+        now: MonotonicTime,
+    ) -> Result<Vec<SessionHandle>, SessionRegistryError> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        Ok(sessions
+            .iter()
+            .filter(|(_, record)| record.revoked || record.grant.is_expired_at(now))
+            .map(|(handle, _)| handle.clone())
+            .collect())
+    }
+
     pub(crate) fn remove_quiescent_inactive(
         &self,
         handle: &SessionHandle,
@@ -300,6 +315,26 @@ mod tests {
                 .expect_err("expired session must fail"),
             SessionRegistryError::Expired
         );
+    }
+
+    #[test]
+    fn inactive_handles_include_only_revoked_and_expired_sessions() {
+        let registry = SessionRegistry::new();
+        let active = grant(1_000);
+        let expired = grant(10);
+        let revoked = grant(1_000);
+        registry.register(active.clone()).expect("active session");
+        registry.register(expired.clone()).expect("expired session");
+        registry.register(revoked.clone()).expect("revoked session");
+        registry.revoke(&revoked.handle).expect("revoke session");
+
+        let inactive = registry
+            .inactive_handles(MonotonicTime::from_millis(10))
+            .expect("inactive handles");
+        assert_eq!(inactive.len(), 2);
+        assert!(inactive.contains(&expired.handle));
+        assert!(inactive.contains(&revoked.handle));
+        assert!(!inactive.contains(&active.handle));
     }
 
     #[test]
