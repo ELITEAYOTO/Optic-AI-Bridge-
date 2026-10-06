@@ -440,7 +440,7 @@ Status: **current**. Split into narrow security tranches.
 
 #### Phase 3C1 - bounded process termination confirmation
 
-Status: **implemented in PR #55; final merge gates current**. Exact code/test head `7c01b78` passed Ubuntu, Windows and dependency policy.
+Status: **merged and post-merge validated** in PR #55 (`bacac76`), exact green head `bfb38a5`; `main` CI run #265 passed Ubuntu, Windows and dependency policy.
 
 1. Stop, timeout, output overflow and process-observation failures all request owned-tree termination and then require OS exit confirmation.
 2. Confirmation is separately bounded to two seconds instead of awaiting `child.wait()` without a deadline.
@@ -449,7 +449,7 @@ Status: **implemented in PR #55; final merge gates current**. Exact code/test he
 5. Output drain tasks are aborted/closed on uncertainty so inherited pipe handles cannot restore an unbounded monitor wait; output is explicitly marked truncated.
 6. No CPU governor, executable identity, network sandbox, public session surface or new MCP tool is introduced by 3C1.
 
-Final gate: documentation-head Ubuntu/Windows/dependency-policy CI, exact-head merge, then post-merge `main` CI.
+Gate passed: exact-head Ubuntu/Windows/dependency-policy CI, exact-head merge, and post-merge `main` CI.
 
 #### Later Phase 3C gates
 
