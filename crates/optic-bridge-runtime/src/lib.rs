@@ -62,9 +62,7 @@ pub use process::{
     ProcessError, ProcessManager, ProcessReadChunk, ProcessResult, ProcessStartSpec, ProcessStatus,
     ProcessStream,
 };
-pub use process_authority::{
-    ProcessAuthority, ProcessAuthorityError, ProcessExecutableIdentity,
-};
+pub use process_authority::{ProcessAuthority, ProcessAuthorityError, ProcessExecutableIdentity};
 pub use recovery::{
     JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
     RecoveryReport,
