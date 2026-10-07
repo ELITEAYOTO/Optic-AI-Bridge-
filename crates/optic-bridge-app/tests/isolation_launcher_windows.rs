@@ -26,7 +26,18 @@ fn system32_executable(name: &str) -> PathBuf {
 }
 
 fn run_launcher(request: Value) -> Output {
-    let mut child = Command::new(launcher_path())
+    run_launcher_command(request, false)
+}
+
+fn run_launcher_command(request: Value, system_root_only: bool) -> Output {
+    let mut command = Command::new(launcher_path());
+    if system_root_only {
+        command.env_clear().env(
+            "SystemRoot",
+            std::env::var_os("SystemRoot").expect("SystemRoot"),
+        );
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -50,6 +61,30 @@ fn launcher_request(executable: &Path, args: &[&str], cwd: &Path) -> Value {
         "cwd": cwd.to_string_lossy(),
         "timeout_ms": TEST_TIMEOUT_MS,
     })
+}
+
+#[test]
+fn launcher_runs_with_systemroot_only_environment() {
+    let cmd = system32_executable("cmd.exe");
+    let cwd = cmd.parent().expect("System32 parent").to_path_buf();
+    let output = run_launcher_command(
+        launcher_request(
+            &cmd,
+            &["/d", "/s", "/c", "echo optic-systemroot-baseline"],
+            &cwd,
+        ),
+        true,
+    );
+
+    assert!(
+        output.status.success(),
+        "launcher failed with SystemRoot-only environment: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("optic-systemroot-baseline"),
+        "AppContainer stdout was not forwarded under SystemRoot-only environment"
+    );
 }
 
 #[test]
