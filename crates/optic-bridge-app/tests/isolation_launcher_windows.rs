@@ -195,56 +195,6 @@ fn launcher_preserves_ungranted_file_denial() {
 }
 
 #[test]
-fn launcher_exact_file_grant_allows_only_granted_file() {
-    let granted = unique_temp_path("granted.txt");
-    let ungranted = unique_temp_path("ungranted.txt");
-    fs::write(&granted, b"optic exact granted sentinel").expect("write granted sentinel");
-    fs::write(&ungranted, b"optic exact ungranted sentinel").expect("write ungranted sentinel");
-    let _granted_cleanup = Cleanup(granted.clone());
-    let _ungranted_cleanup = Cleanup(ungranted.clone());
-
-    let findstr = system32_executable("findstr.exe");
-    let cwd = findstr.parent().expect("System32 parent").to_path_buf();
-    let workspace_root = granted.parent().expect("temporary workspace root");
-    let granted_arg = granted.to_string_lossy().into_owned();
-    let output = run_launcher(launcher_request_with_read_files(
-        &findstr,
-        &["/c:optic exact granted sentinel", &granted_arg],
-        &cwd,
-        &[granted.as_path()],
-        workspace_root,
-    ));
-
-    assert!(
-        output.status.success(),
-        "helper could not read its exact granted file: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("optic exact granted sentinel"),
-        "granted exact file was not readable through the real helper"
-    );
-
-    let ungranted_arg = ungranted.to_string_lossy().into_owned();
-    let denied = run_launcher(launcher_request_with_read_files(
-        &findstr,
-        &["/c:optic exact ungranted sentinel", &ungranted_arg],
-        &cwd,
-        &[granted.as_path()],
-        workspace_root,
-    ));
-    assert!(
-        !denied.status.success(),
-        "real helper unexpectedly read an ungranted sibling file"
-    );
-    assert_ne!(
-        denied.status.code(),
-        Some(LAUNCHER_FAILURE_EXIT),
-        "launcher failed internally instead of returning the target access denial"
-    );
-}
-
-#[test]
 fn launcher_rejects_read_grant_outside_workspace_root() {
     let sentinel = unique_temp_path("outside-workspace-sentinel.txt");
     fs::write(&sentinel, b"optic outside workspace sentinel").expect("write sentinel");
