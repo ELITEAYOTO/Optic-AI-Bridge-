@@ -40,20 +40,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
 
-    let mut canonical_process_executables = BTreeMap::new();
-    for executable in &args.allowed_executables {
-        let canonical = processes.canonicalize_executable(&executable.path)?;
-        if canonical_process_executables
-            .insert(canonical, executable.class)
-            .is_some()
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "duplicate canonical --allow-executable path",
-            )
-            .into());
-        }
-    }
+    let canonical_process_executables =
+        canonicalize_allowed_executables(&processes, &args.allowed_executables)?;
 
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
@@ -305,6 +293,24 @@ async fn supervise_session_expiry(
 struct AllowedExecutableSpec {
     class: ProcessExecutionClass,
     path: String,
+}
+
+fn canonicalize_allowed_executables(
+    processes: &ProcessManager,
+    executables: &[AllowedExecutableSpec],
+) -> Result<BTreeMap<String, ProcessExecutionClass>, Box<dyn Error + Send + Sync>> {
+    let mut canonical = BTreeMap::new();
+    for executable in executables {
+        let path = processes.canonicalize_executable(&executable.path)?;
+        if canonical.insert(path, executable.class).is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate canonical --allow-executable path",
+            )
+            .into());
+        }
+    }
+    Ok(canonical)
 }
 
 #[derive(Debug)]
@@ -737,6 +743,32 @@ mod tests {
                 "authority should fail: {value}"
             );
         }
+    }
+
+    #[test]
+    fn duplicate_canonical_executable_cannot_receive_competing_classes() {
+        let processes = ProcessManager::new(
+            std::env::current_dir().expect("current directory"),
+            HardLimits::default(),
+            Vec::new(),
+        )
+        .expect("process manager");
+        let executable = std::env::current_exe()
+            .expect("current test executable")
+            .to_string_lossy()
+            .into_owned();
+        let specs = vec![
+            AllowedExecutableSpec {
+                class: ProcessExecutionClass::FixedTool,
+                path: executable.clone(),
+            },
+            AllowedExecutableSpec {
+                class: ProcessExecutionClass::Interpreter,
+                path: executable,
+            },
+        ];
+
+        assert!(canonicalize_allowed_executables(&processes, &specs).is_err());
     }
 
     #[test]
