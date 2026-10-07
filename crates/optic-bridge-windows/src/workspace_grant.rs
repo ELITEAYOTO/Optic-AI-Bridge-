@@ -322,7 +322,7 @@ fn free_local_sid(sid: PSID) {
 #[cfg(test)]
 mod tests {
     use std::{
-        ffi::{OsStr, OsString},
+        ffi::OsString,
         fs::{self, OpenOptions},
         os::windows::io::AsHandle,
         path::{Path, PathBuf},
