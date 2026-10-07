@@ -259,6 +259,7 @@ mod tests {
             .into_owned();
         ProcessStartSpec {
             session,
+            class: ProcessExecutionClass::FixedTool,
             executable,
             args: vec![
                 "--exact".to_owned(),

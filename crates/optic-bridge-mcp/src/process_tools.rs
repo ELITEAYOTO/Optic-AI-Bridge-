@@ -83,6 +83,7 @@ impl ReadonlyMcpServer {
             .processes
             .start(ProcessStartSpec {
                 session: self.session.clone(),
+                class,
                 executable,
                 args: params.0.args,
                 cwd,
@@ -370,6 +371,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::invalid_params("optic.process_cursor_out_of_range", None)
         }
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
+        ProcessError::IsolationUnavailable => {
+            ErrorData::invalid_request("optic.process_isolation_unavailable", None)
+        }
         ProcessError::TooManyActiveJobs | ProcessError::ProcessRecordLimitExceeded => {
             ErrorData::internal_error("optic.process_runtime_busy", None)
         }
@@ -562,6 +566,10 @@ mod tests {
         ))
         .expect_err("high-risk process should fail closed");
         assert_eq!(error.message, "optic.process_isolation_unavailable");
+        assert_eq!(
+            map_process_error(ProcessError::IsolationUnavailable).message,
+            "optic.process_isolation_unavailable"
+        );
 
         let generic =
             map_process_policy_decision(PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized))

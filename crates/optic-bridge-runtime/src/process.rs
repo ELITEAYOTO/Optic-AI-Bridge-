@@ -12,7 +12,8 @@ use std::{
 };
 
 use optic_bridge_core::{
-    HardLimits, JobId, LimitError, ResourceBudget, SessionHandle, WorkspacePath,
+    HardLimits, JobId, LimitError, ProcessExecutionClass, ResourceBudget, SessionHandle,
+    WorkspacePath,
 };
 #[cfg(windows)]
 use optic_bridge_windows::LimitedJobObject;
@@ -34,6 +35,7 @@ const DRAIN_CHUNK_BYTES: usize = 8 * 1024;
 #[derive(Clone, Debug)]
 pub struct ProcessStartSpec {
     pub session: SessionHandle,
+    pub class: ProcessExecutionClass,
     pub executable: String,
     pub args: Vec<String>,
     pub cwd: Option<WorkspacePath>,
@@ -169,6 +171,12 @@ impl ProcessManager {
         let executable = self.canonicalize_executable(&spec.executable)?;
         let cwd = self.resolve_cwd(spec.cwd.as_ref())?;
         let environment = self.resolve_environment(&spec.env_allowlist)?;
+        if matches!(
+            spec.class,
+            ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
+        ) {
+            return Err(ProcessError::IsolationUnavailable);
+        }
         let runtime = Handle::try_current().map_err(|_| ProcessError::RuntimeUnavailable)?;
 
         let job_id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
@@ -852,6 +860,8 @@ pub enum ProcessError {
     CursorOutOfRange,
     #[error("process job is unknown to this session")]
     UnknownJob,
+    #[error("required process isolation profile is unavailable")]
+    IsolationUnavailable,
     #[error("Tokio runtime is unavailable")]
     RuntimeUnavailable,
     #[error("operating-system entropy unavailable for process job id")]
@@ -887,6 +897,7 @@ mod tests {
         let _ = root;
         ProcessStartSpec {
             session,
+            class: ProcessExecutionClass::FixedTool,
             executable,
             args: vec![
                 "--exact".to_owned(),
@@ -959,6 +970,26 @@ mod tests {
             thread::sleep(Duration::from_secs(2));
         } else if cwd.join("fixture-flood").exists() {
             print!("{}", "x".repeat(128 * 1024));
+        }
+    }
+
+    #[test]
+    fn high_risk_execution_classes_fail_closed_in_runtime_before_spawn() {
+        let root = workspace("isolation-class");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let session = SessionHandle::generate().expect("session");
+
+        for class in [
+            ProcessExecutionClass::Interpreter,
+            ProcessExecutionClass::RepositoryCode,
+        ] {
+            let mut request = spec(&root, session.clone(), budget(2_000, 64 * 1024));
+            request.class = class;
+            assert!(matches!(
+                manager.start(request),
+                Err(ProcessError::IsolationUnavailable)
+            ));
         }
     }
 
