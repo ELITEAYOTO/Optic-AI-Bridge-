@@ -48,7 +48,9 @@ impl ProcessExecutableIdentity {
         executable: &str,
         max_bytes: u64,
     ) -> Result<Self, ProcessAuthorityError> {
-        let canonical_path = processes.canonicalize_executable(executable)?;
+        let canonical_path = processes
+            .canonicalize_executable(executable)
+            .map_err(ProcessAuthorityError::ExecutableObservation)?;
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
         Ok(Self {
@@ -67,7 +69,9 @@ impl ProcessExecutableIdentity {
         processes: &ProcessManager,
         executable: &str,
     ) -> Result<ExecutablePin, ProcessAuthorityError> {
-        let canonical = processes.canonicalize_executable(executable)?;
+        let canonical = processes
+            .canonicalize_executable(executable)
+            .map_err(ProcessAuthorityError::ExecutableObservation)?;
         if canonical != self.canonical_path {
             return Err(ProcessAuthorityError::ExecutablePathChanged);
         }
@@ -140,8 +144,10 @@ fn open_identity_pin(path: &Path) -> io::Result<ExecutablePin> {
 
 #[derive(Debug, Error)]
 pub enum ProcessAuthorityError {
-    #[error("process runtime rejected executable authority: {0}")]
-    Process(#[from] ProcessError),
+    #[error("process executable could not be observed for identity: {0}")]
+    ExecutableObservation(ProcessError),
+    #[error("process runtime rejected verified executable authority: {0}")]
+    Process(ProcessError),
     #[error("process executable identity observation failed: {0}")]
     IdentityRead(#[from] ContentVersionReadError),
     #[error("process executable identity could not be opened: {0}")]
