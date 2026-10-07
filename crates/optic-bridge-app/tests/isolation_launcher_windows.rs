@@ -199,13 +199,16 @@ fn launcher_applies_exact_file_read_grant_for_child_lifetime() {
     let sentinel = unique_temp_path("granted-sentinel.txt");
     fs::write(&sentinel, b"optic granted launcher sentinel").expect("write granted sentinel");
     let _cleanup = Cleanup(sentinel.clone());
-    let findstr = system32_executable("findstr.exe");
-    let cwd = findstr.parent().expect("System32 parent").to_path_buf();
-    let sentinel_arg = sentinel.to_string_lossy().into_owned();
+    let cmd = system32_executable("cmd.exe");
+    let cwd = cmd.parent().expect("System32 parent").to_path_buf();
+    let type_command = format!("type {}", sentinel.display());
 
+    // Use an exact-path opener here. `findstr.exe` performs directory-style
+    // discovery before opening its input, which intentionally requires authority
+    // broader than this exact-file grant.
     let output = run_launcher(launcher_request_with_read_files(
-        &findstr,
-        &["/c:optic granted launcher sentinel", &sentinel_arg],
+        &cmd,
+        &["/d", "/s", "/c", &type_command],
         &cwd,
         &[sentinel.as_path()],
         sentinel.parent().expect("sentinel parent"),
@@ -215,6 +218,10 @@ fn launcher_applies_exact_file_read_grant_for_child_lifetime() {
         output.status.success(),
         "granted AppContainer file read failed: {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("optic granted launcher sentinel"),
+        "exact-file content was not forwarded through the isolated child"
     );
 }
 
