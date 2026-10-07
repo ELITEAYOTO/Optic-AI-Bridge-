@@ -267,6 +267,7 @@ mod tests {
                 "--nocapture".to_owned(),
             ],
             cwd: None,
+            workspace_read_files: Vec::new(),
             env_allowlist: Vec::new(),
             resources: ResourceBudget {
                 timeout_ms: 5_000,

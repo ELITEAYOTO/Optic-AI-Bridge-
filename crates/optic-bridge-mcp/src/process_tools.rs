@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
-    ActionEnvelope, ActionId, Effect, JobId, NetworkAccess, ResourceBudget, TaskLeaseId,
-    WorkspacePath,
+    ActionEnvelope, ActionId, Capability, Effect, JobId, LeaseScope, NetworkAccess, ResourceBudget,
+    TaskLease, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_policy::{PolicyDecision, PolicyReason};
 use optic_bridge_runtime::{
@@ -73,6 +73,8 @@ impl ReadonlyMcpServer {
             network: NetworkAccess::Denied,
         };
         authorize_process(self, grant, &lease.id, &lease, effect, resources, now)?;
+        let workspace_read_files =
+            process_workspace_read_files(grant.allows(Capability::FileRead), &lease);
         let cwd = params
             .0
             .cwd
@@ -87,6 +89,7 @@ impl ReadonlyMcpServer {
                 executable,
                 args: params.0.args,
                 cwd,
+                workspace_read_files,
                 env_allowlist: params.0.env_allowlist,
                 resources,
             })
@@ -336,6 +339,23 @@ fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
     }
 }
 
+fn process_workspace_read_files(
+    session_allows_file_read: bool,
+    lease: &TaskLease,
+) -> Vec<WorkspacePath> {
+    if !session_allows_file_read || !lease.allows(Capability::FileRead) {
+        return Vec::new();
+    }
+    lease
+        .scopes
+        .iter()
+        .filter_map(|scope| match scope {
+            LeaseScope::WorkspacePrefix(path) => Some(path.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn map_process_error(error: ProcessError) -> ErrorData {
     match error {
         ProcessError::ExecutableMustBeAbsolute => {
@@ -388,6 +408,13 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         }
         ProcessError::InvalidLimits(_)
         | ProcessError::RootNotDirectory
+        | ProcessError::WorkspaceReadGrantsRequireIsolation
+        | ProcessError::TooManyWorkspaceReadGrants
+        | ProcessError::WorkspaceReadGrantOutsideWorkspace
+        | ProcessError::WorkspaceReadGrantNotFile
+        | ProcessError::NonUtf8WorkspaceRoot
+        | ProcessError::NonUtf8WorkspaceReadGrant
+        | ProcessError::DuplicateWorkspaceReadGrant
         | ProcessError::IsolationLauncherMustBeAbsolute
         | ProcessError::IsolationLauncherNotFile
         | ProcessError::IsolationLauncherProtocol(_)
@@ -483,6 +510,28 @@ mod tests {
     use optic_bridge_core::HardLimits;
 
     use super::*;
+
+    #[test]
+    fn process_workspace_read_grants_require_file_read_and_exact_prefix_scopes() {
+        let exact = WorkspacePath::parse("input.txt").expect("workspace path");
+        let mut lease = TaskLease {
+            id: TaskLeaseId::generate().expect("lease id"),
+            session: optic_bridge_core::SessionHandle::generate().expect("session"),
+            capabilities: std::collections::BTreeSet::from([Capability::ProcessRun]),
+            scopes: std::collections::BTreeSet::from([
+                LeaseScope::WorkspaceAll,
+                LeaseScope::WorkspacePrefix(exact.clone()),
+            ]),
+            resource_ceiling: HardLimits::default().max_process_budget,
+            expires_at: optic_bridge_core::MonotonicTime::from_millis(1_000),
+            policy_epoch: 1,
+        };
+        assert!(process_workspace_read_files(true, &lease).is_empty());
+
+        lease.capabilities.insert(Capability::FileRead);
+        assert!(process_workspace_read_files(false, &lease).is_empty());
+        assert_eq!(process_workspace_read_files(true, &lease), vec![exact]);
+    }
 
     #[test]
     fn network_requests_are_not_silently_enabled() {

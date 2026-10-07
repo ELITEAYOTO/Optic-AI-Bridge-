@@ -208,7 +208,7 @@ fn query_identity(file: &File) -> Result<WindowsFileIdentity, WindowsFileError> 
     })
 }
 
-fn query_final_path(file: &File) -> Result<PathBuf, WindowsFileError> {
+pub(crate) fn query_final_path(file: &File) -> Result<PathBuf, WindowsFileError> {
     let handle = file_handle(file);
     let mut buffer = vec![0_u16; 512];
 
