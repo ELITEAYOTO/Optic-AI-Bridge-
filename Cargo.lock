@@ -404,7 +404,10 @@ dependencies = [
  "optic-bridge-core",
  "optic-bridge-mcp",
  "optic-bridge-runtime",
+ "optic-bridge-windows",
  "rmcp",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
