@@ -583,9 +583,22 @@ Status: **merged and post-merge validated** in PR #74 (`11232b90`), exact final 
 
 Gate passed: exact PR CI #330, SHA-guarded squash merge, and post-merge `main` CI #331.
 
+#### Phase 3C3C2C2B2 - exact-file grant lifecycle/wiring
+
+Status: **merged and post-merge validated** in PR #76 (`8d127a3b`), exact final head `5aaf3957`; exact PR CI #336 and post-merge `main` CI #337 passed Ubuntu, Windows and dependency policy, including grant-selection/containment regressions, real MCP smoke and installer-profile validation.
+
+1. The internal launcher protocol v2 carries the canonical workspace root and at most 32 exact `workspace_read_files`; the existing 64 KiB request ceiling remains unchanged.
+2. `ProcessManager` accepts workspace read grants only on the isolated path, resolves only exact regular files, rejects duplicates/out-of-workspace/directory/count violations and keeps fixed-tool launches grant-free.
+3. MCP never accepts a caller-supplied grant list: candidates are derived from the active server-owned task lease only when both the current session grant and lease carry `FileRead`; only exact `WorkspacePrefix` scopes are selected and `WorkspaceAll` is ignored.
+4. Windows containment is handle-based: the workspace root and target are opened, final reparses are rejected, final paths are resolved with `GetFinalPathNameByHandleW`, target containment beneath the opened root is verified, then the DACL is modified on that same target handle.
+5. Grant guards remain live for the isolated child lifetime and revoke Package-SID ACEs before the ephemeral AppContainer profile is destroyed.
+6. Current operator process authority still provisions only `ProcessRun + ProcessExecutable`; no process lease receives `FileRead` workspace scopes yet, so public high-risk execution remains fail-closed and no new public authority is enabled.
+
+Gate passed: exact PR CI #336, SHA-guarded squash merge, and post-merge `main` CI #337.
+
 #### Later Phase 3C gates
 
-Wire the exact-file grant lifecycle/selection into the now-wired helper/AppContainer runtime and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Add explicit operator-owned process read-grant provisioning and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then evaluate broader workspace coverage/write authority and prove truthful network semantics plus broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
