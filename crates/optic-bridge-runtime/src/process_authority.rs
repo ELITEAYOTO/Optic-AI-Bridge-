@@ -1,4 +1,4 @@
-use std::{io, path::Path};
+use std::{fs, io, path::Path};
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -36,21 +36,26 @@ pub struct ProcessExecutableIdentity {
 }
 
 impl ProcessExecutableIdentity {
-    pub fn capture(
-        processes: &ProcessManager,
-        executable: &str,
-    ) -> Result<Self, ProcessAuthorityError> {
-        Self::capture_with_limit(processes, executable, MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES)
+    pub fn capture(executable: &str) -> Result<Self, ProcessAuthorityError> {
+        Self::capture_with_limit(executable, MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES)
     }
 
     fn capture_with_limit(
-        processes: &ProcessManager,
         executable: &str,
         max_bytes: u64,
     ) -> Result<Self, ProcessAuthorityError> {
-        let canonical_path = processes
-            .canonicalize_executable(executable)
-            .map_err(ProcessAuthorityError::ExecutableObservation)?;
+        let path = Path::new(executable);
+        if !path.is_absolute() {
+            return Err(ProcessAuthorityError::InvalidExecutablePath);
+        }
+        let canonical = fs::canonicalize(path)?;
+        if !canonical.is_file() {
+            return Err(ProcessAuthorityError::InvalidExecutablePath);
+        }
+        let canonical_path = canonical
+            .to_str()
+            .map(str::to_owned)
+            .ok_or(ProcessAuthorityError::NonUtf8ExecutablePath)?;
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
         Ok(Self {
@@ -96,13 +101,12 @@ pub struct ProcessAuthority {
 
 impl ProcessAuthority {
     pub fn capture(
-        processes: &ProcessManager,
         lease_id: TaskLeaseId,
         executable: &str,
     ) -> Result<Self, ProcessAuthorityError> {
         Ok(Self {
             lease_id,
-            identity: ProcessExecutableIdentity::capture(processes, executable)?,
+            identity: ProcessExecutableIdentity::capture(executable)?,
         })
     }
 
@@ -144,6 +148,10 @@ fn open_identity_pin(path: &Path) -> io::Result<ExecutablePin> {
 
 #[derive(Debug, Error)]
 pub enum ProcessAuthorityError {
+    #[error("process executable path must be an absolute regular file")]
+    InvalidExecutablePath,
+    #[error("process executable canonical path is not valid UTF-8")]
+    NonUtf8ExecutablePath,
     #[error("process executable could not be observed for identity: {0}")]
     ExecutableObservation(ProcessError),
     #[error("process runtime rejected verified executable authority: {0}")]
@@ -184,7 +192,7 @@ mod tests {
         let manager =
             ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
-        let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
+        let identity = ProcessExecutableIdentity::capture_with_limit(&executable, 1024)
             .expect("capture identity");
 
         fs::write(&executable, b"second-tool").expect("replace fixture contents");
@@ -204,7 +212,7 @@ mod tests {
         let manager =
             ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
-        let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
+        let identity = ProcessExecutableIdentity::capture_with_limit(&executable, 1024)
             .expect("capture identity");
 
         let pin = identity
@@ -220,11 +228,9 @@ mod tests {
         let root = workspace("bounded");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"too-large").expect("write fixture");
-        let manager =
-            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         assert!(matches!(
-            ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 4),
+            ProcessExecutableIdentity::capture_with_limit(&executable, 4),
             Err(ProcessAuthorityError::IdentityRead(
                 ContentVersionReadError::LimitExceeded
             ))
