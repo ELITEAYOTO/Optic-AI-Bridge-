@@ -3,10 +3,8 @@ use std::{fs, io, path::Path};
 #[cfg(not(windows))]
 use std::fs::File;
 
-use optic_bridge_core::{ContentVersion, ContentVersionReadError, JobId, TaskLeaseId};
+use optic_bridge_core::{ContentVersion, ContentVersionReadError, TaskLeaseId};
 use thiserror::Error;
-
-use crate::{ProcessError, ProcessManager, ProcessStartSpec};
 
 #[cfg(windows)]
 use optic_bridge_windows::{PinnedExecutableFile, open_pinned_executable};
@@ -37,31 +35,33 @@ pub struct ProcessExecutableIdentity {
 
 impl ProcessExecutableIdentity {
     pub fn capture(executable: &str) -> Result<Self, ProcessAuthorityError> {
-        Self::capture_with_limit(executable, MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES)
+        let (identity, _pin) =
+            Self::capture_with_pin(executable, MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES)?;
+        Ok(identity)
     }
 
     fn capture_with_limit(
         executable: &str,
         max_bytes: u64,
     ) -> Result<Self, ProcessAuthorityError> {
-        let path = Path::new(executable);
-        if !path.is_absolute() {
-            return Err(ProcessAuthorityError::InvalidExecutablePath);
-        }
-        let canonical = fs::canonicalize(path)?;
-        if !canonical.is_file() {
-            return Err(ProcessAuthorityError::InvalidExecutablePath);
-        }
-        let canonical_path = canonical
-            .to_str()
-            .map(str::to_owned)
-            .ok_or(ProcessAuthorityError::NonUtf8ExecutablePath)?;
+        let (identity, _pin) = Self::capture_with_pin(executable, max_bytes)?;
+        Ok(identity)
+    }
+
+    fn capture_with_pin(
+        executable: &str,
+        max_bytes: u64,
+    ) -> Result<(Self, ExecutablePin), ProcessAuthorityError> {
+        let canonical_path = canonical_executable(executable)?;
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
-        Ok(Self {
-            canonical_path,
-            version,
-        })
+        Ok((
+            Self {
+                canonical_path,
+                version,
+            },
+            pin,
+        ))
     }
 
     #[must_use]
@@ -69,14 +69,8 @@ impl ProcessExecutableIdentity {
         &self.canonical_path
     }
 
-    fn verify_and_pin(
-        &self,
-        processes: &ProcessManager,
-        executable: &str,
-    ) -> Result<ExecutablePin, ProcessAuthorityError> {
-        let canonical = processes
-            .canonicalize_executable(executable)
-            .map_err(ProcessAuthorityError::ExecutableObservation)?;
+    pub fn verify(&self) -> Result<(), ProcessAuthorityError> {
+        let canonical = canonical_executable(&self.canonical_path)?;
         if canonical != self.canonical_path {
             return Err(ProcessAuthorityError::ExecutablePathChanged);
         }
@@ -89,24 +83,27 @@ impl ProcessExecutableIdentity {
         if observed != self.version {
             return Err(ProcessAuthorityError::ExecutableIdentityChanged);
         }
-        Ok(pin)
+        Ok(())
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ProcessAuthority {
     lease_id: TaskLeaseId,
     identity: ProcessExecutableIdentity,
+    _pin: ExecutablePin,
 }
 
 impl ProcessAuthority {
-    pub fn capture(
-        lease_id: TaskLeaseId,
-        executable: &str,
-    ) -> Result<Self, ProcessAuthorityError> {
+    pub fn capture(lease_id: TaskLeaseId, executable: &str) -> Result<Self, ProcessAuthorityError> {
+        let (identity, pin) = ProcessExecutableIdentity::capture_with_pin(
+            executable,
+            MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
+        )?;
         Ok(Self {
             lease_id,
-            identity: ProcessExecutableIdentity::capture(executable)?,
+            identity,
+            _pin: pin,
         })
     }
 
@@ -120,18 +117,24 @@ impl ProcessAuthority {
         self.identity.canonical_path()
     }
 
-    /// Verify the executable identity and keep its pin alive through process creation.
-    pub fn start(
-        &self,
-        processes: &ProcessManager,
-        mut spec: ProcessStartSpec,
-    ) -> Result<JobId, ProcessAuthorityError> {
-        let pin = self.identity.verify_and_pin(processes, &spec.executable)?;
-        spec.executable = self.identity.canonical_path.clone();
-        let result = processes.start(spec);
-        drop(pin);
-        result.map_err(ProcessAuthorityError::Process)
+    pub fn verify(&self) -> Result<(), ProcessAuthorityError> {
+        self.identity.verify()
     }
+}
+
+fn canonical_executable(executable: &str) -> Result<String, ProcessAuthorityError> {
+    let path = Path::new(executable);
+    if !path.is_absolute() {
+        return Err(ProcessAuthorityError::InvalidExecutablePath);
+    }
+    let canonical = fs::canonicalize(path)?;
+    if !canonical.is_file() {
+        return Err(ProcessAuthorityError::InvalidExecutablePath);
+    }
+    canonical
+        .to_str()
+        .map(str::to_owned)
+        .ok_or(ProcessAuthorityError::NonUtf8ExecutablePath)
 }
 
 #[cfg(windows)]
@@ -152,10 +155,6 @@ pub enum ProcessAuthorityError {
     InvalidExecutablePath,
     #[error("process executable canonical path is not valid UTF-8")]
     NonUtf8ExecutablePath,
-    #[error("process executable could not be observed for identity: {0}")]
-    ExecutableObservation(ProcessError),
-    #[error("process runtime rejected verified executable authority: {0}")]
-    Process(ProcessError),
     #[error("process executable identity observation failed: {0}")]
     IdentityRead(#[from] ContentVersionReadError),
     #[error("process executable identity could not be opened: {0}")]
@@ -169,8 +168,6 @@ pub enum ProcessAuthorityError {
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
-
-    use optic_bridge_core::HardLimits;
 
     use super::*;
 
@@ -189,15 +186,13 @@ mod tests {
         let root = workspace("change");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"first-tool").expect("write fixture");
-        let manager =
-            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         let identity = ProcessExecutableIdentity::capture_with_limit(&executable, 1024)
             .expect("capture identity");
 
         fs::write(&executable, b"second-tool").expect("replace fixture contents");
         assert!(matches!(
-            identity.verify_and_pin(&manager, &executable),
+            identity.verify(),
             Err(ProcessAuthorityError::ExecutableIdentityChanged)
         ));
 
@@ -209,17 +204,11 @@ mod tests {
         let root = workspace("stable");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"stable-tool").expect("write fixture");
-        let manager =
-            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         let identity = ProcessExecutableIdentity::capture_with_limit(&executable, 1024)
             .expect("capture identity");
 
-        let pin = identity
-            .verify_and_pin(&manager, &executable)
-            .expect("verify unchanged identity");
-        drop(pin);
-
+        identity.verify().expect("verify unchanged identity");
         fs::remove_dir_all(root).expect("remove fixture root");
     }
 
@@ -235,6 +224,23 @@ mod tests {
                 ContentVersionReadError::LimitExceeded
             ))
         ));
+        fs::remove_dir_all(root).expect("remove fixture root");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn authority_pin_prevents_same_path_rewrite_while_lease_is_alive() {
+        let root = workspace("lease-pin");
+        let executable = root.join("tool.exe");
+        fs::write(&executable, b"pinned-tool").expect("write fixture");
+        let lease_id = TaskLeaseId::generate().expect("lease id");
+        let authority = ProcessAuthority::capture(lease_id, &executable.to_string_lossy())
+            .expect("capture authority");
+
+        assert!(fs::write(&executable, b"replacement").is_err());
+        authority.verify().expect("pinned identity remains valid");
+        drop(authority);
+        fs::write(&executable, b"replacement").expect("rewrite after authority drop");
         fs::remove_dir_all(root).expect("remove fixture root");
     }
 }
