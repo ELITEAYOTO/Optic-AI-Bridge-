@@ -1,14 +1,17 @@
-use std::{fs::File, io, path::Path};
+use std::{io, path::Path};
 
-use optic_bridge_core::{
-    ContentVersion, ContentVersionReadError, JobId, TaskLeaseId,
-};
+#[cfg(not(windows))]
+use std::fs::File;
+
+use optic_bridge_core::{ContentVersion, ContentVersionReadError, JobId, TaskLeaseId};
 use thiserror::Error;
 
 use crate::{ProcessError, ProcessManager, ProcessStartSpec};
 
 #[cfg(windows)]
 use optic_bridge_windows::{PinnedExecutableFile, open_pinned_executable};
+
+pub const MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES: u64 = 512 * 1024 * 1024;
 
 #[cfg(windows)]
 type ExecutablePin = PinnedExecutableFile;
@@ -30,11 +33,17 @@ impl ExecutablePin {
 pub struct ProcessExecutableIdentity {
     canonical_path: String,
     version: ContentVersion,
-    max_bytes: u64,
 }
 
 impl ProcessExecutableIdentity {
     pub fn capture(
+        processes: &ProcessManager,
+        executable: &str,
+    ) -> Result<Self, ProcessAuthorityError> {
+        Self::capture_with_limit(processes, executable, MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES)
+    }
+
+    fn capture_with_limit(
         processes: &ProcessManager,
         executable: &str,
         max_bytes: u64,
@@ -45,7 +54,6 @@ impl ProcessExecutableIdentity {
         Ok(Self {
             canonical_path,
             version,
-            max_bytes,
         })
     }
 
@@ -65,7 +73,10 @@ impl ProcessExecutableIdentity {
         }
 
         let mut pin = open_identity_pin(Path::new(&canonical))?;
-        let observed = ContentVersion::from_reader_bounded(pin.file_mut(), self.max_bytes)?;
+        let observed = ContentVersion::from_reader_bounded(
+            pin.file_mut(),
+            MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
+        )?;
         if observed != self.version {
             return Err(ProcessAuthorityError::ExecutableIdentityChanged);
         }
@@ -84,11 +95,10 @@ impl ProcessAuthority {
         processes: &ProcessManager,
         lease_id: TaskLeaseId,
         executable: &str,
-        max_bytes: u64,
     ) -> Result<Self, ProcessAuthorityError> {
         Ok(Self {
             lease_id,
-            identity: ProcessExecutableIdentity::capture(processes, executable, max_bytes)?,
+            identity: ProcessExecutableIdentity::capture(processes, executable)?,
         })
     }
 
@@ -146,7 +156,7 @@ pub enum ProcessAuthorityError {
 mod tests {
     use std::{env, fs};
 
-    use optic_bridge_core::{HardLimits, SessionHandle};
+    use optic_bridge_core::HardLimits;
 
     use super::*;
 
@@ -168,7 +178,7 @@ mod tests {
         let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
             .expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
-        let identity = ProcessExecutableIdentity::capture(&manager, &executable, 1024)
+        let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
             .expect("capture identity");
 
         fs::write(&executable, b"second-tool").expect("replace fixture contents");
@@ -188,7 +198,7 @@ mod tests {
         let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
             .expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
-        let identity = ProcessExecutableIdentity::capture(&manager, &executable, 1024)
+        let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
             .expect("capture identity");
 
         let pin = identity
@@ -200,22 +210,19 @@ mod tests {
     }
 
     #[test]
-    fn authority_keeps_lease_id_separate_from_executable_identity() {
-        let root = workspace("authority");
+    fn identity_observation_is_bounded() {
+        let root = workspace("bounded");
         let executable = root.join("tool.bin");
-        fs::write(&executable, b"stable-tool").expect("write fixture");
+        fs::write(&executable, b"too-large").expect("write fixture");
         let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
             .expect("process manager");
-        let lease_id = TaskLeaseId::generate().expect("lease id");
-        let authority = ProcessAuthority::capture(
-            &manager,
-            lease_id.clone(),
-            &executable.to_string_lossy(),
-            1024,
-        )
-        .expect("capture authority");
-        assert_eq!(authority.lease_id(), &lease_id);
-        let _session = SessionHandle::generate().expect("session handle");
+        let executable = executable.to_string_lossy().into_owned();
+        assert!(matches!(
+            ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 4),
+            Err(ProcessAuthorityError::IdentityRead(
+                ContentVersionReadError::LimitExceeded
+            ))
+        ));
         fs::remove_dir_all(root).expect("remove fixture root");
     }
 }
