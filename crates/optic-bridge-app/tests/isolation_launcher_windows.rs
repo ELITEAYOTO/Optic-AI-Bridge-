@@ -195,22 +195,21 @@ fn launcher_preserves_ungranted_file_denial() {
 }
 
 #[test]
-fn launcher_exact_file_grant_supports_command_interpreter_read() {
-    let granted = unique_temp_path("interpreter-granted.txt");
-    let ungranted = unique_temp_path("interpreter-ungranted.txt");
-    fs::write(&granted, b"optic interpreter granted sentinel").expect("write granted sentinel");
-    fs::write(&ungranted, b"optic interpreter ungranted sentinel")
-        .expect("write ungranted sentinel");
+fn launcher_exact_file_grant_allows_only_granted_file() {
+    let granted = unique_temp_path("granted.txt");
+    let ungranted = unique_temp_path("ungranted.txt");
+    fs::write(&granted, b"optic exact granted sentinel").expect("write granted sentinel");
+    fs::write(&ungranted, b"optic exact ungranted sentinel").expect("write ungranted sentinel");
     let _granted_cleanup = Cleanup(granted.clone());
     let _ungranted_cleanup = Cleanup(ungranted.clone());
 
-    let cmd = system32_executable("cmd.exe");
-    let cwd = cmd.parent().expect("System32 parent").to_path_buf();
+    let findstr = system32_executable("findstr.exe");
+    let cwd = findstr.parent().expect("System32 parent").to_path_buf();
     let workspace_root = granted.parent().expect("temporary workspace root");
-    let granted_command = format!("type {}", granted.to_string_lossy());
+    let granted_arg = granted.to_string_lossy().into_owned();
     let output = run_launcher(launcher_request_with_read_files(
-        &cmd,
-        &["/d", "/c", &granted_command],
+        &findstr,
+        &["/c:optic exact granted sentinel", &granted_arg],
         &cwd,
         &[granted.as_path()],
         workspace_root,
@@ -218,25 +217,25 @@ fn launcher_exact_file_grant_supports_command_interpreter_read() {
 
     assert!(
         output.status.success(),
-        "command interpreter could not read its exact grant: {}",
+        "helper could not read its exact granted file: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("optic interpreter granted sentinel"),
-        "granted exact file was not readable through the isolated interpreter"
+        String::from_utf8_lossy(&output.stdout).contains("optic exact granted sentinel"),
+        "granted exact file was not readable through the real helper"
     );
 
-    let ungranted_command = format!("type {}", ungranted.to_string_lossy());
+    let ungranted_arg = ungranted.to_string_lossy().into_owned();
     let denied = run_launcher(launcher_request_with_read_files(
-        &cmd,
-        &["/d", "/c", &ungranted_command],
+        &findstr,
+        &["/c:optic exact ungranted sentinel", &ungranted_arg],
         &cwd,
         &[granted.as_path()],
         workspace_root,
     ));
     assert!(
         !denied.status.success(),
-        "isolated interpreter unexpectedly read an ungranted sibling file"
+        "real helper unexpectedly read an ungranted sibling file"
     );
     assert_ne!(
         denied.status.code(),
