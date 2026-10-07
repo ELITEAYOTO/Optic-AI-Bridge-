@@ -127,9 +127,12 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
         Effect::GitIntegrationObserve | Effect::GitIntegrate { .. } => {
             lease.has_scope(&LeaseScope::Repository)
         }
-        Effect::ProcessRun { executable, .. } => {
-            lease.has_scope(&LeaseScope::ProcessExecutable(executable.clone()))
-        }
+        Effect::ProcessRun {
+            executable, class, ..
+        } => lease.has_scope(&LeaseScope::ProcessExecutable {
+            executable: executable.clone(),
+            class: *class,
+        }),
         Effect::NetworkAccess { endpoint } => {
             lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
         }
@@ -154,8 +157,8 @@ mod tests {
 
     use optic_bridge_core::{
         ActionEnvelope, ActionId, Capability, ContentVersion, Effect, ExpectedState, GitObjectId,
-        LeaseScope, MonotonicTime, NetworkAccess, PrincipalId, ProjectId, ResourceBudget,
-        SessionGrant, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
+        LeaseScope, MonotonicTime, NetworkAccess, PrincipalId, ProcessExecutionClass, ProjectId,
+        ResourceBudget, SessionGrant, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
     };
 
     use super::*;
@@ -447,13 +450,17 @@ mod tests {
         let mut lease = lease(
             &session,
             &[Capability::ProcessRun],
-            &[LeaseScope::ProcessExecutable("cargo".to_owned())],
+            &[LeaseScope::ProcessExecutable {
+                executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
+            }],
         );
         lease.resource_ceiling.output_bytes = 1024;
         let action = envelope(
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
                 network: NetworkAccess::Denied,
             },
             Some(&lease),
@@ -466,13 +473,43 @@ mod tests {
     }
 
     #[test]
+    fn process_execution_class_must_match_exact_lease_scope() {
+        let session = session(&[Capability::ProcessRun]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[LeaseScope::ProcessExecutable {
+                executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
+            }],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+                network: NetworkAccess::Denied,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
     fn process_network_requires_network_capability_in_lease() {
         let session = session(&[Capability::ProcessRun, Capability::NetworkAccess]);
         let lease = lease(
             &session,
             &[Capability::ProcessRun],
             &[
-                LeaseScope::ProcessExecutable("cargo".to_owned()),
+                LeaseScope::ProcessExecutable {
+                    executable: "cargo".to_owned(),
+                    class: ProcessExecutionClass::RepositoryCode,
+                },
                 LeaseScope::NetworkAny,
             ],
         );
@@ -480,6 +517,7 @@ mod tests {
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),
@@ -497,12 +535,16 @@ mod tests {
         let lease = lease(
             &session,
             &[Capability::ProcessRun, Capability::NetworkAccess],
-            &[LeaseScope::ProcessExecutable("cargo".to_owned())],
+            &[LeaseScope::ProcessExecutable {
+                executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
+            }],
         );
         let action = envelope(
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),
@@ -521,7 +563,10 @@ mod tests {
             &session,
             &[Capability::ProcessRun, Capability::NetworkAccess],
             &[
-                LeaseScope::ProcessExecutable("cargo".to_owned()),
+                LeaseScope::ProcessExecutable {
+                    executable: "cargo".to_owned(),
+                    class: ProcessExecutionClass::RepositoryCode,
+                },
                 LeaseScope::NetworkAny,
             ],
         );
@@ -529,6 +574,7 @@ mod tests {
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),

@@ -3,7 +3,9 @@ use std::{fs, io, path::Path};
 #[cfg(not(windows))]
 use std::fs::File;
 
-use optic_bridge_core::{ContentVersion, ContentVersionReadError, TaskLeaseId};
+use optic_bridge_core::{
+    ContentVersion, ContentVersionReadError, ProcessExecutionClass, TaskLeaseId,
+};
 use thiserror::Error;
 
 #[cfg(windows)]
@@ -88,18 +90,24 @@ impl ProcessExecutableIdentity {
 #[derive(Debug)]
 pub struct ProcessAuthority {
     lease_id: TaskLeaseId,
+    class: ProcessExecutionClass,
     identity: ProcessExecutableIdentity,
     _pin: ExecutablePin,
 }
 
 impl ProcessAuthority {
-    pub fn capture(lease_id: TaskLeaseId, executable: &str) -> Result<Self, ProcessAuthorityError> {
+    pub fn capture(
+        lease_id: TaskLeaseId,
+        executable: &str,
+        class: ProcessExecutionClass,
+    ) -> Result<Self, ProcessAuthorityError> {
         let (identity, pin) = ProcessExecutableIdentity::capture_with_pin(
             executable,
             MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
         )?;
         Ok(Self {
             lease_id,
+            class,
             identity,
             _pin: pin,
         })
@@ -113,6 +121,11 @@ impl ProcessAuthority {
     #[must_use]
     pub fn canonical_path(&self) -> &str {
         self.identity.canonical_path()
+    }
+
+    #[must_use]
+    pub const fn execution_class(&self) -> ProcessExecutionClass {
+        self.class
     }
 
     pub fn verify(&self) -> Result<(), ProcessAuthorityError> {
@@ -232,8 +245,12 @@ mod tests {
         let executable = root.join("tool.exe");
         fs::write(&executable, b"pinned-tool").expect("write fixture");
         let lease_id = TaskLeaseId::generate().expect("lease id");
-        let authority = ProcessAuthority::capture(lease_id, &executable.to_string_lossy())
-            .expect("capture authority");
+        let authority = ProcessAuthority::capture(
+            lease_id,
+            &executable.to_string_lossy(),
+            ProcessExecutionClass::FixedTool,
+        )
+        .expect("capture authority");
 
         assert!(fs::write(&executable, b"replacement").is_err());
         authority.verify().expect("pinned identity remains valid");
@@ -247,8 +264,12 @@ mod tests {
     fn authority_pin_still_allows_executable_launch() {
         let executable = env::current_exe().expect("current test executable");
         let lease_id = TaskLeaseId::generate().expect("lease id");
-        let authority = ProcessAuthority::capture(lease_id, &executable.to_string_lossy())
-            .expect("capture executable authority");
+        let authority = ProcessAuthority::capture(
+            lease_id,
+            &executable.to_string_lossy(),
+            ProcessExecutionClass::FixedTool,
+        )
+        .expect("capture executable authority");
 
         let status = std::process::Command::new(&executable)
             .arg("--list")

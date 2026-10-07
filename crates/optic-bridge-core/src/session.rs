@@ -52,12 +52,22 @@ impl ProjectId {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ProcessExecutionClass {
+    FixedTool,
+    Interpreter,
+    RepositoryCode,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LeaseScope {
     WorkspaceAll,
     WorkspacePrefix(WorkspacePath),
     Repository,
-    ProcessExecutable(String),
+    ProcessExecutable {
+        executable: String,
+        class: ProcessExecutionClass,
+    },
     NetworkAny,
     NetworkEndpoint(String),
 }
@@ -109,6 +119,17 @@ impl TaskLease {
     #[must_use]
     pub fn has_scope(&self, scope: &LeaseScope) -> bool {
         self.scopes.contains(scope)
+    }
+
+    #[must_use]
+    pub fn process_execution_class(&self, executable: &str) -> Option<ProcessExecutionClass> {
+        self.scopes.iter().find_map(|scope| match scope {
+            LeaseScope::ProcessExecutable {
+                executable: scoped,
+                class,
+            } if scoped == executable => Some(*class),
+            _ => None,
+        })
     }
 }
 
