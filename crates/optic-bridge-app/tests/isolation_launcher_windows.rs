@@ -29,13 +29,16 @@ fn run_launcher(request: Value) -> Output {
     run_launcher_command(request, false)
 }
 
-fn run_launcher_command(request: Value, system_root_only: bool) -> Output {
+fn run_launcher_command(request: Value, minimal_windows_environment: bool) -> Output {
     let mut command = Command::new(launcher_path());
-    if system_root_only {
-        command.env_clear().env(
-            "SystemRoot",
-            std::env::var_os("SystemRoot").expect("SystemRoot"),
-        );
+    if minimal_windows_environment {
+        command.env_clear();
+        for name in ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"] {
+            command.env(
+                name,
+                std::env::var_os(name).unwrap_or_else(|| panic!("{name}")),
+            );
+        }
     }
     let mut child = command
         .stdin(Stdio::piped())
@@ -64,13 +67,13 @@ fn launcher_request(executable: &Path, args: &[&str], cwd: &Path) -> Value {
 }
 
 #[test]
-fn launcher_runs_with_systemroot_only_environment() {
+fn launcher_runs_with_minimal_windows_environment() {
     let cmd = system32_executable("cmd.exe");
     let cwd = cmd.parent().expect("System32 parent").to_path_buf();
     let output = run_launcher_command(
         launcher_request(
             &cmd,
-            &["/d", "/s", "/c", "echo optic-systemroot-baseline"],
+            &["/d", "/s", "/c", "echo optic-minimal-windows-baseline"],
             &cwd,
         ),
         true,
@@ -78,12 +81,12 @@ fn launcher_runs_with_systemroot_only_environment() {
 
     assert!(
         output.status.success(),
-        "launcher failed with SystemRoot-only environment: {}",
+        "launcher failed with minimal Windows environment: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("optic-systemroot-baseline"),
-        "AppContainer stdout was not forwarded under SystemRoot-only environment"
+        String::from_utf8_lossy(&output.stdout).contains("optic-minimal-windows-baseline"),
+        "AppContainer stdout was not forwarded under minimal Windows environment"
     );
 }
 
