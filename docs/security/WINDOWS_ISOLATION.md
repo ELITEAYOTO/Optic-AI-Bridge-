@@ -90,9 +90,22 @@ The proven helper is now wired into the internal Windows runtime without changin
 
 This is still **not public high-risk execution**: `optic-bridge-policy` continues to reject `Interpreter` / `RepositoryCode`, no workspace ACL/capability grant exists, and no network capability or containment claim is added.
 
+## Phase 3C3C2C2B1 exact-file read grant foundation
+
+Windows now has a deliberately narrow filesystem grant primitive for the AppContainer profile:
+
+- only `create_ephemeral()` profiles, named from fresh 128-bit OS randomness, may mint external ACL grants;
+- the trustee is the Package SID already present in the AppContainer token, not a new capability/network SID;
+- one exact file is opened handle-first with read + `WRITE_DAC`; final reparse points and null/absent DACLs are refused;
+- one non-inheritable `FILE_GENERIC_READ` ACE is added, with explicit revoke and best-effort Drop cleanup;
+- the handle remains live for the grant lifetime, and the API exposes no directory/recursive or write grant;
+- native CI proves denial before grant, read success only for the granted file, denial of a second file, append denial, explicit revoke, Drop cleanup, and refusal of predictably named profiles.
+
+This is still not public high-risk execution: the helper/runtime does not yet select grants and policy/MCP continue to reject `Interpreter` / `RepositoryCode`. Abrupt-crash stale ACEs are deliberately non-reusable by later Optic profiles because later profiles receive a fresh Package SID.
+
 ## Hardened profile
 
-Current direction: define explicit workspace grants on the now-wired helper/AppContainer runtime and validate representative Rust/Node/Java toolchains before any selected high-risk policy re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: wire exact-file grant lifecycle/selection into the now-wired helper/AppContainer runtime and validate representative Rust/Node/Java toolchains before any selected high-risk policy re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -108,4 +121,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher; Phase 3C3C2C2A wires that helper into the internal Windows `ProcessManager` path with executable pinning and +1 kernel-process accounting. The helper remains non-distributed and policy/MCP still deny high-risk classes. Remaining work includes explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher; Phase 3C3C2C2A wires that helper into the internal Windows `ProcessManager` path with executable pinning and +1 kernel-process accounting. The helper remains non-distributed and policy/MCP still deny high-risk classes. Remaining work includes helper/runtime grant selection and lifecycle, broader workspace coverage beyond exact read-only files, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
