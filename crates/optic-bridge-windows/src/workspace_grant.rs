@@ -218,8 +218,6 @@ mod tests {
 
     use crate::{AppContainerProfile, AppContainerStdio, spawn_appcontainer_suspended};
 
-    use super::*;
-
     static SEQUENCE: AtomicU64 = AtomicU64::new(1);
     const WAIT_MS: u32 = 10_000;
 
