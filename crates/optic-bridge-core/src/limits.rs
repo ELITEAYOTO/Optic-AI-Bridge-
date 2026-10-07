@@ -53,6 +53,9 @@ pub struct HardLimits {
     pub max_process_records: u32,
     pub max_process_records_per_session: u32,
     pub max_process_read_bytes: u64,
+    pub max_process_cpu_percent_per_job: u32,
+    pub max_active_process_cpu_percent: u32,
+    pub max_active_process_cpu_percent_per_session: u32,
     pub max_process_budget: ResourceBudget,
 }
 
@@ -81,6 +84,9 @@ impl Default for HardLimits {
             max_process_records: 64,
             max_process_records_per_session: 32,
             max_process_read_bytes: 64 * 1024,
+            max_process_cpu_percent_per_job: 25,
+            max_active_process_cpu_percent: 75,
+            max_active_process_cpu_percent_per_session: 50,
             max_process_budget: ResourceBudget {
                 timeout_ms: 60 * 60 * 1000,
                 output_bytes: 8 * 1024 * 1024,
@@ -115,6 +121,9 @@ impl HardLimits {
             || self.max_process_records == 0
             || self.max_process_records_per_session == 0
             || self.max_process_read_bytes == 0
+            || self.max_process_cpu_percent_per_job == 0
+            || self.max_active_process_cpu_percent == 0
+            || self.max_active_process_cpu_percent_per_session == 0
         {
             return Err(LimitError::ZeroIsNotUnlimited);
         }
@@ -125,6 +134,13 @@ impl HardLimits {
             || self.max_process_records_per_session < self.max_active_process_jobs_per_session
             || self.max_active_output_ram_bytes_per_session > self.max_active_output_ram_bytes
             || self.max_process_budget.output_bytes > self.max_active_output_ram_bytes_per_session
+            || self.max_process_cpu_percent_per_job > 100
+            || self.max_active_process_cpu_percent > 100
+            || self.max_active_process_cpu_percent_per_session > 100
+            || self.max_process_cpu_percent_per_job > self.max_active_process_cpu_percent
+            || self.max_process_cpu_percent_per_job
+                > self.max_active_process_cpu_percent_per_session
+            || self.max_active_process_cpu_percent_per_session > self.max_active_process_cpu_percent
         {
             return Err(LimitError::InvalidRelationship);
         }
@@ -321,5 +337,35 @@ mod tests {
                 .expect_err("per-job output budget must fit the session ceiling"),
             LimitError::InvalidRelationship
         );
+    }
+
+    #[test]
+    fn process_cpu_limits_are_bounded_and_leave_default_headroom() {
+        let defaults = HardLimits::default();
+        assert_eq!(defaults.max_process_cpu_percent_per_job, 25);
+        assert_eq!(defaults.max_active_process_cpu_percent, 75);
+        assert_eq!(defaults.max_active_process_cpu_percent_per_session, 50);
+        assert!(defaults.validate_nonzero().is_ok());
+
+        for limits in [
+            HardLimits {
+                max_process_cpu_percent_per_job: 0,
+                ..defaults
+            },
+            HardLimits {
+                max_active_process_cpu_percent: 101,
+                ..defaults
+            },
+            HardLimits {
+                max_process_cpu_percent_per_job: 60,
+                ..defaults
+            },
+            HardLimits {
+                max_active_process_cpu_percent_per_session: 80,
+                ..defaults
+            },
+        ] {
+            assert!(limits.validate_nonzero().is_err());
+        }
     }
 }

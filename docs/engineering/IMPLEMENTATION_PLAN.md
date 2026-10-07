@@ -451,9 +451,22 @@ Status: **merged and post-merge validated** in PR #55 (`bacac76`), exact green h
 
 Gate passed: exact-head Ubuntu/Windows/dependency-policy CI, exact-head merge, and post-merge `main` CI.
 
+#### Phase 3C2 - bounded process CPU governor
+
+Status: **implemented in current PR #57**. Exact code/test head `480de5c` passed CI #269 on Ubuntu, Windows and dependency policy, including native Windows hard-cap verification and the real MCP smoke; final documentation-head CI/merge remains pending.
+
+1. `HardLimits` owns non-zero CPU ceilings with current defaults of 25% per active job, 75% aggregate Optic process CPU and 50% per session.
+2. `ProcessManager` admits CPU reservation atomically with existing process/output capacity; one session cannot consume the entire Optic CPU reservation.
+3. `TerminationUncertain` keeps its CPU reservation because process ownership was not proven released; retained proven-terminal history releases CPU reservation.
+4. Native Windows Job Objects configure `JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP` before the suspended root process is assigned/resumed. Failure to configure the cap fails closed.
+5. The MCP caller has no CPU-rate field. CPU governance is application/operator-owned rather than caller-selected.
+6. The 75% aggregate value is an Optic admission ceiling, not whole-machine utilization telemetry or a guarantee against unrelated host load.
+
+Final gate: documentation-head Ubuntu/Windows/dependency-policy CI, exact-head merge, then post-merge `main` CI.
+
 #### Later Phase 3C gates
 
-Still prioritize machine ResourceGovernor/CPU/headroom, ToolProfile/ToolIdentity, truthful network semantics, environment/repository-code execution classification and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Still prioritize ToolProfile/ToolIdentity, truthful network semantics, environment/repository-code execution classification and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

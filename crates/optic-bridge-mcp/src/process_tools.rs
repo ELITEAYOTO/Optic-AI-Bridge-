@@ -328,6 +328,12 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::OutputMemoryLimitExceededForSession => {
             ErrorData::invalid_params("optic.process_session_output_memory_limit", None)
         }
+        ProcessError::CpuCapacityExceeded => {
+            ErrorData::internal_error("optic.process_cpu_capacity_exceeded", None)
+        }
+        ProcessError::CpuCapacityExceededForSession => {
+            ErrorData::internal_error("optic.process_session_cpu_capacity_exceeded", None)
+        }
         ProcessError::ReadLimitExceeded => {
             ErrorData::invalid_params("optic.process_read_limit_exceeded", None)
         }

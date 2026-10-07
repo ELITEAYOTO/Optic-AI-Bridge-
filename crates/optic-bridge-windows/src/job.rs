@@ -20,10 +20,12 @@ use windows::{
                 Thread32Next,
             },
             JobObjects::{
-                AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+                AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+                JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
                 JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-                JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+                JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
@@ -46,14 +48,19 @@ const JOB_EMPTY_POLL: Duration = Duration::from_millis(10);
 pub struct LimitedJobObject {
     active_process_limit: u32,
     job_memory_limit: usize,
+    cpu_percent: u32,
 }
 
 impl LimitedJobObject {
-    pub fn new(active_process_limit: u32, job_memory_limit: u64) -> Result<Self> {
-        if active_process_limit == 0 || job_memory_limit == 0 {
+    pub fn new(active_process_limit: u32, job_memory_limit: u64, cpu_percent: u32) -> Result<Self> {
+        if active_process_limit == 0
+            || job_memory_limit == 0
+            || cpu_percent == 0
+            || cpu_percent > 100
+        {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
-                "Windows Job Object limits must be non-zero",
+                "Windows Job Object limits must be non-zero and CPU percent must be at most 100",
             ));
         }
         let job_memory_limit = usize::try_from(job_memory_limit).map_err(|_| {
@@ -65,6 +72,7 @@ impl LimitedJobObject {
         Ok(Self {
             active_process_limit,
             job_memory_limit,
+            cpu_percent,
         })
     }
 }
@@ -88,7 +96,11 @@ impl CommandWrapper for LimitedJobObject {
         })?;
         let process = HANDLE(process.as_raw_handle());
 
-        let job = match OwnedJob::create(self.active_process_limit, self.job_memory_limit) {
+        let job = match OwnedJob::create(
+            self.active_process_limit,
+            self.job_memory_limit,
+            self.cpu_percent,
+        ) {
             Ok(job) => job,
             Err(error) => {
                 let _ = inner.start_kill();
@@ -128,7 +140,11 @@ unsafe impl Send for OwnedJob {}
 unsafe impl Sync for OwnedJob {}
 
 impl OwnedJob {
-    fn create(active_process_limit: u32, job_memory_limit: usize) -> Result<Self> {
+    fn create(
+        active_process_limit: u32,
+        job_memory_limit: usize,
+        cpu_percent: u32,
+    ) -> Result<Self> {
         // SAFETY: null security attributes/name request a new unnamed Job Object.
         let handle = unsafe { CreateJobObjectW(None, None) }.map_err(Error::other)?;
         let job = Self(handle);
@@ -148,6 +164,23 @@ impl OwnedJob {
                 JobObjectExtendedLimitInformation,
                 (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast::<c_void>(),
                 size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .map_err(Error::other)?;
+
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+            ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            ..Default::default()
+        };
+        cpu.Anonymous.CpuRate = cpu_percent * 100;
+        // SAFETY: the CPU information class matches the concrete structure and exact size;
+        // the hard cap is configured before any child is assigned or resumed.
+        unsafe {
+            SetInformationJobObject(
+                job.0,
+                JobObjectCpuRateControlInformation,
+                (&cpu as *const JOBOBJECT_CPU_RATE_CONTROL_INFORMATION).cast::<c_void>(),
+                size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
             )
         }
         .map_err(Error::other)?;
@@ -327,14 +360,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_zero_limits() {
-        assert!(LimitedJobObject::new(0, 1).is_err());
-        assert!(LimitedJobObject::new(1, 0).is_err());
+    fn rejects_invalid_limits() {
+        assert!(LimitedJobObject::new(0, 1, 25).is_err());
+        assert!(LimitedJobObject::new(1, 0, 25).is_err());
+        assert!(LimitedJobObject::new(1, 1, 0).is_err());
+        assert!(LimitedJobObject::new(1, 1, 101).is_err());
     }
 
     #[test]
     fn accepts_nonzero_limits() {
-        assert!(LimitedJobObject::new(1, 64 * 1024 * 1024).is_ok());
+        assert!(LimitedJobObject::new(1, 64 * 1024 * 1024, 25).is_ok());
+    }
+
+    #[test]
+    fn configures_hard_cpu_cap() {
+        let job = OwnedJob::create(1, 64 * 1024 * 1024, 25).expect("create limited job");
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        // SAFETY: the queried information class matches the concrete buffer and exact size;
+        // `job` owns a valid Job Object handle for the duration of this synchronous call.
+        unsafe {
+            QueryInformationJobObject(
+                Some(job.raw()),
+                JobObjectCpuRateControlInformation,
+                (&mut cpu as *mut JOBOBJECT_CPU_RATE_CONTROL_INFORMATION).cast::<c_void>(),
+                size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .expect("query CPU rate control");
+        assert_eq!(
+            cpu.ControlFlags,
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+        );
+        // SAFETY: `CpuRate` is the active union member for hard-cap mode.
+        assert_eq!(unsafe { cpu.Anonymous.CpuRate }, 2_500);
     }
 
     #[test]
@@ -374,7 +433,9 @@ mod tests {
             .env("OPTIC_JOB_DROP_STARTED", &started)
             .env("OPTIC_JOB_DROP_SURVIVED", &survived);
         let mut command = CommandWrap::from(command);
-        command.wrap(LimitedJobObject::new(1, 512 * 1024 * 1024).expect("valid Job Object limits"));
+        command.wrap(
+            LimitedJobObject::new(1, 512 * 1024 * 1024, 25).expect("valid Job Object limits"),
+        );
         let child = command.spawn().expect("spawn wrapped fixture");
 
         for _ in 0..200 {

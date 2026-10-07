@@ -42,6 +42,8 @@ Status: DECIDED baseline. Every invariant must eventually have an executable tes
 
 **INV-024 — Process network is dual-authorized.** A leased process receives network only when both its session and its task lease carry `NetworkAccess` and the task lease also contains an explicit network scope.
 
+**INV-025 — Optic-owned process CPU is bounded before execution.** Active/termination-uncertain process jobs consume application-owned CPU reservation under global and per-session ceilings. On native Windows each owned process tree is hard-capped by its Job Object before resume; failure to establish that cap fails closed rather than silently running uncapped. Proven-terminal retained history releases CPU reservation.
+
 ## Data-flow containment
 
 **INV-030 — Untrusted source is not authority.** Repository/process/network text can influence model reasoning but cannot weaken local policy.
