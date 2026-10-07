@@ -344,7 +344,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::ExecutableNotFile | ProcessError::NonUtf8Executable => {
             ErrorData::invalid_params("optic.invalid_process_executable", None)
         }
-        ProcessError::CwdOutsideWorkspace | ProcessError::CwdNotDirectory => {
+        ProcessError::CwdOutsideWorkspace
+        | ProcessError::CwdNotDirectory
+        | ProcessError::NonUtf8WorkingDirectory => {
             ErrorData::invalid_params("optic.invalid_process_cwd", None)
         }
         ProcessError::InvalidEnvironmentName | ProcessError::EnvironmentNotAllowed => {
@@ -352,7 +354,8 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         }
         ProcessError::ResourceBudgetExceeded
         | ProcessError::OutputMemoryLimitExceeded
-        | ProcessError::RequestShapeTooLarge => {
+        | ProcessError::RequestShapeTooLarge
+        | ProcessError::TooManyProcessArguments => {
             ErrorData::invalid_params("optic.process_budget_exceeded", None)
         }
         ProcessError::OutputMemoryLimitExceededForSession => {
@@ -385,6 +388,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         }
         ProcessError::InvalidLimits(_)
         | ProcessError::RootNotDirectory
+        | ProcessError::IsolationLauncherMustBeAbsolute
+        | ProcessError::IsolationLauncherNotFile
+        | ProcessError::IsolationLauncherProtocol(_)
         | ProcessError::RuntimeUnavailable
         | ProcessError::JobIdUnavailable
         | ProcessError::StateUnavailable
