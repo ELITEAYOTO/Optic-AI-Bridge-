@@ -93,6 +93,7 @@ struct JobRecord {
     owner: SessionHandle,
     sequence: u64,
     reserved_output_bytes: u64,
+    reserved_cpu_percent: u32,
     output: Mutex<OutputState>,
     state: Mutex<JobState>,
     stop_requested: AtomicBool,
@@ -173,10 +174,12 @@ impl ProcessManager {
         let job_id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
         let sequence = self.sequence.fetch_add(1, Ordering::AcqRel);
         let owner = spec.session.clone();
+        let reserved_cpu_percent = self.limits.max_process_cpu_percent_per_job;
         let record = Arc::new(JobRecord {
             owner: spec.session,
             sequence,
             reserved_output_bytes: resources.output_bytes,
+            reserved_cpu_percent,
             output: Mutex::new(OutputState {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
@@ -196,7 +199,12 @@ impl ProcessManager {
                 .jobs
                 .lock()
                 .map_err(|_| ProcessError::StateUnavailable)?;
-            self.prepare_store_for_start(&mut store, &owner, resources.output_bytes)?;
+            self.prepare_store_for_start(
+                &mut store,
+                &owner,
+                resources.output_bytes,
+                reserved_cpu_percent,
+            )?;
             store.jobs.insert(job_id.clone(), Arc::clone(&record));
         }
 
@@ -215,8 +223,12 @@ impl ProcessManager {
         let mut command = CommandWrap::from(command);
         #[cfg(windows)]
         command.wrap(
-            LimitedJobObject::new(resources.process_count, resources.memory_bytes)
-                .map_err(ProcessError::Io)?,
+            LimitedJobObject::new(
+                resources.process_count,
+                resources.memory_bytes,
+                reserved_cpu_percent,
+            )
+            .map_err(ProcessError::Io)?,
         );
         #[cfg(unix)]
         {
@@ -475,6 +487,7 @@ impl ProcessManager {
         store: &mut JobStore,
         session: &SessionHandle,
         requested_output_bytes: u64,
+        requested_cpu_percent: u32,
     ) -> Result<(), ProcessError> {
         loop {
             let active = active_job_count(store)?;
@@ -488,6 +501,8 @@ impl ProcessManager {
 
             let reserved = reserved_output_bytes(store);
             let session_reserved = reserved_output_bytes_for_session(store, session);
+            let reserved_cpu = reserved_cpu_percent(store)?;
+            let session_reserved_cpu = reserved_cpu_percent_for_session(store, session)?;
             let global_record_limit_reached = store.jobs.len()
                 >= usize::try_from(self.limits.max_process_records)
                     .map_err(|_| ProcessError::InvalidLimits(LimitError::InvalidRelationship))?;
@@ -499,13 +514,26 @@ impl ProcessManager {
             let session_output_limit_reached = session_reserved
                 .saturating_add(requested_output_bytes)
                 > self.limits.max_active_output_ram_bytes_per_session;
+            let global_cpu_limit_reached = reserved_cpu.saturating_add(requested_cpu_percent)
+                > self.limits.max_active_process_cpu_percent;
+            let session_cpu_limit_reached = session_reserved_cpu
+                .saturating_add(requested_cpu_percent)
+                > self.limits.max_active_process_cpu_percent_per_session;
 
             if !global_record_limit_reached
                 && !session_record_limit_reached
                 && !global_output_limit_reached
                 && !session_output_limit_reached
+                && !global_cpu_limit_reached
+                && !session_cpu_limit_reached
             {
                 return Ok(());
+            }
+            if session_cpu_limit_reached {
+                return Err(ProcessError::CpuCapacityExceededForSession);
+            }
+            if global_cpu_limit_reached {
+                return Err(ProcessError::CpuCapacityExceeded);
             }
 
             // A start request may only retire history owned by the same session.
@@ -594,6 +622,35 @@ fn reserved_output_bytes_for_session(store: &JobStore, session: &SessionHandle) 
             sum
         }
     })
+}
+
+fn reserved_cpu_percent(store: &JobStore) -> Result<u32, ProcessError> {
+    reserved_cpu_percent_matching(store, |_| true)
+}
+
+fn reserved_cpu_percent_for_session(
+    store: &JobStore,
+    session: &SessionHandle,
+) -> Result<u32, ProcessError> {
+    reserved_cpu_percent_matching(store, |record| &record.owner == session)
+}
+
+fn reserved_cpu_percent_matching(
+    store: &JobStore,
+    matches: impl Fn(&JobRecord) -> bool,
+) -> Result<u32, ProcessError> {
+    let mut reserved = 0_u32;
+    for record in store.jobs.values() {
+        let status = record
+            .state
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?
+            .status;
+        if matches(record) && status_holds_process_ownership(status) {
+            reserved = reserved.saturating_add(record.reserved_cpu_percent);
+        }
+    }
+    Ok(reserved)
 }
 
 fn job_count_for_session(store: &JobStore, session: &SessionHandle) -> usize {
@@ -785,6 +842,10 @@ pub enum ProcessError {
     OutputMemoryLimitExceeded,
     #[error("this session's reserved process output would exceed its hard in-memory ceiling")]
     OutputMemoryLimitExceededForSession,
+    #[error("reserved process CPU would exceed the hard aggregate Optic CPU ceiling")]
+    CpuCapacityExceeded,
+    #[error("this session's reserved process CPU would exceed its hard CPU ceiling")]
+    CpuCapacityExceededForSession,
     #[error("process output read exceeds the hard per-call byte ceiling")]
     ReadLimitExceeded,
     #[error("process output cursor is out of range")]
@@ -847,6 +908,32 @@ mod tests {
         }
     }
 
+    fn synthetic_record(
+        owner: SessionHandle,
+        sequence: u64,
+        status: ProcessStatus,
+        reserved_cpu_percent: u32,
+    ) -> Arc<JobRecord> {
+        Arc::new(JobRecord {
+            owner,
+            sequence,
+            reserved_output_bytes: 1,
+            reserved_cpu_percent,
+            output: Mutex::new(OutputState {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                stdout_closed: true,
+                stderr_closed: true,
+            }),
+            state: Mutex::new(JobState {
+                status,
+                exit_code: None,
+            }),
+            stop_requested: AtomicBool::new(false),
+            output_overflow: AtomicBool::new(false),
+        })
+    }
+
     async fn await_terminal(
         manager: &ProcessManager,
         session: &SessionHandle,
@@ -903,6 +990,70 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[test]
+    fn cpu_reservations_are_global_session_scoped_and_uncertainty_holds_capacity() {
+        let root = workspace("cpu-governor");
+        let limits = HardLimits {
+            max_active_process_jobs: 8,
+            max_active_process_jobs_per_session: 8,
+            max_process_cpu_percent_per_job: 25,
+            max_active_process_cpu_percent: 50,
+            max_active_process_cpu_percent_per_session: 25,
+            ..HardLimits::default()
+        };
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+        let owner = SessionHandle::generate().expect("owner session");
+        let other = SessionHandle::generate().expect("other session");
+        let third = SessionHandle::generate().expect("third session");
+        let owner_job = JobId::generate().expect("owner job id");
+        let other_job = JobId::generate().expect("other job id");
+
+        let mut store = manager.jobs.lock().expect("job store");
+        store.jobs.insert(
+            owner_job.clone(),
+            synthetic_record(
+                owner.clone(),
+                0,
+                ProcessStatus::TerminationUncertain,
+                limits.max_process_cpu_percent_per_job,
+            ),
+        );
+        assert!(matches!(
+            manager.prepare_store_for_start(&mut store, &owner, 1, 25),
+            Err(ProcessError::CpuCapacityExceededForSession)
+        ));
+        assert!(
+            manager
+                .prepare_store_for_start(&mut store, &other, 1, 25)
+                .is_ok()
+        );
+
+        store.jobs.insert(
+            other_job,
+            synthetic_record(other, 1, ProcessStatus::Running, 25),
+        );
+        assert!(matches!(
+            manager.prepare_store_for_start(&mut store, &third, 1, 25),
+            Err(ProcessError::CpuCapacityExceeded)
+        ));
+
+        store
+            .jobs
+            .get(&owner_job)
+            .expect("owner record")
+            .state
+            .lock()
+            .expect("owner state")
+            .status = ProcessStatus::Exited;
+        assert!(
+            manager
+                .prepare_store_for_start(&mut store, &third, 1, 25)
+                .is_ok()
+        );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
     #[tokio::test]
     async fn termination_confirmation_wait_is_bounded_and_fail_closed() {
         let started = Instant::now();
@@ -942,6 +1093,7 @@ mod tests {
                     owner: owner.clone(),
                     sequence: 0,
                     reserved_output_bytes: 1024,
+                    reserved_cpu_percent: limits.max_process_cpu_percent_per_job,
                     output: Mutex::new(OutputState {
                         stdout: Vec::new(),
                         stderr: Vec::new(),
