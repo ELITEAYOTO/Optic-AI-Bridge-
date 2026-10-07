@@ -2,7 +2,9 @@
 
 use std::{fs, path::PathBuf, time::Duration};
 
-use optic_bridge_core::{ActionId, HardLimits, ResourceBudget, SessionHandle};
+use optic_bridge_core::{
+    ActionId, HardLimits, ProcessExecutionClass, ResourceBudget, SessionHandle,
+};
 use optic_bridge_runtime::{ProcessManager, ProcessStartSpec, ProcessStatus, ProcessStream};
 
 fn workspace(label: &str) -> PathBuf {
@@ -32,6 +34,7 @@ fn spec(
 ) -> ProcessStartSpec {
     ProcessStartSpec {
         session,
+        class: ProcessExecutionClass::FixedTool,
         executable: fixture(),
         args: args.into_iter().collect(),
         cwd: None,
