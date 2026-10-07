@@ -544,9 +544,22 @@ Status: **merged and post-merge validated** in PR #68 (`1cac5076`), exact green 
 
 Gate passed: exact-head CI #305, SHA-guarded squash merge, and post-merge `main` CI #306.
 
+#### Phase 3C3C2C1 - internal AppContainer launcher proof
+
+Status: **merged and post-merge validated** in PR #70 (`3d660196`), exact final head `fdefc199`; exact PR CI #309 and post-merge `main` CI #310 passed Ubuntu, Windows and dependency policy, including native real-helper tests, real MCP smoke and installer-profile validation.
+
+1. A separate `optic-bridge-isolation-launcher` Windows binary owns the internal launcher protocol; `optic-bridge.exe` does not gain a hidden arbitrary-launch mode.
+2. The helper forbids unsafe Rust, reads one internal JSON request bounded to 64 KiB before deserialization, denies unknown fields, bounds argument count/command-line shape/timeout, and recanonicalizes absolute executable/cwd paths.
+3. Each launch creates a fresh zero-capability AppContainer, gives the target `NUL` stdin, forwards only helper stdout/stderr through the B2B2 explicit-handle primitive, verifies `TokenIsAppContainer`, then uses the existing bounded/fail-closed wait.
+4. Native Windows CI invokes the real helper binary and proves stdout forwarding, stderr forwarding, preservation of ungranted user-file denial, and oversized-request rejection; parser unit tests also prove zero-timeout and unknown-field rejection.
+5. The helper is not copied into the current release bundle and is not selected by `ProcessManager`; this gate adds no MCP/policy/workspace/network authority and does not re-admit `Interpreter` / `RepositoryCode`.
+6. Future runtime Job Object integration must count the helper as one additional kernel process while leaving the authorized logical workload `process_count` unchanged.
+
+Gate passed: exact PR CI #309, SHA-guarded squash merge, and post-merge `main` CI #310.
+
 #### Later Phase 3C gates
 
-Wire the proven AppContainer + explicit-stdio primitive into the production process path through a trusted Optic-owned launcher/runtime boundary, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Wire the proven internal helper/AppContainer path into `ProcessManager`, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. The Job Object process limit must include the helper (+1 internal process) without widening the logical workload budget. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
