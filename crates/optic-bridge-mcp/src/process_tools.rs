@@ -288,8 +288,26 @@ fn parse_job_id(value: &str) -> Result<JobId, ErrorData> {
     JobId::from_token(value).map_err(|_| ErrorData::invalid_params("optic.invalid_job_id", None))
 }
 
-fn map_task_lease_error(_error: TaskLeaseRegistryError) -> ErrorData {
-    ErrorData::invalid_request("optic.task_lease_inactive", None)
+fn map_task_lease_error(error: TaskLeaseRegistryError) -> ErrorData {
+    match error {
+        TaskLeaseRegistryError::ProcessIdentityChanged => {
+            ErrorData::invalid_request("optic.process_executable_identity_changed", None)
+        }
+        TaskLeaseRegistryError::ProcessIdentityUnavailable => {
+            ErrorData::invalid_request("optic.process_executable_identity_unavailable", None)
+        }
+        TaskLeaseRegistryError::StateUnavailable
+        | TaskLeaseRegistryError::AlreadyRegistered
+        | TaskLeaseRegistryError::CapacityExceeded
+        | TaskLeaseRegistryError::SessionCapacityExceeded
+        | TaskLeaseRegistryError::UnknownLease
+        | TaskLeaseRegistryError::Revoked
+        | TaskLeaseRegistryError::WrongSession
+        | TaskLeaseRegistryError::Expired
+        | TaskLeaseRegistryError::LeaseStillActive => {
+            ErrorData::invalid_request("optic.task_lease_inactive", None)
+        }
+    }
 }
 
 fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
@@ -508,6 +526,22 @@ mod tests {
             optic_bridge_runtime::SessionRegistryError::Revoked,
         ));
         assert_eq!(error.message, "optic.session_inactive");
+    }
+
+    #[test]
+    fn process_identity_errors_have_distinct_mcp_codes() {
+        assert_eq!(
+            map_task_lease_error(TaskLeaseRegistryError::ProcessIdentityChanged).message,
+            "optic.process_executable_identity_changed"
+        );
+        assert_eq!(
+            map_task_lease_error(TaskLeaseRegistryError::ProcessIdentityUnavailable).message,
+            "optic.process_executable_identity_unavailable"
+        );
+        assert_eq!(
+            map_task_lease_error(TaskLeaseRegistryError::Revoked).message,
+            "optic.task_lease_inactive"
+        );
     }
 
     #[test]

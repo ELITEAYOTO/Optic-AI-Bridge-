@@ -40,10 +40,8 @@ impl ProcessExecutableIdentity {
         Ok(identity)
     }
 
-    fn capture_with_limit(
-        executable: &str,
-        max_bytes: u64,
-    ) -> Result<Self, ProcessAuthorityError> {
+    #[cfg(test)]
+    fn capture_with_limit(executable: &str, max_bytes: u64) -> Result<Self, ProcessAuthorityError> {
         let (identity, _pin) = Self::capture_with_pin(executable, max_bytes)?;
         Ok(identity)
     }
@@ -242,5 +240,25 @@ mod tests {
         drop(authority);
         fs::write(&executable, b"replacement").expect("rewrite after authority drop");
         fs::remove_dir_all(root).expect("remove fixture root");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn authority_pin_still_allows_executable_launch() {
+        let executable = env::current_exe().expect("current test executable");
+        let lease_id = TaskLeaseId::generate().expect("lease id");
+        let authority = ProcessAuthority::capture(lease_id, &executable.to_string_lossy())
+            .expect("capture executable authority");
+
+        let status = std::process::Command::new(&executable)
+            .arg("--list")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("launch pinned executable");
+        assert!(status.success());
+        authority
+            .verify()
+            .expect("identity remains valid after launch");
     }
 }

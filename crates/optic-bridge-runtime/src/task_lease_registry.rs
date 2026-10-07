@@ -282,10 +282,7 @@ mod tests {
     }
 
     fn workspace(label: &str) -> PathBuf {
-        let root = env::temp_dir().join(format!(
-            "optic-task-lease-{label}-{}",
-            std::process::id()
-        ));
+        let root = env::temp_dir().join(format!("optic-task-lease-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture root");
         root
@@ -331,7 +328,9 @@ mod tests {
         let registry = TaskLeaseRegistry::new();
         let owner = SessionHandle::generate().expect("owner session");
         let owned = lease(owner.clone(), 100);
-        registry.register(owned.clone()).expect("register fixture lease");
+        registry
+            .register(owned.clone())
+            .expect("register fixture lease");
         registry
             .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
             .expect("relative fixture scope remains active");
