@@ -361,10 +361,11 @@ mod tests {
     #[test]
     fn appcontainer_token_denies_ungranted_user_file_read() {
         let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
-        let security = profile.security_capabilities();
-        assert_eq!(security.as_raw().CapabilityCount, 0);
-        assert!(security.as_raw().Capabilities.is_null());
-        drop(security);
+        {
+            let security = profile.security_capabilities();
+            assert_eq!(security.as_raw().CapabilityCount, 0);
+            assert!(security.as_raw().Capabilities.is_null());
+        }
 
         let sentinel = std::env::temp_dir().join(format!(
             "optic-appcontainer-sentinel-{}-{}.txt",
