@@ -247,6 +247,15 @@ mod tests {
         stderr: String,
     }
 
+    impl IsolatedOutput {
+        fn diagnostic(&self) -> String {
+            format!(
+                "exit={} stdout={:?} stderr={:?}",
+                self.exit_code, self.stdout, self.stderr
+            )
+        }
+    }
+
     fn run_isolated_capture(
         profile: &AppContainerProfile,
         executable: &Path,
@@ -408,8 +417,10 @@ mod tests {
 
         let before_grant = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            before_grant.exit_code, 0,
-            "profile without an ACL grant must not read the file: {before_grant:?}"
+            before_grant.exit_code,
+            0,
+            "profile without an ACL grant must not read the file: {}",
+            before_grant.diagnostic()
         );
 
         let grant = profile
@@ -417,19 +428,25 @@ mod tests {
             .expect("grant exact-file read");
         let granted_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_eq!(
-            granted_read.exit_code, 0,
-            "Package SID plus exact ACL grant must read the file: {granted_read:?}"
+            granted_read.exit_code,
+            0,
+            "Package SID plus exact ACL grant must read the file: {}",
+            granted_read.diagnostic()
         );
         let ungranted_read = run_workspace_probe(&profile, &probe_exe, &ungranted, "read");
         assert_ne!(
-            ungranted_read.exit_code, 0,
-            "the profile must not read a second file without its own ACL grant: {ungranted_read:?}"
+            ungranted_read.exit_code,
+            0,
+            "the profile must not read a second file without its own ACL grant: {}",
+            ungranted_read.diagnostic()
         );
 
         let append_attempt = run_workspace_probe(&profile, &probe_exe, &sentinel, "append");
         assert_ne!(
-            append_attempt.exit_code, 0,
-            "read-only grant must not permit file mutation: {append_attempt:?}"
+            append_attempt.exit_code,
+            0,
+            "read-only grant must not permit file mutation: {}",
+            append_attempt.diagnostic()
         );
         assert_eq!(
             fs::read_to_string(&sentinel).expect("read sentinel after write attempt"),
@@ -439,8 +456,10 @@ mod tests {
         grant.revoke().expect("revoke exact-file grant");
         let revoked_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            revoked_read.exit_code, 0,
-            "the same profile must lose access after its ACE is revoked: {revoked_read:?}"
+            revoked_read.exit_code,
+            0,
+            "the same profile must lose access after its ACE is revoked: {}",
+            revoked_read.diagnostic()
         );
 
         {
@@ -449,14 +468,18 @@ mod tests {
                 .expect("grant exact-file read for Drop cleanup");
             let live_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
             assert_eq!(
-                live_read.exit_code, 0,
-                "Drop-cleanup grant must be usable while its guard is live: {live_read:?}"
+                live_read.exit_code,
+                0,
+                "Drop-cleanup grant must be usable while its guard is live: {}",
+                live_read.diagnostic()
             );
         }
         let dropped_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            dropped_read.exit_code, 0,
-            "dropping the grant guard must revoke the Package SID ACE: {dropped_read:?}"
+            dropped_read.exit_code,
+            0,
+            "dropping the grant guard must revoke the Package SID ACE: {}",
+            dropped_read.diagnostic()
         );
     }
 
