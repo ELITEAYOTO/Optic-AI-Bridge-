@@ -59,11 +59,25 @@ B2B2 adds a reusable Windows-only suspended AppContainer spawn primitive with ca
 - unfinished children are terminated in `Drop`, and bounded wait failure also terminates the owned child;
 - native Windows CI proves both the existing ungranted-file denial and observable explicit stdout capture through the production primitive.
 
-This still does **not** re-admit `Interpreter` or `RepositoryCode`. The remaining production work is to wire the primitive into an Optic-owned launcher/runtime path, define explicit workspace grants, prove representative toolchain compatibility, and only then consider policy re-admission.
+This still does **not** re-admit `Interpreter` or `RepositoryCode`.
+
+## Phase 3C3C2C1 internal launcher proof
+
+A separate `optic-bridge-isolation-launcher` now proves the next internal boundary without making it part of the production process path:
+
+- the helper is a distinct binary, not a hidden mode of `optic-bridge.exe`;
+- its stdin protocol is application-internal JSON bounded to 64 KiB before parsing, with unknown fields rejected;
+- executable and cwd must be absolute and are recanonicalized inside the helper; argument count, conservative Windows command-line size and timeout are bounded;
+- every request creates a fresh zero-capability AppContainer; the target receives `NUL` stdin and only helper stdout/stderr are forwarded through the explicit handle list;
+- `TokenIsAppContainer` is checked before resume and the existing bounded/fail-closed child wait is retained;
+- native CI executes the real helper and proves stdout/stderr forwarding, ungranted-file denial and oversized-request rejection;
+- the release bundle still copies only `optic-bridge.exe`, and `ProcessManager` does not select this helper.
+
+This proof adds no workspace or network capability and does not alter the fail-closed `Interpreter` / `RepositoryCode` policy. When the helper is wired under the Job Object, kernel `process_count` must reserve one extra internal process for it without expanding the workload's logical descendant budget.
 
 ## Hardened profile
 
-Current direction: wire the proven AppContainer + explicit-stdio primitives into the production high-risk execution path, then validate representative Rust/Node/Java toolchains and explicit workspace grants. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: wire the proven internal launcher + AppContainer explicit-stdio path into `ProcessManager` with explicit workspace grants and correct +1 helper process accounting, then validate representative Rust/Node/Java toolchains before any selected high-risk re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -79,4 +93,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 additionally proves explicit captured stdio with handle-list-restricted inheritance. These primitives are still not wired into the production `ProcessManager` path. Remaining work includes the trusted launcher/runtime integration, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher driving that primitive. The helper is still non-distributed and not wired into the production `ProcessManager` path. Remaining work includes runtime selection/Job Object integration with +1 helper process accounting, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
