@@ -41,7 +41,7 @@ There is no implicit blind-write or blind-delete mode in the core effect model.
 
 ## Current application-owned authority
 
-- `ProcessRun`: provisioned only from operator `--allow-executable` configuration; exact executable task leases are application-owned.
+- `ProcessRun`: provisioned only from operator `--allow-executable` configuration; exact executable task leases are application-owned. Phase 3C3A additionally binds each absolute executable scope to a bounded BLAKE3 content identity. Windows keeps a read pin alive with the lease record so same-path write/delete/rename replacement is denied until physical reap; active lease resolution revalidates identity. Non-Windows currently revalidates content without claiming the same persistent-handle guarantee.
 - `FileWrite`: provisioned only from explicit write scopes and used for whole-file write plus deterministic patch.
 - `FileDelete`: provisioned separately from explicit delete scopes.
 - `GitRead`: provisioned only when the operator supplies one valid absolute `--git-executable` and the workspace validates as the exact repository root.
