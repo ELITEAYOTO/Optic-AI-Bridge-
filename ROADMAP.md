@@ -6,7 +6,7 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 **Current phase:** Phase 3 — multi-session runtime
 **Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2C, Phase 2D1–2D3D, the real-binary closure smoke and the explicit ChatGPT integration packaging gate are merged
 **Release state:** no production-supported release
-**Next gate:** Phase 3C1 bounded process termination is merged in PR #55 (`bacac76`, exact green head `bfb38a5`) and post-merge `main` CI run #265 passed Ubuntu, Windows and dependency policy. Phase 3C2 CPU governance is implemented in current PR #57; exact code/test head `480de5c` passed CI #269 on Ubuntu, Windows (including native hard-cap tests and real MCP smoke) and dependency policy. Final documentation-head CI/merge remains pending. After 3C2, ToolProfile/ToolIdentity, truthful OS network containment, repository-code execution classification and Windows sandboxing remain open.
+**Next gate:** Phase 3C1 bounded process termination and Phase 3C2 bounded CPU governance are merged and post-merge validated. Phase 3C2 merged in PR #57 as `fda0f24` from exact green final head `444dab2`; post-merge `main` CI #271 passed Ubuntu, Windows (including native hard-cap tests and real MCP smoke) and dependency policy. The next Phase 3C work remains ToolProfile/ToolIdentity, truthful OS network containment, repository-code execution classification and Windows sandboxing.
 
 The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
 
