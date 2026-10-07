@@ -51,8 +51,13 @@ mod windows_launcher {
         let cwd = canonical_directory(&request.cwd)?;
         validate_command_size(&executable, &request.args)?;
 
-        let profile = AppContainerProfile::create(&unique_profile_name()?)?;
-        let null_stdin = OpenOptions::new().read(true).open("NUL")?;
+        let profile_name = unique_profile_name()?;
+        let profile = AppContainerProfile::create(&profile_name)
+            .map_err(|error| IoError::other(format!("create AppContainer profile: {error}")))?;
+        let null_stdin = OpenOptions::new()
+            .read(true)
+            .open("NUL")
+            .map_err(|error| IoError::other(format!("open NUL stdin: {error}")))?;
         let stdout = std::io::stdout();
         let stderr = std::io::stderr();
         let args = request.args.into_iter().map(Into::into).collect::<Vec<_>>();
@@ -67,15 +72,24 @@ mod windows_launcher {
                 stdout: stdout.as_handle(),
                 stderr: stderr.as_handle(),
             },
-        )?;
-        if !child.is_appcontainer()? {
+        )
+        .map_err(|error| IoError::other(format!("spawn AppContainer target: {error}")))?;
+        let is_appcontainer = child
+            .is_appcontainer()
+            .map_err(|error| IoError::other(format!("verify AppContainer token: {error}")))?;
+        if !is_appcontainer {
             return Err(IoError::other("child token is not an AppContainer token").into());
         }
-        child.resume()?;
+        child
+            .resume()
+            .map_err(|error| IoError::other(format!("resume AppContainer target: {error}")))?;
         let timeout_ms = u32::try_from(request.timeout_ms).map_err(|_| {
             IoError::new(ErrorKind::InvalidInput, "launcher timeout does not fit u32")
         })?;
-        Ok(child.wait_exit(timeout_ms)? as i32)
+        let exit = child
+            .wait_exit(timeout_ms)
+            .map_err(|error| IoError::other(format!("wait AppContainer target: {error}")))?;
+        Ok(exit as i32)
     }
 
     fn read_request(reader: impl Read) -> LauncherResult<LauncherRequest> {
