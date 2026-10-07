@@ -67,6 +67,21 @@ impl AppContainerProfile {
     /// Existing profiles are not reused implicitly, so stale grants cannot be
     /// inherited by a new isolation attempt.
     pub fn create(name: &str) -> Result<Self> {
+        Self::create_inner(name, None)
+    }
+
+    /// Create a fresh AppContainer profile that declares one ephemeral read capability.
+    ///
+    /// Windows profile creation records the requested capability SID. The same
+    /// capability must still be supplied in `SECURITY_CAPABILITIES` at process launch.
+    pub fn create_with_read_capability(
+        name: &str,
+        capability: &AppContainerReadCapability,
+    ) -> Result<Self> {
+        Self::create_inner(name, Some(capability))
+    }
+
+    fn create_inner(name: &str, capability: Option<&AppContainerReadCapability>) -> Result<Self> {
         if name.is_empty() || name.len() > 64 {
             return Err(Error::other(
                 "AppContainer profile name must be 1..=64 bytes",
@@ -75,10 +90,13 @@ impl AppContainerProfile {
 
         let name = HSTRING::from(name);
         let description = HSTRING::from("Optic AI Bridge isolated process profile");
-        // SAFETY: strings live through the synchronous call, no capability array
-        // is supplied, and the returned SID is owned by this value.
+        let capability_entry = capability.map(AppContainerReadCapability::sid_and_attributes);
+        let capabilities = capability_entry.as_ref().map(std::slice::from_ref);
+        // SAFETY: strings and the optional capability entry live through the synchronous
+        // call, and the returned SID is owned by this value.
         let sid = unsafe {
-            CreateAppContainerProfile(&name, &name, &description, None).map_err(Error::other)?
+            CreateAppContainerProfile(&name, &name, &description, capabilities)
+                .map_err(Error::other)?
         };
 
         Ok(Self { name, sid })

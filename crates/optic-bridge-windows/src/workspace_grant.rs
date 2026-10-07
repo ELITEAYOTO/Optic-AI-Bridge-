@@ -423,8 +423,10 @@ mod tests {
         fs::write(&ungranted, b"optic read grant sentinel\n").expect("write ungranted sentinel");
         let _ungranted_cleanup = Cleanup(ungranted.clone());
 
-        let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
         let capability = AppContainerReadCapability::create_ephemeral().expect("derive capability");
+        let profile =
+            AppContainerProfile::create_with_read_capability(&unique_profile_name(), &capability)
+                .expect("create profile with read capability");
 
         assert_ne!(
             read_exit(&profile, &capability, &sentinel),
