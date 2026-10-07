@@ -570,9 +570,22 @@ Status: **merged and post-merge validated** in PR #72 (`d31086e1`), exact final 
 
 Gate passed: exact PR CI #318, SHA-guarded squash merge, and post-merge `main` CI #319.
 
+#### Phase 3C3C2C2B1 - exact-file workspace read grants
+
+Status: **merged and post-merge validated** in PR #74 (`11232b90`), exact final head `0c82f0c`; exact PR CI #330 and post-merge `main` CI #331 passed Ubuntu, Windows and dependency policy, including the controlled AppContainer ACL probe, real MCP smoke and installer-profile validation.
+
+1. `AppContainerProfile::create_ephemeral()` uses fresh 128-bit OS randomness; only these non-reusable profiles may mint external filesystem grants.
+2. The filesystem trustee is the profile Package SID already present in the AppContainer token; no extra capability SID or network authority is introduced.
+3. `grant_file_read` opens one exact file handle with read + `WRITE_DAC`, rejects final reparse points and null/absent DACLs, and adds one non-inheritable `FILE_GENERIC_READ` ACE.
+4. The grant keeps the exact file handle and profile lifetime bound, revokes explicitly or best-effort on `Drop`, and exposes no write/directory/recursive authority.
+5. Native Windows CI proves denial before grant, success only for the granted file, continued denial of a second file, write/append denial, explicit revoke, Drop cleanup, and refusal of predictably named profiles.
+6. This gate does not select grants in `ProcessManager`/the helper and does not change policy/MCP admission; high-risk classes remain denied.
+
+Gate passed: exact PR CI #330, SHA-guarded squash merge, and post-merge `main` CI #331.
+
 #### Later Phase 3C gates
 
-Define explicit workspace grants and prove representative toolchain compatibility through the now-wired helper/AppContainer runtime before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Wire the exact-file grant lifecycle/selection into the now-wired helper/AppContainer runtime and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
