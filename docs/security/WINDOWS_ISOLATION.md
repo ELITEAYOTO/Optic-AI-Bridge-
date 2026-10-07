@@ -33,13 +33,24 @@ The Phase 1D native gate currently verifies:
 
 These are containment tests, not proof that arbitrary untrusted native code is sandboxed.
 
+## Phase 3C3C2A AppContainer foundation
+
+The Windows-only unsafe boundary now has a proven AppContainer identity primitive:
+
+- every proof profile is created fresh for the current user and carries zero capability SIDs;
+- `AppContainerSecurityCapabilities<'a>` keeps the raw AppContainer SID pointer lifetime-bound to its owning profile in safe Rust;
+- the native proof child is created suspended with `STARTUPINFOEXW` and `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`;
+- the child token is queried for `TokenIsAppContainer` before resume;
+- a control `findstr.exe` process can read a user-owned sentinel, while the same executable in the no-capability AppContainer cannot read the ungranted file;
+- the proof process has a bounded wait and is terminated fail-closed on timeout.
+
+This is **not yet the production process sandbox**. The primitive is not wired into `ProcessManager` or captured stdout/stderr, no workspace ACL/capability grant model has been added, and 3C3C1 still denies `Interpreter` / `RepositoryCode`. No network capability SID is granted by the profile, but public network-containment semantics remain unclaimed until the production path and a dedicated network regression gate exist.
+
 ## Hardened profile
 
-PROPOSED: Restricted Tokens for workloads where toolchain compatibility is acceptable. Validate behavior on real Rust/Node/Java build chains before making this default.
+Current direction: build the production high-risk execution profile on the proven AppContainer foundation, then validate representative Rust/Node/Java toolchains and explicit workspace grants. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
-
-AppContainer/LPAC remains a research candidate where stronger local isolation is worth the compatibility cost.
 
 ## Hard isolation
 
@@ -53,4 +64,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. They do not independently restrict filesystem access, registry access, user-token privileges or network access. Later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A additionally proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read, but it is not yet integrated into the production process path. Remaining work includes captured-stdio launching, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.

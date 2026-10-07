@@ -506,9 +506,22 @@ Status: **merged and post-merge validated** in PR #63 (`148f4720`), exact green 
 
 Gate passed: exact-head CI #291, SHA-guarded squash merge, and post-merge `main` CI #292.
 
+#### Phase 3C3C2A - AppContainer isolation foundation
+
+Status: **merged and post-merge validated** in PR #65 (`75cc9c62`), exact green final head `4f5e3f7a`; exact-head CI #297 and post-merge `main` CI #298 passed Ubuntu, Windows and dependency policy, including the native AppContainer proof, real MCP smoke and installer-profile validation.
+
+1. The Windows-only unsafe boundary owns creation/deletion of fresh per-user AppContainer profiles; existing profile state is not silently reused.
+2. Profiles carry zero capability SIDs. `AppContainerSecurityCapabilities<'a>` binds the raw `SECURITY_CAPABILITIES` SID pointer to the profile lifetime in safe Rust.
+3. Native proof creation uses `STARTUPINFOEXW` plus `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`, starts the child suspended and verifies `TokenIsAppContainer` before resume.
+4. The proof fixture first confirms a normal `findstr.exe` can read a user-owned sentinel, then proves the no-capability AppContainer instance cannot read that same ungranted file.
+5. This gate does not change policy/MCP/runtime admission: `Interpreter` and `RepositoryCode` remain deterministically denied by 3C3C1, while `FixedTool` remains on the existing bounded runtime.
+6. Production captured-stdio launching, workspace grants, network containment proof and toolchain compatibility are deliberately deferred to later gates.
+
+Gate passed: exact-head CI #297, SHA-guarded squash merge, and post-merge `main` CI #298.
+
 #### Later Phase 3C gates
 
-Implement an evidence-backed Windows isolation profile capable of safely re-admitting selected `Interpreter` / `RepositoryCode` execution, then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Integrate the proven AppContainer foundation with the production captured-stdio process path, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
