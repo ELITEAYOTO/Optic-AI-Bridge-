@@ -114,6 +114,16 @@ impl AppContainerProfile {
         self.external_acl_grants_allowed
     }
 
+    #[cfg(test)]
+    pub(crate) fn profile_storage_path_for_tests(&self) -> std::path::PathBuf {
+        let local_app_data =
+            std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA must exist on Windows tests");
+        std::path::PathBuf::from(local_app_data)
+            .join("Packages")
+            .join(self.name.to_string_lossy())
+            .join("AC")
+    }
+
     /// Borrow security capabilities for process creation in this profile.
     ///
     /// No capability SID is attached; in particular no network capability is granted.

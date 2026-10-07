@@ -211,6 +211,7 @@ mod tests {
     use std::{
         ffi::OsString,
         fs::{self, OpenOptions},
+        io::Write as _,
         os::windows::io::AsHandle,
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
@@ -220,6 +221,8 @@ mod tests {
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(1);
     const WAIT_MS: u32 = 10_000;
+    const PROBE_CONFIG: &str = "optic-workspace-grant-probe.txt";
+    const PROBE_SENTINEL: &str = "optic read grant sentinel\n";
 
     fn unique_profile_name() -> String {
         format!(
@@ -237,16 +240,6 @@ mod tests {
         ))
     }
 
-    fn system32_executable(name: &str) -> PathBuf {
-        PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"))
-            .join("System32")
-            .join(name)
-    }
-
-    fn run_isolated(profile: &AppContainerProfile, executable: &Path, args: Vec<OsString>) -> u32 {
-        run_isolated_capture(profile, executable, args).exit_code
-    }
-
     #[derive(Debug)]
     struct IsolatedOutput {
         exit_code: u32,
@@ -259,7 +252,7 @@ mod tests {
         executable: &Path,
         args: Vec<OsString>,
     ) -> IsolatedOutput {
-        let cwd = executable.parent().expect("System32 parent");
+        let cwd = executable.parent().expect("isolated executable parent");
         let stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
@@ -302,35 +295,71 @@ mod tests {
         }
     }
 
-    fn read_output(profile: &AppContainerProfile, file: &Path) -> IsolatedOutput {
-        let findstr = system32_executable("findstr.exe");
+    fn write_probe_config(profile_dir: &Path, mode: &str, target: &Path) {
+        let target = target.to_string_lossy();
+        assert!(
+            !target.contains(['\r', '\n']),
+            "probe target must fit one config line"
+        );
+        fs::write(
+            profile_dir.join(PROBE_CONFIG),
+            format!("{mode}\n{target}\n"),
+        )
+        .expect("write probe config");
+    }
+
+    fn run_workspace_probe(
+        profile: &AppContainerProfile,
+        probe_exe: &Path,
+        target: &Path,
+        mode: &str,
+    ) -> IsolatedOutput {
+        let profile_dir = probe_exe.parent().expect("probe profile directory");
+        write_probe_config(profile_dir, mode, target);
         run_isolated_capture(
             profile,
-            &findstr,
+            probe_exe,
             vec![
-                OsString::from("/c:optic read grant sentinel"),
-                file.as_os_str().to_os_string(),
+                OsString::from("--exact"),
+                OsString::from("workspace_grant::tests::appcontainer_workspace_probe_child"),
+                OsString::from("--nocapture"),
+                OsString::from("--test-threads=1"),
             ],
         )
     }
 
-    fn type_output(profile: &AppContainerProfile, file: &Path) -> IsolatedOutput {
-        let cmd = system32_executable("cmd.exe");
-        let command = format!("type \"{}\"", file.to_string_lossy());
-        run_isolated_capture(
-            profile,
-            &cmd,
-            vec![
-                OsString::from("/d"),
-                OsString::from("/s"),
-                OsString::from("/c"),
-                OsString::from(command),
-            ],
-        )
-    }
+    #[test]
+    fn appcontainer_workspace_probe_child() {
+        let exact_child = std::env::args().any(|arg| arg == "--exact");
+        let config_path = Path::new(PROBE_CONFIG);
+        if !exact_child || !config_path.is_file() {
+            return;
+        }
 
-    fn read_exit(profile: &AppContainerProfile, file: &Path) -> u32 {
-        read_output(profile, file).exit_code
+        let config = fs::read_to_string(config_path).expect("read workspace probe config");
+        let mut lines = config.lines();
+        let mode = lines.next().expect("probe mode");
+        let target = PathBuf::from(lines.next().expect("probe target"));
+        assert!(
+            lines.next().is_none(),
+            "probe config must contain two lines"
+        );
+
+        match mode {
+            "read" => {
+                let content = fs::read_to_string(&target).expect("probe read exact file");
+                assert_eq!(content, PROBE_SENTINEL);
+            }
+            "append" => {
+                let mut file = OpenOptions::new()
+                    .append(true)
+                    .open(&target)
+                    .expect("probe open exact file for append");
+                file.write_all(b"forbidden-write\n")
+                    .expect("probe append exact file");
+            }
+            other => panic!("unsupported workspace probe mode: {other}"),
+        }
     }
 
     #[test]
@@ -349,96 +378,85 @@ mod tests {
     #[test]
     fn ephemeral_read_grant_is_exact_read_only_and_revocable() {
         let sentinel = unique_temp_file();
-        fs::write(&sentinel, b"optic read grant sentinel\n").expect("write sentinel");
+        fs::write(&sentinel, PROBE_SENTINEL).expect("write sentinel");
         let _cleanup = Cleanup(sentinel.clone());
         let ungranted = unique_temp_file();
-        fs::write(&ungranted, b"optic read grant sentinel\n").expect("write ungranted sentinel");
+        fs::write(&ungranted, PROBE_SENTINEL).expect("write ungranted sentinel");
         let _ungranted_cleanup = Cleanup(ungranted.clone());
 
-        let findstr = system32_executable("findstr.exe");
-        let control = std::process::Command::new(&findstr)
-            .arg("/c:optic read grant sentinel")
-            .arg(&sentinel)
-            .status()
-            .expect("run control findstr");
-        assert!(control.success(), "control process must read the sentinel");
+        assert_eq!(
+            fs::read_to_string(&sentinel).expect("control read sentinel"),
+            PROBE_SENTINEL
+        );
 
         let profile = AppContainerProfile::create_ephemeral().expect("create ephemeral profile");
+        let profile_dir = profile.profile_storage_path_for_tests();
+        assert!(
+            profile_dir.is_dir(),
+            "AppContainer profile storage directory must exist: {}",
+            profile_dir.display()
+        );
+        let probe_exe = profile_dir.join("optic-workspace-grant-probe.exe");
+        let probe_config = profile_dir.join(PROBE_CONFIG);
+        let _probe_cleanup = Cleanup(probe_exe.clone());
+        let _config_cleanup = Cleanup(probe_config);
+        fs::copy(
+            std::env::current_exe().expect("current test executable"),
+            &probe_exe,
+        )
+        .expect("copy workspace probe into AppContainer private storage");
 
+        let before_grant = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            read_exit(&profile, &sentinel),
-            0,
-            "profile without an ACL grant must not read the file"
+            before_grant.exit_code, 0,
+            "profile without an ACL grant must not read the file: {before_grant:?}"
         );
 
         let grant = profile
             .grant_file_read(&sentinel)
             .expect("grant exact-file read");
-        let findstr_read = read_output(&profile, &sentinel);
-        let cmd_read = type_output(&profile, &sentinel);
+        let granted_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_eq!(
-            findstr_read.exit_code,
-            0,
-            "Package SID plus exact ACL grant must read the file; findstr_stdout={:?}; findstr_stderr={:?}; cmd_exit={}; cmd_stdout={:?}; cmd_stderr={:?}",
-            findstr_read.stdout,
-            findstr_read.stderr,
-            cmd_read.exit_code,
-            cmd_read.stdout,
-            cmd_read.stderr
+            granted_read.exit_code, 0,
+            "Package SID plus exact ACL grant must read the file: {granted_read:?}"
         );
-        assert_eq!(
-            cmd_read.exit_code, 0,
-            "cmd type must independently read the exact granted file; cmd_stdout={:?}; cmd_stderr={:?}",
-            cmd_read.stdout, cmd_read.stderr
-        );
+        let ungranted_read = run_workspace_probe(&profile, &probe_exe, &ungranted, "read");
         assert_ne!(
-            read_exit(&profile, &ungranted),
-            0,
-            "the profile must not read a second file without its own ACL grant"
+            ungranted_read.exit_code, 0,
+            "the profile must not read a second file without its own ACL grant: {ungranted_read:?}"
         );
 
-        let cmd = system32_executable("cmd.exe");
-        let append_command = format!("echo forbidden-write>>\"{}\"", sentinel.to_string_lossy());
+        let append_attempt = run_workspace_probe(&profile, &probe_exe, &sentinel, "append");
         assert_ne!(
-            run_isolated(
-                &profile,
-                &cmd,
-                vec![
-                    OsString::from("/d"),
-                    OsString::from("/s"),
-                    OsString::from("/c"),
-                    OsString::from(append_command),
-                ],
-            ),
-            0,
-            "read-only grant must not permit file mutation"
+            append_attempt.exit_code, 0,
+            "read-only grant must not permit file mutation: {append_attempt:?}"
         );
         assert_eq!(
             fs::read_to_string(&sentinel).expect("read sentinel after write attempt"),
-            "optic read grant sentinel\n"
+            PROBE_SENTINEL
         );
 
         grant.revoke().expect("revoke exact-file grant");
+        let revoked_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            read_exit(&profile, &sentinel),
-            0,
-            "the same profile must lose access after its ACE is revoked"
+            revoked_read.exit_code, 0,
+            "the same profile must lose access after its ACE is revoked: {revoked_read:?}"
         );
 
         {
             let _drop_revoke = profile
                 .grant_file_read(&sentinel)
                 .expect("grant exact-file read for Drop cleanup");
+            let live_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
             assert_eq!(
-                read_exit(&profile, &sentinel),
-                0,
-                "Drop-cleanup grant must be usable while its guard is live"
+                live_read.exit_code, 0,
+                "Drop-cleanup grant must be usable while its guard is live: {live_read:?}"
             );
         }
+        let dropped_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_ne!(
-            read_exit(&profile, &sentinel),
-            0,
-            "dropping the grant guard must revoke the Package SID ACE"
+            dropped_read.exit_code, 0,
+            "dropping the grant guard must revoke the Package SID ACE: {dropped_read:?}"
         );
     }
 
