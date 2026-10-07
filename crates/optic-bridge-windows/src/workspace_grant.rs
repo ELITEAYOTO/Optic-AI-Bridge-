@@ -244,19 +244,40 @@ mod tests {
     }
 
     fn run_isolated(profile: &AppContainerProfile, executable: &Path, args: Vec<OsString>) -> u32 {
+        run_isolated_capture(profile, executable, args).exit_code
+    }
+
+    #[derive(Debug)]
+    struct IsolatedOutput {
+        exit_code: u32,
+        stdout: String,
+        stderr: String,
+    }
+
+    fn run_isolated_capture(
+        profile: &AppContainerProfile,
+        executable: &Path,
+        args: Vec<OsString>,
+    ) -> IsolatedOutput {
         let cwd = executable.parent().expect("System32 parent");
         let stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
             .expect("NUL stdin");
+        let stdout_path = unique_temp_file();
+        let stderr_path = unique_temp_file();
+        let _stdout_cleanup = Cleanup(stdout_path.clone());
+        let _stderr_cleanup = Cleanup(stderr_path.clone());
         let stdout = OpenOptions::new()
+            .create_new(true)
             .write(true)
-            .open("NUL")
-            .expect("NUL stdout");
+            .open(&stdout_path)
+            .expect("capture stdout");
         let stderr = OpenOptions::new()
+            .create_new(true)
             .write(true)
-            .open("NUL")
-            .expect("NUL stderr");
+            .open(&stderr_path)
+            .expect("capture stderr");
         let mut child = spawn_appcontainer_suspended(
             profile,
             executable,
@@ -271,12 +292,19 @@ mod tests {
         .expect("spawn AppContainer");
         assert!(child.is_appcontainer().expect("query AppContainer token"));
         child.resume().expect("resume AppContainer");
-        child.wait_exit(WAIT_MS).expect("wait AppContainer")
+        let exit_code = child.wait_exit(WAIT_MS).expect("wait AppContainer");
+        drop(stdout);
+        drop(stderr);
+        IsolatedOutput {
+            exit_code,
+            stdout: fs::read_to_string(&stdout_path).expect("read captured stdout"),
+            stderr: fs::read_to_string(&stderr_path).expect("read captured stderr"),
+        }
     }
 
-    fn read_exit(profile: &AppContainerProfile, file: &Path) -> u32 {
+    fn read_output(profile: &AppContainerProfile, file: &Path) -> IsolatedOutput {
         let findstr = system32_executable("findstr.exe");
-        run_isolated(
+        run_isolated_capture(
             profile,
             &findstr,
             vec![
@@ -284,6 +312,25 @@ mod tests {
                 file.as_os_str().to_os_string(),
             ],
         )
+    }
+
+    fn type_output(profile: &AppContainerProfile, file: &Path) -> IsolatedOutput {
+        let cmd = system32_executable("cmd.exe");
+        let command = format!("type \"{}\"", file.to_string_lossy());
+        run_isolated_capture(
+            profile,
+            &cmd,
+            vec![
+                OsString::from("/d"),
+                OsString::from("/s"),
+                OsString::from("/c"),
+                OsString::from(command),
+            ],
+        )
+    }
+
+    fn read_exit(profile: &AppContainerProfile, file: &Path) -> u32 {
+        read_output(profile, file).exit_code
     }
 
     #[test]
@@ -327,10 +374,22 @@ mod tests {
         let grant = profile
             .grant_file_read(&sentinel)
             .expect("grant exact-file read");
+        let findstr_read = read_output(&profile, &sentinel);
+        let cmd_read = type_output(&profile, &sentinel);
         assert_eq!(
-            read_exit(&profile, &sentinel),
+            findstr_read.exit_code,
             0,
-            "Package SID plus exact ACL grant must read the file"
+            "Package SID plus exact ACL grant must read the file; findstr_stdout={:?}; findstr_stderr={:?}; cmd_exit={}; cmd_stdout={:?}; cmd_stderr={:?}",
+            findstr_read.stdout,
+            findstr_read.stderr,
+            cmd_read.exit_code,
+            cmd_read.stdout,
+            cmd_read.stderr
+        );
+        assert_eq!(
+            cmd_read.exit_code, 0,
+            "cmd type must independently read the exact granted file; cmd_stdout={:?}; cmd_stderr={:?}",
+            cmd_read.stdout, cmd_read.stderr
         );
         assert_ne!(
             read_exit(&profile, &ungranted),
