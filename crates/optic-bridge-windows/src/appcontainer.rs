@@ -1,4 +1,7 @@
-use std::io::{Error, Result};
+use std::{
+    io::{Error, Result},
+    marker::PhantomData,
+};
 
 use windows::{
     Win32::Security::{
@@ -17,6 +20,23 @@ use windows::{
 pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
+}
+
+/// Borrowed AppContainer process-creation capabilities.
+///
+/// The lifetime keeps the underlying profile SID alive for every safe use of
+/// the raw Windows structure.
+#[derive(Debug)]
+pub struct AppContainerSecurityCapabilities<'a> {
+    raw: SECURITY_CAPABILITIES,
+    _profile: PhantomData<&'a AppContainerProfile>,
+}
+
+impl AppContainerSecurityCapabilities<'_> {
+    #[must_use]
+    pub fn as_raw(&self) -> &SECURITY_CAPABILITIES {
+        &self.raw
+    }
 }
 
 impl AppContainerProfile {
@@ -42,16 +62,20 @@ impl AppContainerProfile {
         Ok(Self { name, sid })
     }
 
-    /// Security capabilities for process creation in this profile.
+    /// Borrow security capabilities for process creation in this profile.
     ///
     /// No capability SID is attached; in particular no network capability is granted.
+    /// The returned value cannot outlive this profile in safe Rust.
     #[must_use]
-    pub fn security_capabilities(&self) -> SECURITY_CAPABILITIES {
-        SECURITY_CAPABILITIES {
-            AppContainerSid: self.sid,
-            Capabilities: std::ptr::null_mut(),
-            CapabilityCount: 0,
-            Reserved: 0,
+    pub fn security_capabilities(&self) -> AppContainerSecurityCapabilities<'_> {
+        AppContainerSecurityCapabilities {
+            raw: SECURITY_CAPABILITIES {
+                AppContainerSid: self.sid,
+                Capabilities: std::ptr::null_mut(),
+                CapabilityCount: 0,
+                Reserved: 0,
+            },
+            _profile: PhantomData,
         }
     }
 }
@@ -232,14 +256,14 @@ mod tests {
 
         let mut attributes = AttributeList::one()?;
         let security = profile.security_capabilities();
-        // SAFETY: the list and SECURITY_CAPABILITIES remain alive through CreateProcessW;
-        // the attribute identifier matches the concrete structure.
+        // SAFETY: the list and borrowed SECURITY_CAPABILITIES remain alive through
+        // CreateProcessW; the attribute identifier matches the concrete structure.
         unsafe {
             UpdateProcThreadAttribute(
                 attributes.raw(),
                 0,
                 PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
-                Some((&security as *const SECURITY_CAPABILITIES).cast()),
+                Some((security.as_raw() as *const SECURITY_CAPABILITIES).cast()),
                 size_of::<SECURITY_CAPABILITIES>(),
                 None,
                 None,
@@ -337,6 +361,11 @@ mod tests {
     #[test]
     fn appcontainer_token_denies_ungranted_user_file_read() {
         let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
+        let security = profile.security_capabilities();
+        assert_eq!(security.as_raw().CapabilityCount, 0);
+        assert!(security.as_raw().Capabilities.is_null());
+        drop(security);
+
         let sentinel = std::env::temp_dir().join(format!(
             "optic-appcontainer-sentinel-{}-{}.txt",
             std::process::id(),
