@@ -455,8 +455,8 @@ mod tests {
         );
 
         let grant = profile
-            .grant_file_read(&sentinel)
-            .expect("grant exact-file read");
+            .grant_file_read_within(&sentinel, sentinel.parent().expect("sentinel parent"))
+            .expect("grant exact-file read within workspace root");
         let granted_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
         assert_eq!(
             granted_read.exit_code,
@@ -495,8 +495,8 @@ mod tests {
 
         {
             let _drop_revoke = profile
-                .grant_file_read(&sentinel)
-                .expect("grant exact-file read for Drop cleanup");
+                .grant_file_read_within(&sentinel, sentinel.parent().expect("sentinel parent"))
+                .expect("grant exact-file read within workspace root for Drop cleanup");
             let live_read = run_workspace_probe(&profile, &probe_exe, &sentinel, "read");
             assert_eq!(
                 live_read.exit_code,
