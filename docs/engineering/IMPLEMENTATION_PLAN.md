@@ -464,9 +464,24 @@ Status: **merged and post-merge validated** in PR #57 (`fda0f24`), exact green f
 
 Gate passed: final documentation-head Ubuntu/Windows/dependency-policy CI, exact-head merge, and post-merge `main` CI.
 
+#### Phase 3C3A - pinned executable identity
+
+Status: **merged and post-merge validated** in PR #59 (`050a4244`), exact green final head `85a7d92c`; exact-head CI #282 and post-merge `main` CI #283 passed Ubuntu, Windows and dependency policy, including native Windows executable-pin/launch coverage and the real MCP smoke.
+
+1. Absolute `LeaseScope::ProcessExecutable` scopes are captured when the application registers the task lease, canonicalized to one regular file and hashed with the existing bounded BLAKE3 `ContentVersion` primitive.
+2. Executable identity observation is capped at 512 MiB; unreadable, invalid or oversized absolute executable authority fails closed before the lease is published.
+3. On Windows the lease record retains a read handle opened with read sharing only. While that record exists, concurrent write/delete/rename replacement is denied; physical lease removal releases the pin. Native coverage proves the pinned executable can still be launched normally.
+4. Every active lease lookup revalidates the canonical executable identity before the process authorization path can proceed. Identity drift and unavailable identity remain distinct runtime failures.
+5. MCP request schemas are unchanged. The adapter exposes stable `optic.process_executable_identity_changed` and `optic.process_executable_identity_unavailable` failures without exposing the hash, pin or lease id.
+6. Relative process scopes remain supported only for historical/internal registry fixtures and do not receive executable identity authority. Production startup already provisions canonical absolute executable scopes.
+7. Non-Windows currently performs bounded content revalidation but does not claim the persistent Windows handle-pinning guarantee.
+8. 3C3A deliberately does not classify interpreters/scripts/repository code, implement network containment or add a Windows sandbox.
+
+Gate passed: exact-head CI #282, SHA-guarded squash merge, and post-merge `main` CI #283.
+
 #### Later Phase 3C gates
 
-Still prioritize ToolProfile/ToolIdentity, truthful network semantics, environment/repository-code execution classification and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Still prioritize ToolProfile/tool-class classification, environment/interpreter/repository-code execution classification, truthful network semantics and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

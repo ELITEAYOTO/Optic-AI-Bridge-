@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha surface through the Phase 3C1 candidate: file mutation and Git integration tools remain conditional on distinct application-owned authority; process results include explicit bounded-termination uncertainty. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha surface through Phase 3C3A: file mutation and Git integration tools remain conditional on distinct application-owned authority; process results include explicit bounded-termination uncertainty, CPU governance is application-owned, and absolute executable leases carry bounded executable identity. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -138,6 +138,9 @@ process_send_input(job_id, data)
 
 - `executable` must be an absolute path and canonicalize to a regular file.
 - Canonical executable identity must exactly match a task lease created by the bridge operator at startup with `--allow-executable`; the MCP caller cannot mint or select a lease.
+- Phase 3C3A binds every absolute process-executable lease at registration to a canonical, byte-bounded BLAKE3 `ContentVersion` (512 MiB identity-observation ceiling) and revalidates that identity when the active lease is resolved.
+- On Windows, the lease record also retains a read handle with read sharing only for its lifetime, denying concurrent write/delete/rename replacement until physical lease removal while still allowing normal executable launch. Non-Windows currently relies on bounded content revalidation and does not claim this persistent-handle guarantee.
+- Identity drift fails as `optic.process_executable_identity_changed`; inability to prove the authorized identity fails as `optic.process_executable_identity_unavailable`. Neither error exposes the hash, pin or lease id, and no new MCP request field is added.
 - A session receives `ProcessRun` only when at least one executable was operator-authorized for that server lifecycle.
 - `args` is a structured array. An opaque shell command string is not accepted as the primitive.
 - `cwd`, when supplied, is project-relative and must canonicalize to a directory inside the workspace.
