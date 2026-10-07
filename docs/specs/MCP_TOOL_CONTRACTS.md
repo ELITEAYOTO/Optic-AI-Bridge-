@@ -144,7 +144,8 @@ process_send_input(job_id, data)
 - The child environment is cleared by default. `env_allowlist` may request inheritance only for names that the operator allowed at startup with `--allow-env`.
 - `network` defaults to denied and `network=true` currently fails closed because process network containment is not implemented.
 - `timeout_ms`, `output_budget`, `memory_bytes` and `process_count` must be non-zero and fit both application hard ceilings and the active exact-executable task lease resource ceiling.
-- On Windows, timeout/output remain Optic-owned runtime limits while `memory_bytes` and `process_count` are additionally enforced by the per-job Windows Job Object.
+- CPU rate is deliberately not an MCP request field. Phase 3C2 applies an application-owned fixed reservation/cap with defaults of 25% per job, 75% aggregate Optic process CPU and 50% per session; aggregate/session exhaustion fails admission rather than accepting a caller-selected larger share.
+- On Windows, timeout/output remain Optic-owned runtime limits while `memory_bytes` and `process_count` are additionally enforced by the per-job Windows Job Object; Phase 3C2 also applies a Job Object hard CPU cap to the owned process tree before resume.
 - Success returns an opaque `job_id`; no operating-system PID is exposed as a control capability.
 
 ### `process_read`

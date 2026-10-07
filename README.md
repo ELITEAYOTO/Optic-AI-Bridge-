@@ -1,6 +1,6 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha - Phase 2D3, Phase 3A through Phase 3B3, and Phase 3C1 bounded process termination are merged and post-merge validated. Later Phase 3C safety gates remain open: CPU/headroom governance, ToolIdentity, OS network containment and sandboxing.
+**Status:** pre-alpha - Phase 2D3, Phase 3A through Phase 3B3, and Phase 3C1 bounded process termination are merged and post-merge validated. Phase 3C2 bounded process CPU governance is implemented in PR #57 with exact green code/test head `480de5c`; final documentation-head CI/merge is still pending. Later Phase 3C safety gates remain open: ToolIdentity, OS network containment, repository-code execution classification and sandboxing.
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
 > **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.

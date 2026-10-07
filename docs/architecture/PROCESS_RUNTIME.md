@@ -48,11 +48,12 @@ For every Windows process job:
 3. The wrapper forces `CREATE_SUSPENDED`.
 4. A new Job Object is created.
 5. `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` and `JOB_OBJECT_LIMIT_JOB_MEMORY` are configured from the authorized budget.
-6. The suspended root process is assigned to that Job Object.
-7. Only after successful assignment are the child threads resumed.
-8. stdout/stderr are drained asynchronously while the runtime monitors timeout, stop and output overflow.
-9. `try_wait` / `wait` keep the process job non-terminal while any descendant remains active in the Job Object.
-10. Stop, timeout, overflow or a process-observation failure requests Job Object tree termination. The runtime then waits at most two seconds for `wait()` to confirm root exit plus zero active Job Object descendants. If that proof is unavailable, the job becomes `TerminationUncertain`; dropping the final live Job Object handle remains the kill-on-close backstop.
+6. Phase 3C2 additionally configures `JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP` before assignment. The current application-owned default is 25% per Job Object (`CpuRate = 2500`); failure to establish that hard cap fails the spawn closed rather than silently running uncapped.
+7. The suspended root process is assigned to that Job Object.
+8. Only after successful assignment are the child threads resumed.
+9. stdout/stderr are drained asynchronously while the runtime monitors timeout, stop and output overflow.
+10. `try_wait` / `wait` keep the process job non-terminal while any descendant remains active in the Job Object.
+11. Stop, timeout, overflow or a process-observation failure requests Job Object tree termination. The runtime then waits at most two seconds for `wait()` to confirm root exit plus zero active Job Object descendants. If that proof is unavailable, the job becomes `TerminationUncertain`; dropping the final live Job Object handle remains the kill-on-close backstop.
 
 This ordering closes the ordinary root-process spawn-before-assignment window for the owned child. Job Objects provide lifecycle/resource containment; they are not a complete security sandbox or a substitute for a restricted token, AppContainer, VM or Windows Sandbox.
 
@@ -69,7 +70,10 @@ Development/CI uses a process-group wrapper plus kill-on-drop. This preserves li
 - `process_read` is cursor-based and independently capped per call (64 KiB by the current default HardLimits);
 - active jobs and retained terminal records are both bounded;
 - retained proven-terminal records may be evicted deterministically to admit later work without allowing an unbounded history; `TerminationUncertain` is deliberately not terminal for quota/eviction/reap purposes;
-- total reserved output RAM is checked before admitting a new job.
+- total reserved output RAM is checked before admitting a new job;
+- Phase 3C2 also reserves a fixed application-owned CPU share per active/uncertain job before spawn. Defaults are 25% per job, 75% aggregate across Optic-owned process jobs and 50% per session. `TerminationUncertain` keeps that reservation; retained proven-terminal history does not.
+
+The 75% figure is an Optic admission ceiling, not a claim that whole-machine utilization stays below 75%: unrelated applications may consume CPU, and a parent Job Object may impose an even smaller inherited quota. Optic simply refuses to authorize its own active jobs above the configured aggregate reservation.
 
 ## Time and cancellation
 
@@ -86,13 +90,15 @@ The authorized `ResourceBudget` now has distinct enforcement layers:
 - `timeout_ms`: runtime monotonic deadline, followed by Job Object tree termination on Windows;
 - `output_bytes`: Optic-owned bounded stdout/stderr retention and overflow termination;
 - `memory_bytes`: Windows `JOB_OBJECT_LIMIT_JOB_MEMORY` on native Windows;
-- `process_count`: Windows `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` on native Windows.
+- `process_count`: Windows `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` on native Windows;
+- CPU: Phase 3C2 uses an application-owned fixed per-job percentage rather than a caller field; Windows enforces it with `JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP`, while `ProcessManager` separately bounds aggregate and per-session reservations before spawn.
 
-The native Phase 1D CI gate proves the new Windows limits using a dedicated fixture:
+The native Windows CI gates prove these limits using dedicated fixtures/tests:
 
 - with `process_count = 1`, descendant creation is blocked;
 - with a 128 MiB job-memory ceiling, the fixture cannot reach a 384 MiB allocation target;
 - a parent that spawns a descendant is timed out and the descendant is killed before it can write a delayed survival marker;
-- dropping a live limited Job Object prevents the child from surviving long enough to write its own delayed marker.
+- dropping a live limited Job Object prevents the child from surviving long enough to write its own delayed marker;
+- Phase 3C2 queries `JobObjectCpuRateControlInformation` and proves the 25% hard cap is stored as `CpuRate = 2500`; runtime tests prove global/per-session admission and uncertain-state reservation behavior.
 
-These tests complement, rather than replace, policy/lease ceilings. Authorization decides which budget is allowed; the Windows Job Object contains the process within the authorized process-count and memory budget.
+These tests complement, rather than replace, policy/lease ceilings. Authorization decides what execution is allowed; the Windows Job Object contains each process tree within its process-count, memory and CPU ceilings, while Optic's runtime admission bounds aggregate/session CPU reservation.
