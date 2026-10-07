@@ -18,7 +18,10 @@ mod file;
 mod job;
 
 #[cfg(windows)]
-pub use appcontainer::{AppContainerProfile, AppContainerSecurityCapabilities};
+pub use appcontainer::{
+    AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
+    SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+};
 #[cfg(windows)]
 pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
