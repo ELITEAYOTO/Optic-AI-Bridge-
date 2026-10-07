@@ -168,9 +168,10 @@ impl OwnedJob {
         }
         .map_err(Error::other)?;
 
-        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
-        cpu.ControlFlags =
-            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+            ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            ..Default::default()
+        };
         cpu.Anonymous.CpuRate = cpu_percent * 100;
         // SAFETY: the CPU information class matches the concrete structure and exact size;
         // the hard cap is configured before any child is assigned or resumed.
