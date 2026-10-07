@@ -16,12 +16,12 @@ use windows::{
         Security::{
             FreeSid, GetTokenInformation,
             Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
-            OpenProcessToken, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
+            PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
             EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
             PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
             TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
