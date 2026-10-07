@@ -1,5 +1,6 @@
 use std::{
     ffi::{OsStr, OsString, c_void},
+    fmt::Write as _,
     io::{Error, Result},
     marker::PhantomData,
     mem::{size_of, size_of_val},
@@ -10,15 +11,13 @@ use std::{
     path::Path,
 };
 
-use crate::workspace_grant::AppContainerReadCapability;
-
 use windows::{
     Win32::{
         Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         Security::{
             FreeSid, GetTokenInformation,
             Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
-            PSID, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES, TOKEN_QUERY, TokenIsAppContainer,
+            PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
@@ -40,6 +39,7 @@ use windows::{
 pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
+    external_acl_grants_allowed: bool,
 }
 
 /// Borrowed AppContainer process-creation capabilities.
@@ -49,9 +49,7 @@ pub struct AppContainerProfile {
 #[derive(Debug)]
 pub struct AppContainerSecurityCapabilities<'a> {
     raw: SECURITY_CAPABILITIES,
-    _capability_entries: Vec<SID_AND_ATTRIBUTES>,
     _profile: PhantomData<&'a AppContainerProfile>,
-    _capability: PhantomData<&'a AppContainerReadCapability>,
 }
 
 impl AppContainerSecurityCapabilities<'_> {
@@ -67,21 +65,26 @@ impl AppContainerProfile {
     /// Existing profiles are not reused implicitly, so stale grants cannot be
     /// inherited by a new isolation attempt.
     pub fn create(name: &str) -> Result<Self> {
-        Self::create_inner(name, None)
+        Self::create_inner(name, false)
     }
 
-    /// Create a fresh AppContainer profile that declares one ephemeral read capability.
+    /// Create a fresh cryptographically named profile suitable for temporary ACL grants.
     ///
-    /// Windows profile creation records the requested capability SID. The same
-    /// capability must still be supplied in `SECURITY_CAPABILITIES` at process launch.
-    pub fn create_with_read_capability(
-        name: &str,
-        capability: &AppContainerReadCapability,
-    ) -> Result<Self> {
-        Self::create_inner(name, Some(capability))
+    /// A stale ACE left behind by abrupt process termination cannot be reused by a later
+    /// Optic profile because the Package SID is derived from a fresh 128-bit random name.
+    pub fn create_ephemeral() -> Result<Self> {
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
+        let mut name = String::from("Optic.Isolation.");
+        for byte in random {
+            write!(&mut name, "{byte:02x}")
+                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
+        }
+        Self::create_inner(&name, true)
     }
 
-    fn create_inner(name: &str, capability: Option<&AppContainerReadCapability>) -> Result<Self> {
+    fn create_inner(name: &str, external_acl_grants_allowed: bool) -> Result<Self> {
         if name.is_empty() || name.len() > 64 {
             return Err(Error::other(
                 "AppContainer profile name must be 1..=64 bytes",
@@ -90,16 +93,25 @@ impl AppContainerProfile {
 
         let name = HSTRING::from(name);
         let description = HSTRING::from("Optic AI Bridge isolated process profile");
-        let capability_entry = capability.map(AppContainerReadCapability::sid_and_attributes);
-        let capabilities = capability_entry.as_ref().map(std::slice::from_ref);
-        // SAFETY: strings and the optional capability entry live through the synchronous
-        // call, and the returned SID is owned by this value.
+        // SAFETY: strings live through the synchronous call, no capability array
+        // is supplied, and the returned SID is owned by this value.
         let sid = unsafe {
-            CreateAppContainerProfile(&name, &name, &description, capabilities)
-                .map_err(Error::other)?
+            CreateAppContainerProfile(&name, &name, &description, None).map_err(Error::other)?
         };
 
-        Ok(Self { name, sid })
+        Ok(Self {
+            name,
+            sid,
+            external_acl_grants_allowed,
+        })
+    }
+
+    pub(crate) const fn package_sid(&self) -> PSID {
+        self.sid
+    }
+
+    pub(crate) const fn external_acl_grants_allowed(&self) -> bool {
+        self.external_acl_grants_allowed
     }
 
     /// Borrow security capabilities for process creation in this profile.
@@ -108,45 +120,14 @@ impl AppContainerProfile {
     /// The returned value cannot outlive this profile in safe Rust.
     #[must_use]
     pub fn security_capabilities(&self) -> AppContainerSecurityCapabilities<'_> {
-        self.security_capabilities_inner(None)
-    }
-
-    /// Borrow process-creation capabilities including one ephemeral read grant.
-    ///
-    /// The returned Windows structure cannot outlive either the AppContainer
-    /// profile or the capability SID in safe Rust.
-    #[must_use]
-    pub(crate) fn security_capabilities_with_read_capability<'a>(
-        &'a self,
-        capability: &'a AppContainerReadCapability,
-    ) -> AppContainerSecurityCapabilities<'a> {
-        self.security_capabilities_inner(Some(capability))
-    }
-
-    fn security_capabilities_inner<'a>(
-        &'a self,
-        capability: Option<&'a AppContainerReadCapability>,
-    ) -> AppContainerSecurityCapabilities<'a> {
-        let mut entries = capability
-            .map(AppContainerReadCapability::sid_and_attributes)
-            .into_iter()
-            .collect::<Vec<_>>();
-        let capability_ptr = if entries.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            entries.as_mut_ptr()
-        };
         AppContainerSecurityCapabilities {
             raw: SECURITY_CAPABILITIES {
                 AppContainerSid: self.sid,
-                Capabilities: capability_ptr,
-                CapabilityCount: u32::try_from(entries.len())
-                    .expect("AppContainer capability count must fit u32"),
+                Capabilities: std::ptr::null_mut(),
+                CapabilityCount: 0,
                 Reserved: 0,
             },
-            _capability_entries: entries,
             _profile: PhantomData,
-            _capability: PhantomData,
         }
     }
 }
@@ -343,29 +324,6 @@ pub fn spawn_appcontainer_suspended(
     cwd: &Path,
     stdio: AppContainerStdio<'_>,
 ) -> Result<SuspendedAppContainerProcess> {
-    spawn_appcontainer_suspended_inner(profile, None, executable, args, cwd, stdio)
-}
-
-/// Create an AppContainer child suspended with one ephemeral read capability.
-pub fn spawn_appcontainer_suspended_with_read_capability(
-    profile: &AppContainerProfile,
-    capability: &AppContainerReadCapability,
-    executable: &Path,
-    args: &[OsString],
-    cwd: &Path,
-    stdio: AppContainerStdio<'_>,
-) -> Result<SuspendedAppContainerProcess> {
-    spawn_appcontainer_suspended_inner(profile, Some(capability), executable, args, cwd, stdio)
-}
-
-fn spawn_appcontainer_suspended_inner(
-    profile: &AppContainerProfile,
-    capability: Option<&AppContainerReadCapability>,
-    executable: &Path,
-    args: &[OsString],
-    cwd: &Path,
-    stdio: AppContainerStdio<'_>,
-) -> Result<SuspendedAppContainerProcess> {
     let executable_wide = wide_null(executable.as_os_str());
     let cwd_wide = wide_null(cwd.as_os_str());
     let mut command_line = build_command_line(executable.as_os_str(), args);
@@ -376,10 +334,7 @@ fn spawn_appcontainer_suspended_inner(
     let inherited_handles = [stdin.raw(), stdout.raw(), stderr.raw()];
 
     let mut attributes = AttributeList::new(2)?;
-    let security = match capability {
-        Some(capability) => profile.security_capabilities_with_read_capability(capability),
-        None => profile.security_capabilities(),
-    };
+    let security = profile.security_capabilities();
     // SAFETY: the list and borrowed SECURITY_CAPABILITIES remain alive through
     // CreateProcessW; the attribute identifier matches the concrete structure.
     unsafe {

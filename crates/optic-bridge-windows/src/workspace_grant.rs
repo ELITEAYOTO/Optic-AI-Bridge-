@@ -1,6 +1,5 @@
 use std::{
     ffi::c_void,
-    fmt::Write as _,
     fs::{File, OpenOptions},
     io::{Error, Result},
     marker::PhantomData,
@@ -9,99 +8,42 @@ use std::{
     ptr,
 };
 
-use windows::{
-    Win32::{
-        Foundation::{HANDLE, HLOCAL, LocalFree},
-        Security::{
-            ACL,
-            Authorization::{
-                BuildTrusteeWithSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetSecurityInfo,
-                REVOKE_ACCESS, SE_FILE_OBJECT, SetEntriesInAclW, SetSecurityInfo, TRUSTEE_W,
-            },
-            DACL_SECURITY_INFORMATION, DeriveCapabilitySidsFromName, PSECURITY_DESCRIPTOR, PSID,
-            SID_AND_ATTRIBUTES,
+use windows::Win32::{
+    Foundation::{HANDLE, HLOCAL, LocalFree},
+    Security::{
+        ACL,
+        Authorization::{
+            BuildTrusteeWithSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetSecurityInfo, REVOKE_ACCESS,
+            SE_FILE_OBJECT, SetEntriesInAclW, SetSecurityInfo, TRUSTEE_W,
         },
-        Storage::FileSystem::{
-            FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_OPEN_REPARSE_POINT,
-            FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            FileAttributeTagInfo, GetFileInformationByHandleEx,
-        },
-        System::SystemServices::SE_GROUP_ENABLED,
+        DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
     },
-    core::HSTRING,
+    Storage::FileSystem::{
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        FileAttributeTagInfo, GetFileInformationByHandleEx,
+    },
 };
+
+use crate::appcontainer::AppContainerProfile;
 
 const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
 
-/// Ephemeral AppContainer capability used only for exact-file read grants.
-///
-/// The capability name is generated from cryptographic randomness and is never
-/// persisted. A stale ACE left by an abrupt crash therefore names a capability
-/// that later Optic launches do not reissue.
-#[derive(Debug)]
-pub struct AppContainerReadCapability {
-    sid: PSID,
-}
-
-impl AppContainerReadCapability {
-    pub fn create_ephemeral() -> Result<Self> {
-        let mut random = [0u8; 16];
-        getrandom::fill(&mut random)
-            .map_err(|_| Error::other("Windows workspace capability entropy unavailable"))?;
-        let mut name = String::from("Optic.Workspace.Read.");
-        for byte in random {
-            write!(&mut name, "{byte:02x}")
-                .map_err(|_| Error::other("failed to format workspace capability name"))?;
-        }
-        Self::derive(&name)
-    }
-
-    fn derive(name: &str) -> Result<Self> {
-        let name = HSTRING::from(name);
-        let mut group_sids = ptr::null_mut::<PSID>();
-        let mut group_count = 0u32;
-        let mut capability_sids = ptr::null_mut::<PSID>();
-        let mut capability_count = 0u32;
-
-        // SAFETY: output pointers reference writable storage and the HSTRING
-        // remains live for the synchronous call. Windows owns all returned
-        // LocalAlloc buffers until this function wraps/frees them.
-        unsafe {
-            DeriveCapabilitySidsFromName(
-                &name,
-                &mut group_sids,
-                &mut group_count,
-                &mut capability_sids,
-                &mut capability_count,
-            )
-        }
-        .map_err(Error::other)?;
-
-        let _groups = LocalSidArray::new(group_sids, group_count);
-        let capabilities = LocalSidArray::new(capability_sids, capability_count);
-        let sid = capabilities.into_single()?;
-        Ok(Self { sid })
-    }
-
-    pub(crate) const fn sid_and_attributes(&self) -> SID_AND_ATTRIBUTES {
-        SID_AND_ATTRIBUTES {
-            Sid: self.sid,
-            Attributes: SE_GROUP_ENABLED as u32,
-        }
-    }
-
-    /// Grant this ephemeral capability read-only access to one exact file.
+impl AppContainerProfile {
+    /// Grant this fresh AppContainer profile read-only access to one exact file.
     ///
-    /// The target is opened handle-first with reparse points denied. The ACE is
-    /// non-inheritable and is revoked on explicit `revoke` or best-effort Drop.
+    /// The profile Package SID is already part of every process token created for
+    /// this AppContainer, so no additional capability SID or network authority is
+    /// introduced. The target is opened handle-first with final reparse points
+    /// denied. The ACE is non-inheritable and is revoked on explicit `revoke` or
+    /// best-effort Drop.
     pub fn grant_file_read<'a>(&'a self, path: &Path) -> Result<AppContainerReadFileGrant<'a>> {
+        if !self.external_acl_grants_allowed() {
+            return Err(Error::other(
+                "workspace grants require a cryptographically ephemeral AppContainer profile",
+            ));
+        }
         AppContainerReadFileGrant::new(path, self)
-    }
-}
-
-impl Drop for AppContainerReadCapability {
-    fn drop(&mut self) {
-        free_local_sid(self.sid);
     }
 }
 
@@ -111,11 +53,11 @@ pub struct AppContainerReadFileGrant<'a> {
     file: File,
     sid: PSID,
     active: bool,
-    _capability: PhantomData<&'a AppContainerReadCapability>,
+    _profile: PhantomData<&'a AppContainerProfile>,
 }
 
 impl<'a> AppContainerReadFileGrant<'a> {
-    fn new(path: &Path, capability: &'a AppContainerReadCapability) -> Result<Self> {
+    fn new(path: &Path, profile: &'a AppContainerProfile) -> Result<Self> {
         let mut options = OpenOptions::new();
         options
             .access_mode(FILE_GENERIC_READ.0 | WRITE_DAC_ACCESS)
@@ -123,16 +65,17 @@ impl<'a> AppContainerReadFileGrant<'a> {
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0);
         let file = options.open(path)?;
         reject_reparse(&file)?;
-        modify_file_dacl(&file, capability.sid, true)?;
+        let sid = profile.package_sid();
+        modify_file_dacl(&file, sid, true)?;
         Ok(Self {
             file,
-            sid: capability.sid,
+            sid,
             active: true,
-            _capability: PhantomData,
+            _profile: PhantomData,
         })
     }
 
-    /// Revoke the exact capability ACE. Consuming self prevents accidental reuse.
+    /// Revoke the exact Package SID ACE. Consuming self prevents accidental reuse.
     pub fn revoke(mut self) -> Result<()> {
         self.revoke_inner()
     }
@@ -179,7 +122,7 @@ fn modify_file_dacl(file: &File, sid: PSID, grant: bool) -> Result<()> {
     }
 
     let mut trustee = TRUSTEE_W::default();
-    // SAFETY: SID is owned by the live capability and remains valid throughout.
+    // SAFETY: SID is owned by the live AppContainer profile and remains valid throughout.
     unsafe { BuildTrusteeWithSidW(&mut trustee, Some(sid)) };
     let entry = EXPLICIT_ACCESS_W {
         grfAccessPermissions: if grant { FILE_GENERIC_READ.0 } else { 0 },
@@ -263,62 +206,6 @@ impl Drop for LocalAllocation {
     }
 }
 
-#[derive(Debug)]
-struct LocalSidArray {
-    ptr: *mut PSID,
-    len: u32,
-}
-
-impl LocalSidArray {
-    const fn new(ptr: *mut PSID, len: u32) -> Self {
-        Self { ptr, len }
-    }
-
-    fn into_single(mut self) -> Result<PSID> {
-        if self.len != 1 || self.ptr.is_null() {
-            return Err(Error::other(format!(
-                "expected one derived capability SID, received {}",
-                self.len
-            )));
-        }
-        // SAFETY: DeriveCapabilitySidsFromName returned an array with one element.
-        let sid = unsafe { *self.ptr };
-        // Free only the outer pointer array; ownership of the single SID moves out.
-        unsafe {
-            let _ = LocalFree(Some(HLOCAL(self.ptr.cast::<c_void>())));
-        }
-        self.ptr = ptr::null_mut();
-        self.len = 0;
-        Ok(sid)
-    }
-}
-
-impl Drop for LocalSidArray {
-    fn drop(&mut self) {
-        if self.ptr.is_null() {
-            return;
-        }
-        for index in 0..self.len as usize {
-            // SAFETY: pointer/count pair was returned by DeriveCapabilitySidsFromName.
-            let sid = unsafe { *self.ptr.add(index) };
-            free_local_sid(sid);
-        }
-        // SAFETY: outer pointer array was allocated by the same Win32 API.
-        unsafe {
-            let _ = LocalFree(Some(HLOCAL(self.ptr.cast::<c_void>())));
-        }
-    }
-}
-
-fn free_local_sid(sid: PSID) {
-    if !sid.0.is_null() {
-        // SAFETY: derived capability SIDs are LocalAlloc buffers owned by this module.
-        unsafe {
-            let _ = LocalFree(Some(HLOCAL(sid.0)));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -329,9 +216,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use crate::{
-        AppContainerProfile, AppContainerStdio, spawn_appcontainer_suspended_with_read_capability,
-    };
+    use crate::{AppContainerProfile, AppContainerStdio, spawn_appcontainer_suspended};
 
     use super::*;
 
@@ -360,12 +245,7 @@ mod tests {
             .join(name)
     }
 
-    fn run_isolated(
-        profile: &AppContainerProfile,
-        capability: &AppContainerReadCapability,
-        executable: &Path,
-        args: Vec<OsString>,
-    ) -> u32 {
+    fn run_isolated(profile: &AppContainerProfile, executable: &Path, args: Vec<OsString>) -> u32 {
         let cwd = executable.parent().expect("System32 parent");
         let stdin = OpenOptions::new()
             .read(true)
@@ -379,9 +259,8 @@ mod tests {
             .write(true)
             .open("NUL")
             .expect("NUL stderr");
-        let mut child = spawn_appcontainer_suspended_with_read_capability(
+        let mut child = spawn_appcontainer_suspended(
             profile,
-            capability,
             executable,
             &args,
             cwd,
@@ -391,27 +270,35 @@ mod tests {
                 stderr: stderr.as_handle(),
             },
         )
-        .expect("spawn capability AppContainer");
+        .expect("spawn AppContainer");
         assert!(child.is_appcontainer().expect("query AppContainer token"));
         child.resume().expect("resume AppContainer");
         child.wait_exit(WAIT_MS).expect("wait AppContainer")
     }
 
-    fn read_exit(
-        profile: &AppContainerProfile,
-        capability: &AppContainerReadCapability,
-        file: &Path,
-    ) -> u32 {
+    fn read_exit(profile: &AppContainerProfile, file: &Path) -> u32 {
         let findstr = system32_executable("findstr.exe");
         run_isolated(
             profile,
-            capability,
             &findstr,
             vec![
                 OsString::from("/c:optic read grant sentinel"),
                 file.as_os_str().to_os_string(),
             ],
         )
+    }
+
+    #[test]
+    fn named_profile_cannot_mint_workspace_grant() {
+        let sentinel = unique_temp_file();
+        fs::write(&sentinel, b"optic read grant sentinel\n").expect("write sentinel");
+        let _cleanup = Cleanup(sentinel.clone());
+        let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
+
+        assert!(
+            profile.grant_file_read(&sentinel).is_err(),
+            "predictably named profiles must not mint persistent filesystem grants"
+        );
     }
 
     #[test]
@@ -423,29 +310,34 @@ mod tests {
         fs::write(&ungranted, b"optic read grant sentinel\n").expect("write ungranted sentinel");
         let _ungranted_cleanup = Cleanup(ungranted.clone());
 
-        let capability = AppContainerReadCapability::create_ephemeral().expect("derive capability");
-        let profile =
-            AppContainerProfile::create_with_read_capability(&unique_profile_name(), &capability)
-                .expect("create profile with read capability");
+        let findstr = system32_executable("findstr.exe");
+        let control = std::process::Command::new(&findstr)
+            .arg("/c:optic read grant sentinel")
+            .arg(&sentinel)
+            .status()
+            .expect("run control findstr");
+        assert!(control.success(), "control process must read the sentinel");
+
+        let profile = AppContainerProfile::create_ephemeral().expect("create ephemeral profile");
 
         assert_ne!(
-            read_exit(&profile, &capability, &sentinel),
+            read_exit(&profile, &sentinel),
             0,
-            "capability without an ACL grant must not read the file"
+            "profile without an ACL grant must not read the file"
         );
 
-        let grant = capability
+        let grant = profile
             .grant_file_read(&sentinel)
             .expect("grant exact-file read");
         assert_eq!(
-            read_exit(&profile, &capability, &sentinel),
+            read_exit(&profile, &sentinel),
             0,
-            "read capability plus exact ACL grant must read the file"
+            "Package SID plus exact ACL grant must read the file"
         );
         assert_ne!(
-            read_exit(&profile, &capability, &ungranted),
+            read_exit(&profile, &ungranted),
             0,
-            "the capability must not read a second file without its own ACL grant"
+            "the profile must not read a second file without its own ACL grant"
         );
 
         let cmd = system32_executable("cmd.exe");
@@ -453,7 +345,6 @@ mod tests {
         assert_ne!(
             run_isolated(
                 &profile,
-                &capability,
                 &cmd,
                 vec![
                     OsString::from("/d"),
@@ -463,7 +354,7 @@ mod tests {
                 ],
             ),
             0,
-            "read-only capability must not permit file mutation"
+            "read-only grant must not permit file mutation"
         );
         assert_eq!(
             fs::read_to_string(&sentinel).expect("read sentinel after write attempt"),
@@ -472,25 +363,25 @@ mod tests {
 
         grant.revoke().expect("revoke exact-file grant");
         assert_ne!(
-            read_exit(&profile, &capability, &sentinel),
+            read_exit(&profile, &sentinel),
             0,
-            "the same capability must lose access after its ACE is revoked"
+            "the same profile must lose access after its ACE is revoked"
         );
 
         {
-            let _drop_revoke = capability
+            let _drop_revoke = profile
                 .grant_file_read(&sentinel)
                 .expect("grant exact-file read for Drop cleanup");
             assert_eq!(
-                read_exit(&profile, &capability, &sentinel),
+                read_exit(&profile, &sentinel),
                 0,
                 "Drop-cleanup grant must be usable while its guard is live"
             );
         }
         assert_ne!(
-            read_exit(&profile, &capability, &sentinel),
+            read_exit(&profile, &sentinel),
             0,
-            "dropping the grant guard must revoke the capability ACE"
+            "dropping the grant guard must revoke the Package SID ACE"
         );
     }
 

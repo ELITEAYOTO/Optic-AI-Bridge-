@@ -8,7 +8,6 @@ mod windows_launcher {
         io::{Error as IoError, ErrorKind, Read},
         os::windows::{ffi::OsStrExt, io::AsHandle},
         path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     use optic_bridge_core::HardLimits;
@@ -51,8 +50,7 @@ mod windows_launcher {
         let cwd = canonical_directory(&request.cwd)?;
         validate_command_size(&executable, &request.args)?;
 
-        let profile_name = unique_profile_name()?;
-        let profile = AppContainerProfile::create(&profile_name)
+        let profile = AppContainerProfile::create_ephemeral()
             .map_err(|error| IoError::other(format!("create AppContainer profile: {error}")))?;
         let null_stdin = OpenOptions::new()
             .read(true)
@@ -194,14 +192,6 @@ mod windows_launcher {
             .into());
         }
         Ok(())
-    }
-
-    fn unique_profile_name() -> LauncherResult<String> {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(IoError::other)?
-            .as_nanos();
-        Ok(format!("Optic.Launcher.{}.{nanos}", std::process::id()))
     }
 
     #[cfg(test)]
