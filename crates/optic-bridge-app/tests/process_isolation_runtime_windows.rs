@@ -68,7 +68,16 @@ async fn process_manager_routes_interpreter_through_pinned_launcher() {
         .expect("start isolated process through runtime");
 
     let result = await_terminal(&manager, &session, &job).await;
-    assert_eq!(result.status, ProcessStatus::Exited);
+    let stderr = manager
+        .read(&session, &job, ProcessStream::Stderr, 0, OUTPUT_BYTES)
+        .expect("read isolated stderr");
+    let stderr_text = String::from_utf8_lossy(&stderr.bytes);
+    assert_eq!(
+        result.status,
+        ProcessStatus::Exited,
+        "isolated runtime status mismatch: exit_code={:?}, stderr={stderr_text}",
+        result.exit_code
+    );
     assert_eq!(result.exit_code, Some(0));
 
     let stdout = manager
@@ -83,9 +92,6 @@ async fn process_manager_routes_interpreter_through_pinned_launcher() {
         "target stdout did not traverse the runtime launcher path"
     );
 
-    let stderr = manager
-        .read(&session, &job, ProcessStream::Stderr, 0, OUTPUT_BYTES)
-        .expect("read isolated stderr");
     assert!(
         stderr.eof,
         "isolated stderr must be closed at terminal state"
