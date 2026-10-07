@@ -439,51 +439,6 @@ mod tests {
         PathBuf::from(root).join("System32").join(name)
     }
 
-    fn wide_null(value: &OsStr) -> Vec<u16> {
-        value.encode_wide().chain(std::iter::once(0)).collect()
-    }
-
-    fn quote_windows_arg(value: &OsStr) -> Vec<u16> {
-        let source: Vec<u16> = value.encode_wide().collect();
-        let needs_quotes = source.is_empty()
-            || source
-                .iter()
-                .any(|value| matches!(*value, 0x20 | 0x09 | 0x22));
-        if !needs_quotes {
-            return source;
-        }
-
-        let mut out = vec![u16::from(b'"')];
-        let mut slashes = 0usize;
-        for value in source {
-            if value == u16::from(b'\\') {
-                slashes += 1;
-                continue;
-            }
-            if value == u16::from(b'"') {
-                out.extend(std::iter::repeat_n(u16::from(b'\\'), slashes * 2 + 1));
-                out.push(value);
-            } else {
-                out.extend(std::iter::repeat_n(u16::from(b'\\'), slashes));
-                out.push(value);
-            }
-            slashes = 0;
-        }
-        out.extend(std::iter::repeat_n(u16::from(b'\\'), slashes * 2));
-        out.push(u16::from(b'"'));
-        out
-    }
-
-    fn build_command_line(executable: &OsStr, args: &[&OsStr]) -> Vec<u16> {
-        let mut command = quote_windows_arg(executable);
-        for arg in args {
-            command.push(u16::from(b' '));
-            command.extend(quote_windows_arg(arg));
-        }
-        command.push(0);
-        command
-    }
-
     #[test]
     fn appcontainer_token_denies_ungranted_user_file_read() {
         let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
