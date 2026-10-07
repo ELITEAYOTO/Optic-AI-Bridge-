@@ -1,6 +1,6 @@
 # MCP Tool Contracts
 
-Status: current implemented pre-alpha surface through Phase 3C3A: file mutation and Git integration tools remain conditional on distinct application-owned authority; process results include explicit bounded-termination uncertainty, CPU governance is application-owned, and absolute executable leases carry bounded executable identity. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
+Status: current implemented pre-alpha surface through Phase 3C3B: file mutation and Git integration tools remain conditional on distinct application-owned authority; process results include explicit bounded-termination uncertainty, CPU governance is application-owned, absolute executable leases carry bounded executable identity, and operator-owned execution class is bound internally to process authority without adding an MCP class field. Implemented schemas are generated/validated from Rust types; this document summarizes the public contract and registration/authorization rules.
 
 ## Registration is not authorization
 
@@ -137,8 +137,11 @@ process_send_input(job_id, data)
 ### `process_start`
 
 - `executable` must be an absolute path and canonicalize to a regular file.
-- Canonical executable identity must exactly match a task lease created by the bridge operator at startup with `--allow-executable`; the MCP caller cannot mint or select a lease.
+- Canonical executable identity must exactly match a task lease created by the bridge operator at startup with classified `--allow-executable=<fixed-tool|interpreter|repository-code>:<absolute-path>` authority; the MCP caller cannot mint or select a lease.
 - Phase 3C3A binds every absolute process-executable lease at registration to a canonical, byte-bounded BLAKE3 `ContentVersion` (512 MiB identity-observation ceiling) and revalidates that identity when the active lease is resolved.
+- Phase 3C3B additionally binds an operator-owned `ProcessExecutionClass` (`FixedTool`, `Interpreter`, `RepositoryCode`) into that executable lease. `process_start` resolves the class from the active lease after executable canonicalization, and policy requires exact path + class agreement.
+- The MCP `process_start` request schema has no execution-class field. Callers cannot choose, downgrade or override the operator-owned class; duplicate canonical executable paths are rejected during startup provisioning so one binary cannot receive competing classes in one server lifecycle.
+- Execution class is classification only, not automatic executable inspection or OS sandboxing. All classes currently share the same bounded process runtime; class-specific confinement remains a later Phase 3C gate.
 - On Windows, the lease record also retains a read handle with read sharing only for its lifetime, denying concurrent write/delete/rename replacement until physical lease removal while still allowing normal executable launch. Non-Windows currently relies on bounded content revalidation and does not claim this persistent-handle guarantee.
 - Identity drift fails as `optic.process_executable_identity_changed`; inability to prove the authorized identity fails as `optic.process_executable_identity_unavailable`. Neither error exposes the hash, pin or lease id, and no new MCP request field is added.
 - A session receives `ProcessRun` only when at least one executable was operator-authorized for that server lifecycle.

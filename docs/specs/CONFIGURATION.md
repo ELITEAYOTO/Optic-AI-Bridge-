@@ -43,15 +43,20 @@ The application accepts one optional positional workspace path. When omitted, th
 Repeatable:
 
 ```text
---allow-executable <absolute-path>
+--allow-executable <fixed-tool|interpreter|repository-code>:<absolute-path>
 --allow-env <variable-name>
 ```
 
-- Each allowed executable is canonicalized and must resolve to a regular file before a process task lease is created.
-- `ProcessRun` is added to the application session only when at least one executable was authorized.
-- The process MCP tools are part of the base tool router, but `process_start` fails closed unless the requested canonical executable exactly matches an operator-created lease.
+- Each allowed executable must include an explicit operator-owned execution class. Legacy unclassified `--allow-executable <absolute-path>` values are rejected rather than receiving a default class.
+- `fixed-tool` is for an operator assertion that the authorized binary is being used as a fixed tool; this is not automatic inspection or proof that the binary cannot load plugins/scripts.
+- `interpreter` is for shells/language runtimes or other binaries whose arguments/files can directly express interpreted code (for example `cmd.exe`, PowerShell, Python or Node when used that way).
+- `repository-code` is for direct project/repository code execution or tools whose authorized role causes repository-controlled code to run (for example a project binary, test runner/build execution path, or similar operator-classified execution).
+- Each path is canonicalized and must resolve to a regular file before a process task lease is created. The same canonical executable path may appear only once per server lifecycle; duplicate/competing classes fail startup closed.
+- `ProcessRun` is added to the application session only when at least one classified executable was authorized.
+- The process MCP tools are part of the base tool router, but `process_start` fails closed unless the requested canonical executable exactly matches an operator-created lease. The execution class is resolved from that lease and is not a caller field.
 - Child environment is cleared by default; only variables allowed by the operator may be requested for inheritance.
 - Process network access remains unavailable; a request with `network=true` fails closed.
+- Phase 3C3B adds classification only. All classes currently share the existing bounded process runtime; class-specific OS confinement remains a later Phase 3C gate.
 
 ### Durable file-mutation authority
 
