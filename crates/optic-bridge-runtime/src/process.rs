@@ -43,7 +43,6 @@ const ISOLATION_LAUNCHER_PROTOCOL_VERSION: u32 = 2;
 const ISOLATION_LAUNCHER_REQUEST_LIMIT_BYTES: usize = 64 * 1024;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_MAX_ARGS: usize = 128;
-#[cfg(windows)]
 const ISOLATION_LAUNCHER_MAX_READ_FILES: usize = 32;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
@@ -221,6 +220,13 @@ impl ProcessManager {
             .to_str()
             .map(str::to_owned)
             .ok_or(ProcessError::NonUtf8Executable)
+    }
+
+    pub fn validate_workspace_read_files(
+        &self,
+        paths: &[WorkspacePath],
+    ) -> Result<(), ProcessError> {
+        self.resolve_workspace_read_files(paths).map(|_| ())
     }
 
     pub fn start(&self, spec: ProcessStartSpec) -> Result<JobId, ProcessError> {
@@ -639,7 +645,6 @@ impl ProcessManager {
             .collect()
     }
 
-    #[cfg(windows)]
     fn resolve_workspace_read_files(
         &self,
         paths: &[WorkspacePath],
@@ -1271,7 +1276,6 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
-    #[cfg(windows)]
     #[test]
     fn workspace_read_grants_resolve_only_exact_regular_files() {
         let root = workspace("grant-resolution");

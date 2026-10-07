@@ -195,6 +195,57 @@ fn launcher_preserves_ungranted_file_denial() {
 }
 
 #[test]
+fn launcher_exact_file_grant_supports_command_interpreter_read() {
+    let granted = unique_temp_path("interpreter-granted.txt");
+    let ungranted = unique_temp_path("interpreter-ungranted.txt");
+    fs::write(&granted, b"optic interpreter granted sentinel").expect("write granted sentinel");
+    fs::write(&ungranted, b"optic interpreter ungranted sentinel")
+        .expect("write ungranted sentinel");
+    let _granted_cleanup = Cleanup(granted.clone());
+    let _ungranted_cleanup = Cleanup(ungranted.clone());
+
+    let cmd = system32_executable("cmd.exe");
+    let cwd = cmd.parent().expect("System32 parent").to_path_buf();
+    let workspace_root = granted.parent().expect("temporary workspace root");
+    let granted_command = format!("type \"{}\"", granted.to_string_lossy());
+    let output = run_launcher(launcher_request_with_read_files(
+        &cmd,
+        &["/d", "/s", "/c", &granted_command],
+        &cwd,
+        &[granted.as_path()],
+        workspace_root,
+    ));
+
+    assert!(
+        output.status.success(),
+        "command interpreter could not read its exact grant: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("optic interpreter granted sentinel"),
+        "granted exact file was not readable through the isolated interpreter"
+    );
+
+    let ungranted_command = format!("type \"{}\"", ungranted.to_string_lossy());
+    let denied = run_launcher(launcher_request_with_read_files(
+        &cmd,
+        &["/d", "/s", "/c", &ungranted_command],
+        &cwd,
+        &[granted.as_path()],
+        workspace_root,
+    ));
+    assert!(
+        !denied.status.success(),
+        "isolated interpreter unexpectedly read an ungranted sibling file"
+    );
+    assert_ne!(
+        denied.status.code(),
+        Some(LAUNCHER_FAILURE_EXIT),
+        "launcher failed internally instead of returning the target access denial"
+    );
+}
+
+#[test]
 fn launcher_rejects_read_grant_outside_workspace_root() {
     let sentinel = unique_temp_path("outside-workspace-sentinel.txt");
     fs::write(&sentinel, b"optic outside workspace sentinel").expect("write sentinel");
