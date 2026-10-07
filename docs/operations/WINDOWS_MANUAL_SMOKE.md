@@ -21,7 +21,7 @@ The repository CI compiles, lints and tests on `windows-latest` and `ubuntu-late
 - durable Windows mutation tools only when matching operator-owned authority is configured: `fs_write`, `fs_apply_patch`, `fs_delete`;
 - Git read tools only when the operator supplies one valid absolute Git executable: `git_status`, `git_diff`, `git_log`.
 
-Not ready yet: public multi-session orchestration, same-repository autonomous worktree execution, a general replay/idempotency ledger, class-specific confinement for interpreter/repository-code execution, truthful process network containment, and a general Windows sandboxing profile.
+Not ready yet: public multi-session orchestration, same-repository autonomous worktree execution, a general replay/idempotency ledger, a strong Windows isolation profile capable of safely re-admitting interpreter/repository-code execution, truthful process network containment, and broader Windows sandboxing.
 
 ## Preconditions
 
@@ -112,22 +112,30 @@ Expected MCP behavior:
 - the caller cannot provide another repository path or Git executable;
 - Git-read-only configuration does not expose `git_integrate` or `git_integration_status`; those remain conditional on separate explicit Git integration authority.
 
-## Test 3 — process authority, one executable only
+## Test 3 — process class safety gate
 
-Choose one harmless absolute executable and classify it explicitly. `cmd.exe` is an interpreter, so a smoke that uses it must provision `interpreter` authority rather than `fixed-tool`. Restart the bridge with only that executable allowed:
+First prove the positive `FixedTool` path with a harmless absolute executable that does not interpret caller-supplied code. `whoami.exe` is suitable for this smoke:
+
+```powershell
+& $Bridge --allow-executable="fixed-tool:C:\Windows\System32\whoami.exe" $SmokeRepo
+```
+
+Verify that:
+
+- `process_start` accepts the configured `whoami.exe` with structured arguments;
+- the MCP request contains no execution-class field; the server uses the operator-owned `FixedTool` class from the lease;
+- an unconfigured executable is rejected, and legacy unclassified startup syntax is rejected rather than defaulting to `fixed-tool`;
+- `process_read`, `process_result` and `process_stop` operate through opaque JobIds rather than caller-supplied PIDs;
+- process descendants remain subject to the Windows Job Object limits;
+- after stop/timeout/session cancellation, no unexpected descendant remains.
+
+Then prove the high-risk fail-closed path. Restart the bridge with `cmd.exe` correctly classified as an interpreter:
 
 ```powershell
 & $Bridge --allow-executable="interpreter:C:\Windows\System32\cmd.exe" $SmokeRepo
 ```
 
-Verify that:
-
-- `process_start` accepts the configured executable with structured arguments;
-- the MCP request contains no execution-class field; the server uses the operator-owned `Interpreter` class from the lease;
-- an unconfigured executable is rejected, and legacy unclassified startup syntax is rejected rather than defaulting to `fixed-tool`;
-- `process_read`, `process_result` and `process_stop` operate through opaque JobIds rather than caller-supplied PIDs;
-- process descendants are contained by the Windows Job Object limits;
-- after stop/timeout/session cancellation, no unexpected descendant remains.
+Verify that an otherwise-valid `process_start` for that exact executable is rejected with `optic.process_isolation_unavailable`. No process job should be created. The operator-owned classification remains hidden from the MCP request, and the caller cannot downgrade `Interpreter` to `FixedTool`.
 
 Do not enable network access for this smoke test. The current process path remains deny-by-default for network authority and `network=true` is rejected.
 
@@ -178,7 +186,7 @@ After the isolated tests pass, combine only the authorities actually needed:
 ```powershell
 & $Bridge `
   --git-executable="C:\Program Files\Git\cmd\git.exe" `
-  --allow-executable="interpreter:C:\Windows\System32\cmd.exe" `
+  --allow-executable="fixed-tool:C:\Windows\System32\whoami.exe" `
   --mutation-state-dir="C:\optic-smoke\state" `
   --allow-write-scope="prefix:scratch" `
   --allow-delete-scope="prefix:scratch" `
@@ -198,7 +206,7 @@ Record:
 - bridge stderr startup line;
 - MCP client name/version;
 - tool list with no optional authorities, then with each authority enabled;
-- expected `process_start` denial with no executable allowlist, then one allowed and one denied executable with process authority configured;
+- expected `process_start` denial with no executable allowlist, successful `fixed-tool:whoami.exe` execution, and expected `interpreter:cmd.exe` denial with `optic.process_isolation_unavailable`;
 - one success and one expected denial for mutation and Git read authority;
 - any Windows Defender/antivirus or permission prompts;
 - any recovery journal left after a successful mutation/restart.
@@ -212,7 +220,7 @@ The machine-level smoke passes when:
 1. `optic-bridge.exe` builds and starts with one Cargo build job;
 2. the MCP client connects over stdio;
 3. read-only tools work in the disposable workspace;
-4. mutation/Git tools appear only with the matching operator-owned runtime/authority, while process execution remains denied until the executable is explicitly allowlisted;
+4. mutation/Git tools appear only with the matching operator-owned runtime/authority; `fixed-tool:whoami.exe` executes when explicitly allowlisted, while `interpreter:cmd.exe` is denied with `optic.process_isolation_unavailable`;
 5. a narrow-scope write succeeds and an out-of-scope write is denied;
 6. exact-version delete succeeds only inside its configured delete scope;
 7. Git status/diff/log work against the exact configured repository;
@@ -221,4 +229,4 @@ The machine-level smoke passes when:
 
 ## What this test does not prove
 
-A successful smoke does not mean the project is production-ready. In particular it does not prove sudden-power-loss ACID durability, hostile local-kernel resistance, AppContainer/LPAC confinement, installer quality, multi-session public orchestration, or Git integration/mutation safety. Those remain later gates.
+A successful smoke does not mean the project is production-ready. In particular it does not prove sudden-power-loss ACID durability, hostile local-kernel resistance, restricted-token/AppContainer/LPAC confinement for high-risk process classes, production installer/release quality, public multi-session orchestration, or truthful OS-level network containment. Those remain later gates.

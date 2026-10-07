@@ -19,7 +19,7 @@ Process authority is application-owned, not MCP-owned.
 7. The request becomes a typed `Effect::ProcessRun` carrying the lease-derived class and must pass `PolicyEngine`, which requires exact path + class agreement.
 8. Only then may `ProcessManager` spawn the child.
 
-The MCP caller cannot create capabilities, approve itself, mint a task lease or choose an execution class. Phase 3C3B classification is an operator assertion rather than automatic executable inspection: `FixedTool` does not prove a binary cannot load plugins/scripts, and interpreter/repository-code-specific OS confinement is still a later gate.
+The MCP caller cannot create capabilities, approve itself, mint a task lease or choose an execution class. Phase 3C3B classification is an operator assertion rather than automatic executable inspection: `FixedTool` does not prove a binary cannot load plugins/scripts. Phase 3C3C1 now fails closed for `Interpreter` and `RepositoryCode`: even with otherwise-valid authority, policy returns `ProcessIsolationRequired` and the MCP adapter reports `optic.process_isolation_unavailable`. Only `FixedTool` may currently reach `ProcessManager` under the existing Job Object-based execution path. A stronger Windows isolation profile must be implemented and proven before selected high-risk classes can be re-admitted.
 
 Network remains unavailable in the Phase 1 runtime. A request with `network=true` fails closed even though the core policy model already defines the later dual session+lease network contract.
 
