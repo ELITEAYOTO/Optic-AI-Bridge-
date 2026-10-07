@@ -1,9 +1,11 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use optic_bridge_core::{
-    HardLimits, LimitError, MonotonicTime, SessionHandle, TaskLease, TaskLeaseId,
+    HardLimits, LeaseScope, LimitError, MonotonicTime, SessionHandle, TaskLease, TaskLeaseId,
 };
 use thiserror::Error;
+
+use crate::process_authority::ProcessAuthority;
 
 #[derive(Debug)]
 pub struct TaskLeaseRegistry {
@@ -27,6 +29,7 @@ impl Default for TaskLeaseRegistry {
 struct LeaseRecord {
     lease: TaskLease,
     revoked: bool,
+    process_authorities: HashMap<String, ProcessAuthority>,
 }
 
 impl TaskLeaseRegistry {
@@ -45,6 +48,7 @@ impl TaskLeaseRegistry {
     }
 
     pub fn register(&self, lease: TaskLease) -> Result<(), TaskLeaseRegistryError> {
+        let process_authorities = capture_process_authorities(&lease)?;
         let mut leases = self
             .leases
             .lock()
@@ -71,6 +75,7 @@ impl TaskLeaseRegistry {
             LeaseRecord {
                 lease,
                 revoked: false,
+                process_authorities,
             },
         );
         Ok(())
@@ -87,16 +92,28 @@ impl TaskLeaseRegistry {
             .lock()
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
-        if record.revoked {
-            return Err(TaskLeaseRegistryError::Revoked);
-        }
-        if &record.lease.session != session {
-            return Err(TaskLeaseRegistryError::WrongSession);
-        }
-        if record.lease.is_expired_at(now) {
-            return Err(TaskLeaseRegistryError::Expired);
-        }
+        validate_active_record(record, session, now)?;
         Ok(record.lease.clone())
+    }
+
+    pub fn get_process_authority(
+        &self,
+        id: &TaskLeaseId,
+        session: &SessionHandle,
+        executable: &str,
+        now: MonotonicTime,
+    ) -> Result<ProcessAuthority, TaskLeaseRegistryError> {
+        let leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
+        validate_active_record(record, session, now)?;
+        record
+            .process_authorities
+            .get(executable)
+            .cloned()
+            .ok_or(TaskLeaseRegistryError::ProcessIdentityUnavailable)
     }
 
     pub fn revoke(&self, id: &TaskLeaseId) -> Result<bool, TaskLeaseRegistryError> {
@@ -156,6 +173,41 @@ impl TaskLeaseRegistry {
     }
 }
 
+fn validate_active_record(
+    record: &LeaseRecord,
+    session: &SessionHandle,
+    now: MonotonicTime,
+) -> Result<(), TaskLeaseRegistryError> {
+    if record.revoked {
+        return Err(TaskLeaseRegistryError::Revoked);
+    }
+    if &record.lease.session != session {
+        return Err(TaskLeaseRegistryError::WrongSession);
+    }
+    if record.lease.is_expired_at(now) {
+        return Err(TaskLeaseRegistryError::Expired);
+    }
+    Ok(())
+}
+
+fn capture_process_authorities(
+    lease: &TaskLease,
+) -> Result<HashMap<String, ProcessAuthority>, TaskLeaseRegistryError> {
+    let mut authorities = HashMap::new();
+    for scope in &lease.scopes {
+        let LeaseScope::ProcessExecutable(executable) = scope else {
+            continue;
+        };
+        if !Path::new(executable).is_absolute() {
+            continue;
+        }
+        let authority = ProcessAuthority::capture(lease.id.clone(), executable)
+            .map_err(|_| TaskLeaseRegistryError::ProcessIdentityUnavailable)?;
+        authorities.insert(authority.canonical_path().to_owned(), authority);
+    }
+    Ok(authorities)
+}
+
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum TaskLeaseRegistryError {
     #[error("task lease registry state is unavailable")]
@@ -174,6 +226,8 @@ pub enum TaskLeaseRegistryError {
     WrongSession,
     #[error("task lease has expired")]
     Expired,
+    #[error("process executable identity is unavailable for this lease")]
+    ProcessIdentityUnavailable,
     #[error("active task lease cannot be physically removed")]
     LeaseStillActive,
 }
