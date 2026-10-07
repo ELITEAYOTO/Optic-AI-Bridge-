@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use std::ffi::OsString;
 use std::{
     collections::{BTreeSet, HashMap},
     fs,
@@ -16,11 +18,15 @@ use optic_bridge_core::{
     WorkspacePath,
 };
 #[cfg(windows)]
-use optic_bridge_windows::LimitedJobObject;
+use optic_bridge_windows::{LimitedJobObject, PinnedExecutableFile, open_pinned_executable};
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(unix)]
 use process_wrap::tokio::{KillOnDrop, ProcessGroup};
+#[cfg(windows)]
+use serde::Serialize;
 use thiserror::Error;
+#[cfg(windows)]
+use tokio::io::AsyncWriteExt;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -31,6 +37,34 @@ use tokio::{
 const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const TERMINATION_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 const DRAIN_CHUNK_BYTES: usize = 8 * 1024;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_PROTOCOL_VERSION: u32 = 1;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_REQUEST_LIMIT_BYTES: usize = 64 * 1024;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_MAX_ARGS: usize = 128;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT: [&str; 4] =
+    ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"];
+
+#[cfg(windows)]
+#[derive(Debug)]
+struct IsolationLauncher {
+    path: PathBuf,
+    _pin: PinnedExecutableFile,
+}
+
+#[cfg(windows)]
+#[derive(Serialize)]
+struct IsolationLauncherRequest<'a> {
+    version: u32,
+    executable: &'a str,
+    args: &'a [String],
+    cwd: &'a str,
+    timeout_ms: u64,
+}
 
 #[derive(Clone, Debug)]
 pub struct ProcessStartSpec {
@@ -81,6 +115,8 @@ pub struct ProcessManager {
     root: PathBuf,
     limits: HardLimits,
     allowed_env_vars: BTreeSet<String>,
+    #[cfg(windows)]
+    isolation_launcher: Option<IsolationLauncher>,
     jobs: Arc<Mutex<JobStore>>,
     sequence: AtomicU64,
 }
@@ -136,9 +172,35 @@ impl ProcessManager {
             root,
             limits,
             allowed_env_vars,
+            #[cfg(windows)]
+            isolation_launcher: None,
             jobs: Arc::new(Mutex::new(JobStore::default())),
             sequence: AtomicU64::new(0),
         })
+    }
+
+    #[cfg(windows)]
+    pub fn new_with_isolation_launcher(
+        root: impl AsRef<Path>,
+        limits: HardLimits,
+        allowed_env_vars: impl IntoIterator<Item = String>,
+        isolation_launcher: impl AsRef<Path>,
+    ) -> Result<Self, ProcessError> {
+        let mut manager = Self::new(root, limits, allowed_env_vars)?;
+        let launcher = isolation_launcher.as_ref();
+        if !launcher.is_absolute() {
+            return Err(ProcessError::IsolationLauncherMustBeAbsolute);
+        }
+        let canonical = fs::canonicalize(launcher).map_err(ProcessError::Io)?;
+        if !canonical.is_file() {
+            return Err(ProcessError::IsolationLauncherNotFile);
+        }
+        let pin = open_pinned_executable(&canonical).map_err(ProcessError::Io)?;
+        manager.isolation_launcher = Some(IsolationLauncher {
+            path: canonical,
+            _pin: pin,
+        });
+        Ok(manager)
     }
 
     pub fn canonicalize_executable(&self, executable: &str) -> Result<String, ProcessError> {
@@ -171,12 +233,55 @@ impl ProcessManager {
         let executable = self.canonicalize_executable(&spec.executable)?;
         let cwd = self.resolve_cwd(spec.cwd.as_ref())?;
         let environment = self.resolve_environment(&spec.env_allowlist)?;
-        if matches!(
+        let requires_isolation = matches!(
             spec.class,
             ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
-        ) {
+        );
+        #[cfg(not(windows))]
+        if requires_isolation {
             return Err(ProcessError::IsolationUnavailable);
         }
+        #[cfg(windows)]
+        let isolation_environment = if requires_isolation {
+            Some(self.resolve_isolation_launcher_environment()?)
+        } else {
+            None
+        };
+        #[cfg(windows)]
+        let isolation_request = if requires_isolation {
+            let launcher = self
+                .isolation_launcher
+                .as_ref()
+                .ok_or(ProcessError::IsolationUnavailable)?;
+            if spec.args.len() > ISOLATION_LAUNCHER_MAX_ARGS {
+                return Err(ProcessError::TooManyProcessArguments);
+            }
+            let cwd = cwd.to_str().ok_or(ProcessError::NonUtf8WorkingDirectory)?;
+            let request = IsolationLauncherRequest {
+                version: ISOLATION_LAUNCHER_PROTOCOL_VERSION,
+                executable: &executable,
+                args: &spec.args,
+                cwd,
+                timeout_ms: resources.timeout_ms,
+            };
+            let payload =
+                serde_json::to_vec(&request).map_err(ProcessError::IsolationLauncherProtocol)?;
+            if payload.len() > ISOLATION_LAUNCHER_REQUEST_LIMIT_BYTES {
+                return Err(ProcessError::RequestShapeTooLarge);
+            }
+            Some((launcher.path.clone(), payload))
+        } else {
+            None
+        };
+        #[cfg(windows)]
+        let kernel_process_count = if isolation_request.is_some() {
+            resources
+                .process_count
+                .checked_add(1)
+                .ok_or(ProcessError::ResourceBudgetExceeded)?
+        } else {
+            resources.process_count
+        };
         let runtime = Handle::try_current().map_err(|_| ProcessError::RuntimeUnavailable)?;
 
         let job_id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
@@ -216,14 +321,34 @@ impl ProcessManager {
             store.jobs.insert(job_id.clone(), Arc::clone(&record));
         }
 
-        let mut command = Command::new(&executable);
+        #[cfg(windows)]
+        let (spawn_executable, launcher_payload) = match isolation_request {
+            Some((launcher, payload)) => (launcher, Some(payload)),
+            None => (PathBuf::from(&executable), None),
+        };
+        #[cfg(not(windows))]
+        let spawn_executable = PathBuf::from(&executable);
+
+        let mut command = Command::new(&spawn_executable);
+        #[cfg(windows)]
+        if requires_isolation {
+            command.stdin(Stdio::piped());
+        } else {
+            command.args(&spec.args).stdin(Stdio::null());
+        }
+        #[cfg(not(windows))]
+        command.args(&spec.args).stdin(Stdio::null());
         command
-            .args(&spec.args)
-            .current_dir(cwd)
-            .stdin(Stdio::null())
+            .current_dir(&cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
+        #[cfg(windows)]
+        if let Some(isolation_environment) = isolation_environment {
+            for (name, value) in isolation_environment {
+                command.env(name, value);
+            }
+        }
         for (name, value) in environment {
             command.env(name, value);
         }
@@ -232,7 +357,7 @@ impl ProcessManager {
         #[cfg(windows)]
         command.wrap(
             LimitedJobObject::new(
-                resources.process_count,
+                kernel_process_count,
                 resources.memory_bytes,
                 reserved_cpu_percent,
             )
@@ -251,8 +376,24 @@ impl ProcessManager {
                 return Err(ProcessError::Io(error));
             }
         };
+        #[cfg(windows)]
+        let launcher_stdin = launcher_payload.and_then(|payload| {
+            child
+                .inner_mut()
+                .stdin()
+                .take()
+                .map(|stdin| (stdin, payload))
+        });
         let stdout = child.stdout().take();
         let stderr = child.stderr().take();
+
+        #[cfg(windows)]
+        if let Some((mut stdin, payload)) = launcher_stdin {
+            std::mem::drop(runtime.spawn(async move {
+                let _ = stdin.write_all(&payload).await;
+                let _ = stdin.shutdown().await;
+            }));
+        }
 
         let stdout_record = Arc::clone(&record);
         let stdout_task = runtime.spawn(async move {
@@ -270,12 +411,17 @@ impl ProcessManager {
                 mark_stream_closed(&stderr_record, ProcessStream::Stderr);
             }
         });
+        #[cfg(windows)]
+        let internal_failure_exit = requires_isolation.then_some(ISOLATION_LAUNCHER_FAILURE_EXIT);
+        #[cfg(not(windows))]
+        let internal_failure_exit: Option<i32> = None;
         let monitor_record = Arc::clone(&record);
         runtime.spawn(async move {
             monitor_child(
                 &mut *child,
                 monitor_record,
                 resources.timeout_ms,
+                internal_failure_exit,
                 stdout_task,
                 stderr_task,
             )
@@ -454,6 +600,20 @@ impl ProcessManager {
             }
         }
         Ok(output)
+    }
+
+    #[cfg(windows)]
+    fn resolve_isolation_launcher_environment(
+        &self,
+    ) -> Result<Vec<(&'static str, OsString)>, ProcessError> {
+        ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT
+            .into_iter()
+            .map(|name| {
+                std::env::var_os(name)
+                    .map(|value| (name, value))
+                    .ok_or(ProcessError::IsolationEnvironmentUnavailable(name))
+            })
+            .collect()
     }
 
     fn resolve_cwd(&self, cwd: Option<&WorkspacePath>) -> Result<PathBuf, ProcessError> {
@@ -740,13 +900,22 @@ async fn monitor_child(
     child: &mut dyn ChildWrapper,
     record: Arc<JobRecord>,
     timeout_ms: u64,
+    internal_failure_exit: Option<i32>,
     stdout_task: tokio::task::JoinHandle<()>,
     stderr_task: tokio::task::JoinHandle<()>,
 ) {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let (status, exit_code) = loop {
         let observation_failure = match child.try_wait() {
-            Ok(Some(exit)) => break (ProcessStatus::Exited, exit.code()),
+            Ok(Some(exit)) => {
+                let code = exit.code();
+                let status = if internal_failure_exit.is_some_and(|failure| code == Some(failure)) {
+                    ProcessStatus::Failed
+                } else {
+                    ProcessStatus::Exited
+                };
+                break (status, code);
+            }
             Err(_) => true,
             Ok(None) => false,
         };
@@ -826,6 +995,8 @@ pub enum ProcessError {
     ExecutableNotFile,
     #[error("canonical executable path cannot be represented as UTF-8")]
     NonUtf8Executable,
+    #[error("canonical process working directory cannot be represented as UTF-8")]
+    NonUtf8WorkingDirectory,
     #[error("process working directory resolves outside the workspace")]
     CwdOutsideWorkspace,
     #[error("process working directory must resolve to a directory")]
@@ -838,6 +1009,8 @@ pub enum ProcessError {
     ResourceBudgetExceeded,
     #[error("process request shape exceeds the hard request byte ceiling")]
     RequestShapeTooLarge,
+    #[error("too many process arguments for the isolation launcher protocol")]
+    TooManyProcessArguments,
     #[error("too many process jobs are already active")]
     TooManyActiveJobs,
     #[error("this session already has too many active process jobs")]
@@ -860,6 +1033,14 @@ pub enum ProcessError {
     CursorOutOfRange,
     #[error("process job is unknown to this session")]
     UnknownJob,
+    #[error("process isolation launcher must be an absolute path")]
+    IsolationLauncherMustBeAbsolute,
+    #[error("process isolation launcher must resolve to a regular file")]
+    IsolationLauncherNotFile,
+    #[error("process isolation launcher protocol serialization failed: {0}")]
+    IsolationLauncherProtocol(serde_json::Error),
+    #[error("required Windows process isolation environment variable is unavailable: {0}")]
+    IsolationEnvironmentUnavailable(&'static str),
     #[error("required process isolation profile is unavailable")]
     IsolationUnavailable,
     #[error("Tokio runtime is unavailable")]

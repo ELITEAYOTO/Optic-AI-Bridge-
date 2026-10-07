@@ -26,7 +26,21 @@ fn system32_executable(name: &str) -> PathBuf {
 }
 
 fn run_launcher(request: Value) -> Output {
-    let mut child = Command::new(launcher_path())
+    run_launcher_command(request, false)
+}
+
+fn run_launcher_command(request: Value, minimal_windows_environment: bool) -> Output {
+    let mut command = Command::new(launcher_path());
+    if minimal_windows_environment {
+        command.env_clear();
+        for name in ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"] {
+            command.env(
+                name,
+                std::env::var_os(name).unwrap_or_else(|| panic!("{name}")),
+            );
+        }
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -50,6 +64,30 @@ fn launcher_request(executable: &Path, args: &[&str], cwd: &Path) -> Value {
         "cwd": cwd.to_string_lossy(),
         "timeout_ms": TEST_TIMEOUT_MS,
     })
+}
+
+#[test]
+fn launcher_runs_with_minimal_windows_environment() {
+    let cmd = system32_executable("cmd.exe");
+    let cwd = cmd.parent().expect("System32 parent").to_path_buf();
+    let output = run_launcher_command(
+        launcher_request(
+            &cmd,
+            &["/d", "/s", "/c", "echo optic-minimal-windows-baseline"],
+            &cwd,
+        ),
+        true,
+    );
+
+    assert!(
+        output.status.success(),
+        "launcher failed with minimal Windows environment: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("optic-minimal-windows-baseline"),
+        "AppContainer stdout was not forwarded under minimal Windows environment"
+    );
 }
 
 #[test]

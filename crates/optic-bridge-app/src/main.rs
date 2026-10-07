@@ -26,6 +26,41 @@ use rmcp::ServiceExt;
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
 const SESSION_REAP_INTERVAL_MS: u64 = 5_000;
 
+fn build_process_manager(
+    args: &AppArgs,
+    limits: HardLimits,
+) -> Result<ProcessManager, Box<dyn Error + Send + Sync>> {
+    #[cfg(windows)]
+    if let Some(launcher) = discover_isolation_launcher()? {
+        return Ok(ProcessManager::new_with_isolation_launcher(
+            &args.workspace,
+            limits,
+            args.allowed_env.clone(),
+            launcher,
+        )?);
+    }
+
+    Ok(ProcessManager::new(
+        &args.workspace,
+        limits,
+        args.allowed_env.clone(),
+    )?)
+}
+
+#[cfg(windows)]
+fn discover_isolation_launcher() -> Result<Option<PathBuf>, std::io::Error> {
+    let current_exe = std::env::current_exe()?;
+    let launcher = current_exe.with_file_name("optic-bridge-isolation-launcher.exe");
+    match std::fs::metadata(&launcher) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(launcher)),
+        Ok(_) => Err(std::io::Error::other(
+            "isolation launcher sibling exists but is not a regular file",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = AppArgs::parse()?;
@@ -33,11 +68,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
     let expires_at = now.saturating_add_millis(INITIAL_SESSION_TTL_MS);
-    let processes = Arc::new(ProcessManager::new(
-        &args.workspace,
-        limits,
-        args.allowed_env.clone(),
-    )?);
+    let processes = Arc::new(build_process_manager(&args, limits)?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
 
     let canonical_process_executables =
