@@ -44,7 +44,7 @@ The Windows-only unsafe boundary now has a proven AppContainer identity primitiv
 - a control `findstr.exe` process can read a user-owned sentinel, while the same executable in the no-capability AppContainer cannot read the ungranted file;
 - the proof process has a bounded wait and is terminated fail-closed on timeout.
 
-This is **not yet the production process sandbox**. The primitive is not wired into `ProcessManager`, no workspace ACL/capability grant model has been added, and 3C3C1 still denies `Interpreter` / `RepositoryCode`. No network capability SID is granted by the profile, but public network-containment semantics remain unclaimed until the production path and a dedicated network regression gate exist.
+This foundation alone is **not a production process sandbox**. Later C2A wiring can route the proven AppContainer helper from `ProcessManager`, but no workspace ACL/capability grant model has been added and 3C3C1 still denies `Interpreter` / `RepositoryCode` through policy/MCP. No network capability SID is granted by the profile, and public network-containment semantics remain unclaimed until a dedicated network regression gate exists.
 
 ## Phase 3C3C2B1/B2B2 production-path foundations
 
@@ -73,11 +73,26 @@ A separate `optic-bridge-isolation-launcher` now proves the next internal bounda
 - native CI executes the real helper and proves stdout/stderr forwarding, ungranted-file denial and oversized-request rejection;
 - the release bundle still copies only `optic-bridge.exe`, and `ProcessManager` does not select this helper.
 
-This proof adds no workspace or network capability and does not alter the fail-closed `Interpreter` / `RepositoryCode` policy. When the helper is wired under the Job Object, kernel `process_count` must reserve one extra internal process for it without expanding the workload's logical descendant budget.
+This proof adds no workspace or network capability and does not alter the fail-closed `Interpreter` / `RepositoryCode` policy.
+
+## Phase 3C3C2C2A runtime launcher wiring
+
+The proven helper is now wired into the internal Windows runtime without changing public authority:
+
+- `ProcessManager` can be constructed with an optional isolation launcher; the launcher path must be absolute, is canonicalized, must be a regular file and is pinned against rewrite/delete/rename for the manager lifetime;
+- `FixedTool` keeps the existing direct spawn path, while direct internal `Interpreter` / `RepositoryCode` starts use the helper only when configured; non-Windows remains fail-closed;
+- the helper runs inside the same bounded Job Object with a kernel process limit of `logical process_count + 1`, so the internal helper does not consume or widen the authorized workload descendant budget;
+- the bounded C1 request is written through piped stdin and runtime stdout/stderr still flow through the existing bounded drains;
+- the helper runs under `env_clear`, receiving only the operator allowlist plus the Windows baseline required for AppContainer creation (`SystemRoot`, `LOCALAPPDATA`, `TEMP`, `TMP`);
+- helper exit 126 is treated as a failed process result, and launcher/protocol/environment failures map onto existing internal/MCP error contracts without adding a model-controlled isolation selector;
+- the app only discovers a sibling helper when present; the current installer/release bundle still does not distribute it;
+- native Windows CI proves real runtime routing with logical `process_count = 1`, which requires the Job Object to admit both helper and isolated target.
+
+This is still **not public high-risk execution**: `optic-bridge-policy` continues to reject `Interpreter` / `RepositoryCode`, no workspace ACL/capability grant exists, and no network capability or containment claim is added.
 
 ## Hardened profile
 
-Current direction: wire the proven internal launcher + AppContainer explicit-stdio path into `ProcessManager` with explicit workspace grants and correct +1 helper process accounting, then validate representative Rust/Node/Java toolchains before any selected high-risk re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: define explicit workspace grants on the now-wired helper/AppContainer runtime and validate representative Rust/Node/Java toolchains before any selected high-risk policy re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -93,4 +108,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher driving that primitive. The helper is still non-distributed and not wired into the production `ProcessManager` path. Remaining work includes runtime selection/Job Object integration with +1 helper process accounting, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher; Phase 3C3C2C2A wires that helper into the internal Windows `ProcessManager` path with executable pinning and +1 kernel-process accounting. The helper remains non-distributed and policy/MCP still deny high-risk classes. Remaining work includes explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.

@@ -557,9 +557,22 @@ Status: **merged and post-merge validated** in PR #70 (`3d660196`), exact final 
 
 Gate passed: exact PR CI #309, SHA-guarded squash merge, and post-merge `main` CI #310.
 
+#### Phase 3C3C2C2A - runtime launcher wiring
+
+Status: **merged and post-merge validated** in PR #72 (`d31086e1`), exact final head `49ffa305`; exact PR CI #318 and post-merge `main` CI #319 passed Ubuntu, Windows and dependency policy, including the native runtime-isolation routing test, real MCP smoke and installer-profile validation.
+
+1. Windows `ProcessManager` accepts an optional isolation launcher, canonicalizes it and keeps the executable pinned for the manager lifetime; the existing constructor still has no launcher and retains fail-closed high-risk behavior.
+2. `FixedTool` remains on the direct spawn path. Direct internal `Interpreter` / `RepositoryCode` starts use the bounded C1 JSON protocol only when the launcher is configured; non-Windows remains `IsolationUnavailable`.
+3. The helper is spawned inside the same bounded Job Object and the kernel process limit uses `logical process_count + 1` for the internal helper, without changing the caller-authorized logical workload budget.
+4. The helper receives its request through piped stdin while the existing runtime drains keep stdout/stderr bounded. `env_clear` is preserved and only the operator allowlist plus `SystemRoot`, `LOCALAPPDATA`, `TEMP` and `TMP` are seeded for the helper/AppContainer baseline.
+5. Exit code 126 is classified as an internal launcher failure. The app discovers only a sibling `optic-bridge-isolation-launcher.exe` when present; the release bundle is still unchanged and does not distribute it.
+6. Policy/MCP admission is unchanged and still denies `Interpreter` / `RepositoryCode`; this gate adds no workspace ACL/capability grant, network capability or public high-risk authority.
+
+Gate passed: exact PR CI #318, SHA-guarded squash merge, and post-merge `main` CI #319.
+
 #### Later Phase 3C gates
 
-Wire the proven internal helper/AppContainer path into `ProcessManager`, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. The Job Object process limit must include the helper (+1 internal process) without widening the logical workload budget. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Define explicit workspace grants and prove representative toolchain compatibility through the now-wired helper/AppContainer runtime before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
