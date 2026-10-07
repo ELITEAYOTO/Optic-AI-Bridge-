@@ -1,5 +1,6 @@
 use std::{
     ffi::{OsStr, OsString, c_void},
+    fmt::Write as _,
     io::{Error, Result},
     marker::PhantomData,
     mem::{size_of, size_of_val},
@@ -38,6 +39,7 @@ use windows::{
 pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
+    external_acl_grants_allowed: bool,
 }
 
 /// Borrowed AppContainer process-creation capabilities.
@@ -63,6 +65,26 @@ impl AppContainerProfile {
     /// Existing profiles are not reused implicitly, so stale grants cannot be
     /// inherited by a new isolation attempt.
     pub fn create(name: &str) -> Result<Self> {
+        Self::create_inner(name, false)
+    }
+
+    /// Create a fresh cryptographically named profile suitable for temporary ACL grants.
+    ///
+    /// A stale ACE left behind by abrupt process termination cannot be reused by a later
+    /// Optic profile because the Package SID is derived from a fresh 128-bit random name.
+    pub fn create_ephemeral() -> Result<Self> {
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
+        let mut name = String::from("Optic.Isolation.");
+        for byte in random {
+            write!(&mut name, "{byte:02x}")
+                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
+        }
+        Self::create_inner(&name, true)
+    }
+
+    fn create_inner(name: &str, external_acl_grants_allowed: bool) -> Result<Self> {
         if name.is_empty() || name.len() > 64 {
             return Err(Error::other(
                 "AppContainer profile name must be 1..=64 bytes",
@@ -77,7 +99,29 @@ impl AppContainerProfile {
             CreateAppContainerProfile(&name, &name, &description, None).map_err(Error::other)?
         };
 
-        Ok(Self { name, sid })
+        Ok(Self {
+            name,
+            sid,
+            external_acl_grants_allowed,
+        })
+    }
+
+    pub(crate) const fn package_sid(&self) -> PSID {
+        self.sid
+    }
+
+    pub(crate) const fn external_acl_grants_allowed(&self) -> bool {
+        self.external_acl_grants_allowed
+    }
+
+    #[cfg(test)]
+    pub(crate) fn profile_storage_path_for_tests(&self) -> std::path::PathBuf {
+        let local_app_data =
+            std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA must exist on Windows tests");
+        std::path::PathBuf::from(local_app_data)
+            .join("Packages")
+            .join(self.name.to_string_lossy())
+            .join("AC")
     }
 
     /// Borrow security capabilities for process creation in this profile.

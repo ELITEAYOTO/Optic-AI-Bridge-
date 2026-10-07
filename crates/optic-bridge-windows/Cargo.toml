@@ -11,6 +11,7 @@ publish.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+getrandom.workspace = true
 process-wrap.workspace = true
 tokio.workspace = true
 windows.workspace = true

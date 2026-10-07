@@ -16,6 +16,8 @@ mod executable;
 mod file;
 #[cfg(windows)]
 mod job;
+#[cfg(windows)]
+mod workspace_grant;
 
 #[cfg(windows)]
 pub use appcontainer::{
@@ -32,3 +34,5 @@ pub use file::{
 };
 #[cfg(windows)]
 pub use job::LimitedJobObject;
+#[cfg(windows)]
+pub use workspace_grant::AppContainerReadFileGrant;
