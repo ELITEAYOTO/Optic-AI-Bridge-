@@ -44,11 +44,26 @@ The Windows-only unsafe boundary now has a proven AppContainer identity primitiv
 - a control `findstr.exe` process can read a user-owned sentinel, while the same executable in the no-capability AppContainer cannot read the ungranted file;
 - the proof process has a bounded wait and is terminated fail-closed on timeout.
 
-This is **not yet the production process sandbox**. The primitive is not wired into `ProcessManager` or captured stdout/stderr, no workspace ACL/capability grant model has been added, and 3C3C1 still denies `Interpreter` / `RepositoryCode`. No network capability SID is granted by the profile, but public network-containment semantics remain unclaimed until the production path and a dedicated network regression gate exist.
+This is **not yet the production process sandbox**. The primitive is not wired into `ProcessManager`, no workspace ACL/capability grant model has been added, and 3C3C1 still denies `Interpreter` / `RepositoryCode`. No network capability SID is granted by the profile, but public network-containment semantics remain unclaimed until the production path and a dedicated network regression gate exist.
+
+## Phase 3C3C2B1/B2B2 production-path foundations
+
+B1 carries the server-resolved execution class into `ProcessStartSpec` and adds an independent runtime `IsolationUnavailable` guard, so direct internal calls cannot bypass the policy-level high-risk denial.
+
+B2B2 adds a reusable Windows-only suspended AppContainer spawn primitive with captured-stdio support while preserving the same fail-closed admission state:
+
+- stdin/stdout/stderr are duplicated as dedicated inheritable handles; the caller's original handle flags are not mutated;
+- only those duplicates are listed in `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`;
+- the same `STARTUPINFOEXW` launch carries `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` with zero capability SIDs;
+- the caller can verify `TokenIsAppContainer` before resume;
+- unfinished children are terminated in `Drop`, and bounded wait failure also terminates the owned child;
+- native Windows CI proves both the existing ungranted-file denial and observable explicit stdout capture through the production primitive.
+
+This still does **not** re-admit `Interpreter` or `RepositoryCode`. The remaining production work is to wire the primitive into an Optic-owned launcher/runtime path, define explicit workspace grants, prove representative toolchain compatibility, and only then consider policy re-admission.
 
 ## Hardened profile
 
-Current direction: build the production high-risk execution profile on the proven AppContainer foundation, then validate representative Rust/Node/Java toolchains and explicit workspace grants. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: wire the proven AppContainer + explicit-stdio primitives into the production high-risk execution path, then validate representative Rust/Node/Java toolchains and explicit workspace grants. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -64,4 +79,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A additionally proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read, but it is not yet integrated into the production process path. Remaining work includes captured-stdio launching, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 additionally proves explicit captured stdio with handle-list-restricted inheritance. These primitives are still not wired into the production `ProcessManager` path. Remaining work includes the trusted launcher/runtime integration, explicit workspace grants, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.

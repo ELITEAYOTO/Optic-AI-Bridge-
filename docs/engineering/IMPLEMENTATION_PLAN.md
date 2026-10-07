@@ -515,13 +515,38 @@ Status: **merged and post-merge validated** in PR #65 (`75cc9c62`), exact green 
 3. Native proof creation uses `STARTUPINFOEXW` plus `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`, starts the child suspended and verifies `TokenIsAppContainer` before resume.
 4. The proof fixture first confirms a normal `findstr.exe` can read a user-owned sentinel, then proves the no-capability AppContainer instance cannot read that same ungranted file.
 5. This gate does not change policy/MCP/runtime admission: `Interpreter` and `RepositoryCode` remain deterministically denied by 3C3C1, while `FixedTool` remains on the existing bounded runtime.
-6. Production captured-stdio launching, workspace grants, network containment proof and toolchain compatibility are deliberately deferred to later gates.
+6. Production runtime wiring, captured-stdio launching, workspace grants, network containment proof and toolchain compatibility are deliberately deferred to later gates.
 
 Gate passed: exact-head CI #297, SHA-guarded squash merge, and post-merge `main` CI #298.
 
+#### Phase 3C3C2B1 - runtime execution-class propagation
+
+Status: **merged and post-merge validated** in PR #67 (`0f369336`), exact green final head `e249e99f`; exact-head CI #301 and post-merge `main` CI #302 passed Ubuntu, Windows and dependency policy, including the real MCP smoke and installer-profile validation.
+
+1. `ProcessStartSpec` carries the server-resolved `ProcessExecutionClass` from the operator-owned lease into `ProcessManager`; MCP still cannot choose or override the class.
+2. `ProcessManager` independently rejects `Interpreter` and `RepositoryCode` with `ProcessError::IsolationUnavailable` before any process/job creation, preserving fail-closed behavior even for direct internal runtime calls.
+3. Existing request validation/canonicalization still runs before the isolation guard, while the guard remains before JobId allocation, quota reservation and spawn.
+4. The MCP adapter maps the runtime isolation error to the same stable `optic.process_isolation_unavailable` contract.
+5. This gate deliberately performs no high-risk re-admission and does not change the fixed-tool spawn path.
+
+Gate passed: exact-head CI #301, SHA-guarded squash merge, and post-merge `main` CI #302.
+
+#### Phase 3C3C2B2 - AppContainer explicit-stdio launch primitive
+
+Status: **merged and post-merge validated** in PR #68 (`1cac5076`), exact green final head `a48258c1`; exact-head CI #305 and post-merge `main` CI #306 passed Ubuntu, Windows and dependency policy, including native AppContainer tests, real MCP smoke and installer-profile validation.
+
+1. `optic-bridge-windows` exposes a reusable suspended AppContainer spawn primitive while all Win32 `unsafe` remains inside the Windows-only boundary.
+2. stdin/stdout/stderr are duplicated as dedicated inheritable handles; only those duplicates are placed in `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
+3. The same `STARTUPINFOEXW` launch carries zero-capability `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`, and the caller can verify `TokenIsAppContainer` before resume.
+4. The owned child has bounded wait semantics and fail-closed termination on unfinished `Drop`.
+5. Native Windows CI proves both denial of the ungranted user-owned sentinel and observable explicit stdout capture through the production primitive.
+6. This gate does not wire the primitive into `ProcessManager`, grant workspace paths, add network capability SIDs, or re-admit `Interpreter` / `RepositoryCode`.
+
+Gate passed: exact-head CI #305, SHA-guarded squash merge, and post-merge `main` CI #306.
+
 #### Later Phase 3C gates
 
-Integrate the proven AppContainer foundation with the production captured-stdio process path, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Wire the proven AppContainer + explicit-stdio primitive into the production process path through a trusted Optic-owned launcher/runtime boundary, define explicit workspace grants and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` re-admission. Then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
