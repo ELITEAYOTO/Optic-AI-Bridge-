@@ -5,7 +5,7 @@ use optic_bridge_core::{
 };
 use thiserror::Error;
 
-use crate::process_authority::ProcessAuthority;
+use crate::process_authority::{ProcessAuthority, ProcessAuthorityError};
 
 #[derive(Debug)]
 pub struct TaskLeaseRegistry {
@@ -25,7 +25,7 @@ impl Default for TaskLeaseRegistry {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct LeaseRecord {
     lease: TaskLease,
     revoked: bool,
@@ -93,27 +93,8 @@ impl TaskLeaseRegistry {
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
         validate_active_record(record, session, now)?;
+        validate_process_authorities(record)?;
         Ok(record.lease.clone())
-    }
-
-    pub fn get_process_authority(
-        &self,
-        id: &TaskLeaseId,
-        session: &SessionHandle,
-        executable: &str,
-        now: MonotonicTime,
-    ) -> Result<ProcessAuthority, TaskLeaseRegistryError> {
-        let leases = self
-            .leases
-            .lock()
-            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
-        let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
-        validate_active_record(record, session, now)?;
-        record
-            .process_authorities
-            .get(executable)
-            .cloned()
-            .ok_or(TaskLeaseRegistryError::ProcessIdentityUnavailable)
     }
 
     pub fn revoke(&self, id: &TaskLeaseId) -> Result<bool, TaskLeaseRegistryError> {
@@ -190,6 +171,22 @@ fn validate_active_record(
     Ok(())
 }
 
+fn validate_process_authorities(record: &LeaseRecord) -> Result<(), TaskLeaseRegistryError> {
+    for authority in record.process_authorities.values() {
+        authority.verify().map_err(|error| match error {
+            ProcessAuthorityError::ExecutablePathChanged
+            | ProcessAuthorityError::ExecutableIdentityChanged => {
+                TaskLeaseRegistryError::ProcessIdentityChanged
+            }
+            ProcessAuthorityError::InvalidExecutablePath
+            | ProcessAuthorityError::NonUtf8ExecutablePath
+            | ProcessAuthorityError::IdentityRead(_)
+            | ProcessAuthorityError::Io(_) => TaskLeaseRegistryError::ProcessIdentityUnavailable,
+        })?;
+    }
+    Ok(())
+}
+
 fn capture_process_authorities(
     lease: &TaskLease,
 ) -> Result<HashMap<String, ProcessAuthority>, TaskLeaseRegistryError> {
@@ -226,6 +223,8 @@ pub enum TaskLeaseRegistryError {
     WrongSession,
     #[error("task lease has expired")]
     Expired,
+    #[error("process executable identity changed since authorization")]
+    ProcessIdentityChanged,
     #[error("process executable identity is unavailable for this lease")]
     ProcessIdentityUnavailable,
     #[error("active task lease cannot be physically removed")]
@@ -234,7 +233,7 @@ pub enum TaskLeaseRegistryError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
     use optic_bridge_core::{
         Capability, LeaseScope, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId,
@@ -257,6 +256,39 @@ mod tests {
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: 1,
         }
+    }
+
+    fn absolute_process_lease(
+        session: SessionHandle,
+        executable: &Path,
+        expires_at: u64,
+    ) -> TaskLease {
+        TaskLease {
+            id: TaskLeaseId::generate().expect("test entropy"),
+            session,
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable(
+                executable.to_string_lossy().into_owned(),
+            )]),
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 1000,
+                output_bytes: 1024,
+                memory_bytes: 1024,
+                process_count: 1,
+            },
+            expires_at: MonotonicTime::from_millis(expires_at),
+            policy_epoch: 1,
+        }
+    }
+
+    fn workspace(label: &str) -> PathBuf {
+        let root = env::temp_dir().join(format!(
+            "optic-task-lease-{label}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create fixture root");
+        root
     }
 
     #[test]
@@ -292,6 +324,57 @@ mod tests {
                 .expect_err("global ceiling must fail closed"),
             TaskLeaseRegistryError::CapacityExceeded
         );
+    }
+
+    #[test]
+    fn relative_fixture_scope_remains_registry_compatible() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner session");
+        let owned = lease(owner.clone(), 100);
+        registry.register(owned.clone()).expect("register fixture lease");
+        registry
+            .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
+            .expect("relative fixture scope remains active");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn absolute_process_scope_detects_content_drift() {
+        let root = workspace("identity-drift");
+        let executable = root.join("tool.bin");
+        fs::write(&executable, b"first-tool").expect("write fixture");
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner session");
+        let owned = absolute_process_lease(owner.clone(), &executable, 100);
+        registry.register(owned.clone()).expect("register lease");
+        fs::write(&executable, b"second-tool").expect("replace fixture");
+        assert_eq!(
+            registry
+                .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
+                .expect_err("identity drift must fail"),
+            TaskLeaseRegistryError::ProcessIdentityChanged
+        );
+        fs::remove_dir_all(root).expect("remove fixture root");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn absolute_process_scope_stays_pinned_until_physical_removal() {
+        let root = workspace("identity-pin");
+        let executable = root.join("tool.exe");
+        fs::write(&executable, b"pinned-tool").expect("write fixture");
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner session");
+        let owned = absolute_process_lease(owner.clone(), &executable, 100);
+        registry.register(owned.clone()).expect("register lease");
+        registry
+            .get_active(&owned.id, &owner, MonotonicTime::from_millis(1))
+            .expect("pinned identity remains active");
+        assert!(fs::write(&executable, b"replacement").is_err());
+        assert!(registry.revoke(&owned.id).expect("revoke lease"));
+        assert!(registry.remove_revoked(&owned.id).expect("remove lease"));
+        fs::write(&executable, b"replacement").expect("rewrite after physical removal");
+        fs::remove_dir_all(root).expect("remove fixture root");
     }
 
     #[test]
