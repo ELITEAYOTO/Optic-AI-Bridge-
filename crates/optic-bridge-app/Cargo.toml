@@ -11,9 +11,18 @@ publish.workspace = true
 name = "optic-bridge"
 path = "src/main.rs"
 
+[[bin]]
+name = "optic-bridge-isolation-launcher"
+path = "src/bin/optic_bridge_isolation_launcher.rs"
+
 [dependencies]
 optic-bridge-core = { path = "../optic-bridge-core" }
 optic-bridge-mcp = { path = "../optic-bridge-mcp" }
 optic-bridge-runtime = { path = "../optic-bridge-runtime" }
 rmcp.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+optic-bridge-windows = { path = "../optic-bridge-windows" }
+serde.workspace = true
+serde_json.workspace = true
