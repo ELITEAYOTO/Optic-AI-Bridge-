@@ -23,6 +23,7 @@ mod workspace_grant;
 pub use appcontainer::{
     AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
     SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+    spawn_appcontainer_suspended_with_read_capability,
 };
 #[cfg(windows)]
 pub use executable::{PinnedExecutableFile, open_pinned_executable};
@@ -34,3 +35,5 @@ pub use file::{
 };
 #[cfg(windows)]
 pub use job::LimitedJobObject;
+#[cfg(windows)]
+pub use workspace_grant::{AppContainerReadCapability, AppContainerReadFileGrant};

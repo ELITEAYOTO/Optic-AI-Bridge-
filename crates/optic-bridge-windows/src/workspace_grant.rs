@@ -39,12 +39,12 @@ const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
 /// persisted. A stale ACE left by an abrupt crash therefore names a capability
 /// that later Optic launches do not reissue.
 #[derive(Debug)]
-pub(crate) struct AppContainerReadCapability {
+pub struct AppContainerReadCapability {
     sid: PSID,
 }
 
 impl AppContainerReadCapability {
-    pub(crate) fn create_ephemeral() -> Result<Self> {
+    pub fn create_ephemeral() -> Result<Self> {
         let mut random = [0u8; 16];
         getrandom::fill(&mut random)
             .map_err(|_| Error::other("Windows workspace capability entropy unavailable"))?;
@@ -94,10 +94,7 @@ impl AppContainerReadCapability {
     ///
     /// The target is opened handle-first with reparse points denied. The ACE is
     /// non-inheritable and is revoked on explicit `revoke` or best-effort Drop.
-    pub(crate) fn grant_file_read<'a>(
-        &'a self,
-        path: &Path,
-    ) -> Result<AppContainerReadFileGrant<'a>> {
+    pub fn grant_file_read<'a>(&'a self, path: &Path) -> Result<AppContainerReadFileGrant<'a>> {
         AppContainerReadFileGrant::new(path, self)
     }
 }
@@ -110,7 +107,7 @@ impl Drop for AppContainerReadCapability {
 
 /// Handle-bound read-only grant for one exact file object.
 #[derive(Debug)]
-pub(crate) struct AppContainerReadFileGrant<'a> {
+pub struct AppContainerReadFileGrant<'a> {
     file: File,
     sid: PSID,
     active: bool,
@@ -136,7 +133,7 @@ impl<'a> AppContainerReadFileGrant<'a> {
     }
 
     /// Revoke the exact capability ACE. Consuming self prevents accidental reuse.
-    pub(crate) fn revoke(mut self) -> Result<()> {
+    pub fn revoke(mut self) -> Result<()> {
         self.revoke_inner()
     }
 

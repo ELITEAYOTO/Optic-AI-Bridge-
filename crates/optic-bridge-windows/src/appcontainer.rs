@@ -329,7 +329,7 @@ pub fn spawn_appcontainer_suspended(
 }
 
 /// Create an AppContainer child suspended with one ephemeral read capability.
-pub(crate) fn spawn_appcontainer_suspended_with_read_capability(
+pub fn spawn_appcontainer_suspended_with_read_capability(
     profile: &AppContainerProfile,
     capability: &AppContainerReadCapability,
     executable: &Path,
