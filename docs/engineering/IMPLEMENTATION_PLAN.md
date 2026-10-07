@@ -489,13 +489,26 @@ Status: **merged and post-merge validated** in PR #61 (`3a907f50`), exact green 
 4. Startup authority now requires `--allow-executable=<fixed-tool|interpreter|repository-code>:<absolute-path>`. Legacy unclassified, unknown-class and empty-path forms fail closed.
 5. One canonical executable path may appear at most once per server lifecycle. Duplicate canonical paths are rejected before lease creation, including attempts to provision the same binary under competing classes.
 6. Classification is an explicit operator assertion, not automatic executable inspection. `FixedTool` must not be interpreted as proof that a binary cannot load plugins, scripts or repository code.
-7. This gate does not change process/network permissions or add class-specific OS isolation. All three classes continue to use the existing bounded process runtime until later confinement gates attach stronger semantics.
+7. This gate introduced classification only; the subsequent 3C3C1 gate determines which classes may currently execute.
 
 Gate passed: exact-head CI #287, SHA-guarded squash merge, and post-merge `main` CI #288.
 
+#### Phase 3C3C1 - fail-closed high-risk execution gate
+
+Status: **merged and post-merge validated** in PR #63 (`148f4720`), exact green final head `3b63e05d`; exact-head CI #291 and post-merge `main` CI #292 passed Ubuntu, Windows and dependency policy, including the native Windows tests, real MCP smoke and installer-profile validation.
+
+1. Otherwise-valid `ProcessRun` effects classified as `Interpreter` or `RepositoryCode` are denied with deterministic `PolicyReason::ProcessIsolationRequired` until stronger process isolation is implemented and proven.
+2. Correctly authorized `FixedTool` execution remains allowed under the existing bounded process runtime and Windows Job Object limits.
+3. Normal session, lease, scope, resource-budget and network authorization checks still run before the isolation gate, so an invalid request is not misreported as an isolation failure.
+4. The MCP adapter maps only `ProcessIsolationRequired` to stable `optic.process_isolation_unavailable`; unrelated policy failures remain `optic.policy_denied`.
+5. The gate does not add a restricted token, alternate desktop, AppContainer or other sandbox primitive. Job Objects remain lifecycle/resource containment only.
+6. Native CI proves the fail-closed policy without regressing the existing fixed-tool process surface, binary smoke or installer profiles.
+
+Gate passed: exact-head CI #291, SHA-guarded squash merge, and post-merge `main` CI #292.
+
 #### Later Phase 3C gates
 
-Prioritize class-specific confinement for `Interpreter` / `RepositoryCode`, truthful network semantics and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Implement an evidence-backed Windows isolation profile capable of safely re-admitting selected `Interpreter` / `RepositoryCode` execution, then prove truthful network semantics and broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

@@ -56,7 +56,7 @@ Repeatable:
 - The process MCP tools are part of the base tool router, but `process_start` fails closed unless the requested canonical executable exactly matches an operator-created lease. The execution class is resolved from that lease and is not a caller field.
 - Child environment is cleared by default; only variables allowed by the operator may be requested for inheritance.
 - Process network access remains unavailable; a request with `network=true` fails closed.
-- Phase 3C3B adds classification only. All classes currently share the existing bounded process runtime; class-specific OS confinement remains a later Phase 3C gate.
+- Phase 3C3B adds operator-owned classification. Phase 3C3C1 now enforces that classification: `fixed-tool` may execute under the current bounded runtime, while `interpreter` and `repository-code` authority may still be provisioned/classified but `process_start` fails closed with `optic.process_isolation_unavailable` until stronger isolation is implemented and proven. Provisioning a high-risk class therefore does not currently grant executable runtime access.
 
 ### Durable file-mutation authority
 
