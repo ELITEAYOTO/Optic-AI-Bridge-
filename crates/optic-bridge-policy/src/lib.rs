@@ -3,7 +3,8 @@
 //! Deterministic authorization for normalized Optic AI Bridge actions.
 
 use optic_bridge_core::{
-    ActionEnvelope, Capability, Effect, LeaseScope, MonotonicTime, SessionGrant, TaskLease,
+    ActionEnvelope, Capability, Effect, LeaseScope, MonotonicTime, ProcessExecutionClass,
+    SessionGrant, TaskLease,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub enum PolicyReason {
     ScopeNotAuthorized,
     ResourceBudgetExceeded,
     NetworkNotAuthorized,
+    ProcessIsolationRequired,
     SecurityPolicyImmutable,
     PrivilegeElevationDenied,
 }
@@ -106,6 +108,16 @@ impl PolicyEngine {
             {
                 return PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized);
             }
+        }
+
+        if matches!(
+            &envelope.effect,
+            Effect::ProcessRun {
+                class: ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode,
+                ..
+            }
+        ) {
+            return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
         }
 
         if matches!(&envelope.effect, Effect::NetworkAccess { .. }) {
@@ -500,6 +512,65 @@ mod tests {
     }
 
     #[test]
+    fn high_risk_process_classes_require_strong_isolation() {
+        for class in [
+            ProcessExecutionClass::Interpreter,
+            ProcessExecutionClass::RepositoryCode,
+        ] {
+            let session = session(&[Capability::ProcessRun]);
+            let lease = lease(
+                &session,
+                &[Capability::ProcessRun],
+                &[LeaseScope::ProcessExecutable {
+                    executable: "tool".to_owned(),
+                    class,
+                }],
+            );
+            let action = envelope(
+                &session,
+                Effect::ProcessRun {
+                    executable: "tool".to_owned(),
+                    class,
+                    network: NetworkAccess::Denied,
+                },
+                Some(&lease),
+            );
+
+            assert_eq!(
+                PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+                PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired)
+            );
+        }
+    }
+
+    #[test]
+    fn fixed_tool_process_remains_allowed_without_network() {
+        let session = session(&[Capability::ProcessRun]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[LeaseScope::ProcessExecutable {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            }],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+                network: NetworkAccess::Denied,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
     fn process_network_requires_network_capability_in_lease() {
         let session = session(&[Capability::ProcessRun, Capability::NetworkAccess]);
         let lease = lease(
@@ -508,7 +579,7 @@ mod tests {
             &[
                 LeaseScope::ProcessExecutable {
                     executable: "cargo".to_owned(),
-                    class: ProcessExecutionClass::RepositoryCode,
+                    class: ProcessExecutionClass::FixedTool,
                 },
                 LeaseScope::NetworkAny,
             ],
@@ -517,7 +588,7 @@ mod tests {
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
-                class: ProcessExecutionClass::RepositoryCode,
+                class: ProcessExecutionClass::FixedTool,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),
@@ -537,14 +608,14 @@ mod tests {
             &[Capability::ProcessRun, Capability::NetworkAccess],
             &[LeaseScope::ProcessExecutable {
                 executable: "cargo".to_owned(),
-                class: ProcessExecutionClass::RepositoryCode,
+                class: ProcessExecutionClass::FixedTool,
             }],
         );
         let action = envelope(
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
-                class: ProcessExecutionClass::RepositoryCode,
+                class: ProcessExecutionClass::FixedTool,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),
@@ -565,7 +636,7 @@ mod tests {
             &[
                 LeaseScope::ProcessExecutable {
                     executable: "cargo".to_owned(),
-                    class: ProcessExecutionClass::RepositoryCode,
+                    class: ProcessExecutionClass::FixedTool,
                 },
                 LeaseScope::NetworkAny,
             ],
@@ -574,7 +645,7 @@ mod tests {
             &session,
             Effect::ProcessRun {
                 executable: "cargo".to_owned(),
-                class: ProcessExecutionClass::RepositoryCode,
+                class: ProcessExecutionClass::FixedTool,
                 network: NetworkAccess::Allowed,
             },
             Some(&lease),

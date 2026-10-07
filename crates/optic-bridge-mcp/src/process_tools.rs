@@ -3,7 +3,7 @@ use optic_bridge_core::{
     ActionEnvelope, ActionId, Effect, JobId, NetworkAccess, ResourceBudget, TaskLeaseId,
     WorkspacePath,
 };
-use optic_bridge_policy::PolicyDecision;
+use optic_bridge_policy::{PolicyDecision, PolicyReason};
 use optic_bridge_runtime::{
     ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, SessionLifecycleError,
     SessionLifecycleManager, TaskLeaseRegistryError,
@@ -262,8 +262,15 @@ fn authorize_process(
         resources,
         policy_epoch: grant.policy_epoch,
     };
-    match server.policy.evaluate(&envelope, grant, Some(lease), now) {
+    map_process_policy_decision(server.policy.evaluate(&envelope, grant, Some(lease), now))
+}
+
+fn map_process_policy_decision(decision: PolicyDecision) -> Result<(), ErrorData> {
+    match decision {
         PolicyDecision::Allow => Ok(()),
+        PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired) => Err(
+            ErrorData::invalid_request("optic.process_isolation_unavailable", None),
+        ),
         PolicyDecision::RequireApproval(_) | PolicyDecision::Deny(_) => {
             Err(ErrorData::invalid_request("optic.policy_denied", None))
         }
@@ -546,6 +553,20 @@ mod tests {
             map_task_lease_error(TaskLeaseRegistryError::Revoked).message,
             "optic.task_lease_inactive"
         );
+    }
+
+    #[test]
+    fn process_isolation_policy_has_distinct_mcp_code() {
+        let error = map_process_policy_decision(PolicyDecision::Deny(
+            PolicyReason::ProcessIsolationRequired,
+        ))
+        .expect_err("high-risk process should fail closed");
+        assert_eq!(error.message, "optic.process_isolation_unavailable");
+
+        let generic =
+            map_process_policy_decision(PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized))
+                .expect_err("generic denial");
+        assert_eq!(generic.message, "optic.policy_denied");
     }
 
     #[test]
