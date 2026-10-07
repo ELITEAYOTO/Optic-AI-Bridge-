@@ -25,7 +25,10 @@ use windows::Win32::{
     },
 };
 
-use crate::appcontainer::AppContainerProfile;
+use crate::{
+    appcontainer::AppContainerProfile,
+    file::{inspect_directory_no_reparse, query_final_path},
+};
 
 const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
 
@@ -43,7 +46,23 @@ impl AppContainerProfile {
                 "workspace grants require a cryptographically ephemeral AppContainer profile",
             ));
         }
-        AppContainerReadFileGrant::new(path, self)
+        AppContainerReadFileGrant::new(path, self, None)
+    }
+
+    /// Grant read-only access only when the exact opened target resolves under
+    /// the exact opened workspace root. Both decisions are handle-bound.
+    pub fn grant_file_read_within<'a>(
+        &'a self,
+        path: &Path,
+        workspace_root: &Path,
+    ) -> Result<AppContainerReadFileGrant<'a>> {
+        if !self.external_acl_grants_allowed() {
+            return Err(Error::other(
+                "workspace grants require a cryptographically ephemeral AppContainer profile",
+            ));
+        }
+        let root = inspect_directory_no_reparse(workspace_root).map_err(Error::other)?;
+        AppContainerReadFileGrant::new(path, self, Some(&root.final_path))
     }
 }
 
@@ -57,7 +76,11 @@ pub struct AppContainerReadFileGrant<'a> {
 }
 
 impl<'a> AppContainerReadFileGrant<'a> {
-    fn new(path: &Path, profile: &'a AppContainerProfile) -> Result<Self> {
+    fn new(
+        path: &Path,
+        profile: &'a AppContainerProfile,
+        workspace_root: Option<&Path>,
+    ) -> Result<Self> {
         let mut options = OpenOptions::new();
         options
             .access_mode(FILE_GENERIC_READ.0 | WRITE_DAC_ACCESS)
@@ -65,6 +88,14 @@ impl<'a> AppContainerReadFileGrant<'a> {
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0);
         let file = options.open(path)?;
         reject_reparse(&file)?;
+        if let Some(workspace_root) = workspace_root {
+            let final_path = query_final_path(&file).map_err(Error::other)?;
+            if !final_path.starts_with(workspace_root) {
+                return Err(Error::other(
+                    "workspace grant target resolves outside the configured workspace",
+                ));
+            }
+        }
         let sid = profile.package_sid();
         modify_file_dacl(&file, sid, true)?;
         Ok(Self {

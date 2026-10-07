@@ -38,11 +38,13 @@ const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const TERMINATION_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 const DRAIN_CHUNK_BYTES: usize = 8 * 1024;
 #[cfg(windows)]
-const ISOLATION_LAUNCHER_PROTOCOL_VERSION: u32 = 1;
+const ISOLATION_LAUNCHER_PROTOCOL_VERSION: u32 = 2;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_REQUEST_LIMIT_BYTES: usize = 64 * 1024;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_MAX_ARGS: usize = 128;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_MAX_READ_FILES: usize = 32;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
 #[cfg(windows)]
@@ -64,6 +66,8 @@ struct IsolationLauncherRequest<'a> {
     args: &'a [String],
     cwd: &'a str,
     timeout_ms: u64,
+    workspace_root: &'a str,
+    workspace_read_files: &'a [String],
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +77,7 @@ pub struct ProcessStartSpec {
     pub executable: String,
     pub args: Vec<String>,
     pub cwd: Option<WorkspacePath>,
+    pub workspace_read_files: Vec<WorkspacePath>,
     pub env_allowlist: Vec<String>,
     pub resources: ResourceBudget,
 }
@@ -237,6 +242,9 @@ impl ProcessManager {
             spec.class,
             ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
         );
+        if !requires_isolation && !spec.workspace_read_files.is_empty() {
+            return Err(ProcessError::WorkspaceReadGrantsRequireIsolation);
+        }
         #[cfg(not(windows))]
         if requires_isolation {
             return Err(ProcessError::IsolationUnavailable);
@@ -248,6 +256,12 @@ impl ProcessManager {
             None
         };
         #[cfg(windows)]
+        let workspace_read_files = if requires_isolation {
+            self.resolve_workspace_read_files(&spec.workspace_read_files)?
+        } else {
+            Vec::new()
+        };
+        #[cfg(windows)]
         let isolation_request = if requires_isolation {
             let launcher = self
                 .isolation_launcher
@@ -257,12 +271,18 @@ impl ProcessManager {
                 return Err(ProcessError::TooManyProcessArguments);
             }
             let cwd = cwd.to_str().ok_or(ProcessError::NonUtf8WorkingDirectory)?;
+            let workspace_root = self
+                .root
+                .to_str()
+                .ok_or(ProcessError::NonUtf8WorkspaceRoot)?;
             let request = IsolationLauncherRequest {
                 version: ISOLATION_LAUNCHER_PROTOCOL_VERSION,
                 executable: &executable,
                 args: &spec.args,
                 cwd,
                 timeout_ms: resources.timeout_ms,
+                workspace_root,
+                workspace_read_files: &workspace_read_files,
             };
             let payload =
                 serde_json::to_vec(&request).map_err(ProcessError::IsolationLauncherProtocol)?;
@@ -573,6 +593,9 @@ impl ProcessManager {
         for name in &spec.env_allowlist {
             bytes = bytes.saturating_add(u64::try_from(name.len()).unwrap_or(u64::MAX));
         }
+        for path in &spec.workspace_read_files {
+            bytes = bytes.saturating_add(u64::try_from(path.as_str().len()).unwrap_or(u64::MAX));
+        }
         if let Some(cwd) = &spec.cwd {
             bytes = bytes.saturating_add(u64::try_from(cwd.as_str().len()).unwrap_or(u64::MAX));
         }
@@ -614,6 +637,49 @@ impl ProcessManager {
                     .ok_or(ProcessError::IsolationEnvironmentUnavailable(name))
             })
             .collect()
+    }
+
+    #[cfg(windows)]
+    fn resolve_workspace_read_files(
+        &self,
+        paths: &[WorkspacePath],
+    ) -> Result<Vec<String>, ProcessError> {
+        if paths.len() > ISOLATION_LAUNCHER_MAX_READ_FILES {
+            return Err(ProcessError::TooManyWorkspaceReadGrants);
+        }
+        let mut seen = BTreeSet::new();
+        let mut resolved = Vec::with_capacity(paths.len());
+        for path in paths {
+            let mut candidate = self.root.clone();
+            for segment in path.as_str().split('/') {
+                candidate.push(segment);
+            }
+            let file_name = candidate
+                .file_name()
+                .ok_or(ProcessError::WorkspaceReadGrantNotFile)?
+                .to_owned();
+            let parent = candidate
+                .parent()
+                .ok_or(ProcessError::WorkspaceReadGrantOutsideWorkspace)?;
+            let canonical_parent = fs::canonicalize(parent).map_err(ProcessError::Io)?;
+            if !canonical_parent.starts_with(&self.root) {
+                return Err(ProcessError::WorkspaceReadGrantOutsideWorkspace);
+            }
+            let exact = canonical_parent.join(file_name);
+            let metadata = fs::symlink_metadata(&exact).map_err(ProcessError::Io)?;
+            if !metadata.file_type().is_file() {
+                return Err(ProcessError::WorkspaceReadGrantNotFile);
+            }
+            if !seen.insert(exact.clone()) {
+                return Err(ProcessError::DuplicateWorkspaceReadGrant);
+            }
+            let value = exact
+                .to_str()
+                .ok_or(ProcessError::NonUtf8WorkspaceReadGrant)?
+                .to_owned();
+            resolved.push(value);
+        }
+        Ok(resolved)
     }
 
     fn resolve_cwd(&self, cwd: Option<&WorkspacePath>) -> Result<PathBuf, ProcessError> {
@@ -1033,6 +1099,20 @@ pub enum ProcessError {
     CursorOutOfRange,
     #[error("process job is unknown to this session")]
     UnknownJob,
+    #[error("workspace read grants require the isolated process path")]
+    WorkspaceReadGrantsRequireIsolation,
+    #[error("too many exact-file workspace read grants")]
+    TooManyWorkspaceReadGrants,
+    #[error("workspace read grant resolves outside the configured workspace")]
+    WorkspaceReadGrantOutsideWorkspace,
+    #[error("workspace read grant must resolve to one exact regular file")]
+    WorkspaceReadGrantNotFile,
+    #[error("workspace root is not valid UTF-8 for the internal isolation protocol")]
+    NonUtf8WorkspaceRoot,
+    #[error("workspace read grant path is not valid UTF-8")]
+    NonUtf8WorkspaceReadGrant,
+    #[error("workspace read grant aliases another requested exact file")]
+    DuplicateWorkspaceReadGrant,
     #[error("process isolation launcher must be an absolute path")]
     IsolationLauncherMustBeAbsolute,
     #[error("process isolation launcher must resolve to a regular file")]
@@ -1086,6 +1166,7 @@ mod tests {
                 "--nocapture".to_owned(),
             ],
             cwd: None,
+            workspace_read_files: Vec::new(),
             env_allowlist: Vec::new(),
             resources,
         }
@@ -1172,6 +1253,63 @@ mod tests {
                 Err(ProcessError::IsolationUnavailable)
             ));
         }
+    }
+
+    #[test]
+    fn workspace_read_grants_require_isolated_process_path() {
+        let root = workspace("grant-fixed-tool");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let session = SessionHandle::generate().expect("session");
+        let mut request = spec(&root, session, budget(2_000, 64 * 1024));
+        request.workspace_read_files =
+            vec![WorkspacePath::parse("sentinel.txt").expect("workspace read path")];
+        assert!(matches!(
+            manager.start(request),
+            Err(ProcessError::WorkspaceReadGrantsRequireIsolation)
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn workspace_read_grants_resolve_only_exact_regular_files() {
+        let root = workspace("grant-resolution");
+        fs::write(root.join("sentinel.txt"), b"sentinel").expect("write sentinel");
+        fs::create_dir(root.join("directory")).expect("create directory");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let sentinel = WorkspacePath::parse("sentinel.txt").expect("sentinel path");
+
+        let resolved = manager
+            .resolve_workspace_read_files(std::slice::from_ref(&sentinel))
+            .expect("resolve exact file");
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(
+            PathBuf::from(&resolved[0]),
+            root.canonicalize()
+                .expect("canonical root")
+                .join("sentinel.txt")
+        );
+
+        assert!(matches!(
+            manager.resolve_workspace_read_files(&[sentinel.clone(), sentinel]),
+            Err(ProcessError::DuplicateWorkspaceReadGrant)
+        ));
+        assert!(matches!(
+            manager.resolve_workspace_read_files(&[
+                WorkspacePath::parse("directory").expect("directory path")
+            ]),
+            Err(ProcessError::WorkspaceReadGrantNotFile)
+        ));
+        let too_many = (0..=ISOLATION_LAUNCHER_MAX_READ_FILES)
+            .map(|index| WorkspacePath::parse(&format!("file-{index}.txt")).expect("bounded path"))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            manager.resolve_workspace_read_files(&too_many),
+            Err(ProcessError::TooManyWorkspaceReadGrants)
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[tokio::test]

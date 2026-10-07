@@ -38,6 +38,7 @@ fn spec(
         executable: fixture(),
         args: args.into_iter().collect(),
         cwd: None,
+        workspace_read_files: Vec::new(),
         env_allowlist: Vec::new(),
         resources,
     }

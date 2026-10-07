@@ -16,9 +16,10 @@ mod windows_launcher {
     };
     use serde::Deserialize;
 
-    const PROTOCOL_VERSION: u32 = 1;
+    const PROTOCOL_VERSION: u32 = 2;
     const MAX_REQUEST_BYTES: usize = 64 * 1024;
     const MAX_ARGS: usize = 128;
+    const MAX_WORKSPACE_READ_FILES: usize = 32;
     const MAX_COMMAND_WORST_CASE_UTF16_UNITS: usize = 30_000;
     const INTERNAL_FAILURE_EXIT: i32 = 126;
 
@@ -32,6 +33,8 @@ mod windows_launcher {
         args: Vec<String>,
         cwd: String,
         timeout_ms: u64,
+        workspace_root: String,
+        workspace_read_files: Vec<String>,
     }
 
     pub fn entry() -> i32 {
@@ -50,8 +53,20 @@ mod windows_launcher {
         let cwd = canonical_directory(&request.cwd)?;
         validate_command_size(&executable, &request.args)?;
 
+        let workspace_root = absolute_path(&request.workspace_root, "workspace root")?;
         let profile = AppContainerProfile::create_ephemeral()
             .map_err(|error| IoError::other(format!("create AppContainer profile: {error}")))?;
+        let mut _workspace_grants = Vec::with_capacity(request.workspace_read_files.len());
+        for value in &request.workspace_read_files {
+            let path = absolute_path(value, "workspace read grant")?;
+            _workspace_grants.push(
+                profile
+                    .grant_file_read_within(&path, &workspace_root)
+                    .map_err(|error| {
+                        IoError::other(format!("grant workspace file read: {error}"))
+                    })?,
+            );
+        }
         let null_stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
@@ -118,9 +133,19 @@ mod windows_launcher {
         if request.args.len() > MAX_ARGS {
             return Err(IoError::new(ErrorKind::InvalidInput, "too many process arguments").into());
         }
+        if request.workspace_read_files.len() > MAX_WORKSPACE_READ_FILES {
+            return Err(
+                IoError::new(ErrorKind::InvalidInput, "too many workspace read grants").into(),
+            );
+        }
         if request.executable.contains('\0')
             || request.cwd.contains('\0')
+            || request.workspace_root.contains('\0')
             || request.args.iter().any(|arg| arg.contains('\0'))
+            || request
+                .workspace_read_files
+                .iter()
+                .any(|path| path.contains('\0'))
         {
             return Err(IoError::new(
                 ErrorKind::InvalidInput,
@@ -137,6 +162,16 @@ mod windows_launcher {
             .into());
         }
         Ok(())
+    }
+
+    fn absolute_path(value: &str, label: &str) -> LauncherResult<PathBuf> {
+        let path = PathBuf::from(value);
+        if !path.is_absolute() {
+            return Err(
+                IoError::new(ErrorKind::InvalidInput, format!("{label} must be absolute")).into(),
+            );
+        }
+        Ok(path)
     }
 
     fn canonical_file(value: &str) -> LauncherResult<PathBuf> {
@@ -206,13 +241,13 @@ mod windows_launcher {
 
         #[test]
         fn unknown_fields_fail_closed() {
-            let request = b"{\"version\":1,\"executable\":\"C:\\\\Windows\\\\System32\\\\cmd.exe\",\"args\":[],\"cwd\":\"C:\\\\Windows\\\\System32\",\"timeout_ms\":1000,\"extra\":true}";
+            let request = br#"{"version":2,"executable":"C:\\Windows\\System32\\cmd.exe","args":[],"cwd":"C:\\Windows\\System32","timeout_ms":1000,"workspace_root":"C:\\Windows\\System32","workspace_read_files":[],"extra":true}"#;
             assert!(read_request(request.as_slice()).is_err());
         }
 
         #[test]
         fn zero_timeout_fails_closed() {
-            let request = b"{\"version\":1,\"executable\":\"C:\\\\Windows\\\\System32\\\\cmd.exe\",\"args\":[],\"cwd\":\"C:\\\\Windows\\\\System32\",\"timeout_ms\":0}";
+            let request = br#"{"version":2,"executable":"C:\\Windows\\System32\\cmd.exe","args":[],"cwd":"C:\\Windows\\System32","timeout_ms":0,"workspace_root":"C:\\Windows\\System32","workspace_read_files":[]}"#;
             assert!(read_request(request.as_slice()).is_err());
         }
     }

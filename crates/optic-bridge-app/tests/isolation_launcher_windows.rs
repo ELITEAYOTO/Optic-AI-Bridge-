@@ -58,11 +58,31 @@ fn run_launcher_command(request: Value, minimal_windows_environment: bool) -> Ou
 
 fn launcher_request(executable: &Path, args: &[&str], cwd: &Path) -> Value {
     json!({
-        "version": 1,
+        "version": 2,
         "executable": executable.to_string_lossy(),
         "args": args,
         "cwd": cwd.to_string_lossy(),
         "timeout_ms": TEST_TIMEOUT_MS,
+        "workspace_root": cwd.to_string_lossy(),
+        "workspace_read_files": [],
+    })
+}
+
+fn launcher_request_with_read_files(
+    executable: &Path,
+    args: &[&str],
+    cwd: &Path,
+    read_files: &[&Path],
+    workspace_root: &Path,
+) -> Value {
+    json!({
+        "version": 2,
+        "executable": executable.to_string_lossy(),
+        "args": args,
+        "cwd": cwd.to_string_lossy(),
+        "timeout_ms": TEST_TIMEOUT_MS,
+        "workspace_root": workspace_root.to_string_lossy(),
+        "workspace_read_files": read_files.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>(),
     })
 }
 
@@ -171,6 +191,56 @@ fn launcher_preserves_ungranted_file_denial() {
         output.status.code(),
         Some(LAUNCHER_FAILURE_EXIT),
         "launcher failed internally instead of returning the target denial"
+    );
+}
+
+#[test]
+fn launcher_applies_exact_file_read_grant_for_child_lifetime() {
+    let sentinel = unique_temp_path("granted-sentinel.txt");
+    fs::write(&sentinel, b"optic granted launcher sentinel").expect("write granted sentinel");
+    let _cleanup = Cleanup(sentinel.clone());
+    let findstr = system32_executable("findstr.exe");
+    let cwd = findstr.parent().expect("System32 parent").to_path_buf();
+    let sentinel_arg = sentinel.to_string_lossy().into_owned();
+
+    let output = run_launcher(launcher_request_with_read_files(
+        &findstr,
+        &["/c:optic granted launcher sentinel", &sentinel_arg],
+        &cwd,
+        &[sentinel.as_path()],
+        sentinel.parent().expect("sentinel parent"),
+    ));
+
+    assert!(
+        output.status.success(),
+        "granted AppContainer file read failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn launcher_rejects_read_grant_outside_workspace_root() {
+    let sentinel = unique_temp_path("outside-workspace-sentinel.txt");
+    fs::write(&sentinel, b"optic outside workspace sentinel").expect("write sentinel");
+    let _cleanup = Cleanup(sentinel.clone());
+    let findstr = system32_executable("findstr.exe");
+    let cwd = findstr.parent().expect("System32 parent").to_path_buf();
+    let sentinel_arg = sentinel.to_string_lossy().into_owned();
+
+    let output = run_launcher(launcher_request_with_read_files(
+        &findstr,
+        &["/c:optic outside workspace sentinel", &sentinel_arg],
+        &cwd,
+        &[sentinel.as_path()],
+        &cwd,
+    ));
+
+    assert_eq!(output.status.code(), Some(LAUNCHER_FAILURE_EXIT));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("workspace grant target resolves outside the configured workspace"),
+        "out-of-workspace grant did not fail at the helper boundary: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
