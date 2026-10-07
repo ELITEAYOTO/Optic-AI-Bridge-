@@ -10,15 +10,16 @@ Processes are launched as structured executable + `args[]` + cwd + controlled en
 
 Process authority is application-owned, not MCP-owned.
 
-1. The bridge operator supplies zero or more `--allow-executable` values at startup.
-2. Each value is canonicalized to an absolute regular-file path.
-3. The application creates one exact executable task lease for that session lifecycle.
-4. `ProcessRun` is present on the session only when at least one executable was authorized.
+1. The bridge operator supplies zero or more classified `--allow-executable=<fixed-tool|interpreter|repository-code>:<absolute-path>` values at startup.
+2. Each path is canonicalized to one absolute regular file; duplicate canonical paths fail startup closed so the same binary cannot receive competing classes in one lifecycle.
+3. The application creates one exact executable task lease carrying both canonical path and operator-owned `ProcessExecutionClass` (`FixedTool`, `Interpreter` or `RepositoryCode`).
+4. `ProcessRun` is present on the session only when at least one classified executable was authorized.
 5. An MCP `process_start` request canonicalizes its executable and must match one of those operator-created leases.
-6. The request becomes a typed `Effect::ProcessRun` and must pass `PolicyEngine` with the active session plus the exact task lease.
-7. Only then may `ProcessManager` spawn the child.
+6. The server resolves the execution class from that active lease; MCP has no class field and cannot select, downgrade or override it.
+7. The request becomes a typed `Effect::ProcessRun` carrying the lease-derived class and must pass `PolicyEngine`, which requires exact path + class agreement.
+8. Only then may `ProcessManager` spawn the child.
 
-The MCP caller cannot create capabilities, approve itself or mint a task lease.
+The MCP caller cannot create capabilities, approve itself, mint a task lease or choose an execution class. Phase 3C3B classification is an operator assertion rather than automatic executable inspection: `FixedTool` does not prove a binary cannot load plugins/scripts, and interpreter/repository-code-specific OS confinement is still a later gate.
 
 Network remains unavailable in the Phase 1 runtime. A request with `network=true` fails closed even though the core policy model already defines the later dual session+lease network contract.
 

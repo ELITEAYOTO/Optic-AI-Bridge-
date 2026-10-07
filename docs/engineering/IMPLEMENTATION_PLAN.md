@@ -479,9 +479,23 @@ Status: **merged and post-merge validated** in PR #59 (`050a4244`), exact green 
 
 Gate passed: exact-head CI #282, SHA-guarded squash merge, and post-merge `main` CI #283.
 
+#### Phase 3C3B - explicit process execution classification
+
+Status: **merged and post-merge validated** in PR #61 (`3a907f50`), exact green final head `506e1f7e`; exact-head CI #287 and post-merge `main` CI #288 passed Ubuntu, Windows and dependency policy, including the native Windows test suite, real MCP smoke and installer-profile validation.
+
+1. `ProcessExecutionClass` is a closed operator-owned classification with `FixedTool`, `Interpreter` and `RepositoryCode` variants.
+2. The class is bound into each production `LeaseScope::ProcessExecutable` and carried through runtime `ProcessAuthority` plus `Effect::ProcessRun`; policy authorization requires exact canonical path + class agreement.
+3. `process_start` resolves the class from the active task lease after executable canonicalization. MCP request schemas do not expose a class field, so callers cannot choose, downgrade or override classification.
+4. Startup authority now requires `--allow-executable=<fixed-tool|interpreter|repository-code>:<absolute-path>`. Legacy unclassified, unknown-class and empty-path forms fail closed.
+5. One canonical executable path may appear at most once per server lifecycle. Duplicate canonical paths are rejected before lease creation, including attempts to provision the same binary under competing classes.
+6. Classification is an explicit operator assertion, not automatic executable inspection. `FixedTool` must not be interpreted as proof that a binary cannot load plugins, scripts or repository code.
+7. This gate does not change process/network permissions or add class-specific OS isolation. All three classes continue to use the existing bounded process runtime until later confinement gates attach stronger semantics.
+
+Gate passed: exact-head CI #287, SHA-guarded squash merge, and post-merge `main` CI #288.
+
 #### Later Phase 3C gates
 
-Still prioritize ToolProfile/tool-class classification, environment/interpreter/repository-code execution classification, truthful network semantics and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Prioritize class-specific confinement for `Interpreter` / `RepositoryCode`, truthful network semantics and Windows sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

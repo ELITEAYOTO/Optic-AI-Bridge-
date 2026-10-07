@@ -17,11 +17,11 @@ Use a disposable Git repository. Do not use an important working tree for the fi
 The repository CI compiles, lints and tests on `windows-latest` and `ubuntu-latest`, and runs `cargo-deny`. The current MCP surface includes:
 
 - base read/session surface: `fs_list`, `fs_read`, `session_info`, `session_cancel`;
-- process tools on the base router: `process_start`, `process_read`, `process_stop`, `process_result`; `process_start` cannot launch anything unless the requested executable exactly matches an operator-owned `--allow-executable` lease;
+- process tools on the base router: `process_start`, `process_read`, `process_stop`, `process_result`; `process_start` cannot launch anything unless the requested executable exactly matches an operator-owned classified `--allow-executable=<fixed-tool|interpreter|repository-code>:<absolute-path>` lease;
 - durable Windows mutation tools only when matching operator-owned authority is configured: `fs_write`, `fs_apply_patch`, `fs_delete`;
 - Git read tools only when the operator supplies one valid absolute Git executable: `git_status`, `git_diff`, `git_log`.
 
-Not ready yet: `GitIntegrate`, worktree integration ownership, merge/cherry-pick/rebase/reset, installer/autoconfiguration, public multi-session orchestration, and a general replay/idempotency ledger.
+Not ready yet: public multi-session orchestration, same-repository autonomous worktree execution, a general replay/idempotency ledger, class-specific confinement for interpreter/repository-code execution, truthful process network containment, and a general Windows sandboxing profile.
 
 ## Preconditions
 
@@ -110,20 +110,21 @@ Expected MCP behavior:
 - after editing `tracked.txt`, `git_diff` returns a bounded diff;
 - `git_log` returns bounded commit metadata and a server-validated cursor;
 - the caller cannot provide another repository path or Git executable;
-- no Git mutation/integration tool exists yet.
+- Git-read-only configuration does not expose `git_integrate` or `git_integration_status`; those remain conditional on separate explicit Git integration authority.
 
 ## Test 3 — process authority, one executable only
 
-Choose one harmless absolute executable, for example the real path of `cmd.exe` or another dedicated test executable. Restart the bridge with only that executable allowed:
+Choose one harmless absolute executable and classify it explicitly. `cmd.exe` is an interpreter, so a smoke that uses it must provision `interpreter` authority rather than `fixed-tool`. Restart the bridge with only that executable allowed:
 
 ```powershell
-& $Bridge --allow-executable="C:\Windows\System32\cmd.exe" $SmokeRepo
+& $Bridge --allow-executable="interpreter:C:\Windows\System32\cmd.exe" $SmokeRepo
 ```
 
 Verify that:
 
 - `process_start` accepts the configured executable with structured arguments;
-- an unconfigured executable is rejected;
+- the MCP request contains no execution-class field; the server uses the operator-owned `Interpreter` class from the lease;
+- an unconfigured executable is rejected, and legacy unclassified startup syntax is rejected rather than defaulting to `fixed-tool`;
 - `process_read`, `process_result` and `process_stop` operate through opaque JobIds rather than caller-supplied PIDs;
 - process descendants are contained by the Windows Job Object limits;
 - after stop/timeout/session cancellation, no unexpected descendant remains.
@@ -177,7 +178,7 @@ After the isolated tests pass, combine only the authorities actually needed:
 ```powershell
 & $Bridge `
   --git-executable="C:\Program Files\Git\cmd\git.exe" `
-  --allow-executable="C:\Windows\System32\cmd.exe" `
+  --allow-executable="interpreter:C:\Windows\System32\cmd.exe" `
   --mutation-state-dir="C:\optic-smoke\state" `
   --allow-write-scope="prefix:scratch" `
   --allow-delete-scope="prefix:scratch" `
