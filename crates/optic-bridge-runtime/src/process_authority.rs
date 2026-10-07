@@ -175,8 +175,8 @@ mod tests {
         let root = workspace("change");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"first-tool").expect("write fixture");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
             .expect("capture identity");
@@ -195,8 +195,8 @@ mod tests {
         let root = workspace("stable");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"stable-tool").expect("write fixture");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         let identity = ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 1024)
             .expect("capture identity");
@@ -214,8 +214,8 @@ mod tests {
         let root = workspace("bounded");
         let executable = root.join("tool.bin");
         fs::write(&executable, b"too-large").expect("write fixture");
-        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-            .expect("process manager");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
         let executable = executable.to_string_lossy().into_owned();
         assert!(matches!(
             ProcessExecutableIdentity::capture_with_limit(&manager, &executable, 4),
