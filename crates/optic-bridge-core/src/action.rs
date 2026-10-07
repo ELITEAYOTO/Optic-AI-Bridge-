@@ -1,4 +1,7 @@
-use crate::{ActionId, ContentVersion, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath};
+use crate::{
+    ActionId, ContentVersion, ProcessExecutionClass, ResourceBudget, SessionHandle, TaskLeaseId,
+    WorkspacePath,
+};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -81,6 +84,7 @@ pub enum Effect {
     },
     ProcessRun {
         executable: String,
+        class: ProcessExecutionClass,
         network: NetworkAccess,
     },
     NetworkAccess {
@@ -191,6 +195,7 @@ mod tests {
     fn process_network_is_a_second_explicit_capability() {
         let effect = Effect::ProcessRun {
             executable: "cargo".to_owned(),
+            class: ProcessExecutionClass::RepositoryCode,
             network: NetworkAccess::Allowed,
         };
         assert_eq!(effect.required_capability(), Some(Capability::ProcessRun));

@@ -184,7 +184,8 @@ mod tests {
     };
 
     use optic_bridge_core::{
-        HardLimits, JobId, LeaseScope, ResourceBudget, TaskLease, TaskLeaseId,
+        HardLimits, JobId, LeaseScope, ProcessExecutionClass, ResourceBudget, TaskLease,
+        TaskLeaseId,
     };
 
     use crate::{ProcessResult, ProcessStartSpec, ProcessStatus};
@@ -213,7 +214,10 @@ mod tests {
             id: TaskLeaseId::generate().expect("test entropy"),
             session,
             capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable("fixture".to_owned())]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable {
+                executable: "fixture".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            }]),
             resource_ceiling: ResourceBudget {
                 timeout_ms: 5_000,
                 output_bytes: 1024,

@@ -192,13 +192,13 @@ fn capture_process_authorities(
 ) -> Result<HashMap<String, ProcessAuthority>, TaskLeaseRegistryError> {
     let mut authorities = HashMap::new();
     for scope in &lease.scopes {
-        let LeaseScope::ProcessExecutable(executable) = scope else {
+        let LeaseScope::ProcessExecutable { executable, class } = scope else {
             continue;
         };
         if !Path::new(executable).is_absolute() {
             continue;
         }
-        let authority = ProcessAuthority::capture(lease.id.clone(), executable)
+        let authority = ProcessAuthority::capture(lease.id.clone(), executable, *class)
             .map_err(|_| TaskLeaseRegistryError::ProcessIdentityUnavailable)?;
         authorities.insert(authority.canonical_path().to_owned(), authority);
     }
@@ -236,7 +236,8 @@ mod tests {
     use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
     use optic_bridge_core::{
-        Capability, LeaseScope, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId,
+        Capability, LeaseScope, ProcessExecutionClass, ResourceBudget, SessionHandle, TaskLease,
+        TaskLeaseId,
     };
 
     use super::*;
@@ -246,7 +247,10 @@ mod tests {
             id: TaskLeaseId::generate().expect("test entropy"),
             session,
             capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable("test".to_owned())]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable {
+                executable: "test".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            }]),
             resource_ceiling: ResourceBudget {
                 timeout_ms: 1000,
                 output_bytes: 1024,
@@ -267,9 +271,10 @@ mod tests {
             id: TaskLeaseId::generate().expect("test entropy"),
             session,
             capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable(
-                executable.to_string_lossy().into_owned(),
-            )]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable {
+                executable: executable.to_string_lossy().into_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            }]),
             resource_ceiling: ResourceBudget {
                 timeout_ms: 1000,
                 output_bytes: 1024,
@@ -286,6 +291,28 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture root");
         root
+    }
+
+    #[test]
+    fn active_process_lease_preserves_execution_class() {
+        let root = workspace("class");
+        let executable = root.join("tool.bin");
+        fs::write(&executable, b"classified-tool").expect("write fixture");
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().expect("session");
+        let lease = absolute_process_lease(session.clone(), &executable, 100);
+        let id = lease.id.clone();
+        registry.register(lease).expect("register lease");
+
+        let active = registry
+            .get_active(&id, &session, MonotonicTime::from_millis(1))
+            .expect("active lease");
+        assert_eq!(
+            active.process_execution_class(&executable.to_string_lossy()),
+            Some(ProcessExecutionClass::FixedTool)
+        );
+        drop(registry);
+        fs::remove_dir_all(root).expect("remove fixture root");
     }
 
     #[test]

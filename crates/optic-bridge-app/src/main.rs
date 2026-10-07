@@ -10,8 +10,8 @@ use std::{
 };
 
 use optic_bridge_core::{
-    Capability, HardLimits, LeaseScope, PrincipalId, ProjectId, TaskLease, TaskLeaseId,
-    WorkspacePath,
+    Capability, HardLimits, LeaseScope, PrincipalId, ProcessExecutionClass, ProjectId, TaskLease,
+    TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
@@ -40,10 +40,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
 
-    let mut canonical_process_executables = BTreeSet::new();
-    for executable in &args.allowed_executables {
-        canonical_process_executables.insert(processes.canonicalize_executable(executable)?);
-    }
+    let canonical_process_executables =
+        canonicalize_allowed_executables(&processes, &args.allowed_executables)?;
 
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
@@ -126,14 +124,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let session = grant.handle;
 
     let mut process_leases = BTreeMap::new();
-    for canonical in canonical_process_executables {
+    for (canonical, class) in canonical_process_executables {
         let id = TaskLeaseId::generate()
             .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
         task_leases.register(TaskLease {
             id: id.clone(),
             session: session.clone(),
             capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable(canonical.clone())]),
+            scopes: BTreeSet::from([LeaseScope::ProcessExecutable {
+                executable: canonical.clone(),
+                class,
+            }]),
             resource_ceiling: limits.max_process_budget,
             expires_at,
             policy_epoch: 1,
@@ -288,10 +289,34 @@ async fn supervise_session_expiry(
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AllowedExecutableSpec {
+    class: ProcessExecutionClass,
+    path: String,
+}
+
+fn canonicalize_allowed_executables(
+    processes: &ProcessManager,
+    executables: &[AllowedExecutableSpec],
+) -> Result<BTreeMap<String, ProcessExecutionClass>, Box<dyn Error + Send + Sync>> {
+    let mut canonical = BTreeMap::new();
+    for executable in executables {
+        let path = processes.canonicalize_executable(&executable.path)?;
+        if canonical.insert(path, executable.class).is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate canonical --allow-executable path",
+            )
+            .into());
+        }
+    }
+    Ok(canonical)
+}
+
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
-    allowed_executables: Vec<String>,
+    allowed_executables: Vec<AllowedExecutableSpec>,
     allowed_env: Vec<String>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
@@ -330,10 +355,13 @@ impl AppArgs {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
-                        "--allow-executable requires a path",
+                        "--allow-executable requires <fixed-tool|interpreter|repository-code>:<absolute-path>",
                     )
                 })?;
-                allowed_executables.push(os_string_to_utf8(value, "executable path")?);
+                allowed_executables.push(parse_allowed_executable(os_string_to_utf8(
+                    value,
+                    "classified executable authority",
+                )?)?);
             } else if arg == "--allow-env" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -419,7 +447,7 @@ impl AppArgs {
                     os_string_to_utf8(value, "Git integration ref")?,
                 )?;
             } else if let Some(value) = option_value(&arg, "--allow-executable=")? {
-                allowed_executables.push(value);
+                allowed_executables.push(parse_allowed_executable(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
                 allowed_env.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-write-scope=")? {
@@ -579,6 +607,36 @@ fn set_git_integration_ref(slot: &mut Option<String>, value: String) -> Result<(
     Ok(())
 }
 
+fn parse_allowed_executable(value: String) -> Result<AllowedExecutableSpec, std::io::Error> {
+    let Some((class, path)) = value.split_once(':') else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--allow-executable must use <fixed-tool|interpreter|repository-code>:<absolute-path>",
+        ));
+    };
+    let class = match class {
+        "fixed-tool" => ProcessExecutionClass::FixedTool,
+        "interpreter" => ProcessExecutionClass::Interpreter,
+        "repository-code" => ProcessExecutionClass::RepositoryCode,
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "unknown --allow-executable class; expected fixed-tool, interpreter, or repository-code",
+            ));
+        }
+    };
+    if path.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--allow-executable path must not be empty",
+        ));
+    }
+    Ok(AllowedExecutableSpec {
+        class,
+        path: path.to_owned(),
+    })
+}
+
 fn parse_mutation_scope(value: String) -> Result<LeaseScope, std::io::Error> {
     if value == "all" {
         return Ok(LeaseScope::WorkspaceAll);
@@ -639,6 +697,78 @@ mod tests {
         assert!(!parsed.allow_git_integrate);
         assert!(parsed.git_integration_root.is_none());
         assert!(parsed.git_integration_ref.is_none());
+    }
+
+    #[test]
+    fn classified_process_authority_is_explicit_and_repeatable() {
+        let parsed = AppArgs::parse_from(args(&[
+            "--allow-executable=fixed-tool:/opt/tool",
+            "--allow-executable",
+            "interpreter:C:\\Tools\\python.exe",
+            "--allow-executable=repository-code:/opt/cargo",
+            "workspace",
+        ]))
+        .expect("classified process authority");
+
+        assert_eq!(
+            parsed.allowed_executables,
+            vec![
+                AllowedExecutableSpec {
+                    class: ProcessExecutionClass::FixedTool,
+                    path: "/opt/tool".to_owned(),
+                },
+                AllowedExecutableSpec {
+                    class: ProcessExecutionClass::Interpreter,
+                    path: "C:\\Tools\\python.exe".to_owned(),
+                },
+                AllowedExecutableSpec {
+                    class: ProcessExecutionClass::RepositoryCode,
+                    path: "/opt/cargo".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn unclassified_or_unknown_process_authority_fails_closed() {
+        for value in [
+            "C:\\Windows\\System32\\cmd.exe",
+            "/usr/bin/python",
+            "unknown:/opt/tool",
+            "fixed-tool:",
+        ] {
+            assert!(
+                AppArgs::parse_from(args(&[&format!("--allow-executable={value}"), "workspace"]))
+                    .is_err(),
+                "authority should fail: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_canonical_executable_cannot_receive_competing_classes() {
+        let processes = ProcessManager::new(
+            std::env::current_dir().expect("current directory"),
+            HardLimits::default(),
+            Vec::new(),
+        )
+        .expect("process manager");
+        let executable = std::env::current_exe()
+            .expect("current test executable")
+            .to_string_lossy()
+            .into_owned();
+        let specs = vec![
+            AllowedExecutableSpec {
+                class: ProcessExecutionClass::FixedTool,
+                path: executable.clone(),
+            },
+            AllowedExecutableSpec {
+                class: ProcessExecutionClass::Interpreter,
+                path: executable,
+            },
+        ];
+
+        assert!(canonicalize_allowed_executables(&processes, &specs).is_err());
     }
 
     #[test]

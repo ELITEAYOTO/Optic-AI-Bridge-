@@ -63,9 +63,13 @@ impl ReadonlyMcpServer {
             .task_leases
             .get_active(&lease_id, &self.session, now)
             .map_err(map_task_lease_error)?;
+        let class = lease.process_execution_class(&executable).ok_or_else(|| {
+            ErrorData::internal_error("optic.process_execution_class_unavailable", None)
+        })?;
         let resources = requested_budget(&params.0)?;
         let effect = Effect::ProcessRun {
             executable: executable.clone(),
+            class,
             network: NetworkAccess::Denied,
         };
         authorize_process(self, grant, &lease.id, &lease, effect, resources, now)?;
