@@ -207,10 +207,10 @@ fn launcher_exact_file_grant_supports_command_interpreter_read() {
     let cmd = system32_executable("cmd.exe");
     let cwd = cmd.parent().expect("System32 parent").to_path_buf();
     let workspace_root = granted.parent().expect("temporary workspace root");
-    let granted_command = format!("type \"{}\"", granted.to_string_lossy());
+    let granted_command = format!("type {}", granted.to_string_lossy());
     let output = run_launcher(launcher_request_with_read_files(
         &cmd,
-        &["/d", "/s", "/c", &granted_command],
+        &["/d", "/c", &granted_command],
         &cwd,
         &[granted.as_path()],
         workspace_root,
@@ -226,10 +226,10 @@ fn launcher_exact_file_grant_supports_command_interpreter_read() {
         "granted exact file was not readable through the isolated interpreter"
     );
 
-    let ungranted_command = format!("type \"{}\"", ungranted.to_string_lossy());
+    let ungranted_command = format!("type {}", ungranted.to_string_lossy());
     let denied = run_launcher(launcher_request_with_read_files(
         &cmd,
-        &["/d", "/s", "/c", &ungranted_command],
+        &["/d", "/c", &ungranted_command],
         &cwd,
         &[granted.as_path()],
         workspace_root,
