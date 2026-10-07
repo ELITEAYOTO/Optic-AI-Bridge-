@@ -16,6 +16,8 @@ mod executable;
 mod file;
 #[cfg(windows)]
 mod job;
+#[cfg(windows)]
+mod workspace_grant;
 
 #[cfg(windows)]
 pub use appcontainer::{

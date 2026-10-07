@@ -463,6 +463,7 @@ dependencies = [
 name = "optic-bridge-windows"
 version = "0.0.1"
 dependencies = [
+ "getrandom",
  "process-wrap",
  "thiserror",
  "tokio",
