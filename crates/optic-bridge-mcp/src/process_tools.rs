@@ -374,7 +374,7 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::invalid_params("optic.process_cursor_out_of_range", None)
         }
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
-        ProcessError::IsolationUnavailable => {
+        ProcessError::IsolationUnavailable | ProcessError::IsolationEnvironmentUnavailable(_) => {
             ErrorData::invalid_request("optic.process_isolation_unavailable", None)
         }
         ProcessError::TooManyActiveJobs | ProcessError::ProcessRecordLimitExceeded => {
@@ -574,6 +574,10 @@ mod tests {
         assert_eq!(error.message, "optic.process_isolation_unavailable");
         assert_eq!(
             map_process_error(ProcessError::IsolationUnavailable).message,
+            "optic.process_isolation_unavailable"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::IsolationEnvironmentUnavailable("SystemRoot")).message,
             "optic.process_isolation_unavailable"
         );
 

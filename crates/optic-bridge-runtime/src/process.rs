@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use std::ffi::OsString;
 use std::{
     collections::{BTreeSet, HashMap},
     fs,
@@ -43,6 +45,9 @@ const ISOLATION_LAUNCHER_REQUEST_LIMIT_BYTES: usize = 64 * 1024;
 const ISOLATION_LAUNCHER_MAX_ARGS: usize = 128;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT: [&str; 4] =
+    ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"];
 
 #[cfg(windows)]
 #[derive(Debug)]
@@ -237,6 +242,12 @@ impl ProcessManager {
             return Err(ProcessError::IsolationUnavailable);
         }
         #[cfg(windows)]
+        let isolation_environment = if requires_isolation {
+            Some(self.resolve_isolation_launcher_environment()?)
+        } else {
+            None
+        };
+        #[cfg(windows)]
         let isolation_request = if requires_isolation {
             let launcher = self
                 .isolation_launcher
@@ -332,6 +343,12 @@ impl ProcessManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
+        #[cfg(windows)]
+        if let Some(isolation_environment) = isolation_environment {
+            for (name, value) in isolation_environment {
+                command.env(name, value);
+            }
+        }
         for (name, value) in environment {
             command.env(name, value);
         }
@@ -583,6 +600,20 @@ impl ProcessManager {
             }
         }
         Ok(output)
+    }
+
+    #[cfg(windows)]
+    fn resolve_isolation_launcher_environment(
+        &self,
+    ) -> Result<Vec<(&'static str, OsString)>, ProcessError> {
+        ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT
+            .into_iter()
+            .map(|name| {
+                std::env::var_os(name)
+                    .map(|value| (name, value))
+                    .ok_or(ProcessError::IsolationEnvironmentUnavailable(name))
+            })
+            .collect()
     }
 
     fn resolve_cwd(&self, cwd: Option<&WorkspacePath>) -> Result<PathBuf, ProcessError> {
@@ -1008,6 +1039,8 @@ pub enum ProcessError {
     IsolationLauncherNotFile,
     #[error("process isolation launcher protocol serialization failed: {0}")]
     IsolationLauncherProtocol(serde_json::Error),
+    #[error("required Windows process isolation environment variable is unavailable: {0}")]
+    IsolationEnvironmentUnavailable(&'static str),
     #[error("required process isolation profile is unavailable")]
     IsolationUnavailable,
     #[error("Tokio runtime is unavailable")]

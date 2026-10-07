@@ -54,7 +54,7 @@ async fn process_manager_routes_interpreter_through_pinned_launcher() {
                 "/d".to_owned(),
                 "/s".to_owned(),
                 "/c".to_owned(),
-                "echo optic-runtime-isolation".to_owned(),
+                "if defined PATH (exit /b 9) else echo optic-runtime-isolation".to_owned(),
             ],
             cwd: None,
             env_allowlist: Vec::new(),
