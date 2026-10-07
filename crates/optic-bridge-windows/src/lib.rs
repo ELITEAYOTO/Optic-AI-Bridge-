@@ -4,9 +4,12 @@
 //! Narrow Windows-only platform primitives.
 //!
 //! This crate is the only project layer allowed to call the Win32 APIs needed
-//! for Job Object containment and handle-first filesystem mutation checks.
-//! Core, policy, MCP and the cross-platform runtime remain `unsafe`-free.
+//! for Job Object containment, AppContainer isolation primitives and handle-first
+//! filesystem mutation checks. Core, policy, MCP and the cross-platform runtime
+//! remain `unsafe`-free.
 
+#[cfg(windows)]
+mod appcontainer;
 #[cfg(windows)]
 mod executable;
 #[cfg(windows)]
@@ -14,6 +17,8 @@ mod file;
 #[cfg(windows)]
 mod job;
 
+#[cfg(windows)]
+pub use appcontainer::{AppContainerProfile, AppContainerSecurityCapabilities};
 #[cfg(windows)]
 pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
