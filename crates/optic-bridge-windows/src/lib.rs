@@ -8,10 +8,14 @@
 //! Core, policy, MCP and the cross-platform runtime remain `unsafe`-free.
 
 #[cfg(windows)]
+mod executable;
+#[cfg(windows)]
 mod file;
 #[cfg(windows)]
 mod job;
 
+#[cfg(windows)]
+pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
 pub use file::{
     OpenedWindowsDeleteFile, OpenedWindowsFile, WindowsFileError, WindowsFileIdentity,
