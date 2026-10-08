@@ -41,6 +41,12 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --locked --workspace --all-features
+      - name: Characterize isolated toolchain compatibility
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPTIC_REQUIRE_HOSTED_TOOLCHAINS: "1"
+        run: cargo test --locked -p optic-bridge-app --test toolchain_isolation_compat_windows -- --nocapture
       - name: Build bridge binary for Git integration MCP smoke
         if: runner.os == 'Windows'
         shell: pwsh
