@@ -351,6 +351,15 @@ fn canonicalize_process_read_grants(
     executables: &BTreeMap<String, ProcessExecutionClass>,
     grants: &[ProcessReadGrantSpec],
 ) -> Result<BTreeMap<String, BTreeSet<WorkspacePath>>, Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if !grants.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "--allow-process-read-file requires the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
     let mut canonical = BTreeMap::<String, BTreeSet<WorkspacePath>>::new();
     for grant in grants {
         let executable = processes.canonicalize_executable(&grant.executable)?;
@@ -377,6 +386,7 @@ fn canonicalize_process_read_grants(
         }
     }
 
+    #[cfg(windows)]
     for paths in canonical.values() {
         let paths = paths.iter().cloned().collect::<Vec<_>>();
         processes.validate_workspace_read_files(&paths)?;
@@ -393,6 +403,15 @@ fn provision_process_leases(
     expires_at: MonotonicTime,
     policy_epoch: u64,
 ) -> Result<BTreeMap<String, TaskLeaseId>, Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if read_grants.values().any(|paths| !paths.is_empty()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "process read-grant leases require the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
     let mut process_leases = BTreeMap::new();
     for (canonical, class) in executables {
         let id = TaskLeaseId::generate()
@@ -966,6 +985,7 @@ mod tests {
         assert!(canonicalize_allowed_executables(&processes, &specs).is_err());
     }
 
+    #[cfg(windows)]
     #[test]
     fn operator_process_read_grants_are_bounded_to_authorized_high_risk_executables() {
         let token = SessionHandle::generate().expect("test entropy").to_token();
@@ -1021,6 +1041,7 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove workspace");
     }
 
+    #[cfg(windows)]
     #[test]
     fn process_leases_mint_file_read_only_for_explicit_operator_grants() {
         let executable = std::env::current_exe()
@@ -1094,6 +1115,56 @@ mod tests {
                 .expect_err("revoked read authority must be inactive"),
             optic_bridge_runtime::TaskLeaseRegistryError::Revoked
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn process_read_authority_fails_closed_without_windows_appcontainer() {
+        let root = std::env::temp_dir().join(format!(
+            "optic-nonwindows-process-read-{}",
+            SessionHandle::generate().expect("test entropy").to_token()
+        ));
+        std::fs::create_dir_all(&root).expect("create workspace");
+        std::fs::write(root.join("input.txt"), b"input").expect("write input");
+        let processes =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let executables =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let grant = ProcessReadGrantSpec {
+            executable: executable.clone(),
+            path: WorkspacePath::parse("input.txt").expect("path"),
+        };
+        assert!(
+            canonicalize_process_read_grants(&processes, &executables, &[grant]).is_err(),
+            "non-Windows startup must reject AppContainer read authority"
+        );
+
+        let task_leases = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().expect("session");
+        let read_grants = BTreeMap::from([(
+            executable,
+            BTreeSet::from([WorkspacePath::parse("input.txt").expect("path")]),
+        )]);
+        assert!(
+            provision_process_leases(
+                &task_leases,
+                &session,
+                &executables,
+                &read_grants,
+                HardLimits::default().max_process_budget,
+                MonotonicTime::from_millis(1_000),
+                1,
+            )
+            .is_err(),
+            "direct provisioning must not mint Windows-only read authority"
+        );
+        std::fs::remove_dir_all(root).expect("remove workspace");
     }
 
     #[test]
