@@ -687,7 +687,7 @@ Gate passed: exact-head CI #401, SHA-guarded squash merge, and post-merge `main`
 
 ### Phase 3E1 — aggregate declared process-memory reservation
 
-Status: **current gate**. This tranche extends the existing per-job Windows memory ceiling with application-owned admission ceilings across active/uncertain Optic jobs.
+Status: **merged and post-merge validated** in PR #101 (`097b6a37`), exact green head `b8447deb`; PR CI #406 and post-merge `main` CI #407 passed Ubuntu, Windows, dependency policy and the existing Windows smoke matrix.
 
 1. `HardLimits` adds non-zero global and per-session declared process-memory ceilings. Current defaults are 16 GiB aggregate and 8 GiB per session; the existing 8 GiB per-job `ResourceBudget.memory_bytes` ceiling remains unchanged.
 2. `ProcessManager` reserves the requested `memory_bytes` atomically with active-job/output/CPU admission before spawn. A request that fits its own lease/budget can still fail when the active aggregate or its session aggregate is full.
@@ -697,7 +697,7 @@ Status: **current gate**. This tranche extends the existing per-job Windows memo
 6. 3E1 is reservation-based, not host-memory telemetry. It does not yet claim dynamic physical-RAM headroom, emergency reserve, heavy-task slots, I/O budgets or memory-pressure feedback. Those remain separate A-02 closure work.
 7. No session/MCP creation surface, filesystem/network authority, process eligibility or sandbox semantics change in this gate.
 
-Gate requires exact-head Ubuntu/Windows/dependency-policy CI and post-merge `main` CI before A-02 can be updated.
+Gate passed: exact-head CI #406, SHA-guarded squash merge, and post-merge `main` CI #407. A-02 remains partial only for host-memory headroom/emergency reserve, heavy-task scheduling/classes and optional I/O governance; Phase 3E2 targets host-memory headroom next.
 
 ## Phase 4 — same-repo parallelism
 
