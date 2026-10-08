@@ -48,8 +48,32 @@ const ISOLATION_LAUNCHER_MAX_READ_FILES: usize = 32;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
 #[cfg(windows)]
-const ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT: [&str; 4] =
-    ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"];
+const ISOLATION_LAUNCHER_REQUIRED_ENVIRONMENT: [&str; 3] = ["SystemRoot", "LOCALAPPDATA", "TEMP"];
+#[cfg(windows)]
+const ISOLATION_LAUNCHER_OPTIONAL_ENVIRONMENT: [&str; 1] = ["TMP"];
+
+#[cfg(windows)]
+fn collect_isolation_launcher_environment<F>(
+    mut lookup: F,
+) -> Result<Vec<(&'static str, OsString)>, ProcessError>
+where
+    F: FnMut(&'static str) -> Option<OsString>,
+{
+    let mut output = Vec::with_capacity(
+        ISOLATION_LAUNCHER_REQUIRED_ENVIRONMENT.len()
+            + ISOLATION_LAUNCHER_OPTIONAL_ENVIRONMENT.len(),
+    );
+    for name in ISOLATION_LAUNCHER_REQUIRED_ENVIRONMENT {
+        let value = lookup(name).ok_or(ProcessError::IsolationEnvironmentUnavailable(name))?;
+        output.push((name, value));
+    }
+    for name in ISOLATION_LAUNCHER_OPTIONAL_ENVIRONMENT {
+        if let Some(value) = lookup(name) {
+            output.push((name, value));
+        }
+    }
+    Ok(output)
+}
 
 #[cfg(windows)]
 #[derive(Debug)]
@@ -637,14 +661,7 @@ impl ProcessManager {
     fn resolve_isolation_launcher_environment(
         &self,
     ) -> Result<Vec<(&'static str, OsString)>, ProcessError> {
-        ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT
-            .into_iter()
-            .map(|name| {
-                std::env::var_os(name)
-                    .map(|value| (name, value))
-                    .ok_or(ProcessError::IsolationEnvironmentUnavailable(name))
-            })
-            .collect()
+        collect_isolation_launcher_environment(std::env::var_os)
     }
 
     #[cfg(windows)]
@@ -1228,6 +1245,39 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("process did not reach a terminal state");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn isolation_launcher_environment_allows_missing_tmp_but_requires_temp() {
+        let environment = collect_isolation_launcher_environment(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\tester\AppData\Local")),
+            "TEMP" => Some(OsString::from(r"C:\Users\tester\AppData\Local\Temp")),
+            "TMP" => None,
+            _ => unreachable!("unexpected environment lookup: {name}"),
+        })
+        .expect("TMP is optional when required Windows baseline variables exist");
+        assert_eq!(
+            environment
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>(),
+            vec!["SystemRoot", "LOCALAPPDATA", "TEMP"]
+        );
+
+        let error = collect_isolation_launcher_environment(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\tester\AppData\Local")),
+            "TEMP" => None,
+            "TMP" => Some(OsString::from(r"C:\Temp")),
+            _ => unreachable!("unexpected environment lookup: {name}"),
+        })
+        .expect_err("TEMP remains required for the isolation launcher baseline");
+        assert!(matches!(
+            error,
+            ProcessError::IsolationEnvironmentUnavailable("TEMP")
+        ));
     }
 
     #[test]

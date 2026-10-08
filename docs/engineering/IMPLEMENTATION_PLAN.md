@@ -654,7 +654,7 @@ Status: **merged and post-merge validated** in PR #92 (`b4412b08`), exact final 
 
 #### Phase 3C3C2C5G - real ChatGPT Desktop Node smoke
 
-Current gate:
+Current gate. Real-machine preparation has already closed the hidden-plugin-artifact round-trip gap on `main`; C5G3 is the remaining compatibility correction before repeating the final Desktop smoke, because a valid Windows user environment may define `TEMP` without `TMP`. `TMP` must therefore be optional while `SystemRoot`, `LOCALAPPDATA` and `TEMP` remain required.
 
 1. Windows CI stages the exact already-tested debug bridge/helper plus installer, doctor, plugin and one dedicated preparation script as a short-lived validation artifact; this is a test artifact, not a release or support claim.
 2. The preparation script installs that exact bundle into the normal user-scoped Optic location with `-ReadOnly -EnableIsolatedNode`, using the real ChatGPT Desktop/Codex plugin manager rather than `-SkipPluginRegistration`.

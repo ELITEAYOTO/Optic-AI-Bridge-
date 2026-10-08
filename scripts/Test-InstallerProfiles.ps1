@@ -179,15 +179,29 @@ try {
     # Explicit Node opt-in auto-discovers the exact hosted node.exe, emits only
     # Node eligibility/process authority, exposes the process lifecycle, and the
     # doctor proves a real isolated Node --version start through the installed helper.
-    & $installer `
-        -Workspace $repo `
-        -BinaryPath $BridgePath `
-        -IsolationLauncherPath $IsolationLauncherPath `
-        -PluginTemplatePath $PluginTemplatePath `
-        -InstallRoot $nodeInstall `
-        -ReadOnly `
-        -EnableIsolatedNode `
-        -SkipPluginRegistration
+    # TMP is deliberately absent for this invocation to cover Windows users who have
+    # TEMP configured but no redundant TMP alias.
+    $originalTmp = [Environment]::GetEnvironmentVariable('TMP', 'Process')
+    try {
+        Remove-Item Env:TMP -ErrorAction SilentlyContinue
+        & $installer `
+            -Workspace $repo `
+            -BinaryPath $BridgePath `
+            -IsolationLauncherPath $IsolationLauncherPath `
+            -PluginTemplatePath $PluginTemplatePath `
+            -InstallRoot $nodeInstall `
+            -ReadOnly `
+            -EnableIsolatedNode `
+            -SkipPluginRegistration
+    }
+    finally {
+        if ($null -eq $originalTmp) {
+            Remove-Item Env:TMP -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:TMP = $originalTmp
+        }
+    }
 
     $nodeConfig = Read-McpConfig -InstallRoot $nodeInstall
     $nodeServer = $nodeConfig.mcpServers.optic
