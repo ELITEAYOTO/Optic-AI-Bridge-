@@ -222,10 +222,11 @@ impl ReadonlyMcpServer {
             .transport_guard
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
-        let lifecycle = SessionLifecycleManager::new(
+        let lifecycle = SessionLifecycleManager::new_with_approval_broker(
             self.sessions.clone(),
             self.task_leases.clone(),
             self.processes.clone(),
+            self.approvals.clone(),
         );
         let report = lifecycle
             .revoke(&self.session)
@@ -330,6 +331,9 @@ fn map_task_lease_error(error: TaskLeaseRegistryError) -> ErrorData {
 fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
     match error {
         SessionLifecycleError::SessionRegistry(error) => super::server::map_session_error(error),
+        SessionLifecycleError::ApprovalBroker(_) => {
+            ErrorData::internal_error("optic.approval_broker_unavailable", None)
+        }
         SessionLifecycleError::TaskLeaseRegistry(error) => map_task_lease_error(error),
         SessionLifecycleError::Process(error) => map_process_error(error),
         SessionLifecycleError::SessionStillActive => {

@@ -6,8 +6,8 @@ use optic_bridge_core::{
 use thiserror::Error;
 
 use crate::{
-    ProcessError, ProcessManager, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
-    TaskLeaseRegistryError,
+    ApprovalBroker, ApprovalBrokerError, ProcessError, ProcessManager, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 
 #[derive(Clone, Debug)]
@@ -22,6 +22,7 @@ pub struct SessionGrantSpec {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionRevokeReport {
     pub session_changed: bool,
+    pub revoked_approvals: usize,
     pub revoked_leases: usize,
     pub cancellation_requests: usize,
 }
@@ -29,6 +30,7 @@ pub struct SessionRevokeReport {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionReapReport {
     pub session_removed: bool,
+    pub revoked_approvals: usize,
     pub revoked_leases: usize,
     pub cancellation_requests: usize,
     pub active_jobs: u32,
@@ -40,6 +42,7 @@ pub struct SessionLifecycleManager {
     sessions: Arc<SessionRegistry>,
     task_leases: Arc<TaskLeaseRegistry>,
     processes: Arc<ProcessManager>,
+    approvals: Arc<ApprovalBroker>,
 }
 
 impl SessionLifecycleManager {
@@ -49,10 +52,26 @@ impl SessionLifecycleManager {
         task_leases: Arc<TaskLeaseRegistry>,
         processes: Arc<ProcessManager>,
     ) -> Self {
+        Self::new_with_approval_broker(
+            sessions,
+            task_leases,
+            processes,
+            Arc::new(ApprovalBroker::new()),
+        )
+    }
+
+    #[must_use]
+    pub fn new_with_approval_broker(
+        sessions: Arc<SessionRegistry>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        processes: Arc<ProcessManager>,
+        approvals: Arc<ApprovalBroker>,
+    ) -> Self {
         Self {
             sessions,
             task_leases,
             processes,
+            approvals,
         }
     }
 
@@ -86,15 +105,19 @@ impl SessionLifecycleManager {
         // admissions fail immediately once the revoked bit is set.
         let session_changed = self.sessions.revoke(session)?;
 
-        // Attempt both owner-scoped cleanup operations before propagating either error.
-        // A lease-registry failure must not prevent us from requesting process stop.
+        // Admission is closed and all already-admitted effects have drained before
+        // authority cleanup begins. Attempt every owner-scoped cleanup operation before
+        // propagating an error so one registry failure cannot leave other authority live.
+        let approval_result = self.approvals.revoke_session(session);
         let lease_result = self.task_leases.revoke_session(session);
         let process_result = self.processes.cancel_session(session);
+        let revoked_approvals = approval_result?;
         let revoked_leases = lease_result?;
         let cancellation_requests = process_result?;
 
         Ok(SessionRevokeReport {
             session_changed,
+            revoked_approvals,
             revoked_leases,
             cancellation_requests,
         })
@@ -131,6 +154,7 @@ impl SessionLifecycleManager {
         if active_jobs != 0 {
             return Ok(SessionReapReport {
                 session_removed: false,
+                revoked_approvals: revoke.revoked_approvals,
                 revoked_leases: revoke.revoked_leases,
                 cancellation_requests: revoke.cancellation_requests,
                 active_jobs,
@@ -148,6 +172,7 @@ impl SessionLifecycleManager {
 
         Ok(SessionReapReport {
             session_removed,
+            revoked_approvals: revoke.revoked_approvals,
             revoked_leases: revoke.revoked_leases,
             cancellation_requests: revoke.cancellation_requests,
             active_jobs: 0,
@@ -168,6 +193,8 @@ pub enum SessionLifecycleError {
     #[error(transparent)]
     SessionRegistry(#[from] SessionRegistryError),
     #[error(transparent)]
+    ApprovalBroker(#[from] ApprovalBrokerError),
+    #[error(transparent)]
     TaskLeaseRegistry(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
     Process(#[from] ProcessError),
@@ -184,11 +211,11 @@ mod tests {
     };
 
     use optic_bridge_core::{
-        HardLimits, JobId, LeaseScope, ProcessExecutionClass, ResourceBudget, TaskLease,
-        TaskLeaseId,
+        ActionEnvelope, ActionId, Effect, HardLimits, JobId, LeaseScope, NetworkAccess,
+        ProcessExecutionClass, ResourceBudget, TaskLease, TaskLeaseId,
     };
 
-    use crate::{ProcessResult, ProcessStartSpec, ProcessStatus};
+    use crate::{ApprovalSpec, ProcessResult, ProcessStartSpec, ProcessStatus};
 
     use super::*;
 
@@ -249,6 +276,37 @@ mod tests {
             Arc::clone(&processes),
         );
         (lifecycle, sessions, task_leases, processes)
+    }
+
+    fn approval_envelope(session: SessionHandle) -> ActionEnvelope {
+        ActionEnvelope {
+            action_id: ActionId::generate().expect("approval action"),
+            session,
+            task_lease: None,
+            effect: Effect::ProcessRun {
+                executable: "fixture".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+                network: NetworkAccess::Denied,
+            },
+            resources: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 1_024,
+                memory_bytes: 1_024,
+                process_count: 1,
+            },
+            policy_epoch: 1,
+        }
+    }
+
+    fn approval_spec(envelope: &ActionEnvelope, expires_at: u64) -> ApprovalSpec {
+        ApprovalSpec {
+            session: envelope.session.clone(),
+            action_id: envelope.action_id.clone(),
+            effect: envelope.effect.clone(),
+            resources: envelope.resources,
+            expires_at: MonotonicTime::from_millis(expires_at),
+            policy_epoch: envelope.policy_epoch,
+        }
     }
 
     fn process_spec(session: SessionHandle) -> ProcessStartSpec {
@@ -769,6 +827,125 @@ mod tests {
         task_leases
             .get_active(&lease_b.id, &session_b.handle, now)
             .expect("B lease must remain active");
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+    #[test]
+    fn revoke_removes_only_owned_approval_grants() {
+        let root = workspace("approval-owner-scope");
+        let limits = HardLimits::default();
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("processes"));
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let lifecycle = SessionLifecycleManager::new_with_approval_broker(
+            Arc::clone(&sessions),
+            task_leases,
+            processes,
+            Arc::clone(&approvals),
+        );
+        let now = MonotonicTime::from_millis(1);
+        let session_a = lifecycle.provision(spec(100), now).expect("session A");
+        let session_b = lifecycle.provision(spec(100), now).expect("session B");
+        let action_a = approval_envelope(session_a.handle.clone());
+        let action_b = approval_envelope(session_b.handle.clone());
+        let approval_a = approvals
+            .issue(approval_spec(&action_a, 100), now)
+            .expect("approval A");
+        let approval_b = approvals
+            .issue(approval_spec(&action_b, 100), now)
+            .expect("approval B");
+
+        let report = lifecycle.revoke(&session_a.handle).expect("revoke A");
+        assert_eq!(report.revoked_approvals, 1);
+        assert_eq!(
+            approvals
+                .consume_exact(&approval_a.id, &action_a, now)
+                .expect_err("A approval must be removed"),
+            ApprovalBrokerError::UnknownApproval
+        );
+        approvals
+            .consume_exact(&approval_b.id, &action_b, now)
+            .expect("B approval must remain usable");
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session remains active");
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn revoke_waits_for_admission_before_approval_cleanup() {
+        let root = workspace("approval-admission-race");
+        let limits = HardLimits {
+            max_approval_grants: 2,
+            max_approval_grants_per_session: 1,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("processes"));
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let lifecycle = Arc::new(SessionLifecycleManager::new_with_approval_broker(
+            Arc::clone(&sessions),
+            task_leases,
+            processes,
+            Arc::clone(&approvals),
+        ));
+        let now = MonotonicTime::from_millis(1);
+        let session = lifecycle.provision(spec(100), now).expect("session");
+        let action = approval_envelope(session.handle.clone());
+        let approval = approvals
+            .issue(approval_spec(&action, 100), now)
+            .expect("approval");
+        let admission = sessions
+            .begin_admission(&session.handle, now)
+            .expect("admitted effect");
+
+        let revoke_lifecycle = Arc::clone(&lifecycle);
+        let revoke_session = session.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoke_thread = thread::spawn(move || {
+            done_tx
+                .send(revoke_lifecycle.revoke(&revoke_session))
+                .expect("send revoke result");
+        });
+
+        let mut revoke_started = false;
+        for _ in 0..100 {
+            if matches!(
+                sessions.get_active(&session.handle, now),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                revoke_started = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(revoke_started, "revoke must close admission first");
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+        let second = approval_envelope(session.handle.clone());
+        assert_eq!(
+            approvals
+                .issue(approval_spec(&second, 100), now)
+                .expect_err("existing approval must stay live while admitted effect drains"),
+            ApprovalBrokerError::SessionCapacityExceeded
+        );
+
+        drop(admission);
+        let report = done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("revoke completes after admission drains")
+            .expect("revoke result");
+        revoke_thread.join().expect("revoke thread");
+        assert_eq!(report.revoked_approvals, 1);
+        assert_eq!(
+            approvals
+                .consume_exact(&approval.id, &action, now)
+                .expect_err("approval must be removed after admission drains"),
+            ApprovalBrokerError::UnknownApproval
+        );
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
 }
