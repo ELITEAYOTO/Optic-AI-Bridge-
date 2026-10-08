@@ -93,6 +93,7 @@ async fn run_probe(
         session: session.clone(),
         class,
         workload_class: optic_bridge_core::WorkloadClass::Standard,
+        network: optic_bridge_core::NetworkAccess::Denied,
         executable: executable.to_string_lossy().into_owned(),
         args,
         cwd: None,

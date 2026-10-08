@@ -87,6 +87,7 @@ impl ReadonlyMcpServer {
                 session: self.session.clone(),
                 class,
                 workload_class: lease.workload_class,
+                network: NetworkAccess::Denied,
                 executable,
                 args: params.0.args,
                 cwd,

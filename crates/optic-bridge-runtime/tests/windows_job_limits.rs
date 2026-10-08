@@ -36,6 +36,7 @@ fn spec(
         session,
         class: ProcessExecutionClass::FixedTool,
         workload_class: optic_bridge_core::WorkloadClass::Standard,
+        network: optic_bridge_core::NetworkAccess::Allowed,
         executable: fixture(),
         args: args.into_iter().collect(),
         cwd: None,

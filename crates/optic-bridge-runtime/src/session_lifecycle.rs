@@ -262,6 +262,7 @@ mod tests {
             session,
             class: ProcessExecutionClass::FixedTool,
             workload_class: optic_bridge_core::WorkloadClass::Standard,
+            network: optic_bridge_core::NetworkAccess::Allowed,
             executable,
             args: vec![
                 "--exact".to_owned(),

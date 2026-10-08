@@ -30,6 +30,12 @@ fn unique_workspace() -> PathBuf {
     ))
 }
 
+fn system32_executable(name: &str) -> PathBuf {
+    PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"))
+        .join("System32")
+        .join(name)
+}
+
 fn where_node() -> Option<PathBuf> {
     let output = Command::new("where.exe").arg("node.exe").output().ok()?;
     if !output.status.success() {
@@ -148,6 +154,7 @@ async fn direct_fixed_tool_path_can_open_tcp_ipv4_loopback_socket() {
             session: session.clone(),
             class: ProcessExecutionClass::FixedTool,
             workload_class: optic_bridge_core::WorkloadClass::Standard,
+            network: optic_bridge_core::NetworkAccess::Allowed,
             executable: executable.clone(),
             args: vec![
                 "--exact".to_owned(),
@@ -207,6 +214,104 @@ async fn direct_fixed_tool_path_can_open_tcp_ipv4_loopback_socket() {
 }
 
 #[tokio::test]
+async fn network_denied_fixed_tool_uses_appcontainer_and_cannot_connect_loopback() {
+    let curl = system32_executable("curl.exe");
+    assert!(
+        curl.is_file(),
+        "Windows runner must provide System32\\curl.exe"
+    );
+
+    let listener =
+        TcpListener::bind(("127.0.0.1", 0)).expect("bind fixed-tool containment listener");
+    listener
+        .set_nonblocking(true)
+        .expect("set fixed-tool containment listener nonblocking");
+    let address = listener
+        .local_addr()
+        .expect("read fixed-tool containment listener address");
+
+    let baseline = TcpStream::connect(address).expect("host loopback baseline must connect");
+    assert!(
+        accept_within(&listener, Duration::from_secs(1)).is_some(),
+        "host listener baseline must accept a normal host connection"
+    );
+    drop(baseline);
+
+    let workspace = unique_workspace();
+    fs::create_dir_all(&workspace).expect("create fixed-tool containment workspace");
+    let _cleanup = WorkspaceCleanup(workspace.clone());
+    let manager = ProcessManager::new_with_isolation_launcher(
+        &workspace,
+        HardLimits::default(),
+        Vec::new(),
+        launcher_path(),
+    )
+    .expect("process manager with isolation launcher");
+    let session = SessionHandle::generate().expect("fixed-tool containment session");
+    let url = format!("http://127.0.0.1:{}/", address.port());
+
+    let job = manager
+        .start(ProcessStartSpec {
+            session: session.clone(),
+            class: ProcessExecutionClass::FixedTool,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
+            network: optic_bridge_core::NetworkAccess::Denied,
+            executable: curl.to_string_lossy().into_owned(),
+            args: vec![
+                "--verbose".to_owned(),
+                "--max-time".to_owned(),
+                "2".to_owned(),
+                url,
+            ],
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: ResourceBudget {
+                timeout_ms: PROCESS_TIMEOUT_MS,
+                output_bytes: OUTPUT_BYTES,
+                memory_bytes: 256 * 1024 * 1024,
+                process_count: 1,
+            },
+        })
+        .expect("start network-denied FixedTool containment probe");
+
+    let result = await_terminal(&manager, &session, &job).await;
+    let stdout = manager
+        .read(&session, &job, ProcessStream::Stdout, 0, OUTPUT_BYTES)
+        .expect("read contained fixed-tool stdout");
+    let stderr = manager
+        .read(&session, &job, ProcessStream::Stderr, 0, OUTPUT_BYTES)
+        .expect("read contained fixed-tool stderr");
+    let stdout = String::from_utf8_lossy(&stdout.bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr.bytes).into_owned();
+    let accepted = accept_within(&listener, Duration::from_millis(500));
+    let attempted = stderr.contains("Trying 127.0.0.1")
+        || stderr.contains("Failed to connect to 127.0.0.1")
+        || stderr.contains("connect to 127.0.0.1");
+
+    println!(
+        "OPTIC_FIXED_TOOL_NETWORK_CONTAINMENT executable={curl:?} status={:?} exit={:?} accepted={accepted:?} stdout={stdout:?} stderr={stderr:?}",
+        result.status, result.exit_code
+    );
+
+    assert_eq!(
+        result.status,
+        ProcessStatus::Exited,
+        "contained FixedTool probe must execute to a normal terminal state"
+    );
+    assert!(attempted, "curl must reach a real TCP connection attempt");
+    assert_ne!(
+        result.exit_code,
+        Some(0),
+        "network-denied FixedTool must not complete the loopback request"
+    );
+    assert!(
+        accepted.is_none(),
+        "host listener must not accept a connection from a network-denied FixedTool"
+    );
+}
+
+#[tokio::test]
 async fn capability_free_appcontainer_denies_node_loopback_connection() {
     let require_hosted = std::env::var_os("OPTIC_REQUIRE_HOSTED_TOOLCHAINS").is_some();
     let node = where_node();
@@ -257,6 +362,7 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
             session: session.clone(),
             class: ProcessExecutionClass::Interpreter,
             workload_class: optic_bridge_core::WorkloadClass::Standard,
+            network: optic_bridge_core::NetworkAccess::Denied,
             executable: node.to_string_lossy().into_owned(),
             args: vec!["-e".to_owned(), script],
             cwd: None,
