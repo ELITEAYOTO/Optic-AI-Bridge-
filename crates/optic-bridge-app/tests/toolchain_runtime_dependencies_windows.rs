@@ -119,6 +119,7 @@ async fn run_startup_probe(
     let job = match manager.start(ProcessStartSpec {
         session: session.clone(),
         class: ProcessExecutionClass::RepositoryCode,
+        workload_class: optic_bridge_core::WorkloadClass::Standard,
         executable: executable.to_string_lossy().into_owned(),
         args,
         cwd: None,

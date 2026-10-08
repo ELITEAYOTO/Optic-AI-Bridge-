@@ -39,6 +39,7 @@ impl GitIntegrationAuthoritySet {
             capabilities: BTreeSet::from([Capability::GitIntegrate]),
             scopes: BTreeSet::from([LeaseScope::Repository]),
             resource_ceiling,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at,
             policy_epoch,
         })?;

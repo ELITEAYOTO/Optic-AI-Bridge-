@@ -59,6 +59,12 @@ pub enum ProcessExecutionClass {
     RepositoryCode,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum WorkloadClass {
+    Standard,
+    Heavy,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LeaseScope {
     WorkspaceAll,
@@ -107,6 +113,7 @@ pub struct TaskLease {
     pub session: SessionHandle,
     pub capabilities: BTreeSet<Capability>,
     pub scopes: BTreeSet<LeaseScope>,
+    pub workload_class: WorkloadClass,
     pub resource_ceiling: ResourceBudget,
     pub expires_at: MonotonicTime,
     pub policy_epoch: u64,
@@ -186,6 +193,7 @@ mod tests {
                     class: ProcessExecutionClass::Interpreter,
                 },
             ]),
+            workload_class: WorkloadClass::Standard,
             resource_ceiling: ResourceBudget {
                 timeout_ms: 1_000,
                 output_bytes: 1_024,

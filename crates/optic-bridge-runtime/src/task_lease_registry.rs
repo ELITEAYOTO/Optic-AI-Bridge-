@@ -257,6 +257,7 @@ mod tests {
                 memory_bytes: 1024,
                 process_count: 1,
             },
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: 1,
         }
@@ -281,6 +282,7 @@ mod tests {
                 memory_bytes: 1024,
                 process_count: 1,
             },
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: 1,
         }

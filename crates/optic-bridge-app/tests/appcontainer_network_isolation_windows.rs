@@ -127,6 +127,7 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
         .start(ProcessStartSpec {
             session: session.clone(),
             class: ProcessExecutionClass::Interpreter,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             executable: node.to_string_lossy().into_owned(),
             args: vec!["-e".to_owned(), script],
             cwd: None,

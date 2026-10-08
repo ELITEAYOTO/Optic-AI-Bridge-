@@ -125,6 +125,7 @@ fn provision_capability(
         capabilities: BTreeSet::from([capability]),
         scopes: scopes.clone(),
         resource_ceiling,
+        workload_class: optic_bridge_core::WorkloadClass::Standard,
         expires_at,
         policy_epoch,
     })?;

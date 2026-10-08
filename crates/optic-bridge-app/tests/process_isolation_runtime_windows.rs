@@ -49,6 +49,7 @@ async fn process_manager_routes_interpreter_through_pinned_launcher() {
         .start(ProcessStartSpec {
             session: session.clone(),
             class: ProcessExecutionClass::Interpreter,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             executable: cmd.to_string_lossy().into_owned(),
             args: vec![
                 "/d".to_owned(),

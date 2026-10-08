@@ -15,7 +15,7 @@ use std::{
 
 use optic_bridge_core::{
     HardLimits, JobId, LimitError, ProcessExecutionClass, ResourceBudget, SessionHandle,
-    WorkspacePath,
+    WorkloadClass, WorkspacePath,
 };
 #[cfg(windows)]
 use optic_bridge_windows::{
@@ -118,6 +118,7 @@ struct IsolationLauncherRequest<'a> {
 pub struct ProcessStartSpec {
     pub session: SessionHandle,
     pub class: ProcessExecutionClass,
+    pub workload_class: WorkloadClass,
     pub executable: String,
     pub args: Vec<String>,
     pub cwd: Option<WorkspacePath>,
@@ -181,6 +182,7 @@ struct JobStore {
 struct JobRecord {
     owner: SessionHandle,
     sequence: u64,
+    workload_class: WorkloadClass,
     reserved_output_bytes: u64,
     reserved_memory_bytes: u64,
     reserved_cpu_percent: u32,
@@ -401,10 +403,12 @@ impl ProcessManager {
         let job_id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
         let sequence = self.sequence.fetch_add(1, Ordering::AcqRel);
         let owner = spec.session.clone();
+        let workload_class = spec.workload_class;
         let reserved_cpu_percent = self.limits.max_process_cpu_percent_per_job;
         let record = Arc::new(JobRecord {
             owner: spec.session,
             sequence,
+            workload_class,
             reserved_output_bytes: resources.output_bytes,
             reserved_memory_bytes: resources.memory_bytes,
             reserved_cpu_percent,
@@ -429,9 +433,10 @@ impl ProcessManager {
                 .jobs
                 .lock()
                 .map_err(|_| ProcessError::StateUnavailable)?;
-            self.prepare_store_for_start(
+            self.prepare_store_for_start_with_workload(
                 &mut store,
                 &owner,
+                workload_class,
                 resources.output_bytes,
                 resources.memory_bytes,
                 reserved_cpu_percent,
@@ -812,10 +817,11 @@ impl ProcessManager {
         Ok(Arc::clone(record))
     }
 
-    fn prepare_store_for_start(
+    fn prepare_store_for_start_with_workload(
         &self,
         store: &mut JobStore,
         session: &SessionHandle,
+        workload_class: WorkloadClass,
         requested_output_bytes: u64,
         requested_memory_bytes: u64,
         requested_cpu_percent: u32,
@@ -828,6 +834,17 @@ impl ProcessManager {
             let session_active = active_job_count_for_session(store, session)?;
             if session_active >= self.limits.max_active_process_jobs_per_session {
                 return Err(ProcessError::TooManyActiveJobsForSession);
+            }
+
+            if workload_class == WorkloadClass::Heavy {
+                let session_heavy = active_heavy_job_count_for_session(store, session)?;
+                if session_heavy >= self.limits.max_active_heavy_process_jobs_per_session {
+                    return Err(ProcessError::HeavyWorkloadCapacityExceededForSession);
+                }
+                let heavy = active_heavy_job_count(store)?;
+                if heavy >= self.limits.max_active_heavy_process_jobs {
+                    return Err(ProcessError::HeavyWorkloadCapacityExceeded);
+                }
             }
 
             let reserved = reserved_output_bytes(store);
@@ -902,6 +919,25 @@ impl ProcessManager {
         }
     }
 
+    #[cfg(test)]
+    fn prepare_store_for_start(
+        &self,
+        store: &mut JobStore,
+        session: &SessionHandle,
+        requested_output_bytes: u64,
+        requested_memory_bytes: u64,
+        requested_cpu_percent: u32,
+    ) -> Result<(), ProcessError> {
+        self.prepare_store_for_start_with_workload(
+            store,
+            session,
+            WorkloadClass::Standard,
+            requested_output_bytes,
+            requested_memory_bytes,
+            requested_cpu_percent,
+        )
+    }
+
     fn remove_job(&self, job_id: &JobId) {
         if let Ok(mut store) = self.jobs.lock() {
             store.jobs.remove(job_id);
@@ -929,6 +965,21 @@ fn active_job_count_for_session(
     session: &SessionHandle,
 ) -> Result<u32, ProcessError> {
     active_job_count_matching(store, |record| &record.owner == session)
+}
+
+fn active_heavy_job_count(store: &JobStore) -> Result<u32, ProcessError> {
+    active_job_count_matching(store, |record| {
+        record.workload_class == WorkloadClass::Heavy
+    })
+}
+
+fn active_heavy_job_count_for_session(
+    store: &JobStore,
+    session: &SessionHandle,
+) -> Result<u32, ProcessError> {
+    active_job_count_matching(store, |record| {
+        &record.owner == session && record.workload_class == WorkloadClass::Heavy
+    })
 }
 
 fn active_job_count_matching(
@@ -1224,6 +1275,10 @@ pub enum ProcessError {
     TooManyActiveJobs,
     #[error("this session already has too many active process jobs")]
     TooManyActiveJobsForSession,
+    #[error("all bounded heavy process workload slots are already active")]
+    HeavyWorkloadCapacityExceeded,
+    #[error("this session already holds its bounded heavy process workload slot")]
+    HeavyWorkloadCapacityExceededForSession,
     #[error("bounded process record history is full")]
     ProcessRecordLimitExceeded,
     #[error("this session's bounded process record history is full")]
@@ -1346,6 +1401,7 @@ mod tests {
         ProcessStartSpec {
             session,
             class: ProcessExecutionClass::FixedTool,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             executable,
             args: vec![
                 "--exact".to_owned(),
@@ -1375,9 +1431,28 @@ mod tests {
         reserved_memory_bytes: u64,
         reserved_cpu_percent: u32,
     ) -> Arc<JobRecord> {
+        synthetic_record_with_workload(
+            owner,
+            sequence,
+            status,
+            reserved_memory_bytes,
+            reserved_cpu_percent,
+            WorkloadClass::Standard,
+        )
+    }
+
+    fn synthetic_record_with_workload(
+        owner: SessionHandle,
+        sequence: u64,
+        status: ProcessStatus,
+        reserved_memory_bytes: u64,
+        reserved_cpu_percent: u32,
+        workload_class: WorkloadClass,
+    ) -> Arc<JobRecord> {
         Arc::new(JobRecord {
             owner,
             sequence,
+            workload_class,
             reserved_output_bytes: 1,
             reserved_memory_bytes,
             reserved_cpu_percent,
@@ -1821,6 +1896,135 @@ mod tests {
     }
 
     #[test]
+    fn heavy_workload_slots_are_global_session_scoped_and_uncertainty_holds_capacity() {
+        let root = workspace("heavy-workload-slots");
+        let limits = HardLimits {
+            max_active_process_jobs: 8,
+            max_active_process_jobs_per_session: 8,
+            max_active_heavy_process_jobs: 2,
+            max_active_heavy_process_jobs_per_session: 1,
+            ..HardLimits::default()
+        };
+        #[cfg(windows)]
+        let manager = manager_with_host_memory(
+            &root,
+            limits,
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 64 * 1024 * 1024 * 1024,
+                available_physical_bytes: 64 * 1024 * 1024 * 1024,
+            }),
+        );
+        #[cfg(not(windows))]
+        let manager = ProcessManager::new(&root, limits, Vec::new()).expect("process manager");
+
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+        let session_c = SessionHandle::generate().expect("session C");
+        let job_a = JobId::generate().expect("job A");
+        let job_b = JobId::generate().expect("job B");
+
+        let mut store = manager.jobs.lock().expect("job store");
+        store.jobs.insert(
+            job_a.clone(),
+            synthetic_record_with_workload(
+                session_a.clone(),
+                0,
+                ProcessStatus::Running,
+                1,
+                1,
+                WorkloadClass::Heavy,
+            ),
+        );
+
+        assert!(matches!(
+            manager.prepare_store_for_start_with_workload(
+                &mut store,
+                &session_a,
+                WorkloadClass::Heavy,
+                1,
+                1,
+                1,
+            ),
+            Err(ProcessError::HeavyWorkloadCapacityExceededForSession)
+        ));
+        assert!(
+            manager
+                .prepare_store_for_start_with_workload(
+                    &mut store,
+                    &session_b,
+                    WorkloadClass::Heavy,
+                    1,
+                    1,
+                    1,
+                )
+                .is_ok()
+        );
+
+        store.jobs.insert(
+            job_b,
+            synthetic_record_with_workload(
+                session_b,
+                1,
+                ProcessStatus::TerminationUncertain,
+                1,
+                1,
+                WorkloadClass::Heavy,
+            ),
+        );
+
+        assert!(matches!(
+            manager.prepare_store_for_start_with_workload(
+                &mut store,
+                &session_c,
+                WorkloadClass::Heavy,
+                1,
+                1,
+                1,
+            ),
+            Err(ProcessError::HeavyWorkloadCapacityExceeded)
+        ));
+        assert!(
+            manager
+                .prepare_store_for_start_with_workload(
+                    &mut store,
+                    &session_c,
+                    WorkloadClass::Standard,
+                    1,
+                    1,
+                    1,
+                )
+                .is_ok(),
+            "standard work must remain admissible when only heavy slots are saturated"
+        );
+
+        store
+            .jobs
+            .get(&job_a)
+            .expect("job A record")
+            .state
+            .lock()
+            .expect("job A state")
+            .status = ProcessStatus::Exited;
+
+        assert!(
+            manager
+                .prepare_store_for_start_with_workload(
+                    &mut store,
+                    &session_c,
+                    WorkloadClass::Heavy,
+                    1,
+                    1,
+                    1,
+                )
+                .is_ok(),
+            "a proven-terminal heavy job must release its slot while uncertain work still holds one"
+        );
+
+        drop(store);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn cpu_reservations_are_global_session_scoped_and_uncertainty_holds_capacity() {
         let root = workspace("cpu-governor");
         let limits = HardLimits {
@@ -1923,6 +2127,7 @@ mod tests {
                 Arc::new(JobRecord {
                     owner: owner.clone(),
                     sequence: 0,
+                    workload_class: WorkloadClass::Standard,
                     reserved_output_bytes: 1024,
                     reserved_memory_bytes: 64 * 1024 * 1024,
                     reserved_cpu_percent: limits.max_process_cpu_percent_per_job,

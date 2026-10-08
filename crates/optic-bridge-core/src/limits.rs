@@ -54,6 +54,8 @@ pub struct HardLimits {
     pub max_git_log_entries: u32,
     pub max_active_process_jobs: u32,
     pub max_active_process_jobs_per_session: u32,
+    pub max_active_heavy_process_jobs: u32,
+    pub max_active_heavy_process_jobs_per_session: u32,
     pub max_process_records: u32,
     pub max_process_records_per_session: u32,
     pub max_process_read_bytes: u64,
@@ -89,6 +91,8 @@ impl Default for HardLimits {
             max_git_log_entries: 256,
             max_active_process_jobs: 8,
             max_active_process_jobs_per_session: 4,
+            max_active_heavy_process_jobs: 2,
+            max_active_heavy_process_jobs_per_session: 1,
             max_process_records: 64,
             max_process_records_per_session: 32,
             max_process_read_bytes: 64 * 1024,
@@ -130,6 +134,8 @@ impl HardLimits {
             || self.max_git_log_entries == 0
             || self.max_active_process_jobs == 0
             || self.max_active_process_jobs_per_session == 0
+            || self.max_active_heavy_process_jobs == 0
+            || self.max_active_heavy_process_jobs_per_session == 0
             || self.max_process_records == 0
             || self.max_process_records_per_session == 0
             || self.max_process_read_bytes == 0
@@ -142,6 +148,10 @@ impl HardLimits {
         if self.max_task_leases_per_session > self.max_task_leases
             || self.max_process_records < self.max_active_process_jobs
             || self.max_active_process_jobs_per_session > self.max_active_process_jobs
+            || self.max_active_heavy_process_jobs > self.max_active_process_jobs
+            || self.max_active_heavy_process_jobs_per_session > self.max_active_heavy_process_jobs
+            || self.max_active_heavy_process_jobs_per_session
+                > self.max_active_process_jobs_per_session
             || self.max_process_records_per_session > self.max_process_records
             || self.max_process_records_per_session < self.max_active_process_jobs_per_session
             || self.max_active_output_ram_bytes_per_session > self.max_active_output_ram_bytes
@@ -438,6 +448,57 @@ mod tests {
                 .expect_err("headroom percent above 100 must fail"),
             LimitError::InvalidRelationship
         );
+    }
+
+    #[test]
+    fn heavy_process_slot_limits_are_bounded() {
+        let defaults = HardLimits::default();
+        assert_eq!(defaults.max_active_heavy_process_jobs, 2);
+        assert_eq!(defaults.max_active_heavy_process_jobs_per_session, 1);
+        assert!(defaults.validate_nonzero().is_ok());
+
+        for limits in [
+            HardLimits {
+                max_active_heavy_process_jobs: 0,
+                ..defaults
+            },
+            HardLimits {
+                max_active_heavy_process_jobs_per_session: 0,
+                ..defaults
+            },
+        ] {
+            assert_eq!(
+                limits
+                    .validate_nonzero()
+                    .expect_err("zero heavy-process slots must fail"),
+                LimitError::ZeroIsNotUnlimited
+            );
+        }
+
+        for limits in [
+            HardLimits {
+                max_active_heavy_process_jobs: defaults.max_active_process_jobs + 1,
+                ..defaults
+            },
+            HardLimits {
+                max_active_heavy_process_jobs: 1,
+                max_active_heavy_process_jobs_per_session: 2,
+                ..defaults
+            },
+            HardLimits {
+                max_active_heavy_process_jobs_per_session: defaults
+                    .max_active_process_jobs_per_session
+                    + 1,
+                ..defaults
+            },
+        ] {
+            assert_eq!(
+                limits
+                    .validate_nonzero()
+                    .expect_err("heavy-process slot relationship must fail"),
+                LimitError::InvalidRelationship
+            );
+        }
     }
 
     #[test]

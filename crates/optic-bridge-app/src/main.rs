@@ -11,7 +11,7 @@ use std::{
 
 use optic_bridge_core::{
     Capability, HardLimits, LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass,
-    ProjectId, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
+    ProjectId, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId, WorkloadClass, WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
@@ -192,6 +192,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &canonical_process_read_grants,
         &process_isolation_eligible,
         ProcessLeaseTerms {
+            workload_class: WorkloadClass::Heavy,
             resource_ceiling: limits.max_process_budget,
             expires_at,
             policy_epoch: 1,
@@ -513,6 +514,7 @@ fn validate_process_isolation_eligibility(
     Ok(())
 }
 struct ProcessLeaseTerms {
+    workload_class: WorkloadClass,
     resource_ceiling: ResourceBudget,
     expires_at: MonotonicTime,
     policy_epoch: u64,
@@ -573,6 +575,7 @@ fn provision_process_leases(
             session: session.clone(),
             capabilities,
             scopes,
+            workload_class: terms.workload_class,
             resource_ceiling,
             expires_at: terms.expires_at,
             policy_epoch: terms.policy_epoch,
@@ -1258,6 +1261,7 @@ mod tests {
             &read_grants,
             &BTreeSet::new(),
             ProcessLeaseTerms {
+                workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
                 expires_at,
                 policy_epoch: 1,
@@ -1269,6 +1273,7 @@ mod tests {
             .get_active(a_id, &session_a, now)
             .expect("A active lease");
         assert!(a_lease.allows(Capability::ProcessRun));
+        assert_eq!(a_lease.workload_class, WorkloadClass::Heavy);
         assert!(a_lease.allows(Capability::FileRead));
         assert!(a_lease.has_scope(&LeaseScope::WorkspacePrefix(exact.clone())));
         assert!(!a_lease.has_scope(&LeaseScope::WorkspaceAll));
@@ -1286,6 +1291,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeSet::new(),
             ProcessLeaseTerms {
+                workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
                 expires_at,
                 policy_epoch: 1,
@@ -1341,6 +1347,7 @@ mod tests {
                 &BTreeMap::new(),
                 &eligible,
                 ProcessLeaseTerms {
+                    workload_class: WorkloadClass::Heavy,
                     resource_ceiling: limits.max_process_budget,
                     expires_at,
                     policy_epoch: 1,
@@ -1351,6 +1358,7 @@ mod tests {
                 .get_active(leases.get(&executable).expect("lease id"), &session, now)
                 .expect("active eligible lease");
             assert!(lease.process_isolation_eligible(&executable, class));
+            assert_eq!(lease.workload_class, WorkloadClass::Heavy);
             assert!(lease.has_scope(&LeaseScope::ProcessExecutable {
                 executable: executable.clone(),
                 class,
@@ -1369,6 +1377,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeSet::new(),
             ProcessLeaseTerms {
+                workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
                 expires_at,
                 policy_epoch: 1,
@@ -1427,6 +1436,7 @@ mod tests {
                 &BTreeMap::new(),
                 &invalid,
                 ProcessLeaseTerms {
+                    workload_class: WorkloadClass::Heavy,
                     resource_ceiling: limits.max_process_budget,
                     expires_at: MonotonicTime::from_millis(1_000),
                     policy_epoch: 1,
@@ -1442,6 +1452,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeSet::new(),
             ProcessLeaseTerms {
+                workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
                 expires_at: MonotonicTime::from_millis(1_000),
                 policy_epoch: 1,
@@ -1492,6 +1503,7 @@ mod tests {
                 &read_grants,
                 &BTreeSet::new(),
                 ProcessLeaseTerms {
+                    workload_class: WorkloadClass::Heavy,
                     resource_ceiling: HardLimits::default().max_process_budget,
                     expires_at: MonotonicTime::from_millis(1_000),
                     policy_epoch: 1,
@@ -1509,6 +1521,7 @@ mod tests {
                 &BTreeMap::new(),
                 &eligibility,
                 ProcessLeaseTerms {
+                    workload_class: WorkloadClass::Heavy,
                     resource_ceiling: HardLimits::default().max_process_budget,
                     expires_at: MonotonicTime::from_millis(1_000),
                     policy_epoch: 1,

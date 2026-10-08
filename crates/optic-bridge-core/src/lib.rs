@@ -22,6 +22,6 @@ pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
 pub use session::{
     LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass, ProjectId, SessionGrant,
-    TaskLease,
+    TaskLease, WorkloadClass,
 };
 pub use version::{ContentVersion, ContentVersionParseError, ContentVersionReadError};

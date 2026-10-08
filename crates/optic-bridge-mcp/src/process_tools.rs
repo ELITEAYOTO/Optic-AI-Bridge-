@@ -86,6 +86,7 @@ impl ReadonlyMcpServer {
             .start(ProcessStartSpec {
                 session: self.session.clone(),
                 class,
+                workload_class: lease.workload_class,
                 executable,
                 args: params.0.args,
                 cwd,
@@ -415,6 +416,13 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::TooManyActiveJobsForSession => {
             ErrorData::internal_error("optic.process_session_active_limit", None)
         }
+        ProcessError::HeavyWorkloadCapacityExceeded => {
+            ErrorData::internal_error("optic.process_heavy_workload_capacity_exceeded", None)
+        }
+        ProcessError::HeavyWorkloadCapacityExceededForSession => ErrorData::internal_error(
+            "optic.process_session_heavy_workload_capacity_exceeded",
+            None,
+        ),
         ProcessError::ProcessRecordLimitExceededForSession => {
             ErrorData::internal_error("optic.process_session_record_limit", None)
         }
@@ -535,6 +543,7 @@ mod tests {
                 LeaseScope::WorkspacePrefix(exact.clone()),
             ]),
             resource_ceiling: HardLimits::default().max_process_budget,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at: optic_bridge_core::MonotonicTime::from_millis(1_000),
             policy_epoch: 1,
         };
