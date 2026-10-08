@@ -110,14 +110,19 @@ impl PolicyEngine {
             }
         }
 
-        if matches!(
-            &envelope.effect,
-            Effect::ProcessRun {
-                class: ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode,
-                ..
+        if let Effect::ProcessRun {
+            executable,
+            class:
+                class @ (ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode),
+            ..
+        } = &envelope.effect
+        {
+            let Some(lease) = lease else {
+                return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
+            };
+            if !lease.process_isolation_eligible(executable, *class) {
+                return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
             }
-        ) {
-            return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
         }
 
         if matches!(&envelope.effect, Effect::NetworkAccess { .. }) {
@@ -570,7 +575,7 @@ mod tests {
         );
     }
     #[test]
-    fn isolation_eligibility_marker_does_not_yet_re_admit_high_risk_processes() {
+    fn exact_isolation_eligibility_re_admits_high_risk_processes() {
         for class in [
             ProcessExecutionClass::Interpreter,
             ProcessExecutionClass::RepositoryCode,
@@ -590,7 +595,6 @@ mod tests {
                     },
                 ],
             );
-            assert!(lease.process_isolation_eligible("tool", class));
             let action = envelope(
                 &session,
                 Effect::ProcessRun {
@@ -603,11 +607,84 @@ mod tests {
 
             assert_eq!(
                 PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
-                PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired),
-                "C5A marker must remain policy-inert until the explicit re-admission gate"
+                PolicyDecision::Allow
             );
         }
     }
+
+    #[test]
+    fn isolation_eligibility_must_match_exact_executable_and_class() {
+        let session = session(&[Capability::ProcessRun]);
+        for marker in [
+            LeaseScope::ProcessIsolationEligible {
+                executable: "other-tool".to_owned(),
+                class: ProcessExecutionClass::Interpreter,
+            },
+            LeaseScope::ProcessIsolationEligible {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::RepositoryCode,
+            },
+        ] {
+            let lease = lease(
+                &session,
+                &[Capability::ProcessRun],
+                &[
+                    LeaseScope::ProcessExecutable {
+                        executable: "tool".to_owned(),
+                        class: ProcessExecutionClass::Interpreter,
+                    },
+                    marker,
+                ],
+            );
+            let action = envelope(
+                &session,
+                Effect::ProcessRun {
+                    executable: "tool".to_owned(),
+                    class: ProcessExecutionClass::Interpreter,
+                    network: NetworkAccess::Denied,
+                },
+                Some(&lease),
+            );
+
+            assert_eq!(
+                PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+                PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired)
+            );
+        }
+    }
+    #[test]
+    fn isolation_eligibility_does_not_bypass_network_authority() {
+        let session = session(&[Capability::ProcessRun]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[
+                LeaseScope::ProcessExecutable {
+                    executable: "tool".to_owned(),
+                    class: ProcessExecutionClass::Interpreter,
+                },
+                LeaseScope::ProcessIsolationEligible {
+                    executable: "tool".to_owned(),
+                    class: ProcessExecutionClass::Interpreter,
+                },
+            ],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::Interpreter,
+                network: NetworkAccess::Allowed,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::NetworkNotAuthorized)
+        );
+    }
+
     #[test]
     fn fixed_tool_process_remains_allowed_without_network() {
         let session = session(&[Capability::ProcessRun]);
