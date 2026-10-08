@@ -66,7 +66,9 @@ async fn await_terminal(
     job: &optic_bridge_core::JobId,
 ) -> optic_bridge_runtime::ProcessResult {
     for _ in 0..600 {
-        let result = manager.result(session, job).expect("read network probe result");
+        let result = manager
+            .result(session, job)
+            .expect("read network probe result");
         if result.status != ProcessStatus::Running {
             return result;
         }
