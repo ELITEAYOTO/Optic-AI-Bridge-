@@ -11,6 +11,8 @@
 #[cfg(windows)]
 mod appcontainer;
 #[cfg(windows)]
+mod directory;
+#[cfg(windows)]
 mod executable;
 #[cfg(windows)]
 mod file;
@@ -26,6 +28,8 @@ pub use appcontainer::{
     AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
     SuspendedAppContainerProcess, spawn_appcontainer_suspended,
 };
+#[cfg(windows)]
+pub use directory::{PinnedDirectoryChain, PinnedDirectoryError, pin_directory_chain};
 #[cfg(windows)]
 pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]

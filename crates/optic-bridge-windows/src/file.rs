@@ -173,7 +173,7 @@ pub fn replace_file_atomically(
     Ok(())
 }
 
-fn reject_reparse(file: &File) -> Result<(), WindowsFileError> {
+pub(crate) fn reject_reparse(file: &File) -> Result<(), WindowsFileError> {
     let handle = file_handle(file);
     let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
     unsafe {
