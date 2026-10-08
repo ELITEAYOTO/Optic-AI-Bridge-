@@ -727,16 +727,26 @@ Gate passed: deterministic boundary/provider/precedence/no-eviction tests, Windo
 
 ### Phase 3E3 — bounded heavy-task slots/classes
 
-Status: **current gate**. This tranche will bound concurrent heavy workloads independently of ordinary active-job/CPU/memory ceilings, without making workload class caller-controlled.
+Status: **merged and post-merge validated** in PR #107 (`826f8cb3`), final head `203d729c`; fixture-corrected CI #420 passed the full Ubuntu/Windows/dependency-policy matrix and Windows smokes, final-head CI #421 completed successfully after a targeted rerun of one transient AppContainer loopback probe timeout with no code change, and post-merge `main` CI #422 passed.
 
-1. Heavy/light (or equivalent closed) workload classification is application-owned task/workload metadata derived from server-side action, policy or operator-profile state; MCP cannot supply or downgrade that class to bypass the governor. The first enforcement tranche may classify `ProcessRun` jobs because they are the current long-running heavy primitive, but heaviness must not be encoded into `ProcessExecutionClass` or executable scope so the model remains reusable for other effects.
-2. `HardLimits` adds non-zero global and per-session heavy-task slot ceilings with an explicit relationship between session and bridge-wide capacity. Numeric defaults must be justified from the existing workload/profile audit rather than invented by the public request.
-3. The first process-focused admission path consumes a heavy slot atomically with the existing process admission lock. `Running` and `TerminationUncertain` heavy jobs retain their slot; proven-terminal jobs release it even if bounded history remains retained. The workload-class model itself remains generic rather than process-specific.
-4. One session exhausting its heavy-slot allowance cannot consume another session's allowance, and global exhaustion remains a distinct fail-closed capacity condition.
-5. Deterministic tests compose heavy-slot pressure with existing 3E1/3E2B memory and CPU governance and prove owner/session isolation plus capacity reuse after proven terminal state.
-6. No new MCP capability, filesystem/network authority, process eligibility or sandbox authority is introduced. Optional I/O governance and richer pressure feedback remain separate A-02 work after this gate.
+1. `WorkloadClass::{Standard, Heavy}` is application-owned `TaskLease` metadata. MCP cannot supply or downgrade it. The first enforcement tranche classifies production process leases as `Heavy` and mutation/Git-integration leases as `Standard`; workload class remains distinct from `ProcessExecutionClass` and executable scope.
+2. `HardLimits` owns non-zero heavy-workload ceilings with defaults of 2 active heavy process jobs bridge-wide and 1 per session. Validation requires the heavy sublimits to fit the ordinary active-job ceilings and the per-session heavy limit to fit the global heavy limit.
+3. `process_start` copies the class from the active server-owned lease into `ProcessStartSpec`; `JobRecord` retains it. Heavy-slot admission runs under the existing process-store lock before later CPU/memory/headroom/output-history admission.
+4. `Running` and `TerminationUncertain` heavy jobs retain their slot. Proven-terminal jobs release it even while bounded history remains retained. Session exhaustion is checked before global exhaustion and both map to distinct stable MCP resource codes.
+5. Deterministic multi-session tests prove per-session/global saturation, uncertainty retention, `Standard`-work independence and capacity reuse after proven terminal state. The same suite runs with controlled Windows host-memory observations so 3E2B cannot make heavy-slot tests depend on runner RAM.
+6. No new MCP field, capability, filesystem/network authority, process eligibility, sandbox authority or public session surface is introduced. Optional I/O governance and richer pressure feedback remain separate residual A-02 work.
 
-Gate requires workload-classification design review, global/per-session capacity tests, cross-session adversarial coverage, exact-head CI and post-merge `main` CI.
+Gate passed: server-owned classification review, global/per-session capacity tests, cross-session lifecycle coverage, exact-head CI #421 and post-merge `main` CI #422. The prioritized heavy-workload part of A-02 is closed; A-02 remains partial only for optional I/O governance / richer pressure feedback.
+
+### Next prioritized audit gate — B-02 network-containment expansion
+
+Status: **next gate**. The existing PR #85 proof is intentionally scoped to a compatible high-risk Node process launched through the real zero-capability AppContainer helper and denied a TCP IPv4 loopback connection. It is not a universal `network=false` OS guarantee.
+
+1. Keep the selected Node/AppContainer proof as a scoped regression and do not relabel it as coverage for every protocol, destination or execution path.
+2. Characterize the direct `FixedTool` path separately: today policy/runtime reject `network=true`, but a user-level `FixedTool` process launched outside AppContainer is not mechanically prevented from opening sockets merely because the request says `network=false`.
+3. Define a bounded evidence matrix for additional network cases called out by B-02 (for example UDP, additional address families/destinations and externally configured AppContainer loopback exemptions) before selecting any enforcement primitive. Characterization must not itself mint `NetworkAccess` or widen process authority.
+4. Preserve `network=true` as fail-closed until explicit server-owned network authority and truthful OS enforcement exist. Any future capability must remain separate from executable/class/eligibility authority.
+5. CI should distinguish an actual containment regression from a probe timeout: tests must record that the network attempt was reached and whether the host accepted traffic, as the existing Node loopback proof already does.
 
 ## Phase 4 — same-repo parallelism
 

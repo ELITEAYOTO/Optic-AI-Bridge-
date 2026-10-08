@@ -48,7 +48,11 @@ Phase 3E2A is merged and validated through PR #103 (`e2b37be0`, exact head `3c76
 
 Phase 3E2B is merged and validated through PR #105 (`aaaf4e17`, exact head `9cb0516f`, PR CI #414, post-merge CI #415). On Windows, `ProcessManager` consumes host-memory observations through a testable provider under the same admission lock used by the 3E1 reservations. The default reserve is `max(1 GiB, 10% of total physical RAM)`. Admission requires current available physical memory to cover that reserve, the full active/uncertain 3E1 declared-memory reservation, and the new job's requested memory budget. This intentionally favors fail-closed headroom over utilization efficiency because Optic does not yet measure each job's actual committed/working-set memory. Provider failure or malformed telemetry fails closed, host-headroom denial has a stable MCP resource code distinct from the 3E1 aggregate-memory capacity errors, and a rejected start does not evict retained terminal history.
 
-This remains a point-in-time admission guard, not a guarantee against unrelated processes consuming memory immediately afterward. Phase 3E3 heavy-task slots/classes is the next A-02 gate; I/O governance and richer pressure feedback remain separate work.
+This remains a point-in-time admission guard, not a guarantee against unrelated processes consuming memory immediately afterward. Phase 3E3 has since added server-owned heavy-workload classification and bounded heavy slots; optional I/O governance and richer pressure feedback remain separate residual A-02 work.
+
+## Phase 3E3 heavy-workload slots
+
+Phase 3E3 is merged and validated through PR #107 (`826f8cb3`, final head `203d729c`, final-head CI #421, post-merge CI #422). `TaskLease` carries application-owned `WorkloadClass::{Standard, Heavy}` metadata that is independent of caller budgets and process execution class. Production process leases are `Heavy`; mutation/Git-integration leases remain `Standard`. The default governor permits 2 active heavy process jobs bridge-wide and 1 per session. `Running` and `TerminationUncertain` heavy jobs retain their slot; proven-terminal jobs release it. MCP cannot supply or downgrade workload class, and heavy-capacity refusal does not widen or replace the independent output/CPU/declared-memory/host-headroom governors.
 
 ## Cursor model
 
