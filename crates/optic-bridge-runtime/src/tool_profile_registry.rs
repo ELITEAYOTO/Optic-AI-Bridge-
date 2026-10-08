@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+};
 
 use optic_bridge_core::{HardLimits, ToolInvocation, ToolProfile, ToolProfileName};
 use thiserror::Error;
@@ -33,17 +36,34 @@ impl ToolProfileRegistry {
     }
 
     pub fn register(&self, profile: ToolProfile) -> Result<(), ToolProfileRegistryError> {
-        let mut profiles = self
+        self.register_all([profile])
+    }
+
+    /// Atomically register a controlled startup batch. Validation happens against
+    /// both the existing registry and every incoming name before any profile is
+    /// published, so a late duplicate/capacity failure cannot leave partial authority.
+    pub fn register_all<I>(&self, profiles: I) -> Result<(), ToolProfileRegistryError>
+    where
+        I: IntoIterator<Item = ToolProfile>,
+    {
+        let incoming = profiles.into_iter().collect::<Vec<_>>();
+        let mut state = self
             .profiles
             .lock()
             .map_err(|_| ToolProfileRegistryError::StateUnavailable)?;
-        if profiles.contains_key(profile.name()) {
-            return Err(ToolProfileRegistryError::AlreadyRegistered);
+        let mut incoming_names = BTreeSet::new();
+        for profile in &incoming {
+            if state.contains_key(profile.name()) || !incoming_names.insert(profile.name().clone())
+            {
+                return Err(ToolProfileRegistryError::AlreadyRegistered);
+            }
         }
-        if profiles.len() >= self.max_profiles {
+        if state.len().saturating_add(incoming.len()) > self.max_profiles {
             return Err(ToolProfileRegistryError::CapacityExceeded);
         }
-        profiles.insert(profile.name().clone(), profile);
+        for profile in incoming {
+            state.insert(profile.name().clone(), profile);
+        }
         Ok(())
     }
 
@@ -67,6 +87,30 @@ impl ToolProfileRegistry {
         }
         Ok(profile)
     }
+
+    /// Resolve authority from the normalized invocation itself. The caller does
+    /// not nominate a profile name. Zero matches and ambiguous matches both fail
+    /// closed, so overlapping application profiles cannot silently select one.
+    pub fn resolve_unique(
+        &self,
+        invocation: &ToolInvocation,
+    ) -> Result<ToolProfile, ToolProfileRegistryError> {
+        let state = self
+            .profiles
+            .lock()
+            .map_err(|_| ToolProfileRegistryError::StateUnavailable)?;
+        let mut matches = state
+            .values()
+            .filter(|profile| profile.matches_invocation(invocation));
+        let first = matches
+            .next()
+            .cloned()
+            .ok_or(ToolProfileRegistryError::NoMatchingProfile)?;
+        if matches.next().is_some() {
+            return Err(ToolProfileRegistryError::AmbiguousProfile);
+        }
+        Ok(first)
+    }
 }
 
 impl Default for ToolProfileRegistry {
@@ -89,6 +133,10 @@ pub enum ToolProfileRegistryError {
     UnknownProfile,
     #[error("process invocation does not exactly match the selected tool profile")]
     InvocationMismatch,
+    #[error("no application-owned tool profile matches the normalized invocation")]
+    NoMatchingProfile,
+    #[error("multiple application-owned tool profiles match the same normalized invocation")]
+    AmbiguousProfile,
 }
 
 #[cfg(test)]
@@ -187,6 +235,81 @@ mod tests {
                 .require_match(&name, &drifted)
                 .expect_err("argument drift must fail"),
             ToolProfileRegistryError::InvocationMismatch
+        );
+    }
+
+    #[test]
+    fn batch_registration_is_atomic_on_duplicate_and_capacity_failure() {
+        let duplicate = ToolProfileRegistry::new();
+        assert_eq!(
+            duplicate
+                .register_all([profile("same", "a"), profile("same", "b")])
+                .expect_err("duplicate batch must fail"),
+            ToolProfileRegistryError::AlreadyRegistered
+        );
+        assert_eq!(
+            duplicate
+                .get(&ToolProfileName::parse("same").expect("name"))
+                .expect_err("failed batch must publish nothing"),
+            ToolProfileRegistryError::UnknownProfile
+        );
+
+        let limits = HardLimits {
+            max_tool_profiles: 1,
+            ..HardLimits::default()
+        };
+        let capacity = ToolProfileRegistry::from_hard_limits(limits).expect("registry");
+        assert_eq!(
+            capacity
+                .register_all([profile("one", "a"), profile("two", "b")])
+                .expect_err("oversized batch must fail atomically"),
+            ToolProfileRegistryError::CapacityExceeded
+        );
+        for name in ["one", "two"] {
+            assert_eq!(
+                capacity
+                    .get(&ToolProfileName::parse(name).expect("name"))
+                    .expect_err("capacity failure must publish nothing"),
+                ToolProfileRegistryError::UnknownProfile
+            );
+        }
+    }
+
+    #[test]
+    fn unique_resolution_uses_invocation_not_caller_selected_profile_name() {
+        let registry = ToolProfileRegistry::new();
+        let safe = profile("safe", "--check");
+        let invocation = invocation(&safe);
+        registry.register(safe).expect("register safe profile");
+        registry
+            .register(profile("other", "--version"))
+            .expect("register other profile");
+        let resolved = registry.resolve_unique(&invocation).expect("unique match");
+        assert_eq!(resolved.name().as_str(), "safe");
+
+        let mut drifted = invocation;
+        drifted.args.push("unexpected".to_owned());
+        assert_eq!(
+            registry
+                .resolve_unique(&drifted)
+                .expect_err("unmatched invocation must fail"),
+            ToolProfileRegistryError::NoMatchingProfile
+        );
+    }
+
+    #[test]
+    fn overlapping_profiles_fail_closed_as_ambiguous() {
+        let registry = ToolProfileRegistry::new();
+        let first = profile("first", "--version");
+        let invocation = invocation(&first);
+        registry
+            .register_all([first, profile("second", "--version")])
+            .expect("overlap may be provisioned but never auto-selected");
+        assert_eq!(
+            registry
+                .resolve_unique(&invocation)
+                .expect_err("ambiguous authority must fail closed"),
+            ToolProfileRegistryError::AmbiguousProfile
         );
     }
 }
