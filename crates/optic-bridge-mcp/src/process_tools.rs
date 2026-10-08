@@ -381,6 +381,12 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::OutputMemoryLimitExceededForSession => {
             ErrorData::invalid_params("optic.process_session_output_memory_limit", None)
         }
+        ProcessError::ProcessMemoryCapacityExceeded => {
+            ErrorData::internal_error("optic.process_memory_capacity_exceeded", None)
+        }
+        ProcessError::ProcessMemoryCapacityExceededForSession => {
+            ErrorData::internal_error("optic.process_session_memory_capacity_exceeded", None)
+        }
         ProcessError::CpuCapacityExceeded => {
             ErrorData::internal_error("optic.process_cpu_capacity_exceeded", None)
         }
@@ -637,6 +643,14 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_memory_capacity_has_distinct_mcp_code() {
+        assert_eq!(
+            map_process_error(ProcessError::ProcessMemoryCapacityExceeded).message,
+            "optic.process_memory_capacity_exceeded"
+        );
+    }
+
+    #[test]
     fn session_resource_errors_have_distinct_mcp_codes() {
         assert_eq!(
             map_process_error(ProcessError::TooManyActiveJobsForSession).message,
@@ -649,6 +663,10 @@ mod tests {
         assert_eq!(
             map_process_error(ProcessError::OutputMemoryLimitExceededForSession).message,
             "optic.process_session_output_memory_limit"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::ProcessMemoryCapacityExceededForSession).message,
+            "optic.process_session_memory_capacity_exceeded"
         );
     }
 }

@@ -40,6 +40,8 @@ pub struct HardLimits {
     pub max_task_leases_per_session: u32,
     pub max_active_output_ram_bytes: u64,
     pub max_active_output_ram_bytes_per_session: u64,
+    pub max_active_process_memory_bytes: u64,
+    pub max_active_process_memory_bytes_per_session: u64,
     pub max_fs_read_bytes: u64,
     pub max_fs_mutation_bytes: u64,
     pub max_mutation_journal_file_bytes: u64,
@@ -71,6 +73,8 @@ impl Default for HardLimits {
             max_task_leases_per_session: 32,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
             max_active_output_ram_bytes_per_session: 8 * 1024 * 1024,
+            max_active_process_memory_bytes: 16 * 1024 * 1024 * 1024,
+            max_active_process_memory_bytes_per_session: 8 * 1024 * 1024 * 1024,
             max_fs_read_bytes: 256 * 1024,
             max_fs_mutation_bytes: 8 * 1024 * 1024,
             max_mutation_journal_file_bytes: 64 * 1024,
@@ -108,6 +112,8 @@ impl HardLimits {
             || self.max_task_leases_per_session == 0
             || self.max_active_output_ram_bytes == 0
             || self.max_active_output_ram_bytes_per_session == 0
+            || self.max_active_process_memory_bytes == 0
+            || self.max_active_process_memory_bytes_per_session == 0
             || self.max_fs_read_bytes == 0
             || self.max_fs_mutation_bytes == 0
             || self.max_mutation_journal_file_bytes == 0
@@ -134,6 +140,10 @@ impl HardLimits {
             || self.max_process_records_per_session < self.max_active_process_jobs_per_session
             || self.max_active_output_ram_bytes_per_session > self.max_active_output_ram_bytes
             || self.max_process_budget.output_bytes > self.max_active_output_ram_bytes_per_session
+            || self.max_active_process_memory_bytes_per_session
+                > self.max_active_process_memory_bytes
+            || self.max_process_budget.memory_bytes
+                > self.max_active_process_memory_bytes_per_session
             || self.max_process_cpu_percent_per_job > 100
             || self.max_active_process_cpu_percent > 100
             || self.max_active_process_cpu_percent_per_session > 100
@@ -335,6 +345,53 @@ mod tests {
             limits
                 .validate_nonzero()
                 .expect_err("per-job output budget must fit the session ceiling"),
+            LimitError::InvalidRelationship
+        );
+    }
+
+    #[test]
+    fn process_memory_reservation_limits_are_bounded() {
+        let defaults = HardLimits::default();
+        assert_eq!(
+            defaults.max_active_process_memory_bytes,
+            16 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            defaults.max_active_process_memory_bytes_per_session,
+            8 * 1024 * 1024 * 1024
+        );
+        assert!(defaults.validate_nonzero().is_ok());
+
+        let zero = HardLimits {
+            max_active_process_memory_bytes: 0,
+            ..defaults
+        };
+        assert_eq!(
+            zero.validate_nonzero()
+                .expect_err("zero aggregate memory must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+
+        let session_exceeds_global = HardLimits {
+            max_active_process_memory_bytes: 4 * 1024 * 1024 * 1024,
+            max_active_process_memory_bytes_per_session: 8 * 1024 * 1024 * 1024,
+            ..defaults
+        };
+        assert_eq!(
+            session_exceeds_global
+                .validate_nonzero()
+                .expect_err("session memory must fit global memory"),
+            LimitError::InvalidRelationship
+        );
+
+        let job_exceeds_session = HardLimits {
+            max_active_process_memory_bytes_per_session: 4 * 1024 * 1024 * 1024,
+            ..defaults
+        };
+        assert_eq!(
+            job_exceeds_session
+                .validate_nonzero()
+                .expect_err("per-job memory must fit session aggregate memory"),
             LimitError::InvalidRelationship
         );
     }

@@ -19,7 +19,7 @@ Process authority is application-owned, not MCP-owned.
 7. The request becomes a typed `Effect::ProcessRun` carrying the lease-derived class and must pass `PolicyEngine`, which requires exact path + class agreement.
 8. Only then may `ProcessManager` spawn the child.
 
-The MCP caller cannot create capabilities, approve itself, mint a task lease or choose an execution class. Phase 3C3B classification is an operator assertion rather than automatic executable inspection: `FixedTool` does not prove a binary cannot load plugins/scripts. Phase 3C3C1 now fails closed for `Interpreter` and `RepositoryCode`: even with otherwise-valid authority, policy returns `ProcessIsolationRequired` and the MCP adapter reports `optic.process_isolation_unavailable`. Only `FixedTool` may currently reach `ProcessManager` under the existing Job Object-based execution path. A stronger Windows isolation profile must be implemented and proven before selected high-risk classes can be re-admitted.
+The MCP caller cannot create capabilities, approve itself, mint a task lease or choose an execution class. Phase 3C3B classification is an operator assertion rather than automatic executable inspection: `FixedTool` does not prove a binary cannot load plugins/scripts. Phase 3C3C1 established deny-by-default for `Interpreter` and `RepositoryCode`. The later C5A-C5G gates selectively re-admit only the exact operator-selected Windows Node profile when the same active lease carries both matching `ProcessExecutable` and `ProcessIsolationEligible` authority and the pinned AppContainer helper is available. Other interpreter/repository-code profiles remain fail-closed with `ProcessIsolationRequired` / `optic.process_isolation_unavailable`; MCP still cannot mint eligibility or widen that profile.
 
 Network remains unavailable in the Phase 1 runtime. A request with `network=true` fails closed even though the core policy model already defines the later dual session+lease network contract.
 
@@ -73,8 +73,9 @@ Development/CI uses a process-group wrapper plus kill-on-drop. This preserves li
 - retained proven-terminal records may be evicted deterministically to admit later work without allowing an unbounded history; `TerminationUncertain` is deliberately not terminal for quota/eviction/reap purposes;
 - total reserved output RAM is checked before admitting a new job;
 - Phase 3C2 also reserves a fixed application-owned CPU share per active/uncertain job before spawn. Defaults are 25% per job, 75% aggregate across Optic-owned process jobs and 50% per session. `TerminationUncertain` keeps that reservation; retained proven-terminal history does not.
+- Phase 3E1 additionally reserves each requested process `memory_bytes` budget across active/uncertain jobs before spawn. Current defaults are 16 GiB aggregate across Optic-owned process jobs and 8 GiB per session, while the existing 8 GiB per-job ceiling remains unchanged. `TerminationUncertain` keeps the memory reservation; a proven-terminal job releases it even if its bounded result/output record is still retained.
 
-The 75% figure is an Optic admission ceiling, not a claim that whole-machine utilization stays below 75%: unrelated applications may consume CPU, and a parent Job Object may impose an even smaller inherited quota. Optic simply refuses to authorize its own active jobs above the configured aggregate reservation.
+The CPU and process-memory aggregate figures are Optic admission ceilings, not measurements of whole-machine utilization. Unrelated applications may consume CPU/RAM, a parent Job Object may impose smaller inherited limits, and 3E1 does not yet derive an emergency reserve from physical-memory telemetry. Optic refuses to authorize its own active jobs above the configured declared-budget reservations.
 
 ## Time and cancellation
 
@@ -90,7 +91,7 @@ The authorized `ResourceBudget` now has distinct enforcement layers:
 
 - `timeout_ms`: runtime monotonic deadline, followed by Job Object tree termination on Windows;
 - `output_bytes`: Optic-owned bounded stdout/stderr retention and overflow termination;
-- `memory_bytes`: Windows `JOB_OBJECT_LIMIT_JOB_MEMORY` on native Windows;
+- `memory_bytes`: Windows `JOB_OBJECT_LIMIT_JOB_MEMORY` on native Windows, plus Phase 3E1 global/per-session declared-budget admission before spawn;
 - `process_count`: Windows `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` on native Windows;
 - CPU: Phase 3C2 uses an application-owned fixed per-job percentage rather than a caller field; Windows enforces it with `JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP`, while `ProcessManager` separately bounds aggregate and per-session reservations before spawn.
 
@@ -102,4 +103,4 @@ The native Windows CI gates prove these limits using dedicated fixtures/tests:
 - dropping a live limited Job Object prevents the child from surviving long enough to write its own delayed marker;
 - Phase 3C2 queries `JobObjectCpuRateControlInformation` and proves the 25% hard cap is stored as `CpuRate = 2500`; runtime tests prove global/per-session admission and uncertain-state reservation behavior.
 
-These tests complement, rather than replace, policy/lease ceilings. Authorization decides what execution is allowed; the Windows Job Object contains each process tree within its process-count, memory and CPU ceilings, while Optic's runtime admission bounds aggregate/session CPU reservation.
+These tests complement, rather than replace, policy/lease ceilings. Authorization decides what execution is allowed; the Windows Job Object contains each process tree within its process-count, memory and CPU ceilings, while Optic's runtime admission bounds aggregate/session CPU and declared process-memory reservations.

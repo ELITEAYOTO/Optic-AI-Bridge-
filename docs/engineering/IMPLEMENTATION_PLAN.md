@@ -685,6 +685,20 @@ Status: **merged and post-merge validated** in PR #99 (`d9068334`), exact green 
 
 Gate passed: exact-head CI #401, SHA-guarded squash merge, and post-merge `main` CI #402. The documented internal adversarial multi-session substrate is now mechanically closed. Public/heavy multi-session autonomy still requires separate product gates, with aggregate process-memory/headroom governance the next Phase 3 resource target.
 
+### Phase 3E1 — aggregate declared process-memory reservation
+
+Status: **current gate**. This tranche extends the existing per-job Windows memory ceiling with application-owned admission ceilings across active/uncertain Optic jobs.
+
+1. `HardLimits` adds non-zero global and per-session declared process-memory ceilings. Current defaults are 16 GiB aggregate and 8 GiB per session; the existing 8 GiB per-job `ResourceBudget.memory_bytes` ceiling remains unchanged.
+2. `ProcessManager` reserves the requested `memory_bytes` atomically with active-job/output/CPU admission before spawn. A request that fits its own lease/budget can still fail when the active aggregate or its session aggregate is full.
+3. `Running` and `TerminationUncertain` jobs retain their memory reservation. Proven-terminal jobs release process-memory reservation even while their bounded result/output record remains retained.
+4. Global and per-session memory-capacity failures remain distinct through the MCP adapter. No caller can raise the configured ceilings.
+5. Windows continues to enforce each individual job's requested memory with `JOB_OBJECT_LIMIT_JOB_MEMORY`; 3E1 is an additional Optic admission governor, not a replacement for that OS limit.
+6. 3E1 is reservation-based, not host-memory telemetry. It does not yet claim dynamic physical-RAM headroom, emergency reserve, heavy-task slots, I/O budgets or memory-pressure feedback. Those remain separate A-02 closure work.
+7. No session/MCP creation surface, filesystem/network authority, process eligibility or sandbox semantics change in this gate.
+
+Gate requires exact-head Ubuntu/Windows/dependency-policy CI and post-merge `main` CI before A-02 can be updated.
+
 ## Phase 4 — same-repo parallelism
 
 Git worktrees, deterministic coordinator, integration/conflict gate.
