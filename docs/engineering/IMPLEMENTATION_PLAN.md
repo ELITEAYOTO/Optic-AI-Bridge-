@@ -611,9 +611,28 @@ Status: **merged** in PR #78 (`70cde40f`), exact green final head `3b871bdf`; CI
 
 Gate passed: exact-head Ubuntu/Windows/dependency-policy CI on PR #78.
 
+#### Phase 3C3C2C3 - representative toolchain characterization
+
+Status: **merged** through PR #82 (`8ea01de3`, exact green final head `915b38f4`, CI #357) and PR #83 (`b5a53b08`, exact green final head `25d2eed7`, CI #361).
+
+1. Run representative toolchains through the real `ProcessManager -> isolation launcher -> AppContainer` path without widening authority to make them pass.
+2. Node is the first complete positive characterization: startup succeeds, one exact operator-granted file is readable, and an ungranted sibling is denied with `EPERM`.
+3. Python and Java fail before workspace semantics with Windows loader status `0xC0000135` (`STATUS_DLL_NOT_FOUND`); adjacent runtime DLL/JDK candidates are recorded rather than granted.
+4. Distinguish rustup proxy executables from direct pinned toolchain binaries. Direct Cargo starts successfully; direct rustc still fails at loader time.
+5. Treat runtime DLLs, stdlib/sysroot/JDK, cwd/traversal and scratch/output needs as separate authority-design questions rather than implicit workspace access.
+
+#### Phase 3C3C2C4 - capability-free AppContainer network denial
+
+Status: **merged** through PR #85 (`bb649833`), exact head `6fcc25d1`; PR CI #365 and post-merge `main` CI #366 passed.
+
+1. Prove a normal host connection to an ephemeral TCP loopback listener succeeds first.
+2. Launch proven-compatible Node as `Interpreter` through the real zero-capability AppContainer path with no file/env/network grants.
+3. Require the script to reach the network attempt, never report a connection, exit only through bounded socket denial/timeout, and independently require the listener to accept no AppContainer connection.
+4. Keep the claim scoped to the tested Windows TCP-loopback case; do not infer universal Internet/intranet/UDP containment, loopback-exemption behavior or containment for the direct `FixedTool` path.
+
 #### Later Phase 3C gates
 
-Prove representative toolchain compatibility under the real helper/AppContainer path before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then evaluate broader workspace coverage/write authority and prove truthful network semantics plus broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Introduce an application/server-owned strong-isolation eligibility marker for selected exact executable leases before changing the blanket high-risk policy denial. Node is currently the only representative interpreter with startup + exact-file + negative-file + zero-capability TCP-loopback evidence. The marker must be absent by default, unavailable to MCP callers and impossible to infer merely from `ProcessExecutionClass`. Only after that boundary is proven should a thin selected policy re-admission be evaluated. Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
