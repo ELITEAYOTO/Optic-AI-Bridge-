@@ -108,20 +108,56 @@ where
     }
 }
 
+struct BoundedJsonBuffer {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+    overflowed: bool,
+}
+
+impl BoundedJsonBuffer {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(max_bytes.min(8 * 1024)),
+            max_bytes,
+            overflowed: false,
+        }
+    }
+}
+
+impl std::io::Write for BoundedJsonBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.max_bytes.saturating_sub(self.bytes.len());
+        if buf.len() > remaining {
+            self.overflowed = true;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                "bounded JSON response buffer exhausted",
+            ));
+        }
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn serialize_json_line_bounded<T: Serialize>(
     value: &T,
     max_bytes: usize,
 ) -> Result<Vec<u8>, BoundedTransportError> {
-    let mut bytes = serde_json::to_vec(value).map_err(BoundedTransportError::Serialization)?;
-    let encoded_len = bytes
-        .len()
-        .checked_add(1)
+    let payload_limit = max_bytes
+        .checked_sub(1)
         .ok_or(BoundedTransportError::ResponseTooLarge)?;
-    if encoded_len > max_bytes {
+    let mut writer = BoundedJsonBuffer::new(payload_limit);
+    let result = serde_json::to_writer(&mut writer, value);
+    if writer.overflowed {
         return Err(BoundedTransportError::ResponseTooLarge);
     }
-    bytes.push(b'\n');
-    Ok(bytes)
+    result.map_err(BoundedTransportError::Serialization)?;
+    writer.bytes.push(b'\n');
+    Ok(writer.bytes)
 }
 
 #[derive(Debug, Error)]
@@ -154,6 +190,21 @@ mod tests {
             serialize_json_line_bounded(&value, exact - 1),
             Err(BoundedTransportError::ResponseTooLarge)
         ));
+    }
+
+    #[test]
+    fn response_serializer_stops_allocating_at_payload_limit() {
+        let value = serde_json::json!({"x": "x".repeat(4096)});
+        assert!(matches!(
+            serialize_json_line_bounded(&value, 64),
+            Err(BoundedTransportError::ResponseTooLarge)
+        ));
+
+        let mut writer = BoundedJsonBuffer::new(32);
+        let result = serde_json::to_writer(&mut writer, &value);
+        assert!(result.is_err());
+        assert!(writer.overflowed);
+        assert!(writer.bytes.len() <= 32);
     }
 
     #[tokio::test]
