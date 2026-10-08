@@ -46,9 +46,9 @@ Phase 3E2A is merged and validated through PR #103 (`e2b37be0`, exact head `3c76
 
 ## Phase 3E2B emergency-headroom admission
 
-Phase 3E2B is the current gate. On Windows, `ProcessManager` consumes host-memory observations through a testable provider under the same admission lock used by the 3E1 reservations. The default reserve is `max(1 GiB, 10% of total physical RAM)`. Admission requires current available physical memory to cover that reserve, the full active/uncertain 3E1 declared-memory reservation, and the new job's requested memory budget. This intentionally favors fail-closed headroom over utilization efficiency because Optic does not yet measure each job's actual committed/working-set memory. Provider failure or malformed telemetry fails closed, and host-headroom denial has a stable MCP resource code distinct from the 3E1 aggregate-memory capacity errors.
+Phase 3E2B is merged and validated through PR #105 (`aaaf4e17`, exact head `9cb0516f`, PR CI #414, post-merge CI #415). On Windows, `ProcessManager` consumes host-memory observations through a testable provider under the same admission lock used by the 3E1 reservations. The default reserve is `max(1 GiB, 10% of total physical RAM)`. Admission requires current available physical memory to cover that reserve, the full active/uncertain 3E1 declared-memory reservation, and the new job's requested memory budget. This intentionally favors fail-closed headroom over utilization efficiency because Optic does not yet measure each job's actual committed/working-set memory. Provider failure or malformed telemetry fails closed, host-headroom denial has a stable MCP resource code distinct from the 3E1 aggregate-memory capacity errors, and a rejected start does not evict retained terminal history.
 
-This remains a point-in-time admission guard, not a guarantee against unrelated processes consuming memory immediately afterward. Heavy-task classes/slots, I/O governance and richer pressure feedback remain separate A-02 work.
+This remains a point-in-time admission guard, not a guarantee against unrelated processes consuming memory immediately afterward. Phase 3E3 heavy-task slots/classes is the next A-02 gate; I/O governance and richer pressure feedback remain separate work.
 
 ## Cursor model
 

@@ -713,7 +713,7 @@ Gate passed: exact-head CI #410, SHA-guarded squash merge, and post-merge `main`
 
 ### Phase 3E2B — host-memory emergency-headroom admission
 
-Status: **current gate**. This tranche turns the validated 3E2A observation into a conservative Windows admission decision without making deterministic tests depend on runner RAM.
+Status: **merged and post-merge validated** in PR #105 (`aaaf4e17`), exact green head `9cb0516f`; PR CI #414 passed Ubuntu, Windows, dependency policy and all Windows smokes, and post-merge `main` CI #415 passed the same matrix after a targeted Windows rerun of one transient MCP `initialize` timeout with no code change.
 
 1. `ProcessManager` consumes host-memory state through an injected/testable Windows provider; production uses the 3E2A `GlobalMemoryStatusEx` snapshot, while deterministic tests use controlled snapshots/errors.
 2. `HardLimits` owns two non-zero server-side headroom floors: 1 GiB absolute and 10% of total physical RAM. The effective emergency reserve is the larger of the two; neither value is caller/MCP-controlled.
@@ -723,7 +723,20 @@ Status: **current gate**. This tranche turns the validated 3E2A observation into
 6. 3E1 aggregate declared-memory ceilings remain independent, and no capability, lease, filesystem, network, process-eligibility or sandbox authority changes.
 7. This is a point-in-time admission guard, not control over unrelated host processes. Heavy-task slots/classes, optional I/O governance and richer pressure feedback remain separate A-02 work.
 
-Gate requires deterministic boundary/provider/precedence tests, Windows real-provider integration coverage, exact-head CI and post-merge `main` CI before the admission rule is considered closed.
+Gate passed: deterministic boundary/provider/precedence/no-eviction tests, Windows real-provider integration, exact-head CI #414, SHA-guarded squash merge, and post-merge `main` CI #415. This closes the host-memory emergency-headroom sub-gate; A-02 remains partial for heavy-task classes/slots and optional I/O/pressure-feedback work.
+
+### Phase 3E3 — bounded heavy-task slots/classes
+
+Status: **current gate**. This tranche will bound concurrent heavy workloads independently of ordinary active-job/CPU/memory ceilings, without making workload class caller-controlled.
+
+1. Heavy/light (or equivalent closed) workload classification is application-owned task/workload metadata derived from server-side action, policy or operator-profile state; MCP cannot supply or downgrade that class to bypass the governor. The first enforcement tranche may classify `ProcessRun` jobs because they are the current long-running heavy primitive, but heaviness must not be encoded into `ProcessExecutionClass` or executable scope so the model remains reusable for other effects.
+2. `HardLimits` adds non-zero global and per-session heavy-task slot ceilings with an explicit relationship between session and bridge-wide capacity. Numeric defaults must be justified from the existing workload/profile audit rather than invented by the public request.
+3. The first process-focused admission path consumes a heavy slot atomically with the existing process admission lock. `Running` and `TerminationUncertain` heavy jobs retain their slot; proven-terminal jobs release it even if bounded history remains retained. The workload-class model itself remains generic rather than process-specific.
+4. One session exhausting its heavy-slot allowance cannot consume another session's allowance, and global exhaustion remains a distinct fail-closed capacity condition.
+5. Deterministic tests compose heavy-slot pressure with existing 3E1/3E2B memory and CPU governance and prove owner/session isolation plus capacity reuse after proven terminal state.
+6. No new MCP capability, filesystem/network authority, process eligibility or sandbox authority is introduced. Optional I/O governance and richer pressure feedback remain separate A-02 work after this gate.
+
+Gate requires workload-classification design review, global/per-session capacity tests, cross-session adversarial coverage, exact-head CI and post-merge `main` CI.
 
 ## Phase 4 — same-repo parallelism
 
