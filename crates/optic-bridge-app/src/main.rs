@@ -159,14 +159,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
     let session = grant.handle;
 
+    // C5B keeps strong-isolation eligibility internal-only. Public startup
+    // configuration cannot mint this set yet; C5C owns that explicit boundary.
+    let process_isolation_eligible = BTreeSet::new();
     let process_leases = provision_process_leases(
         &task_leases,
         &session,
         &canonical_process_executables,
         &canonical_process_read_grants,
-        limits.max_process_budget,
-        expires_at,
-        1,
+        &process_isolation_eligible,
+        ProcessLeaseTerms {
+            resource_ceiling: limits.max_process_budget,
+            expires_at,
+            policy_epoch: 1,
+        },
     )?;
 
     let mutation_authorities = MutationAuthoritySet::provision(
@@ -394,15 +400,58 @@ fn canonicalize_process_read_grants(
     Ok(canonical)
 }
 
+fn validate_process_isolation_eligibility(
+    executables: &BTreeMap<String, ProcessExecutionClass>,
+    eligible_executables: &BTreeSet<String>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if !eligible_executables.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "process isolation eligibility requires the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
+    for executable in eligible_executables {
+        match executables.get(executable) {
+            Some(ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode) => {}
+            Some(ProcessExecutionClass::FixedTool) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "process isolation eligibility cannot be attached to fixed-tool authority",
+                )
+                .into());
+            }
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "process isolation eligibility requires an already-authorized exact executable",
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+struct ProcessLeaseTerms {
+    resource_ceiling: ResourceBudget,
+    expires_at: MonotonicTime,
+    policy_epoch: u64,
+}
+
 fn provision_process_leases(
     task_leases: &TaskLeaseRegistry,
     session: &SessionHandle,
     executables: &BTreeMap<String, ProcessExecutionClass>,
     read_grants: &BTreeMap<String, BTreeSet<WorkspacePath>>,
-    resource_ceiling: ResourceBudget,
-    expires_at: MonotonicTime,
-    policy_epoch: u64,
+    isolation_eligible: &BTreeSet<String>,
+    terms: ProcessLeaseTerms,
 ) -> Result<BTreeMap<String, TaskLeaseId>, Box<dyn Error + Send + Sync>> {
+    // Validate every server-owned eligibility selection before registering any
+    // lease so a bad marker can never leave partial process authority behind.
+    validate_process_isolation_eligibility(executables, isolation_eligible)?;
+
     #[cfg(not(windows))]
     if read_grants.values().any(|paths| !paths.is_empty()) {
         return Err(std::io::Error::new(
@@ -421,6 +470,12 @@ fn provision_process_leases(
             executable: canonical.clone(),
             class: *class,
         }]);
+        if isolation_eligible.contains(canonical) {
+            scopes.insert(LeaseScope::ProcessIsolationEligible {
+                executable: canonical.clone(),
+                class: *class,
+            });
+        }
         if let Some(paths) = read_grants.get(canonical)
             && !paths.is_empty()
         {
@@ -432,9 +487,9 @@ fn provision_process_leases(
             session: session.clone(),
             capabilities,
             scopes,
-            resource_ceiling,
-            expires_at,
-            policy_epoch,
+            resource_ceiling: terms.resource_ceiling,
+            expires_at: terms.expires_at,
+            policy_epoch: terms.policy_epoch,
         })?;
         process_leases.insert(canonical.clone(), id);
     }
@@ -1066,9 +1121,12 @@ mod tests {
             &session_a,
             &executables,
             &read_grants,
-            limits.max_process_budget,
-            expires_at,
-            1,
+            &BTreeSet::new(),
+            ProcessLeaseTerms {
+                resource_ceiling: limits.max_process_budget,
+                expires_at,
+                policy_epoch: 1,
+            },
         )
         .expect("A process authority");
         let a_id = a.get(&executable).expect("A lease id");
@@ -1091,9 +1149,12 @@ mod tests {
             &session_b,
             &executables,
             &BTreeMap::new(),
-            limits.max_process_budget,
-            expires_at,
-            1,
+            &BTreeSet::new(),
+            ProcessLeaseTerms {
+                resource_ceiling: limits.max_process_budget,
+                expires_at,
+                policy_epoch: 1,
+            },
         )
         .expect("B process authority without read grants");
         let b_lease = task_leases
@@ -1117,6 +1178,143 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn internal_isolation_eligibility_is_exact_optional_and_high_risk_only() {
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let limits = HardLimits::default();
+        let expires_at = MonotonicTime::from_millis(1_000);
+        let now = MonotonicTime::from_millis(1);
+
+        for class in [
+            ProcessExecutionClass::Interpreter,
+            ProcessExecutionClass::RepositoryCode,
+        ] {
+            let executables = BTreeMap::from([(executable.clone(), class)]);
+            let eligible = BTreeSet::from([executable.clone()]);
+            let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("registry");
+            let session = SessionHandle::generate().expect("session");
+            let leases = provision_process_leases(
+                &registry,
+                &session,
+                &executables,
+                &BTreeMap::new(),
+                &eligible,
+                ProcessLeaseTerms {
+                    resource_ceiling: limits.max_process_budget,
+                    expires_at,
+                    policy_epoch: 1,
+                },
+            )
+            .expect("eligible process lease");
+            let lease = registry
+                .get_active(leases.get(&executable).expect("lease id"), &session, now)
+                .expect("active eligible lease");
+            assert!(lease.process_isolation_eligible(&executable, class));
+            assert!(lease.has_scope(&LeaseScope::ProcessExecutable {
+                executable: executable.clone(),
+                class,
+            }));
+            assert!(!lease.allows(Capability::NetworkAccess));
+        }
+
+        let executables =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("registry");
+        let session = SessionHandle::generate().expect("session");
+        let leases = provision_process_leases(
+            &registry,
+            &session,
+            &executables,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            ProcessLeaseTerms {
+                resource_ceiling: limits.max_process_budget,
+                expires_at,
+                policy_epoch: 1,
+            },
+        )
+        .expect("ordinary process lease");
+        let lease = registry
+            .get_active(leases.get(&executable).expect("lease id"), &session, now)
+            .expect("active ordinary lease");
+        assert!(!lease.process_isolation_eligible(&executable, ProcessExecutionClass::Interpreter));
+
+        let fixed = BTreeMap::from([(executable.clone(), ProcessExecutionClass::FixedTool)]);
+        assert!(
+            validate_process_isolation_eligibility(&fixed, &BTreeSet::from([executable.clone()]))
+                .is_err(),
+            "fixed tools must not receive the high-risk isolation marker"
+        );
+        assert!(
+            validate_process_isolation_eligibility(
+                &executables,
+                &BTreeSet::from(["C:\\missing\\unknown.exe".to_owned()])
+            )
+            .is_err(),
+            "unknown executables must not receive the isolation marker"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn invalid_isolation_eligibility_fails_before_any_process_lease_is_registered() {
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let executables =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let limits = HardLimits {
+            max_task_leases: 1,
+            max_task_leases_per_session: 1,
+            ..HardLimits::default()
+        };
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("bounded registry");
+        let session = SessionHandle::generate().expect("session");
+        let invalid = BTreeSet::from([
+            executable.clone(),
+            "Z:\\unknown-isolation-target.exe".to_owned(),
+        ]);
+
+        assert!(
+            provision_process_leases(
+                &registry,
+                &session,
+                &executables,
+                &BTreeMap::new(),
+                &invalid,
+                ProcessLeaseTerms {
+                    resource_ceiling: limits.max_process_budget,
+                    expires_at: MonotonicTime::from_millis(1_000),
+                    policy_epoch: 1,
+                },
+            )
+            .is_err()
+        );
+
+        let valid = provision_process_leases(
+            &registry,
+            &session,
+            &executables,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            ProcessLeaseTerms {
+                resource_ceiling: limits.max_process_budget,
+                expires_at: MonotonicTime::from_millis(1_000),
+                policy_epoch: 1,
+            },
+        )
+        .expect("capacity must remain untouched after invalid eligibility");
+        assert_eq!(valid.len(), 1);
+    }
     #[cfg(not(windows))]
     #[test]
     fn process_read_authority_fails_closed_without_windows_appcontainer() {
@@ -1157,12 +1355,32 @@ mod tests {
                 &session,
                 &executables,
                 &read_grants,
-                HardLimits::default().max_process_budget,
-                MonotonicTime::from_millis(1_000),
-                1,
+                &BTreeSet::new(),
+                ProcessLeaseTerms {
+                    resource_ceiling: HardLimits::default().max_process_budget,
+                    expires_at: MonotonicTime::from_millis(1_000),
+                    policy_epoch: 1,
+                },
             )
             .is_err(),
             "direct provisioning must not mint Windows-only read authority"
+        );
+        let eligibility = BTreeSet::from([executables.keys().next().expect("executable").clone()]);
+        assert!(
+            provision_process_leases(
+                &task_leases,
+                &session,
+                &executables,
+                &BTreeMap::new(),
+                &eligibility,
+                ProcessLeaseTerms {
+                    resource_ceiling: HardLimits::default().max_process_budget,
+                    expires_at: MonotonicTime::from_millis(1_000),
+                    policy_epoch: 1,
+                },
+            )
+            .is_err(),
+            "non-Windows provisioning must reject AppContainer isolation eligibility"
         );
         std::fs::remove_dir_all(root).expect("remove workspace");
     }
