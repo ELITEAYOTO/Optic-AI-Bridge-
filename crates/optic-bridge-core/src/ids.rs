@@ -52,6 +52,7 @@ macro_rules! opaque_id {
 opaque_id!(SessionHandle);
 opaque_id!(TaskLeaseId);
 opaque_id!(ActionId);
+opaque_id!(ApprovalId);
 opaque_id!(JobId);
 
 fn encode_token(bytes: &[u8; TOKEN_BYTES]) -> String {

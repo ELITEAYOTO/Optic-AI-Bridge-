@@ -7,6 +7,7 @@
 //! session, transport, filesystem, Git, process, mutation-precondition,
 //! recovery, or output constraints.
 
+mod approval_broker;
 mod authorized_file_mutation;
 mod authorized_git_integration;
 mod clock;
@@ -26,6 +27,7 @@ mod task_lease_registry;
 mod transactional_file;
 mod transport;
 
+pub use approval_broker::{ApprovalBroker, ApprovalBrokerError, ApprovalSpec};
 pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
 pub use authorized_git_integration::{
     AuthorizedGitIntegrationError, AuthorizedGitIntegrationService,
