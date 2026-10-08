@@ -125,7 +125,9 @@ impl Effect {
     pub const fn requires_task_lease(&self) -> bool {
         matches!(
             self,
-            Self::FileWrite { .. }
+            Self::FileRead { .. }
+                | Self::FileSearch { .. }
+                | Self::FileWrite { .. }
                 | Self::FileDelete { .. }
                 | Self::GitIntegrationObserve
                 | Self::GitIntegrate { .. }

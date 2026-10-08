@@ -9,9 +9,9 @@ use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
     BoundedFileSystem, Clock, EntryKind, FileSystemError, GitIntegrationAuthoritySet,
-    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError, TransportGuard,
-    TransportLimits,
+    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, ReadAuthoritySet,
+    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError,
+    TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -42,6 +42,7 @@ pub struct ReadonlyMcpServer {
     pub(crate) approvals: Arc<ApprovalBroker>,
     pub(crate) tool_profiles: Option<Arc<ToolProfileRegistry>>,
     pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
+    pub(crate) read_authorities: Arc<ReadAuthoritySet>,
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
     pub(crate) git_service: Option<Arc<GitReadService>>,
@@ -293,6 +294,7 @@ impl ReadonlyMcpServer {
             approvals,
             tool_profiles,
             process_leases: Arc::new(process_leases),
+            read_authorities: Arc::new(ReadAuthoritySet::default()),
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),
             git_service,
@@ -304,6 +306,14 @@ impl ReadonlyMcpServer {
     #[must_use]
     pub const fn limits(&self) -> HardLimits {
         self.limits
+    }
+
+    /// Installs application-owned read/search leases before the server is exposed.
+    /// This consumes the server so authority cannot be swapped on a live instance.
+    #[must_use]
+    pub fn with_read_authorities(mut self, read_authorities: ReadAuthoritySet) -> Self {
+        self.read_authorities = Arc::new(read_authorities);
+        self
     }
 
     /// Reports only whether application-owned Git integration authority and its
@@ -498,12 +508,23 @@ impl ReadonlyMcpServer {
         effect: Effect,
         now: optic_bridge_core::MonotonicTime,
     ) -> Result<(), ErrorData> {
+        let capability = effect
+            .required_capability()
+            .ok_or_else(|| ErrorData::invalid_request("optic.policy_denied", None))?;
+        let lease_id = self
+            .read_authorities
+            .lease_for(capability)
+            .ok_or_else(|| ErrorData::invalid_request("optic.policy_denied", None))?;
+        let lease = self
+            .task_leases
+            .get_active(lease_id, &self.session, now)
+            .map_err(|_| ErrorData::invalid_request("optic.policy_denied", None))?;
         let action_id = ActionId::generate()
             .map_err(|_| ErrorData::internal_error("optic.action_id_unavailable", None))?;
         let envelope = ActionEnvelope {
             action_id,
             session: self.session.clone(),
-            task_lease: None,
+            task_lease: Some(lease.id.clone()),
             effect,
             resources: ResourceBudget {
                 timeout_ms: self.limits.max_request_duration_ms,
@@ -514,7 +535,7 @@ impl ReadonlyMcpServer {
             policy_epoch: grant.policy_epoch,
         };
 
-        match self.policy.evaluate(&envelope, grant, None, now) {
+        match self.policy.evaluate(&envelope, grant, Some(&lease), now) {
             PolicyDecision::Allow => Ok(()),
             PolicyDecision::RequireApproval(_) | PolicyDecision::Deny(_) => {
                 Err(ErrorData::invalid_request("optic.policy_denied", None))
@@ -719,8 +740,8 @@ mod tests {
 
     use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId};
     use optic_bridge_runtime::{
-        ApprovalBrokerError, ApprovalSpec, GitIntegrationAuthoritySpec,
-        git_integration_resource_budget,
+        ApprovalBrokerError, ApprovalSpec, GitIntegrationAuthoritySpec, ReadAuthoritySet,
+        ReadAuthoritySpec, git_integration_resource_budget, read_authority_resource_budget,
     };
 
     use super::*;
@@ -754,8 +775,32 @@ mod tests {
         };
         let sessions = Arc::new(SessionRegistry::new());
         sessions.register(grant).expect("register session");
-        ReadonlyMcpServer::new(root, sessions, session, clock, HardLimits::default())
-            .expect("build server")
+        let limits = HardLimits::default();
+        let server = ReadonlyMcpServer::new(root, sessions, session.clone(), clock, limits)
+            .expect("build server");
+        let spec = ReadAuthoritySpec {
+            search_metadata: if capabilities.contains(&Capability::FileSearch) {
+                BTreeSet::from([optic_bridge_core::SearchMetadataScope::all()])
+            } else {
+                BTreeSet::new()
+            },
+            read_content: if capabilities.contains(&Capability::FileRead) {
+                BTreeSet::from([optic_bridge_core::ReadContentScope::all()])
+            } else {
+                BTreeSet::new()
+            },
+            read_sensitive: BTreeSet::new(),
+        };
+        let read_authorities = ReadAuthoritySet::provision(
+            &server.task_leases,
+            &session,
+            &spec,
+            read_authority_resource_budget(limits),
+            MonotonicTime::from_millis(1_000),
+            1,
+        )
+        .expect("provision read authority");
+        server.with_read_authorities(read_authorities)
     }
 
     #[tokio::test]
@@ -805,6 +850,39 @@ mod tests {
                 .expect_err("session cancellation must remove its approval"),
             ApprovalBrokerError::UnknownApproval
         );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn file_read_capability_without_application_owned_read_lease_is_denied() {
+        let root = workspace("read-no-lease");
+        fs::write(root.join("hello.bin"), b"hello").expect("write fixture");
+        let clock: Arc<dyn Clock> = Arc::new(FixedClock(MonotonicTime::from_millis(10)));
+        let session = SessionHandle::generate().expect("test entropy");
+        let grant = SessionGrant {
+            handle: session.clone(),
+            principal: PrincipalId::new("test-principal").expect("principal"),
+            project: ProjectId::new("test-project").expect("project"),
+            capabilities: BTreeSet::from([Capability::FileRead]),
+            expires_at: MonotonicTime::from_millis(1_000),
+            policy_epoch: 1,
+        };
+        let sessions = Arc::new(SessionRegistry::new());
+        sessions.register(grant).expect("register session");
+        let server = ReadonlyMcpServer::new(&root, sessions, session, clock, HardLimits::default())
+            .expect("build server");
+
+        assert!(
+            server
+                .fs_read(Parameters(FsReadRequest {
+                    path: "hello.bin".to_owned(),
+                    offset: None,
+                    max_bytes: Some(5),
+                }))
+                .await
+                .is_err()
+        );
+
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

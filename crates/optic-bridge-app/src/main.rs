@@ -20,9 +20,10 @@ use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
     GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService,
-    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionGrantSpec,
-    SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
-    TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
+    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, ReadAuthoritySet,
+    ReadAuthoritySpec, SessionGrantSpec, SessionLifecycleManager, SessionRegistry, StdClock,
+    TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
+    mutation_resource_budget, read_authority_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -203,6 +204,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
     let session = grant.handle;
 
+    let read_authorities = ReadAuthoritySet::provision(
+        &task_leases,
+        &session,
+        &ReadAuthoritySpec::workspace_all_non_sensitive(),
+        read_authority_resource_budget(limits),
+        expires_at,
+        1,
+    )?;
+
     // C5E keeps the first production minting path deliberately profile-specific:
     // only exact operator-selected Node interpreters may receive eligibility.
     let process_leases = provision_process_leases(
@@ -301,7 +311,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         git_service,
         git_integration_service,
         git_integration_authorities,
-    )?;
+    )?
+    .with_read_authorities(read_authorities);
     let git_integrate_authority_ready = server.git_integration_authority_ready();
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
