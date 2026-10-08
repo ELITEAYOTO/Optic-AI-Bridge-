@@ -20,6 +20,7 @@ mod mutation;
 mod mutation_authority;
 mod process;
 mod process_authority;
+mod read_authority;
 mod recovery;
 mod session_lifecycle;
 mod session_registry;
@@ -66,6 +67,9 @@ pub use process::{
     ProcessStream,
 };
 pub use process_authority::{ProcessAuthority, ProcessAuthorityError, ProcessExecutableIdentity};
+pub use read_authority::{
+    ReadAuthorityError, ReadAuthoritySet, ReadAuthoritySpec, read_authority_resource_budget,
+};
 pub use recovery::{
     JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
     RecoveryReport,
