@@ -572,6 +572,7 @@ impl ReadonlyMcpServer {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FsReadRequest {
     pub path: String,
     pub offset: Option<u64>,
@@ -589,6 +590,7 @@ pub struct FsReadResponse {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FsListRequest {
     pub path: Option<String>,
     pub cursor: Option<u64>,

@@ -208,6 +208,7 @@ impl ReadonlyMcpServer {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GitDiffRequest {
     pub path: Option<String>,
     pub staged: Option<bool>,
@@ -228,12 +229,14 @@ pub struct GitDiffResponse {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GitLogRequest {
     pub cursor: Option<GitLogCursorRequest>,
     pub limit: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GitLogCursorRequest {
     pub head: String,
     pub offset: u64,
