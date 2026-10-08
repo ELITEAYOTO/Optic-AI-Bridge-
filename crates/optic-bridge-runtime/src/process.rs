@@ -48,8 +48,33 @@ const ISOLATION_LAUNCHER_MAX_READ_FILES: usize = 32;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_FAILURE_EXIT: i32 = 126;
 #[cfg(windows)]
-const ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT: [&str; 4] =
-    ["SystemRoot", "LOCALAPPDATA", "TEMP", "TMP"];
+fn isolation_launcher_environment_from<F>(
+    mut lookup: F,
+) -> Result<Vec<(&'static str, OsString)>, ProcessError>
+where
+    F: FnMut(&str) -> Option<OsString>,
+{
+    let system_root =
+        lookup("SystemRoot").ok_or(ProcessError::IsolationEnvironmentUnavailable("SystemRoot"))?;
+    let local_appdata = lookup("LOCALAPPDATA").ok_or(
+        ProcessError::IsolationEnvironmentUnavailable("LOCALAPPDATA"),
+    )?;
+    let temp = lookup("TEMP");
+    let tmp = lookup("TMP");
+    let fallback = temp
+        .clone()
+        .or_else(|| tmp.clone())
+        .ok_or(ProcessError::IsolationEnvironmentUnavailable("TEMP/TMP"))?;
+    let temp = temp.unwrap_or_else(|| fallback.clone());
+    let tmp = tmp.unwrap_or(fallback);
+
+    Ok(vec![
+        ("SystemRoot", system_root),
+        ("LOCALAPPDATA", local_appdata),
+        ("TEMP", temp),
+        ("TMP", tmp),
+    ])
+}
 
 #[cfg(windows)]
 #[derive(Debug)]
@@ -637,14 +662,7 @@ impl ProcessManager {
     fn resolve_isolation_launcher_environment(
         &self,
     ) -> Result<Vec<(&'static str, OsString)>, ProcessError> {
-        ISOLATION_LAUNCHER_BASELINE_ENVIRONMENT
-            .into_iter()
-            .map(|name| {
-                std::env::var_os(name)
-                    .map(|value| (name, value))
-                    .ok_or(ProcessError::IsolationEnvironmentUnavailable(name))
-            })
-            .collect()
+        isolation_launcher_environment_from(|name| std::env::var_os(name))
     }
 
     #[cfg(windows)]
@@ -1261,6 +1279,53 @@ mod tests {
                 Err(ProcessError::IsolationUnavailable)
             ));
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn isolation_launcher_environment_accepts_temp_without_tmp() {
+        let environment = isolation_launcher_environment_from(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\optic\AppData\Local")),
+            "TEMP" => Some(OsString::from(r"C:\Users\optic\AppData\Local\Temp")),
+            "TMP" => None,
+            _ => None,
+        })
+        .expect("TEMP should satisfy the temp alias requirement");
+
+        assert_eq!(environment[2].1, environment[3].1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn isolation_launcher_environment_accepts_tmp_without_temp() {
+        let environment = isolation_launcher_environment_from(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\optic\AppData\Local")),
+            "TEMP" => None,
+            "TMP" => Some(OsString::from(r"C:\Temp")),
+            _ => None,
+        })
+        .expect("TMP should satisfy the temp alias requirement");
+
+        assert_eq!(environment[2].1, environment[3].1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn isolation_launcher_environment_requires_one_temp_alias() {
+        let error = isolation_launcher_environment_from(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\optic\AppData\Local")),
+            "TEMP" | "TMP" => None,
+            _ => None,
+        })
+        .expect_err("missing TEMP and TMP must fail closed");
+
+        assert!(matches!(
+            error,
+            ProcessError::IsolationEnvironmentUnavailable("TEMP/TMP")
+        ));
     }
 
     #[test]

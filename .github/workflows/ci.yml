@@ -59,6 +59,34 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: cargo build --locked -p optic-bridge-app -j 1
+      - name: Smoke isolated Node doctor with TEMP-only environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $workspace = Join-Path $env:GITHUB_WORKSPACE 'target\isolated-node-temp-only-doctor'
+          if (Test-Path -LiteralPath $workspace) { Remove-Item -LiteralPath $workspace -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          $savedTmp = $env:TMP
+          try {
+            Remove-Item Env:TMP -ErrorAction SilentlyContinue
+            if ([string]::IsNullOrWhiteSpace($env:TEMP)) {
+              throw 'Windows runner unexpectedly has no TEMP variable.'
+            }
+            .\scripts\Test-OpticAIBridge.ps1 `
+              -BridgePath '.\target\debug\optic-bridge.exe' `
+              -Workspace $workspace `
+              -IsolationLauncherPath '.\target\debug\optic-bridge-isolation-launcher.exe' `
+              -IsolatedNodePath $node
+          }
+          finally {
+            if ($null -eq $savedTmp) {
+              Remove-Item Env:TMP -ErrorAction SilentlyContinue
+            }
+            else {
+              $env:TMP = $savedTmp
+            }
+          }
       - name: Smoke real isolated Node MCP admission
         if: runner.os == 'Windows'
         shell: pwsh
