@@ -44,10 +44,7 @@ fn where_executable(name: &str) -> Option<PathBuf> {
 }
 
 fn rustup_which(name: &str) -> Option<PathBuf> {
-    let output = Command::new("rustup")
-        .args(["which", name])
-        .output()
-        .ok()?;
+    let output = Command::new("rustup").args(["which", name]).output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -208,8 +205,14 @@ async fn runtime_dependencies_are_characterized_without_new_authority() {
     if require_hosted {
         assert!(cargo_proxy.is_some(), "Windows CI must provide cargo proxy");
         assert!(rustc_proxy.is_some(), "Windows CI must provide rustc proxy");
-        assert!(cargo_direct.is_some(), "rustup must resolve the active cargo binary");
-        assert!(rustc_direct.is_some(), "rustup must resolve the active rustc binary");
+        assert!(
+            cargo_direct.is_some(),
+            "rustup must resolve the active cargo binary"
+        );
+        assert!(
+            rustc_direct.is_some(),
+            "rustup must resolve the active rustc binary"
+        );
     }
 
     if let (Some(proxy), Some(direct)) = (&cargo_proxy, &cargo_direct) {
@@ -219,13 +222,8 @@ async fn runtime_dependencies_are_characterized_without_new_authority() {
             direct,
             proxy == direct
         );
-        let outcome = run_startup_probe(
-            &manager,
-            &session,
-            direct,
-            vec!["--version".to_owned()],
-        )
-        .await;
+        let outcome =
+            run_startup_probe(&manager, &session, direct, vec!["--version".to_owned()]).await;
         print_probe("cargo_direct_startup", direct, &outcome);
     }
 
@@ -236,13 +234,8 @@ async fn runtime_dependencies_are_characterized_without_new_authority() {
             direct,
             proxy == direct
         );
-        let outcome = run_startup_probe(
-            &manager,
-            &session,
-            direct,
-            vec!["--version".to_owned()],
-        )
-        .await;
+        let outcome =
+            run_startup_probe(&manager, &session, direct, vec!["--version".to_owned()]).await;
         print_probe("rustc_direct_startup", direct, &outcome);
     }
 
