@@ -4,10 +4,14 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[cfg(windows)]
+use crate::windows_path::windows_path_is_within;
 use optic_bridge_core::{
     ContentVersion, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
     WorkspacePathError,
 };
+#[cfg(windows)]
+use optic_bridge_windows::{WindowsFileError, inspect_directory_no_reparse, open_file_no_reparse};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -17,6 +21,8 @@ pub struct BoundedFileSystem {
     max_mutation_bytes: u64,
     max_list_page_entries: usize,
     max_directory_scan_entries: usize,
+    #[cfg(windows)]
+    windows_root_final_path: PathBuf,
 }
 
 impl BoundedFileSystem {
@@ -70,6 +76,8 @@ impl BoundedFileSystem {
         if !root.is_dir() {
             return Err(FileSystemError::RootNotDirectory);
         }
+        #[cfg(windows)]
+        let windows_root_final_path = inspect_directory_no_reparse(&root)?.final_path;
 
         Ok(Self {
             root,
@@ -79,6 +87,8 @@ impl BoundedFileSystem {
                 .map_err(|_| FileSystemError::InvalidLimits)?,
             max_directory_scan_entries: usize::try_from(max_directory_scan_entries)
                 .map_err(|_| FileSystemError::InvalidLimits)?,
+            #[cfg(windows)]
+            windows_root_final_path,
         })
     }
 
@@ -95,8 +105,53 @@ impl BoundedFileSystem {
         let buffer_len =
             usize::try_from(requested).map_err(|_| FileSystemError::ReadLimitExceeded)?;
 
-        let resolved = self.resolve_existing(path)?;
-        let mut file = File::open(&resolved).map_err(FileSystemError::Io)?;
+        #[cfg(windows)]
+        {
+            self.read_windows(path, offset, buffer_len)
+        }
+
+        #[cfg(not(windows))]
+        {
+            let resolved = self.resolve_existing(path)?;
+            let mut file = File::open(&resolved).map_err(FileSystemError::Io)?;
+            let metadata = file.metadata().map_err(FileSystemError::Io)?;
+            if !metadata.is_file() {
+                return Err(FileSystemError::NotFile);
+            }
+            if offset > metadata.len() {
+                return Err(FileSystemError::OffsetOutOfRange);
+            }
+
+            file.seek(SeekFrom::Start(offset))
+                .map_err(FileSystemError::Io)?;
+            let mut bytes = vec![0_u8; buffer_len];
+            let read = file.read(&mut bytes).map_err(FileSystemError::Io)?;
+            bytes.truncate(read);
+
+            let read = u64::try_from(read).map_err(|_| FileSystemError::ReadLimitExceeded)?;
+            let next_offset = offset.saturating_add(read);
+            Ok(FsReadChunk {
+                bytes,
+                offset,
+                next_offset,
+                eof: next_offset >= metadata.len(),
+            })
+        }
+    }
+
+    #[cfg(windows)]
+    fn read_windows(
+        &self,
+        path: &WorkspacePath,
+        offset: u64,
+        buffer_len: usize,
+    ) -> Result<FsReadChunk, FileSystemError> {
+        let candidate = self.join_workspace_path(path);
+        let mut opened = open_file_no_reparse(&candidate)?;
+        if !windows_path_is_within(&self.windows_root_final_path, opened.final_path()) {
+            return Err(FileSystemError::OutsideWorkspace);
+        }
+        let file = opened.file_mut();
         let metadata = file.metadata().map_err(FileSystemError::Io)?;
         if !metadata.is_file() {
             return Err(FileSystemError::NotFile);
@@ -104,13 +159,11 @@ impl BoundedFileSystem {
         if offset > metadata.len() {
             return Err(FileSystemError::OffsetOutOfRange);
         }
-
         file.seek(SeekFrom::Start(offset))
             .map_err(FileSystemError::Io)?;
         let mut bytes = vec![0_u8; buffer_len];
         let read = file.read(&mut bytes).map_err(FileSystemError::Io)?;
         bytes.truncate(read);
-
         let read = u64::try_from(read).map_err(|_| FileSystemError::ReadLimitExceeded)?;
         let next_offset = offset.saturating_add(read);
         Ok(FsReadChunk {
@@ -426,6 +479,9 @@ pub enum FileSystemError {
     OffsetOutOfRange,
     #[error("directory entry cannot be represented as UTF-8")]
     NonUtf8Name,
+    #[cfg(windows)]
+    #[error("Windows handle-first filesystem operation failed: {0}")]
+    Windows(#[from] WindowsFileError),
     #[error("filesystem operation failed: {0}")]
     Io(std::io::Error),
 }

@@ -718,6 +718,8 @@ fn map_filesystem_error(error: FileSystemError) -> ErrorData {
         | FileSystemError::Path(_)
         | FileSystemError::NonUtf8Name
         | FileSystemError::Io(_) => ErrorData::internal_error("optic.filesystem_error", None),
+        #[cfg(windows)]
+        FileSystemError::Windows(_) => ErrorData::internal_error("optic.filesystem_error", None),
     }
 }
 

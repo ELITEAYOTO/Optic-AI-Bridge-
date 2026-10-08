@@ -11,6 +11,8 @@ use std::{
 use optic_bridge_core::{ActionId, ContentVersion, ExpectedState, HardLimits, WorkspacePath};
 use thiserror::Error;
 
+#[cfg(windows)]
+use crate::windows_path::windows_path_is_within;
 use crate::{BoundedFileSystem, FileSystemError, MutationError};
 
 #[cfg(windows)]
@@ -562,26 +564,6 @@ fn absolute_workspace_path(root: &Path, path: &WorkspacePath) -> PathBuf {
         absolute.push(segment);
     }
     absolute
-}
-
-#[cfg(windows)]
-fn windows_path_is_within(root: &Path, candidate: &Path) -> bool {
-    fn key(path: &Path) -> String {
-        path.as_os_str()
-            .to_string_lossy()
-            .replace('/', "\\")
-            .trim_end_matches('\\')
-            .to_lowercase()
-    }
-
-    let root = key(root);
-    let candidate = key(candidate);
-    if candidate == root {
-        return true;
-    }
-    candidate
-        .strip_prefix(&root)
-        .is_some_and(|suffix| suffix.starts_with('\\'))
 }
 
 #[derive(Debug, Error)]
