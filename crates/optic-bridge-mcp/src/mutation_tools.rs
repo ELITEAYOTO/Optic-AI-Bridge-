@@ -156,6 +156,7 @@ impl ReadonlyMcpServer {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FsWriteRequest {
     pub path: String,
     pub content_base64: String,
@@ -163,16 +164,16 @@ pub struct FsWriteRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExpectedStateRequest {
-    Absent,
+    Absent {},
     Content { version_hex: String },
 }
 
 impl ExpectedStateRequest {
     fn into_expected_state(self) -> Result<ExpectedState, ErrorData> {
         match self {
-            Self::Absent => Ok(ExpectedState::Absent),
+            Self::Absent {} => Ok(ExpectedState::Absent),
             Self::Content { version_hex } => {
                 parse_content_version(&version_hex).map(ExpectedState::Content)
             }
@@ -181,6 +182,7 @@ impl ExpectedStateRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FsApplyPatchRequest {
     pub path: String,
     pub expected_version: String,
@@ -190,6 +192,7 @@ pub struct FsApplyPatchRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FsDeleteRequest {
     pub path: String,
     pub expected_version: String,
@@ -419,7 +422,7 @@ mod tests {
     #[test]
     fn expected_state_request_is_never_blind() {
         assert!(matches!(
-            ExpectedStateRequest::Absent
+            ExpectedStateRequest::Absent {}
                 .into_expected_state()
                 .expect("absent"),
             ExpectedState::Absent

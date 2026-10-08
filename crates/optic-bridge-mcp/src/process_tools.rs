@@ -683,6 +683,7 @@ fn process_status_name(status: ProcessStatus) -> &'static str {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessStartRequest {
     pub executable: String,
     #[serde(default)]
@@ -710,6 +711,7 @@ pub enum ProcessStreamRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessReadRequest {
     pub job_id: String,
     pub stream: ProcessStreamRequest,
@@ -728,6 +730,7 @@ pub struct ProcessReadResponse {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessJobRequest {
     pub job_id: String,
 }
