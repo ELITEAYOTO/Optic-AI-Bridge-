@@ -15,6 +15,7 @@ mod filesystem;
 mod git_integrate;
 mod git_integration_authority;
 mod git_read;
+mod hardened_command;
 mod journaled_mutation;
 mod mutation;
 mod mutation_authority;
@@ -50,6 +51,9 @@ pub use git_integration_authority::{
 pub use git_read::{
     GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
     GitStatusSnapshot,
+};
+pub use hardened_command::{
+    HardenedCommandError, HardenedCommandOutput, HardenedCommandRunner, HardenedCommandSpec,
 };
 pub use journaled_mutation::{
     JournaledDeleteCommit, JournaledMutationCommit, JournaledMutationError,

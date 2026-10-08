@@ -1,23 +1,24 @@
 use std::{
+    collections::BTreeMap,
     ffi::OsString,
-    fs,
-    io::{self, Read},
+    fs, io,
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    thread,
-    time::{Duration, Instant},
+    process::ExitStatus,
+    time::Duration,
 };
 
 use optic_bridge_core::{GitObjectId, GitObjectIdError, HardLimits, WorkspacePath};
 use thiserror::Error;
 
+use crate::{
+    HardenedCommandError, HardenedCommandOutput, HardenedCommandRunner, HardenedCommandSpec,
+};
+
 const REPOSITORY_PROBE_BYTES: u64 = 16 * 1024;
-const PIPE_READ_CHUNK_BYTES: usize = 8 * 1024;
-const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(5);
+#[cfg(windows)]
+const NULL_CONFIG_PATH: &str = "NUL";
+#[cfg(not(windows))]
+const NULL_CONFIG_PATH: &str = "/dev/null";
 
 #[derive(Debug)]
 pub struct GitReadService {
@@ -25,7 +26,7 @@ pub struct GitReadService {
     git_executable: PathBuf,
     max_read_bytes: u64,
     max_log_entries: u32,
-    command_timeout: Duration,
+    runner: HardenedCommandRunner,
 }
 
 impl GitReadService {
@@ -56,7 +57,10 @@ impl GitReadService {
             git_executable,
             max_read_bytes: limits.max_git_read_bytes,
             max_log_entries: limits.max_git_log_entries,
-            command_timeout: Duration::from_millis(limits.max_request_duration_ms),
+            runner: HardenedCommandRunner::new(Duration::from_millis(
+                limits.max_request_duration_ms,
+            ))
+            .map_err(|_| GitReadError::InvalidLimits)?,
         };
         service.validate_repository_root()?;
         Ok(service)
@@ -262,7 +266,7 @@ impl GitReadService {
         &self,
         args: &[OsString],
         output_limit: u64,
-    ) -> Result<BoundedGitOutput, GitReadError> {
+    ) -> Result<HardenedCommandOutput, GitReadError> {
         let output = self.run_command(args, output_limit)?;
         if !output.status.success() {
             return Err(command_failed(output.status, &output.stderr));
@@ -274,83 +278,28 @@ impl GitReadService {
         &self,
         args: &[OsString],
         output_limit: u64,
-    ) -> Result<BoundedGitOutput, GitReadError> {
+    ) -> Result<HardenedCommandOutput, GitReadError> {
         if output_limit == 0 {
             return Err(GitReadError::ZeroRequestLimit);
         }
 
-        let mut command = Command::new(&self.git_executable);
-        command
-            .arg("--no-pager")
-            .arg("--literal-pathspecs")
-            .arg("-c")
-            .arg("core.fsmonitor=false")
-            .arg("-c")
-            .arg("core.untrackedCache=false")
-            .arg("-C")
-            .arg(&self.repository_root)
-            .args(args)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_PAGER", "cat")
-            .env("PAGER", "cat")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = command.spawn()?;
-        let stdout = child.stdout.take().ok_or(GitReadError::MissingChildPipe)?;
-        let stderr = child.stderr.take().ok_or(GitReadError::MissingChildPipe)?;
-        let total = Arc::new(AtomicU64::new(0));
-        let exceeded = Arc::new(AtomicBool::new(false));
-        let stdout_reader = spawn_bounded_reader(
-            stdout,
-            Arc::clone(&total),
-            Arc::clone(&exceeded),
+        let mut command_args = os_args([
+            "--no-pager",
+            "--literal-pathspecs",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+        ]);
+        command_args.extend(args.iter().cloned());
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args: command_args,
+            env: git_read_environment(),
             output_limit,
-        );
-        let stderr_reader =
-            spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), output_limit);
-
-        let started = Instant::now();
-        let mut timed_out = false;
-        let status = loop {
-            if exceeded.load(Ordering::Acquire) {
-                let _ = child.kill();
-                break child.wait()?;
-            }
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            if started.elapsed() >= self.command_timeout {
-                timed_out = true;
-                let _ = child.kill();
-                break child.wait()?;
-            }
-            thread::sleep(CHILD_POLL_INTERVAL);
         };
-
-        let stdout = stdout_reader
-            .join()
-            .map_err(|_| GitReadError::ReaderThreadPanicked)??;
-        let stderr = stderr_reader
-            .join()
-            .map_err(|_| GitReadError::ReaderThreadPanicked)??;
-
-        if timed_out {
-            return Err(GitReadError::CommandTimedOut);
-        }
-        if exceeded.load(Ordering::Acquire) {
-            return Err(GitReadError::OutputLimitExceeded {
-                limit: output_limit,
-            });
-        }
-
-        Ok(BoundedGitOutput {
-            status,
-            stdout,
-            stderr,
-        })
+        self.runner.run(&spec).map_err(map_runner_error)
     }
 }
 
@@ -383,12 +332,6 @@ pub struct GitLogPage {
     pub snapshot_head: Option<GitObjectId>,
     pub entries: Vec<GitLogEntry>,
     pub next_cursor: Option<GitLogCursor>,
-}
-
-struct BoundedGitOutput {
-    status: ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
 }
 
 #[derive(Debug, Error)]
@@ -485,31 +428,37 @@ fn parse_log_entries(bytes: &[u8]) -> Result<Vec<GitLogEntry>, GitReadError> {
     Ok(entries)
 }
 
-fn spawn_bounded_reader<R: Read + Send + 'static>(
-    mut reader: R,
-    total: Arc<AtomicU64>,
-    exceeded: Arc<AtomicBool>,
-    limit: u64,
-) -> thread::JoinHandle<Result<Vec<u8>, io::Error>> {
-    thread::spawn(move || {
-        let mut captured = Vec::new();
-        let mut buffer = [0_u8; PIPE_READ_CHUNK_BYTES];
-        loop {
-            let read = reader.read(&mut buffer)?;
-            if read == 0 {
-                break;
-            }
-            let read_u64 = read as u64;
-            let previous = total.fetch_add(read_u64, Ordering::AcqRel);
-            let remaining = limit.saturating_sub(previous);
-            let accepted = remaining.min(read_u64) as usize;
-            captured.extend_from_slice(&buffer[..accepted]);
-            if read_u64 > remaining {
-                exceeded.store(true, Ordering::Release);
-            }
+fn git_read_environment() -> BTreeMap<OsString, OsString> {
+    [
+        ("GIT_OPTIONAL_LOCKS", "0"),
+        ("GIT_TERMINAL_PROMPT", "0"),
+        ("GIT_PAGER", "cat"),
+        ("PAGER", "cat"),
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_GLOBAL", NULL_CONFIG_PATH),
+        ("GIT_NO_REPLACE_OBJECTS", "1"),
+        ("GIT_ATTR_NOSYSTEM", "1"),
+        ("LC_ALL", "C"),
+    ]
+    .into_iter()
+    .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+    .collect()
+}
+
+fn map_runner_error(error: HardenedCommandError) -> GitReadError {
+    match error {
+        HardenedCommandError::TimedOut => GitReadError::CommandTimedOut,
+        HardenedCommandError::OutputLimitExceeded { limit } => {
+            GitReadError::OutputLimitExceeded { limit }
         }
-        Ok(captured)
-    })
+        HardenedCommandError::MissingChildPipe => GitReadError::MissingChildPipe,
+        HardenedCommandError::ReaderThreadPanicked => GitReadError::ReaderThreadPanicked,
+        HardenedCommandError::Io(error) => GitReadError::Io(error),
+        HardenedCommandError::ExecutableMustBeAbsolute
+        | HardenedCommandError::WorkingDirectoryMustBeAbsolute
+        | HardenedCommandError::ZeroOutputLimit
+        | HardenedCommandError::ZeroTimeout => GitReadError::InvalidLimits,
+    }
 }
 
 fn command_failed(status: ExitStatus, stderr: &[u8]) -> GitReadError {
@@ -521,7 +470,7 @@ fn command_failed(status: ExitStatus, stderr: &[u8]) -> GitReadError {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, ffi::OsStr, sync::Arc};
+    use std::{env, ffi::OsStr, process::Command, sync::Arc, thread};
 
     use optic_bridge_core::ActionId;
 
@@ -620,6 +569,23 @@ mod tests {
 
     fn path(value: &str) -> WorkspacePath {
         WorkspacePath::parse(value).expect("workspace path")
+    }
+
+    #[test]
+    fn git_read_environment_is_explicit_and_excludes_user_search_paths() {
+        let env = git_read_environment();
+        assert_eq!(
+            env.get(&OsString::from("GIT_CONFIG_NOSYSTEM")),
+            Some(&OsString::from("1"))
+        );
+        assert_eq!(
+            env.get(&OsString::from("GIT_CONFIG_GLOBAL")),
+            Some(&OsString::from(NULL_CONFIG_PATH))
+        );
+        assert!(!env.contains_key(&OsString::from("PATH")));
+        assert!(!env.contains_key(&OsString::from("HOME")));
+        assert!(!env.contains_key(&OsString::from("HTTP_PROXY")));
+        assert!(!env.contains_key(&OsString::from("HTTPS_PROXY")));
     }
 
     #[test]
