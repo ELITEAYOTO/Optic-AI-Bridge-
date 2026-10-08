@@ -387,6 +387,12 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         ProcessError::ProcessMemoryCapacityExceededForSession => {
             ErrorData::internal_error("optic.process_session_memory_capacity_exceeded", None)
         }
+        ProcessError::HostMemoryUnavailable => {
+            ErrorData::internal_error("optic.process_host_memory_unavailable", None)
+        }
+        ProcessError::HostMemoryHeadroomExceeded => {
+            ErrorData::internal_error("optic.process_host_memory_headroom_exceeded", None)
+        }
         ProcessError::CpuCapacityExceeded => {
             ErrorData::internal_error("optic.process_cpu_capacity_exceeded", None)
         }
@@ -647,6 +653,18 @@ mod tests {
         assert_eq!(
             map_process_error(ProcessError::ProcessMemoryCapacityExceeded).message,
             "optic.process_memory_capacity_exceeded"
+        );
+    }
+
+    #[test]
+    fn host_memory_headroom_errors_have_distinct_mcp_codes() {
+        assert_eq!(
+            map_process_error(ProcessError::HostMemoryUnavailable).message,
+            "optic.process_host_memory_unavailable"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::HostMemoryHeadroomExceeded).message,
+            "optic.process_host_memory_headroom_exceeded"
         );
     }
 

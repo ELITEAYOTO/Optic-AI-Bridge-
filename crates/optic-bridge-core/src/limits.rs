@@ -42,6 +42,8 @@ pub struct HardLimits {
     pub max_active_output_ram_bytes_per_session: u64,
     pub max_active_process_memory_bytes: u64,
     pub max_active_process_memory_bytes_per_session: u64,
+    pub min_host_memory_headroom_bytes: u64,
+    pub min_host_memory_headroom_percent: u32,
     pub max_fs_read_bytes: u64,
     pub max_fs_mutation_bytes: u64,
     pub max_mutation_journal_file_bytes: u64,
@@ -75,6 +77,8 @@ impl Default for HardLimits {
             max_active_output_ram_bytes_per_session: 8 * 1024 * 1024,
             max_active_process_memory_bytes: 16 * 1024 * 1024 * 1024,
             max_active_process_memory_bytes_per_session: 8 * 1024 * 1024 * 1024,
+            min_host_memory_headroom_bytes: 1024 * 1024 * 1024,
+            min_host_memory_headroom_percent: 10,
             max_fs_read_bytes: 256 * 1024,
             max_fs_mutation_bytes: 8 * 1024 * 1024,
             max_mutation_journal_file_bytes: 64 * 1024,
@@ -114,6 +118,8 @@ impl HardLimits {
             || self.max_active_output_ram_bytes_per_session == 0
             || self.max_active_process_memory_bytes == 0
             || self.max_active_process_memory_bytes_per_session == 0
+            || self.min_host_memory_headroom_bytes == 0
+            || self.min_host_memory_headroom_percent == 0
             || self.max_fs_read_bytes == 0
             || self.max_fs_mutation_bytes == 0
             || self.max_mutation_journal_file_bytes == 0
@@ -144,6 +150,7 @@ impl HardLimits {
                 > self.max_active_process_memory_bytes
             || self.max_process_budget.memory_bytes
                 > self.max_active_process_memory_bytes_per_session
+            || self.min_host_memory_headroom_percent > 100
             || self.max_process_cpu_percent_per_job > 100
             || self.max_active_process_cpu_percent > 100
             || self.max_active_process_cpu_percent_per_session > 100
@@ -392,6 +399,43 @@ mod tests {
             job_exceeds_session
                 .validate_nonzero()
                 .expect_err("per-job memory must fit session aggregate memory"),
+            LimitError::InvalidRelationship
+        );
+    }
+
+    #[test]
+    fn host_memory_headroom_limits_are_bounded() {
+        let defaults = HardLimits::default();
+        assert_eq!(defaults.min_host_memory_headroom_bytes, 1024 * 1024 * 1024);
+        assert_eq!(defaults.min_host_memory_headroom_percent, 10);
+        assert!(defaults.validate_nonzero().is_ok());
+
+        for limits in [
+            HardLimits {
+                min_host_memory_headroom_bytes: 0,
+                ..defaults
+            },
+            HardLimits {
+                min_host_memory_headroom_percent: 0,
+                ..defaults
+            },
+        ] {
+            assert_eq!(
+                limits
+                    .validate_nonzero()
+                    .expect_err("zero headroom must fail"),
+                LimitError::ZeroIsNotUnlimited
+            );
+        }
+
+        let invalid_percent = HardLimits {
+            min_host_memory_headroom_percent: 101,
+            ..defaults
+        };
+        assert_eq!(
+            invalid_percent
+                .validate_nonzero()
+                .expect_err("headroom percent above 100 must fail"),
             LimitError::InvalidRelationship
         );
     }

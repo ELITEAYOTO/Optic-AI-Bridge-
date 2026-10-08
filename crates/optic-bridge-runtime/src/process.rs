@@ -18,7 +18,10 @@ use optic_bridge_core::{
     WorkspacePath,
 };
 #[cfg(windows)]
-use optic_bridge_windows::{LimitedJobObject, PinnedExecutableFile, open_pinned_executable};
+use optic_bridge_windows::{
+    HostMemorySnapshot, LimitedJobObject, PinnedExecutableFile, open_pinned_executable,
+    query_host_memory_snapshot,
+};
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(unix)]
 use process_wrap::tokio::{KillOnDrop, ProcessGroup};
@@ -81,6 +84,22 @@ where
 struct IsolationLauncher {
     path: PathBuf,
     _pin: PinnedExecutableFile,
+}
+
+#[cfg(windows)]
+trait HostMemoryProvider: std::fmt::Debug + Send + Sync {
+    fn snapshot(&self) -> std::io::Result<HostMemorySnapshot>;
+}
+
+#[cfg(windows)]
+#[derive(Debug)]
+struct WindowsHostMemoryProvider;
+
+#[cfg(windows)]
+impl HostMemoryProvider for WindowsHostMemoryProvider {
+    fn snapshot(&self) -> std::io::Result<HostMemorySnapshot> {
+        query_host_memory_snapshot()
+    }
 }
 
 #[cfg(windows)]
@@ -147,6 +166,8 @@ pub struct ProcessManager {
     allowed_env_vars: BTreeSet<String>,
     #[cfg(windows)]
     isolation_launcher: Option<IsolationLauncher>,
+    #[cfg(windows)]
+    host_memory_provider: Arc<dyn HostMemoryProvider>,
     jobs: Arc<Mutex<JobStore>>,
     sequence: AtomicU64,
 }
@@ -183,6 +204,15 @@ struct JobState {
     exit_code: Option<i32>,
 }
 
+#[cfg(windows)]
+fn effective_host_memory_headroom_bytes(limits: &HardLimits, total_physical_bytes: u64) -> u64 {
+    let proportional = (u128::from(total_physical_bytes)
+        * u128::from(limits.min_host_memory_headroom_percent))
+    .div_ceil(100);
+    let proportional = u64::try_from(proportional).unwrap_or(u64::MAX);
+    limits.min_host_memory_headroom_bytes.max(proportional)
+}
+
 impl ProcessManager {
     pub fn new(
         root: impl AsRef<Path>,
@@ -205,6 +235,8 @@ impl ProcessManager {
             allowed_env_vars,
             #[cfg(windows)]
             isolation_launcher: None,
+            #[cfg(windows)]
+            host_memory_provider: Arc::new(WindowsHostMemoryProvider),
             jobs: Arc::new(Mutex::new(JobStore::default())),
             sequence: AtomicU64::new(0),
         })
@@ -232,6 +264,34 @@ impl ProcessManager {
             _pin: pin,
         });
         Ok(manager)
+    }
+
+    #[cfg(windows)]
+    fn ensure_host_memory_headroom(
+        &self,
+        reserved_memory_bytes: u64,
+        requested_memory_bytes: u64,
+    ) -> Result<(), ProcessError> {
+        let snapshot = self
+            .host_memory_provider
+            .snapshot()
+            .map_err(|_| ProcessError::HostMemoryUnavailable)?;
+        if snapshot.total_physical_bytes == 0
+            || snapshot.available_physical_bytes > snapshot.total_physical_bytes
+        {
+            return Err(ProcessError::HostMemoryUnavailable);
+        }
+
+        let reserve =
+            effective_host_memory_headroom_bytes(&self.limits, snapshot.total_physical_bytes);
+        let required = reserve
+            .checked_add(reserved_memory_bytes)
+            .and_then(|value| value.checked_add(requested_memory_bytes))
+            .ok_or(ProcessError::HostMemoryHeadroomExceeded)?;
+        if snapshot.available_physical_bytes < required {
+            return Err(ProcessError::HostMemoryHeadroomExceeded);
+        }
+        Ok(())
     }
 
     pub fn canonicalize_executable(&self, executable: &str) -> Result<String, ProcessError> {
@@ -800,17 +860,6 @@ impl ProcessManager {
                 .saturating_add(requested_cpu_percent)
                 > self.limits.max_active_process_cpu_percent_per_session;
 
-            if !global_record_limit_reached
-                && !session_record_limit_reached
-                && !global_output_limit_reached
-                && !session_output_limit_reached
-                && !global_memory_limit_reached
-                && !session_memory_limit_reached
-                && !global_cpu_limit_reached
-                && !session_cpu_limit_reached
-            {
-                return Ok(());
-            }
             if session_cpu_limit_reached {
                 return Err(ProcessError::CpuCapacityExceededForSession);
             }
@@ -822,6 +871,17 @@ impl ProcessManager {
             }
             if global_memory_limit_reached {
                 return Err(ProcessError::ProcessMemoryCapacityExceeded);
+            }
+
+            #[cfg(windows)]
+            self.ensure_host_memory_headroom(reserved_memory, requested_memory_bytes)?;
+
+            if !global_record_limit_reached
+                && !session_record_limit_reached
+                && !global_output_limit_reached
+                && !session_output_limit_reached
+            {
+                return Ok(());
             }
 
             // A start request may only retire history owned by the same session.
@@ -1176,6 +1236,10 @@ pub enum ProcessError {
     ProcessMemoryCapacityExceeded,
     #[error("this session's reserved process memory would exceed its hard memory ceiling")]
     ProcessMemoryCapacityExceededForSession,
+    #[error("Windows host-memory telemetry is unavailable")]
+    HostMemoryUnavailable,
+    #[error("starting this process would violate the host-memory emergency headroom")]
+    HostMemoryHeadroomExceeded,
     #[error("reserved process CPU would exceed the hard aggregate Optic CPU ceiling")]
     CpuCapacityExceeded,
     #[error("this session's reserved process CPU would exceed its hard CPU ceiling")]
@@ -1227,6 +1291,42 @@ mod tests {
     use optic_bridge_core::ActionId;
 
     use super::*;
+
+    #[cfg(windows)]
+    #[derive(Clone, Copy, Debug)]
+    enum FakeHostMemoryObservation {
+        Snapshot(HostMemorySnapshot),
+        Error,
+    }
+
+    #[cfg(windows)]
+    #[derive(Debug)]
+    struct FakeHostMemoryProvider {
+        observation: FakeHostMemoryObservation,
+    }
+
+    #[cfg(windows)]
+    impl HostMemoryProvider for FakeHostMemoryProvider {
+        fn snapshot(&self) -> std::io::Result<HostMemorySnapshot> {
+            match self.observation {
+                FakeHostMemoryObservation::Snapshot(snapshot) => Ok(snapshot),
+                FakeHostMemoryObservation::Error => {
+                    Err(std::io::Error::other("fake host-memory failure"))
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn manager_with_host_memory(
+        root: &Path,
+        limits: HardLimits,
+        observation: FakeHostMemoryObservation,
+    ) -> ProcessManager {
+        let mut manager = ProcessManager::new(root, limits, Vec::new()).expect("process manager");
+        manager.host_memory_provider = std::sync::Arc::new(FakeHostMemoryProvider { observation });
+        manager
+    }
 
     fn workspace(label: &str) -> PathBuf {
         let token = ActionId::generate().expect("test entropy").to_token();
@@ -1473,6 +1573,180 @@ mod tests {
             .expect("read stdout");
         assert!(String::from_utf8_lossy(&stdout.bytes).contains("fixture-stdout"));
         assert!(stdout.eof);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_memory_headroom_uses_absolute_or_percent_floor() {
+        let limits = HardLimits::default();
+        let gib = 1024_u64 * 1024 * 1024;
+        assert_eq!(effective_host_memory_headroom_bytes(&limits, 8 * gib), gib);
+        assert_eq!(
+            effective_host_memory_headroom_bytes(&limits, 20 * gib),
+            2 * gib
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_memory_headroom_admission_is_bounded_and_fail_closed() {
+        let root = workspace("host-memory-headroom");
+        let gib = 1024_u64 * 1024 * 1024;
+        let limits = HardLimits::default();
+        let session = SessionHandle::generate().expect("session");
+
+        let manager = manager_with_host_memory(
+            &root,
+            limits,
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 8 * gib,
+                available_physical_bytes: 3 * gib,
+            }),
+        );
+        let mut store = manager.jobs.lock().expect("job store");
+        assert!(
+            manager
+                .prepare_store_for_start(&mut store, &session, 1, 2 * gib, 1)
+                .is_ok()
+        );
+        drop(store);
+
+        let manager = manager_with_host_memory(
+            &root,
+            limits,
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 8 * gib,
+                available_physical_bytes: 3 * gib - 1,
+            }),
+        );
+        let mut store = manager.jobs.lock().expect("job store");
+        assert!(matches!(
+            manager.prepare_store_for_start(&mut store, &session, 1, 2 * gib, 1),
+            Err(ProcessError::HostMemoryHeadroomExceeded)
+        ));
+        drop(store);
+
+        for observation in [
+            FakeHostMemoryObservation::Error,
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 0,
+                available_physical_bytes: 0,
+            }),
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: gib,
+                available_physical_bytes: 2 * gib,
+            }),
+        ] {
+            let manager = manager_with_host_memory(&root, limits, observation);
+            let mut store = manager.jobs.lock().expect("job store");
+            assert!(matches!(
+                manager.prepare_store_for_start(&mut store, &session, 1, 1, 1),
+                Err(ProcessError::HostMemoryUnavailable)
+            ));
+        }
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_memory_headroom_counts_existing_declared_reservations() {
+        let root = workspace("host-memory-reservations");
+        let gib = 1024_u64 * 1024 * 1024;
+        let limits = HardLimits::default();
+        let owner = SessionHandle::generate().expect("owner");
+        let other = SessionHandle::generate().expect("other");
+        let existing_job = JobId::generate().expect("job id");
+
+        for (available, expected_ok) in [(3 * gib, true), (3 * gib - 1, false)] {
+            let manager = manager_with_host_memory(
+                &root,
+                limits,
+                FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                    total_physical_bytes: 8 * gib,
+                    available_physical_bytes: available,
+                }),
+            );
+            let mut store = manager.jobs.lock().expect("job store");
+            store.jobs.insert(
+                existing_job.clone(),
+                synthetic_record(owner.clone(), 0, ProcessStatus::Running, gib, 1),
+            );
+            let result = manager.prepare_store_for_start(&mut store, &other, 1, gib, 1);
+            if expected_ok {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(ProcessError::HostMemoryHeadroomExceeded)
+                ));
+            }
+        }
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_memory_failure_does_not_evict_terminal_history() {
+        let root = workspace("host-memory-no-eviction");
+        let defaults = HardLimits::default();
+        let limits = HardLimits {
+            max_active_process_jobs: 1,
+            max_active_process_jobs_per_session: 1,
+            max_process_records: 1,
+            max_process_records_per_session: 1,
+            ..defaults
+        };
+        let manager = manager_with_host_memory(&root, limits, FakeHostMemoryObservation::Error);
+        let owner = SessionHandle::generate().expect("owner");
+        let terminal_job = JobId::generate().expect("terminal job id");
+        let mut store = manager.jobs.lock().expect("job store");
+        store.jobs.insert(
+            terminal_job.clone(),
+            synthetic_record(owner.clone(), 0, ProcessStatus::Exited, 0, 0),
+        );
+
+        assert!(matches!(
+            manager.prepare_store_for_start(&mut store, &owner, 1, 1, 1),
+            Err(ProcessError::HostMemoryUnavailable)
+        ));
+        assert!(store.jobs.contains_key(&terminal_job));
+        drop(store);
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn declared_memory_capacity_errors_precede_host_telemetry() {
+        let root = workspace("host-memory-precedence");
+        let memory = 64 * 1024 * 1024;
+        let defaults = HardLimits::default();
+        let limits = HardLimits {
+            max_active_process_jobs: 8,
+            max_active_process_jobs_per_session: 8,
+            max_active_process_memory_bytes: memory,
+            max_active_process_memory_bytes_per_session: memory,
+            max_process_budget: ResourceBudget {
+                memory_bytes: memory,
+                ..defaults.max_process_budget
+            },
+            ..defaults
+        };
+        let manager = manager_with_host_memory(&root, limits, FakeHostMemoryObservation::Error);
+        let owner = SessionHandle::generate().expect("owner");
+        let other = SessionHandle::generate().expect("other");
+        let mut store = manager.jobs.lock().expect("job store");
+        store.jobs.insert(
+            JobId::generate().expect("job id"),
+            synthetic_record(owner, 0, ProcessStatus::Running, memory, 1),
+        );
+        assert!(matches!(
+            manager.prepare_store_for_start(&mut store, &other, 1, 1, 1),
+            Err(ProcessError::ProcessMemoryCapacityExceeded)
+        ));
+        drop(store);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
