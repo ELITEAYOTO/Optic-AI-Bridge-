@@ -42,7 +42,13 @@ On Windows, the individual job ceiling remains independently enforced by the Job
 
 Phase 3E2A is merged and validated through PR #103 (`e2b37be0`, exact head `3c765d9e`, CI #410/#411). It adds a Windows-only, point-in-time host physical-memory observation primitive in `optic-bridge-windows`, reporting validated `total_physical_bytes` and `available_physical_bytes` from `GlobalMemoryStatusEx`; the Win32 `unsafe` call remains confined to the platform crate.
 
-3E2A remains deliberately telemetry-only: `ProcessManager` does not consume the snapshot, process admission is unchanged, and no MCP/session/policy authority was added. Phase 3E2B is the current follow-up and will define the conservative emergency-headroom admission rule against a testable provider instead of making runtime tests depend on runner RAM.
+3E2A remains deliberately telemetry-only: `ProcessManager` does not consume the snapshot by itself, and no MCP/session/policy authority was added.
+
+## Phase 3E2B emergency-headroom admission
+
+Phase 3E2B is the current gate. On Windows, `ProcessManager` consumes host-memory observations through a testable provider under the same admission lock used by the 3E1 reservations. The default reserve is `max(1 GiB, 10% of total physical RAM)`. Admission requires current available physical memory to cover that reserve, the full active/uncertain 3E1 declared-memory reservation, and the new job's requested memory budget. This intentionally favors fail-closed headroom over utilization efficiency because Optic does not yet measure each job's actual committed/working-set memory. Provider failure or malformed telemetry fails closed, and host-headroom denial has a stable MCP resource code distinct from the 3E1 aggregate-memory capacity errors.
+
+This remains a point-in-time admission guard, not a guarantee against unrelated processes consuming memory immediately afterward. Heavy-task classes/slots, I/O governance and richer pressure feedback remain separate A-02 work.
 
 ## Cursor model
 
