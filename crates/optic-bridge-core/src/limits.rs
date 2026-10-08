@@ -38,6 +38,7 @@ pub struct HardLimits {
     pub max_sessions: u32,
     pub max_task_leases: u32,
     pub max_task_leases_per_session: u32,
+    pub max_tool_profiles: u32,
     pub max_approval_grants: u32,
     pub max_approval_grants_per_session: u32,
     pub max_active_output_ram_bytes: u64,
@@ -77,6 +78,7 @@ impl Default for HardLimits {
             max_sessions: 16,
             max_task_leases: 128,
             max_task_leases_per_session: 32,
+            max_tool_profiles: 128,
             max_approval_grants: 128,
             max_approval_grants_per_session: 32,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
@@ -122,6 +124,7 @@ impl HardLimits {
             || self.max_sessions == 0
             || self.max_task_leases == 0
             || self.max_task_leases_per_session == 0
+            || self.max_tool_profiles == 0
             || self.max_approval_grants == 0
             || self.max_approval_grants_per_session == 0
             || self.max_active_output_ram_bytes == 0
@@ -215,6 +218,18 @@ mod tests {
     fn hard_limits_reject_zero_concurrency() {
         let limits = HardLimits {
             max_concurrent_requests: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_tool_profile_capacity() {
+        let limits = HardLimits {
+            max_tool_profiles: 0,
             ..HardLimits::default()
         };
         assert_eq!(
