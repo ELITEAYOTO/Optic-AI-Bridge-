@@ -1,6 +1,6 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Last reviewed: 2026-10-07.
+Status: LIVING DOCUMENT. Last reviewed: 2026-10-08.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
@@ -244,7 +244,9 @@ PR #53 merged as `25a40e7` from exact green head `2337651`; post-merge `main` CI
 
 **3C3C2C2B2 exact-file grant lifecycle/wiring (COMPLETED).** PR #76 merged as `8d127a3b` from exact final head `5aaf3957`; exact PR CI #336 and post-merge `main` CI #337 passed Ubuntu, Windows and dependency policy. The isolated helper/runtime can now carry at most 32 exact-file read grants derived only from server-owned `FileRead + WorkspacePrefix` authority. `ProcessManager` resolves only exact regular files and rejects fixed-tool grants, duplicates, directories and out-of-workspace targets. The Windows grant path uses opened workspace/target handles, final-path containment and child-lifetime revoke guards. `WorkspaceAll`, write/directory grants and caller-supplied grant lists remain excluded. Current operator process leases still mint no `FileRead` workspace scopes, so public high-risk policy remains fail-closed.
 
-Later Phase 3C gates remain open: add explicit operator-owned process read-grant provisioning and prove representative toolchain compatibility, then consider selected high-risk policy re-admission. Truthful network containment semantics, broader workspace/write authority and broader sandboxing remain separate gates. Public multi-session orchestration remains behind these safety gates.
+**3C3C2C2C1 operator-owned exact-file process read provisioning (COMPLETED).** PR #78 merged as `70cde40f` from exact green final head `3b871bdf`; CI #347 passed Ubuntu, Windows and dependency policy. Windows startup can explicitly bind exact workspace files to an already-authorized `Interpreter` / `RepositoryCode` executable with `--allow-process-read-file`; only that matching application-owned process lease gains `FileRead + WorkspacePrefix(file)`. Fixed tools, non-Windows provisioning, unsafe/non-file/duplicate/out-of-workspace paths and caller-selected grants fail closed. MCP schemas are unchanged and policy still denies high-risk execution. Validation exposed a separate compatibility issue: ordinary `cmd.exe` / `findstr.exe` did not consume the granted temp-file ACL like the controlled Rust probe, so no broader ACL or policy claim is made.
+
+Later Phase 3C gates remain open: prove representative toolchain compatibility under the real helper/AppContainer path, then consider selected high-risk policy re-admission. Truthful network containment semantics, broader workspace/write authority and broader sandboxing remain separate gates. Public multi-session orchestration remains behind these safety gates.
 
 ## Phase 4 — Same-repository parallelism
 
