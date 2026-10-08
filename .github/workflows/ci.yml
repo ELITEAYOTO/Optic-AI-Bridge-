@@ -49,6 +49,12 @@ jobs:
         run: |
           cargo test --locked -p optic-bridge-app --test toolchain_isolation_compat_windows -- --nocapture
           cargo test --locked -p optic-bridge-app --test toolchain_runtime_dependencies_windows -- --nocapture
+      - name: Prove capability-free AppContainer loopback denial
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPTIC_REQUIRE_HOSTED_TOOLCHAINS: "1"
+        run: cargo test --locked -p optic-bridge-app --test appcontainer_network_isolation_windows -- --nocapture
       - name: Build bridge binary for Git integration MCP smoke
         if: runner.os == 'Windows'
         shell: pwsh
