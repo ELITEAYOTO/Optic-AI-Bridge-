@@ -31,13 +31,32 @@ fn build_process_manager(
     limits: HardLimits,
 ) -> Result<ProcessManager, Box<dyn Error + Send + Sync>> {
     #[cfg(windows)]
-    if let Some(launcher) = discover_isolation_launcher()? {
-        return Ok(ProcessManager::new_with_isolation_launcher(
-            &args.workspace,
-            limits,
-            args.allowed_env.clone(),
-            launcher,
-        )?);
+    {
+        let launcher = discover_isolation_launcher()?;
+        if !args.isolated_node_executables.is_empty() && launcher.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "--allow-isolated-node requires the installed sibling optic-bridge-isolation-launcher.exe",
+            )
+            .into());
+        }
+        if let Some(launcher) = launcher {
+            return Ok(ProcessManager::new_with_isolation_launcher(
+                &args.workspace,
+                limits,
+                args.allowed_env.clone(),
+                launcher,
+            )?);
+        }
+    }
+
+    #[cfg(not(windows))]
+    if !args.isolated_node_executables.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "--allow-isolated-node requires the Windows AppContainer runtime",
+        )
+        .into());
     }
 
     Ok(ProcessManager::new(
@@ -77,6 +96,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &processes,
         &canonical_process_executables,
         &args.process_read_grants,
+    )?;
+    let process_isolation_eligible = canonicalize_isolated_node_eligibility(
+        &processes,
+        &canonical_process_executables,
+        &args.isolated_node_executables,
     )?;
 
     let mutation_spec = MutationAuthoritySpec {
@@ -159,9 +183,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
     let session = grant.handle;
 
-    // C5B keeps strong-isolation eligibility internal-only. Public startup
-    // configuration cannot mint this set yet; C5C owns that explicit boundary.
-    let process_isolation_eligible = BTreeSet::new();
+    // C5E keeps the first production minting path deliberately profile-specific:
+    // only exact operator-selected Node interpreters may receive eligibility.
     let process_leases = provision_process_leases(
         &task_leases,
         &session,
@@ -400,6 +423,61 @@ fn canonicalize_process_read_grants(
     Ok(canonical)
 }
 
+fn canonicalize_isolated_node_eligibility(
+    processes: &ProcessManager,
+    executables: &BTreeMap<String, ProcessExecutionClass>,
+    nodes: &[String],
+) -> Result<BTreeSet<String>, Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if !nodes.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "--allow-isolated-node requires the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
+    let mut eligible = BTreeSet::new();
+    for node in nodes {
+        let executable = processes.canonicalize_executable(node)?;
+        match executables.get(&executable) {
+            Some(ProcessExecutionClass::Interpreter) => {}
+            Some(_) | None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "--allow-isolated-node requires the same executable to be authorized as --allow-executable=interpreter:<absolute-node-path>",
+                )
+                .into());
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            let executable_path = PathBuf::from(&executable);
+            let file_name = executable_path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            if !file_name.eq_ignore_ascii_case("node.exe") {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "--allow-isolated-node accepts only an exact node.exe interpreter path",
+                )
+                .into());
+            }
+        }
+
+        if !eligible.insert(executable) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate canonical --allow-isolated-node executable",
+            )
+            .into());
+        }
+    }
+    Ok(eligible)
+}
+
 fn validate_process_isolation_eligibility(
     executables: &BTreeMap<String, ProcessExecutionClass>,
     eligible_executables: &BTreeSet<String>,
@@ -482,12 +560,20 @@ fn provision_process_leases(
             capabilities.insert(Capability::FileRead);
             scopes.extend(paths.iter().cloned().map(LeaseScope::WorkspacePrefix));
         }
+        let resource_ceiling = if isolation_eligible.contains(canonical) {
+            ResourceBudget {
+                process_count: 1,
+                ..terms.resource_ceiling
+            }
+        } else {
+            terms.resource_ceiling
+        };
         task_leases.register(TaskLease {
             id: id.clone(),
             session: session.clone(),
             capabilities,
             scopes,
-            resource_ceiling: terms.resource_ceiling,
+            resource_ceiling,
             expires_at: terms.expires_at,
             policy_epoch: terms.policy_epoch,
         })?;
@@ -501,6 +587,7 @@ struct AppArgs {
     workspace: PathBuf,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
+    isolated_node_executables: Vec<String>,
     allowed_env: Vec<String>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
@@ -524,6 +611,7 @@ impl AppArgs {
         let mut workspace = None;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
+        let mut isolated_node_executables = Vec::new();
         let mut allowed_env = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
@@ -561,6 +649,17 @@ impl AppArgs {
                     )
                 })?;
                 process_read_grants.push(parse_process_read_grant(executable, path)?);
+            } else if arg == "--allow-isolated-node" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-isolated-node requires an absolute node.exe path",
+                    )
+                })?;
+                isolated_node_executables.push(parse_isolated_node_executable(os_string_to_utf8(
+                    value,
+                    "isolated Node executable",
+                )?)?);
             } else if arg == "--allow-env" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -656,6 +755,8 @@ impl AppArgs {
                 })?;
                 process_read_grants
                     .push(parse_process_read_grant(OsString::from(executable), path)?);
+            } else if let Some(value) = option_value(&arg, "--allow-isolated-node=")? {
+                isolated_node_executables.push(parse_isolated_node_executable(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
                 allowed_env.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-write-scope=")? {
@@ -714,6 +815,7 @@ impl AppArgs {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
             allowed_executables,
             process_read_grants,
+            isolated_node_executables,
             allowed_env,
             write_scopes,
             delete_scopes,
@@ -814,6 +916,16 @@ fn set_git_integration_ref(slot: &mut Option<String>, value: String) -> Result<(
         ));
     }
     Ok(())
+}
+
+fn parse_isolated_node_executable(value: String) -> Result<String, std::io::Error> {
+    if value.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--allow-isolated-node path must not be empty",
+        ));
+    }
+    Ok(value)
 }
 
 fn parse_allowed_executable(value: String) -> Result<AllowedExecutableSpec, std::io::Error> {
@@ -920,6 +1032,7 @@ mod tests {
     fn mutation_authority_is_absent_without_operator_flags() {
         let parsed = AppArgs::parse_from(args(&["workspace"])).expect("args");
         assert!(parsed.process_read_grants.is_empty());
+        assert!(parsed.isolated_node_executables.is_empty());
         assert!(parsed.write_scopes.is_empty());
         assert!(parsed.delete_scopes.is_empty());
         assert!(parsed.mutation_state_dir.is_none());
@@ -957,6 +1070,28 @@ mod tests {
                     path: "/opt/cargo".to_owned(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn isolated_node_profile_is_explicit_and_repeatable() {
+        let parsed = AppArgs::parse_from(args(&[
+            "--allow-isolated-node=C:\\Program Files\\nodejs\\node.exe",
+            "--allow-isolated-node",
+            "D:\\Tools\\node.exe",
+            "workspace",
+        ]))
+        .expect("isolated Node profile");
+        assert_eq!(
+            parsed.isolated_node_executables,
+            vec![
+                "C:\\Program Files\\nodejs\\node.exe".to_owned(),
+                "D:\\Tools\\node.exe".to_owned(),
+            ]
+        );
+        assert!(
+            AppArgs::parse_from(args(&["--allow-isolated-node=", "workspace"])).is_err(),
+            "empty isolated Node profile must fail closed"
         );
     }
 

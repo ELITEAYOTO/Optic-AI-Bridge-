@@ -59,6 +59,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: cargo build --locked -p optic-bridge-app -j 1
+      - name: Smoke real isolated Node MCP admission
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\isolated-node-mcp-smoke'
+          .\scripts\Test-IsolatedNodeMcp.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -NodePath $node `
+            -FixtureRoot $fixtureRoot
       - name: Smoke real Git integration MCP binary
         if: runner.os == 'Windows'
         shell: pwsh
