@@ -14,3 +14,5 @@
 12. ActionId idempotency ledger persistence format, retention window and crash-recovery interaction.
 13. Whether content-addressed output dedup justifies its complexity after bounded spool benchmarks.
 14. Whether WASM extensions are ever needed; default remains no until a concrete use case exists.
+15. Whether the FranceStudent Remote MCP candidate should be promoted after current Phase 3C gates, and what exact authentication header/token semantics FranceStudent actually sends for its "Token ou clé d'accès" mode.
+16. Whether a zero-mandatory-backend remote path should prefer Tailscale Funnel, Cloudflare tunnels or only a provider abstraction with no default until authenticated/reconnect/concurrency smokes have passed.
