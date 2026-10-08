@@ -12,6 +12,7 @@ mod ids;
 mod limits;
 mod path;
 mod session;
+mod tool_profile;
 mod version;
 
 pub use action::{
@@ -25,5 +26,9 @@ pub use path::{WorkspacePath, WorkspacePathError};
 pub use session::{
     LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass, ProjectId, SessionGrant,
     TaskLease, WorkloadClass,
+};
+pub use tool_profile::{
+    ToolApprovalRequirement, ToolInvocation, ToolProfile, ToolProfileError, ToolProfileName,
+    ToolProfileSpec,
 };
 pub use version::{ContentVersion, ContentVersionParseError, ContentVersionReadError};

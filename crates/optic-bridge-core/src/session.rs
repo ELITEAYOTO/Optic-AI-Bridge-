@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::{Capability, ResourceBudget, SessionHandle, TaskLeaseId, WorkspacePath};
+use crate::{
+    Capability, ResourceBudget, SessionHandle, TaskLeaseId, ToolProfileName, WorkspacePath,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MonotonicTime(u64);
@@ -81,6 +83,7 @@ pub enum LeaseScope {
         executable: String,
         class: ProcessExecutionClass,
     },
+    ToolProfile(ToolProfileName),
     NetworkAny,
     NetworkEndpoint(String),
 }

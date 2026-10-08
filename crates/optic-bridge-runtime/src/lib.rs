@@ -24,6 +24,7 @@ mod recovery;
 mod session_lifecycle;
 mod session_registry;
 mod task_lease_registry;
+mod tool_profile_registry;
 mod transactional_file;
 mod transport;
 
@@ -75,5 +76,6 @@ pub use session_lifecycle::{
 };
 pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
+pub use tool_profile_registry::{ToolProfileRegistry, ToolProfileRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};
