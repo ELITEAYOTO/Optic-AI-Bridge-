@@ -91,10 +91,20 @@ foreach ($argument in $expectedArgs) {
 if ($args | Where-Object { $_ -like '--allow-process-read-file*' }) {
     throw 'Installed Node profile unexpectedly contains process workspace-read authority.'
 }
-foreach ($tool in @('process_start', 'process_read', 'process_result', 'process_stop')) {
+$expectedProcessTools = @('process_start', 'process_read', 'process_result', 'process_stop')
+foreach ($tool in $expectedProcessTools) {
     if ($tool -notin $tools) {
         throw "Installed Node profile is missing tool: $tool"
     }
+}
+$actualProcessTools = @($tools | Where-Object { $_ -like 'process_*' } | Sort-Object)
+$expectedProcessTools = @($expectedProcessTools | Sort-Object)
+if (($actualProcessTools -join "`n") -cne ($expectedProcessTools -join "`n")) {
+    throw "Installed Node profile exposes an unexpected process tool surface: $($actualProcessTools -join ', ')"
+}
+$sessionTools = @($tools | Where-Object { $_ -like 'session_*' })
+if ($sessionTools.Count -ne 0) {
+    throw "Installed Node profile unexpectedly exposes session tools: $($sessionTools -join ', ')"
 }
 if ($server.tools.process_start.approval_mode -ne 'prompt') {
     throw 'Installed process_start is not prompt-gated.'
