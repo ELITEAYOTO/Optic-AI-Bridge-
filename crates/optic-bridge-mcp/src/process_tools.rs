@@ -678,6 +678,18 @@ mod tests {
     }
 
     #[test]
+    fn heavy_workload_capacity_errors_have_distinct_mcp_codes() {
+        assert_eq!(
+            map_process_error(ProcessError::HeavyWorkloadCapacityExceeded).message,
+            "optic.process_heavy_workload_capacity_exceeded"
+        );
+        assert_eq!(
+            map_process_error(ProcessError::HeavyWorkloadCapacityExceededForSession).message,
+            "optic.process_session_heavy_workload_capacity_exceeded"
+        );
+    }
+
+    #[test]
     fn session_resource_errors_have_distinct_mcp_codes() {
         assert_eq!(
             map_process_error(ProcessError::TooManyActiveJobsForSession).message,
