@@ -7,7 +7,9 @@ use std::{
     time::Duration,
 };
 
-use optic_bridge_core::{HardLimits, ProcessExecutionClass, ResourceBudget, SessionHandle, WorkspacePath};
+use optic_bridge_core::{
+    HardLimits, ProcessExecutionClass, ResourceBudget, SessionHandle, WorkspacePath,
+};
 use optic_bridge_runtime::{ProcessManager, ProcessStartSpec, ProcessStatus, ProcessStream};
 
 const TEST_TIMEOUT_MS: u64 = 15_000;
@@ -22,7 +24,9 @@ fn unique_workspace() -> PathBuf {
     std::env::temp_dir().join(format!(
         "optic-toolchain-compat-{}-{}",
         std::process::id(),
-        SessionHandle::generate().expect("workspace entropy").to_token()
+        SessionHandle::generate()
+            .expect("workspace entropy")
+            .to_token()
     ))
 }
 
@@ -267,7 +271,8 @@ async fn representative_toolchains_are_characterized_without_widening_authority(
             &executable,
             vec![
                 "-c".to_owned(),
-                "import sys; sys.stdout.write(open(sys.argv[1], encoding='utf-8').read())".to_owned(),
+                "import sys; sys.stdout.write(open(sys.argv[1], encoding='utf-8').read())"
+                    .to_owned(),
                 workspace.join("allowed.txt").to_string_lossy().into_owned(),
             ],
             vec![WorkspacePath::parse("allowed.txt").expect("allowed workspace path")],
@@ -283,7 +288,8 @@ async fn representative_toolchains_are_characterized_without_widening_authority(
             &executable,
             vec![
                 "-c".to_owned(),
-                "import sys; sys.stdout.write(open(sys.argv[1], encoding='utf-8').read())".to_owned(),
+                "import sys; sys.stdout.write(open(sys.argv[1], encoding='utf-8').read())"
+                    .to_owned(),
                 workspace.join("denied.txt").to_string_lossy().into_owned(),
             ],
             vec![WorkspacePath::parse("allowed.txt").expect("allowed workspace path")],
@@ -309,7 +315,10 @@ async fn representative_toolchains_are_characterized_without_widening_authority(
             ProcessExecutionClass::Interpreter,
             &executable,
             vec![
-                workspace.join("OpticCompat.java").to_string_lossy().into_owned(),
+                workspace
+                    .join("OpticCompat.java")
+                    .to_string_lossy()
+                    .into_owned(),
                 workspace.join("allowed.txt").to_string_lossy().into_owned(),
             ],
             vec![
@@ -327,7 +336,10 @@ async fn representative_toolchains_are_characterized_without_widening_authority(
             ProcessExecutionClass::Interpreter,
             &executable,
             vec![
-                workspace.join("OpticCompat.java").to_string_lossy().into_owned(),
+                workspace
+                    .join("OpticCompat.java")
+                    .to_string_lossy()
+                    .into_owned(),
                 workspace.join("denied.txt").to_string_lossy().into_owned(),
             ],
             vec![WorkspacePath::parse("OpticCompat.java").expect("Java probe path")],
