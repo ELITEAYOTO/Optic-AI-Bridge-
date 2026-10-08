@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod tool_profile_config;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
@@ -11,7 +13,8 @@ use std::{
 
 use optic_bridge_core::{
     Capability, HardLimits, LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass,
-    ProjectId, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId, WorkloadClass, WorkspacePath,
+    ProjectId, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId, ToolProfile, WorkloadClass,
+    WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
@@ -22,6 +25,8 @@ use optic_bridge_runtime::{
     TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
 };
 use rmcp::ServiceExt;
+
+use crate::tool_profile_config::load_tool_profiles;
 
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
 const SESSION_REAP_INTERVAL_MS: u64 = 5_000;
@@ -103,6 +108,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &canonical_process_executables,
         &args.isolated_node_executables,
     )?;
+
+    let loaded_tool_profiles = load_tool_profiles(
+        args.tool_profile_file.as_deref(),
+        &processes,
+        &canonical_process_executables,
+        &canonical_process_read_grants,
+        &process_isolation_eligible,
+        limits,
+    )?;
+    let configured_tool_profiles = loaded_tool_profiles
+        .as_ref()
+        .map(|loaded| loaded.profiles.as_slice())
+        .unwrap_or(&[]);
 
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
@@ -193,6 +211,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &canonical_process_executables,
         &canonical_process_read_grants,
         &process_isolation_eligible,
+        configured_tool_profiles,
         ProcessLeaseTerms {
             workload_class: WorkloadClass::Heavy,
             resource_ceiling: limits.max_process_budget,
@@ -200,6 +219,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             policy_epoch: 1,
         },
     )?;
+    let tool_profile_count = configured_tool_profiles.len();
+    let tool_profile_registry = loaded_tool_profiles.map(|loaded| Arc::new(loaded.registry));
 
     let mutation_authorities = MutationAuthoritySet::provision(
         &task_leases,
@@ -264,7 +285,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     let git_read_enabled = git_service.is_some();
-    let server = ReadonlyMcpServer::new_with_git_integration_runtime_and_approvals(
+    let server = ReadonlyMcpServer::new_with_git_integration_runtime_and_approvals_and_profiles(
         &args.workspace,
         sessions,
         session,
@@ -273,6 +294,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         processes,
         task_leases,
         approvals,
+        tool_profile_registry,
         process_leases,
         mutation_service,
         mutation_authorities,
@@ -294,9 +316,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
 
     eprintln!(
-        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} write scope(s), {} delete scope(s), Git read {}, Git integrate authority {})",
+        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), Git read {}, Git integrate authority {})",
         env!("CARGO_PKG_VERSION"),
         args.allowed_executables.len(),
+        tool_profile_count,
         args.write_scopes.len(),
         args.delete_scopes.len(),
         if git_read_enabled {
@@ -529,6 +552,7 @@ fn provision_process_leases(
     executables: &BTreeMap<String, ProcessExecutionClass>,
     read_grants: &BTreeMap<String, BTreeSet<WorkspacePath>>,
     isolation_eligible: &BTreeSet<String>,
+    tool_profiles: &[ToolProfile],
     terms: ProcessLeaseTerms,
 ) -> Result<BTreeMap<String, TaskLeaseId>, Box<dyn Error + Send + Sync>> {
     // Validate every server-owned eligibility selection before registering any
@@ -557,6 +581,15 @@ fn provision_process_leases(
             scopes.insert(LeaseScope::ProcessIsolationEligible {
                 executable: canonical.clone(),
                 class: *class,
+            });
+        }
+        for profile in tool_profiles
+            .iter()
+            .filter(|profile| profile.spec().executable == *canonical)
+        {
+            scopes.insert(LeaseScope::ToolProfile {
+                name: profile.name().clone(),
+                approval: profile.approval_requirement(),
             });
         }
         if let Some(paths) = read_grants.get(canonical)
@@ -594,6 +627,7 @@ struct AppArgs {
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
     isolated_node_executables: Vec<String>,
+    tool_profile_file: Option<PathBuf>,
     allowed_env: Vec<String>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
@@ -618,6 +652,7 @@ impl AppArgs {
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
+        let mut tool_profile_file = None;
         let mut allowed_env = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
@@ -666,6 +701,14 @@ impl AppArgs {
                     value,
                     "isolated Node executable",
                 )?)?);
+            } else if arg == "--tool-profile-file" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--tool-profile-file requires an absolute JSON file path",
+                    )
+                })?;
+                set_tool_profile_file(&mut tool_profile_file, PathBuf::from(value))?;
             } else if arg == "--allow-env" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -763,6 +806,8 @@ impl AppArgs {
                     .push(parse_process_read_grant(OsString::from(executable), path)?);
             } else if let Some(value) = option_value(&arg, "--allow-isolated-node=")? {
                 isolated_node_executables.push(parse_isolated_node_executable(value)?);
+            } else if let Some(value) = option_value(&arg, "--tool-profile-file=")? {
+                set_tool_profile_file(&mut tool_profile_file, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
                 allowed_env.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-write-scope=")? {
@@ -822,6 +867,7 @@ impl AppArgs {
             allowed_executables,
             process_read_grants,
             isolated_node_executables,
+            tool_profile_file,
             allowed_env,
             write_scopes,
             delete_scopes,
@@ -833,6 +879,22 @@ impl AppArgs {
             git_integration_ref,
         })
     }
+}
+
+fn set_tool_profile_file(slot: &mut Option<PathBuf>, value: PathBuf) -> Result<(), std::io::Error> {
+    if !value.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--tool-profile-file must be an absolute path",
+        ));
+    }
+    if slot.replace(value).is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--tool-profile-file may be supplied only once",
+        ));
+    }
+    Ok(())
 }
 
 fn set_mutation_state_dir(
@@ -1029,6 +1091,9 @@ fn os_string_to_utf8(value: OsString, label: &str) -> Result<String, std::io::Er
 #[cfg(test)]
 mod tests {
     use super::*;
+    use optic_bridge_core::{
+        NetworkAccess, ToolApprovalRequirement, ToolProfileName, ToolProfileSpec,
+    };
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
@@ -1076,6 +1141,37 @@ mod tests {
                     path: "/opt/cargo".to_owned(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn tool_profile_file_is_explicit_absolute_and_unique() {
+        let absolute = if cfg!(windows) {
+            r"C:\profiles.json"
+        } else {
+            "/tmp/profiles.json"
+        };
+        let parsed = AppArgs::parse_from([
+            OsString::from("--tool-profile-file"),
+            OsString::from(absolute),
+        ])
+        .expect("profile file flag");
+        assert_eq!(parsed.tool_profile_file, Some(PathBuf::from(absolute)));
+        assert!(
+            AppArgs::parse_from([
+                OsString::from("--tool-profile-file"),
+                OsString::from(absolute),
+                OsString::from("--tool-profile-file"),
+                OsString::from(absolute),
+            ])
+            .is_err()
+        );
+        assert!(
+            AppArgs::parse_from([
+                OsString::from("--tool-profile-file"),
+                OsString::from("relative.json"),
+            ])
+            .is_err()
         );
     }
 
@@ -1263,6 +1359,7 @@ mod tests {
             &executables,
             &read_grants,
             &BTreeSet::new(),
+            &[],
             ProcessLeaseTerms {
                 workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
@@ -1293,6 +1390,7 @@ mod tests {
             &executables,
             &BTreeMap::new(),
             &BTreeSet::new(),
+            &[],
             ProcessLeaseTerms {
                 workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
@@ -1322,6 +1420,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn process_profile_scope_is_application_owned_and_exact() {
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let limits = HardLimits::default();
+        let profile = ToolProfile::from_spec(ToolProfileSpec {
+            name: ToolProfileName::parse("fixed-check").expect("profile name"),
+            executable: executable.clone(),
+            class: ProcessExecutionClass::FixedTool,
+            workload_class: WorkloadClass::Heavy,
+            exact_args: vec!["--check".to_owned()],
+            cwd: None,
+            workspace_read_files: BTreeSet::new(),
+            env_allowlist: BTreeSet::new(),
+            network: NetworkAccess::Denied,
+            resource_ceiling: limits.max_process_budget,
+            approval: ToolApprovalRequirement::HumanRequired,
+        })
+        .expect("profile");
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("registry");
+        let session = SessionHandle::generate().expect("session");
+        let leases = provision_process_leases(
+            &registry,
+            &session,
+            &BTreeMap::from([(executable.clone(), ProcessExecutionClass::FixedTool)]),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            std::slice::from_ref(&profile),
+            ProcessLeaseTerms {
+                workload_class: WorkloadClass::Heavy,
+                resource_ceiling: limits.max_process_budget,
+                expires_at: MonotonicTime::from_millis(1_000),
+                policy_epoch: 1,
+            },
+        )
+        .expect("process lease");
+        let lease = registry
+            .get_active(
+                leases.get(&executable).expect("lease id"),
+                &session,
+                MonotonicTime::from_millis(1),
+            )
+            .expect("active lease");
+        assert!(lease.has_scope(&LeaseScope::ToolProfile {
+            name: profile.name().clone(),
+            approval: ToolApprovalRequirement::HumanRequired,
+        }));
+        assert!(!lease.allows(Capability::NetworkAccess));
+        assert_eq!(lease.workload_class, WorkloadClass::Heavy);
+    }
+
     #[cfg(windows)]
     #[test]
     fn internal_isolation_eligibility_is_exact_optional_and_high_risk_only() {
@@ -1349,6 +1502,7 @@ mod tests {
                 &executables,
                 &BTreeMap::new(),
                 &eligible,
+                &[],
                 ProcessLeaseTerms {
                     workload_class: WorkloadClass::Heavy,
                     resource_ceiling: limits.max_process_budget,
@@ -1379,6 +1533,7 @@ mod tests {
             &executables,
             &BTreeMap::new(),
             &BTreeSet::new(),
+            &[],
             ProcessLeaseTerms {
                 workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
@@ -1438,6 +1593,7 @@ mod tests {
                 &executables,
                 &BTreeMap::new(),
                 &invalid,
+                &[],
                 ProcessLeaseTerms {
                     workload_class: WorkloadClass::Heavy,
                     resource_ceiling: limits.max_process_budget,
@@ -1454,6 +1610,7 @@ mod tests {
             &executables,
             &BTreeMap::new(),
             &BTreeSet::new(),
+            &[],
             ProcessLeaseTerms {
                 workload_class: WorkloadClass::Heavy,
                 resource_ceiling: limits.max_process_budget,
@@ -1505,6 +1662,7 @@ mod tests {
                 &executables,
                 &read_grants,
                 &BTreeSet::new(),
+                &[],
                 ProcessLeaseTerms {
                     workload_class: WorkloadClass::Heavy,
                     resource_ceiling: HardLimits::default().max_process_budget,
@@ -1523,6 +1681,7 @@ mod tests {
                 &executables,
                 &BTreeMap::new(),
                 &eligibility,
+                &[],
                 ProcessLeaseTerms {
                     workload_class: WorkloadClass::Heavy,
                     resource_ceiling: HardLimits::default().max_process_budget,
