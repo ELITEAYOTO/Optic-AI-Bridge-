@@ -243,7 +243,7 @@ PR #47 merged to `main` as `1e42b1ff`; exact final head `4ff720b2` passed depend
 
 ### Current / next implementation
 - Phase 2D3 is complete, including native-binary, installer-profile, and real ChatGPT Desktop disposable-repository validation.
-- Phase 3 internal runtime work is merged and post-merge validated through Phase 3E3, including the selected C5G isolated-Node product profile, the Phase 3D adversarial multi-session composition gate, aggregate declared-memory governance, Windows emergency-headroom admission and application-owned heavy-workload slots. Public session creation/renewal remains absent. The next prioritized audit gate is B-02: broaden OS-level network-containment evidence beyond the selected high-risk Node/TCP-loopback proof and treat the direct `FixedTool` path separately. Optional I/O governance and richer memory-pressure feedback remain separate residual A-02 work.
+- Phase 3 internal runtime work is merged and post-merge validated through Phase 3E3, including the selected C5G isolated-Node product profile, the Phase 3D adversarial multi-session composition gate, aggregate declared-memory governance, Windows emergency-headroom admission and application-owned heavy-workload slots. Public session creation/renewal remains absent. B-02A is now complete through PR #109 (`0d05959a`, exact green head `4a96ff09`, PR CI #426, post-merge CI #427): the existing zero-capability AppContainer Node path still cannot complete the tested TCP/IPv4 loopback connection, while the direct `FixedTool` path can complete it when only server-allowlisted `SystemRoot` is restored. The next prioritized audit gate is B-02B: add truthful OS-level network containment to the direct `FixedTool` path without minting network authority. Optional I/O governance and richer memory-pressure feedback remain separate residual A-02 work.
 - Preserve independent `--git-executable` (Git read) and `--git-integration-executable` (integration/recovery) authority so enabling one never silently grants the other.
 - Keep Git authority application-owned and separate read from integration capability; MCP Git exposure follows only after recovery, startup wiring and authorization negative gates pass.
 - Preserve the completed Phase 2 file-mutation/Git guarantees while Phase 3 introduces multi-session orchestration; do not couple new session lifecycle state to mutation journals or Git worktrees accidentally.
@@ -259,14 +259,14 @@ PR #47 merged to `main` as `1e42b1ff`; exact final head `4ff720b2` passed depend
 - Cross-platform durable mutation primitive equivalent to the Windows 2B/2C boundary.
 - Multi-session public runtime orchestration and same-repository worktree execution.
 - Tunnel integration.
-- Broader Windows high-risk execution profiles beyond the selected Node profile remain unimplemented. The Node `Interpreter` profile has already been selectively re-admitted and validated through the real ChatGPT Desktop path; Python/Java/Cargo/rustc are not product-admitted profiles, broader workspace/runtime-directory/write authority remains absent, and B-02 network-containment evidence is still intentionally scoped rather than universal.
+- Broader Windows high-risk execution profiles beyond the selected Node profile remain unimplemented. The Node `Interpreter` profile has already been selectively re-admitted and validated through the real ChatGPT Desktop path; Python/Java/Cargo/rustc are not product-admitted profiles, broader workspace/runtime-directory/write authority remains absent, and B-02A proves the direct `FixedTool` path still lacks truthful network containment. B-02B must close that path before `network=false` can be treated as a runtime guarantee there.
 - Power-loss/ACID durability proof.
 - General retained replay/idempotency ledger.
 - Public release.
 
 ## Main baseline
 
-`main = 826f8cb3246e56a7d9daaffb5e260db437226a46` includes the completed Phase 1 and Phase 2 gates plus Phase 3 through Phase 3E3, including the selected C5G isolated-Node Desktop profile, Phase 3D adversarial multi-session closure, Phase 3E1 aggregate declared-memory governance, Phase 3E2A/3E2B host-memory observation/headroom admission and Phase 3E3 bounded heavy-workload slots. PR #107 merged from final head `203d729c`; post-merge `main` CI #422 passed. The next prioritized audit gate is B-02 network-containment expansion; public session minting/renewal and broader high-risk tool profiles remain separate future work.
+`main = 0d05959a2ea8198ba596f3f0ba2ccd8f3ca89ce4` includes the completed Phase 1 and Phase 2 gates plus Phase 3 through Phase 3E3 and B-02A network characterization. PR #109 merged from exact green head `4a96ff09b95d98eb9ddba905224570ee48842bc8`; PR CI #426 and post-merge `main` CI #427 passed. The selected Node/AppContainer path retains the scoped TCP/IPv4 loopback denial proof, while the direct `FixedTool` path is now mechanically proven able to complete that loopback connection under the characterized environment. The next prioritized audit gate is B-02B direct-`FixedTool` network containment; public session minting/renewal and broader high-risk tool profiles remain separate future work.
 
 ## Health rule
 
