@@ -672,7 +672,18 @@ Broader workspace/write/runtime dependencies, machine-wide resource governance, 
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 
-Phase 3 gate: adversarial cross-session access, lifecycle/admission races, bounded registry/resource pressure and process/tool containment.
+### Phase 3D — adversarial multi-session closure
+
+Status: **merged and post-merge validated** in PR #99 (`d9068334`), exact green head `fdccf3a4`; PR CI #401 and post-merge `main` CI #402 passed Ubuntu, Windows and dependency policy, including the existing Windows isolation/MCP/installer regressions.
+
+1. One bounded A/B/C scenario composes the already-merged Phase 3A/3B primitives instead of adding new authority.
+2. A cannot resolve B's task lease (`WrongSession`) and cannot read or stop B's opaque JobId (`UnknownJob`); B cannot read A's JobId.
+3. A reaches its own active-process ceiling without disturbing B, and a third session is rejected while A+B occupy the bounded session registry.
+4. Revoking A affects only A's lease/job; B remains active and observable to B.
+5. Quiescent reap removes only A's subordinate process/lease/session state. C can then reuse reclaimed capacity and start a job while B remains active.
+6. No public MCP session creation/renewal route, policy capability, filesystem/network authority or new process primitive is introduced.
+
+Gate passed: exact-head CI #401, SHA-guarded squash merge, and post-merge `main` CI #402. The documented internal adversarial multi-session substrate is now mechanically closed. Public/heavy multi-session autonomy still requires separate product gates, with aggregate process-memory/headroom governance the next Phase 3 resource target.
 
 ## Phase 4 — same-repo parallelism
 
