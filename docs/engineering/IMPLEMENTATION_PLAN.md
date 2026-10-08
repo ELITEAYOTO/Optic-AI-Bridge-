@@ -642,7 +642,19 @@ Status: **merged and post-merge validated**. C5A merged through PR #87 as `c5caf
 
 #### Phase 3C3C2C5D - packaged isolation helper
 
-Current gate: distribute the already-proven `optic-bridge-isolation-launcher.exe` as the canonical sibling of `optic-bridge.exe` without adding execution authority. The installer must resolve/copy the helper, the doctor must verify the sibling layout, installer-profile CI must prove byte-exact copy/reinstall/uninstall behavior, and the Windows release ZIP must include both binaries. Helper presence alone must not mint `ProcessIsolationEligible`; Node operator opt-in remains a later gate.
+Status: **merged and post-merge validated** in PR #90 (`5d3f64a7`), exact final head `815a73c8`; PR CI #380 and post-merge `main` CI #381 passed Ubuntu, Windows and dependency policy, including toolchain characterization, AppContainer network proof, real MCP smoke and byte-exact installer-profile helper validation. The Windows release ZIP and installer now carry the helper as the canonical bridge sibling. Helper presence alone mints no eligibility.
+
+#### Phase 3C3C2C5E - selected Node operator eligibility
+
+Current gate:
+
+1. Add repeatable Windows startup opt-in `--allow-isolated-node=<absolute-node.exe>`; it is an operator configuration field, not an MCP field.
+2. Canonicalize the exact executable and require it already exists in `--allow-executable` with `ProcessExecutionClass::Interpreter`; reject fixed tools, repository-code, unknown executables and non-`node.exe` paths.
+3. Require the canonical sibling isolation launcher to exist before startup may mint Node eligibility.
+4. Feed only those exact canonical Node paths into the already-proven C5B eligibility provisioning; all unselected high-risk executables remain `ProcessIsolationRequired`.
+5. Preserve independent exact-file, network, resource, session, expiry/revoke and executable-identity checks; the Node flag grants none of those by itself. Cap every eligible high-risk lease to `process_count = 1` until descendant execution has its own proof gate.
+6. Native real-binary MCP CI must prove no-profile denial, rejection of a multi-process budget, caller-supplied spoof fields cannot mint eligibility, selected Node starts through the real helper, reads exactly the granted file, and cannot read an ungranted sibling.
+7. Do not admit Python, Java, Cargo, rustc or a generic interpreter/repository-code profile in this gate.
 
 Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
