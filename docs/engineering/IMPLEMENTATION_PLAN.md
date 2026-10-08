@@ -738,15 +738,20 @@ Status: **merged and post-merge validated** in PR #107 (`826f8cb3`), final head 
 
 Gate passed: server-owned classification review, global/per-session capacity tests, cross-session lifecycle coverage, exact-head CI #421 and post-merge `main` CI #422. The prioritized heavy-workload part of A-02 is closed; A-02 remains partial only for optional I/O governance / richer pressure feedback.
 
-### Next prioritized audit gate — B-02 network-containment expansion
+### B-02A — direct `FixedTool` TCP/IPv4 loopback characterization (COMPLETED)
 
-Status: **next gate**. The existing PR #85 proof is intentionally scoped to a compatible high-risk Node process launched through the real zero-capability AppContainer helper and denied a TCP IPv4 loopback connection. It is not a universal `network=false` OS guarantee.
+PR #109 merged as `0d05959a` from exact green head `4a96ff09`; PR CI #426 and post-merge `main` CI #427 passed the full matrix. The existing Node/AppContainer regression still reaches `NETWORK_ATTEMPT` without any accepted TCP/IPv4 loopback connection. A separate direct `FixedTool` probe, launched through `ProcessManager` outside AppContainer with only server-allowlisted `SystemRoot` restored, reaches `FIXED_TOOL_NETWORK_ATTEMPT`, then `FIXED_TOOL_NETWORK_CONNECTED`, exits 0 and is accepted by the host listener. The earlier empty-environment Winsock 10106 result was explicitly rejected as containment evidence. No `NetworkAccess` capability, scope, MCP field or runtime enforcement changed in this characterization.
 
-1. Keep the selected Node/AppContainer proof as a scoped regression and do not relabel it as coverage for every protocol, destination or execution path.
-2. Characterize the direct `FixedTool` path separately: today policy/runtime reject `network=true`, but a user-level `FixedTool` process launched outside AppContainer is not mechanically prevented from opening sockets merely because the request says `network=false`.
-3. Define a bounded evidence matrix for additional network cases called out by B-02 (for example UDP, additional address families/destinations and externally configured AppContainer loopback exemptions) before selecting any enforcement primitive. Characterization must not itself mint `NetworkAccess` or widen process authority.
-4. Preserve `network=true` as fail-closed until explicit server-owned network authority and truthful OS enforcement exist. Any future capability must remain separate from executable/class/eligibility authority.
-5. CI should distinguish an actual containment regression from a probe timeout: tests must record that the network attempt was reached and whether the host accepted traffic, as the existing Node loopback proof already does.
+### B-02B — direct `FixedTool` network containment
+
+Status: **current gate**. B-02A proves the direct path can open the tested socket, so `network=false` is not yet a truthful OS guarantee for `FixedTool`.
+
+1. Preserve the selected Node/AppContainer proof and the B-02A direct-path proof as separate regressions.
+2. Select the narrowest Windows enforcement primitive that prevents the direct `FixedTool` path from completing the characterized TCP/IPv4 loopback connection when network authority is denied. Do not mint `NetworkAccess` merely to preserve current behavior.
+3. Keep the enforcement decision server/application-owned. MCP must not choose or downgrade the containment mode, and `network=true` remains fail-closed until explicit network authority plus truthful OS enforcement exist.
+4. Add a real Windows regression proving the direct `FixedTool` reaches its network attempt but the host listener accepts no connection after enforcement. A probe that fails before Winsock/network attempt is not containment evidence.
+5. Keep non-claims explicit: B-02B does not automatically prove UDP, IPv6, non-loopback Internet/intranet containment, externally configured AppContainer loopback exemptions, or every future execution path. Those require separate evidence before broader claims.
+6. Do not change filesystem authority, process eligibility, workload class, session authority or the selected Node product profile in this gate.
 
 ## Phase 4 — same-repo parallelism
 
