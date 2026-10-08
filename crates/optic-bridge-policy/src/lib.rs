@@ -4,7 +4,7 @@
 
 use optic_bridge_core::{
     ActionEnvelope, Capability, Effect, LeaseScope, MonotonicTime, ProcessExecutionClass,
-    SessionGrant, TaskLease,
+    SessionGrant, TaskLease, ToolApprovalRequirement,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +27,7 @@ pub enum PolicyReason {
     ResourceBudgetExceeded,
     NetworkNotAuthorized,
     ProcessIsolationRequired,
+    ToolProfileApprovalRequired,
     SecurityPolicyImmutable,
     PrivilegeElevationDenied,
 }
@@ -110,19 +111,38 @@ impl PolicyEngine {
             }
         }
 
-        if let Effect::ProcessRun {
-            executable,
-            class:
-                class @ (ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode),
-            ..
-        } = &envelope.effect
-        {
+        let high_risk_process = match &envelope.effect {
+            Effect::ProcessRun {
+                executable, class, ..
+            }
+            | Effect::ProfiledProcessRun {
+                executable, class, ..
+            } if matches!(
+                class,
+                ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
+            ) =>
+            {
+                Some((executable, *class))
+            }
+            _ => None,
+        };
+        if let Some((executable, class)) = high_risk_process {
             let Some(lease) = lease else {
                 return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
             };
-            if !lease.process_isolation_eligible(executable, *class) {
+            if !lease.process_isolation_eligible(executable, class) {
                 return PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired);
             }
+        }
+
+        if matches!(
+            &envelope.effect,
+            Effect::ProfiledProcessRun {
+                approval: ToolApprovalRequirement::HumanRequired,
+                ..
+            }
+        ) {
+            return PolicyDecision::RequireApproval(PolicyReason::ToolProfileApprovalRequired);
         }
 
         if matches!(&envelope.effect, Effect::NetworkAccess { .. }) {
@@ -150,6 +170,21 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
             executable: executable.clone(),
             class: *class,
         }),
+        Effect::ProfiledProcessRun {
+            profile,
+            executable,
+            class,
+            approval,
+            ..
+        } => {
+            lease.has_scope(&LeaseScope::ProcessExecutable {
+                executable: executable.clone(),
+                class: *class,
+            }) && lease.has_scope(&LeaseScope::ToolProfile {
+                name: profile.clone(),
+                approval: *approval,
+            })
+        }
         Effect::NetworkAccess { endpoint } => {
             lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
         }
@@ -160,7 +195,9 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
 
 fn lease_covers_network(lease: &TaskLease, effect: &Effect) -> bool {
     match effect {
-        Effect::ProcessRun { .. } => lease.has_scope(&LeaseScope::NetworkAny),
+        Effect::ProcessRun { .. } | Effect::ProfiledProcessRun { .. } => {
+            lease.has_scope(&LeaseScope::NetworkAny)
+        }
         Effect::NetworkAccess { endpoint } => {
             lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
         }
@@ -175,7 +212,8 @@ mod tests {
     use optic_bridge_core::{
         ActionEnvelope, ActionId, Capability, ContentVersion, Effect, ExpectedState, GitObjectId,
         LeaseScope, MonotonicTime, NetworkAccess, PrincipalId, ProcessExecutionClass, ProjectId,
-        ResourceBudget, SessionGrant, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
+        ResourceBudget, SessionGrant, SessionHandle, TaskLease, TaskLeaseId,
+        ToolApprovalRequirement, ToolProfileName, WorkspacePath,
     };
 
     use super::*;
@@ -796,6 +834,188 @@ mod tests {
 
         assert_eq!(
             PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Allow
+        );
+    }
+
+    fn profiled_effect(
+        name: &ToolProfileName,
+        approval: ToolApprovalRequirement,
+        class: ProcessExecutionClass,
+    ) -> Effect {
+        Effect::ProfiledProcessRun {
+            profile: name.clone(),
+            executable: "C:/Tools/node.exe".to_owned(),
+            class,
+            network: NetworkAccess::Denied,
+            approval,
+        }
+    }
+
+    fn profiled_scopes(
+        name: &ToolProfileName,
+        approval: ToolApprovalRequirement,
+        class: ProcessExecutionClass,
+    ) -> Vec<LeaseScope> {
+        vec![
+            LeaseScope::ProcessExecutable {
+                executable: "C:/Tools/node.exe".to_owned(),
+                class,
+            },
+            LeaseScope::ToolProfile {
+                name: name.clone(),
+                approval,
+            },
+        ]
+    }
+
+    #[test]
+    fn profiled_process_requires_exact_profile_scope() {
+        let session = session(&[Capability::ProcessRun]);
+        let profile = ToolProfileName::parse("node-version").expect("profile");
+        let exact = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &profiled_scopes(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+        );
+        let action = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+            Some(&exact),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&exact), now()),
+            PolicyDecision::Allow
+        );
+
+        let executable_only = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[LeaseScope::ProcessExecutable {
+                executable: "C:/Tools/node.exe".to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            }],
+        );
+        let denied = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+            Some(&executable_only),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&denied, &session, Some(&executable_only), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn profiled_process_approval_mode_is_part_of_exact_scope() {
+        let session = session(&[Capability::ProcessRun]);
+        let profile = ToolProfileName::parse("node-version").expect("profile");
+        let wrong_mode = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &profiled_scopes(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+        );
+        let action = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::HumanRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+            Some(&wrong_mode),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&wrong_mode), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn human_required_profile_reaches_require_approval_only_after_exact_scope_checks() {
+        let session = session(&[Capability::ProcessRun]);
+        let profile = ToolProfileName::parse("node-version").expect("profile");
+        let scoped = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &profiled_scopes(
+                &profile,
+                ToolApprovalRequirement::HumanRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+        );
+        let action = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::HumanRequired,
+                ProcessExecutionClass::FixedTool,
+            ),
+            Some(&scoped),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&scoped), now()),
+            PolicyDecision::RequireApproval(PolicyReason::ToolProfileApprovalRequired)
+        );
+    }
+
+    #[test]
+    fn profiled_high_risk_process_still_requires_exact_isolation_eligibility() {
+        let session = session(&[Capability::ProcessRun]);
+        let profile = ToolProfileName::parse("node-version").expect("profile");
+        let scopes = profiled_scopes(
+            &profile,
+            ToolApprovalRequirement::NotRequired,
+            ProcessExecutionClass::Interpreter,
+        );
+        let unisolated = lease(&session, &[Capability::ProcessRun], &scopes);
+        let action = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::Interpreter,
+            ),
+            Some(&unisolated),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&unisolated), now()),
+            PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired)
+        );
+
+        let mut isolated_scopes = scopes;
+        isolated_scopes.push(LeaseScope::ProcessIsolationEligible {
+            executable: "C:/Tools/node.exe".to_owned(),
+            class: ProcessExecutionClass::Interpreter,
+        });
+        let isolated = lease(&session, &[Capability::ProcessRun], &isolated_scopes);
+        let action = envelope(
+            &session,
+            profiled_effect(
+                &profile,
+                ToolApprovalRequirement::NotRequired,
+                ProcessExecutionClass::Interpreter,
+            ),
+            Some(&isolated),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&isolated), now()),
             PolicyDecision::Allow
         );
     }
