@@ -1,7 +1,7 @@
 #![cfg(windows)]
 
 use std::{
-    fs,
+    env, fs,
     net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
@@ -14,6 +14,7 @@ use optic_bridge_runtime::{ProcessManager, ProcessStartSpec, ProcessStatus, Proc
 
 const PROCESS_TIMEOUT_MS: u64 = 10_000;
 const OUTPUT_BYTES: u64 = 32 * 1024;
+const FIXED_TOOL_PROBE_PORT_FILE: &str = "fixed-tool-loopback-port";
 
 fn launcher_path() -> &'static str {
     env!("CARGO_BIN_EXE_optic-bridge-isolation-launcher")
@@ -75,6 +76,130 @@ async fn await_terminal(
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("network isolation probe did not reach a terminal state");
+}
+
+#[test]
+fn fixed_tool_loopback_probe_child() {
+    let cwd = env::current_dir().expect("fixed-tool probe cwd");
+    let port_file = cwd.join(FIXED_TOOL_PROBE_PORT_FILE);
+    let Ok(port) = fs::read_to_string(port_file) else {
+        // Normal cargo test execution reaches this helper without a probe
+        // fixture. Only the parent characterization test creates the marker.
+        return;
+    };
+    let port = port
+        .trim()
+        .parse::<u16>()
+        .expect("parse fixed-tool loopback port");
+
+    println!("FIXED_TOOL_NETWORK_ATTEMPT");
+    let stream = TcpStream::connect(("127.0.0.1", port))
+        .expect("direct FixedTool loopback connection should characterize current host behavior");
+    println!("FIXED_TOOL_NETWORK_CONNECTED");
+    drop(stream);
+}
+
+#[tokio::test]
+async fn direct_fixed_tool_path_can_open_tcp_ipv4_loopback_socket() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind fixed-tool loopback listener");
+    listener
+        .set_nonblocking(true)
+        .expect("set fixed-tool listener nonblocking");
+    let address = listener
+        .local_addr()
+        .expect("read fixed-tool listener address");
+
+    let baseline = TcpStream::connect(address).expect("host loopback baseline must connect");
+    assert!(
+        accept_within(&listener, Duration::from_secs(1)).is_some(),
+        "host listener baseline must accept a normal host connection"
+    );
+    drop(baseline);
+
+    let workspace = unique_workspace();
+    fs::create_dir_all(&workspace).expect("create fixed-tool characterization workspace");
+    let _cleanup = WorkspaceCleanup(workspace.clone());
+    fs::write(
+        workspace.join(FIXED_TOOL_PROBE_PORT_FILE),
+        address.port().to_string(),
+    )
+    .expect("write fixed-tool loopback port fixture");
+
+    let executable = env::current_exe()
+        .expect("current network test executable")
+        .canonicalize()
+        .expect("canonical network test executable")
+        .to_string_lossy()
+        .into_owned();
+    let manager = ProcessManager::new(&workspace, HardLimits::default(), Vec::new())
+        .expect("direct fixed-tool process manager");
+    let session = SessionHandle::generate().expect("fixed-tool session");
+
+    // B-02 characterization only: FixedTool is intentionally the direct
+    // ProcessManager path. No NetworkAccess capability or network authority is
+    // introduced here. This locks the current TCP/IPv4 loopback fact before an
+    // enforcement primitive is selected: this direct path can open that socket.
+    let job = manager
+        .start(ProcessStartSpec {
+            session: session.clone(),
+            class: ProcessExecutionClass::FixedTool,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
+            executable: executable.clone(),
+            args: vec![
+                "--exact".to_owned(),
+                "fixed_tool_loopback_probe_child".to_owned(),
+                "--nocapture".to_owned(),
+            ],
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: ResourceBudget {
+                timeout_ms: PROCESS_TIMEOUT_MS,
+                output_bytes: OUTPUT_BYTES,
+                memory_bytes: 256 * 1024 * 1024,
+                process_count: 1,
+            },
+        })
+        .expect("start direct FixedTool network characterization probe");
+
+    let result = await_terminal(&manager, &session, &job).await;
+    let stdout = manager
+        .read(&session, &job, ProcessStream::Stdout, 0, OUTPUT_BYTES)
+        .expect("read fixed-tool probe stdout");
+    let stderr = manager
+        .read(&session, &job, ProcessStream::Stderr, 0, OUTPUT_BYTES)
+        .expect("read fixed-tool probe stderr");
+    let stdout = String::from_utf8_lossy(&stdout.bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr.bytes).into_owned();
+    let accepted = accept_within(&listener, Duration::from_secs(1));
+
+    println!(
+        "OPTIC_FIXED_TOOL_NETWORK_CHARACTERIZATION executable={executable:?} status={:?} exit={:?} accepted={accepted:?} stdout={stdout:?} stderr={stderr:?}",
+        result.status, result.exit_code
+    );
+
+    assert_eq!(
+        result.status,
+        ProcessStatus::Exited,
+        "direct FixedTool probe must reach a normal terminal state"
+    );
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "direct FixedTool TCP/IPv4 loopback probe currently succeeds on the unconstrained host path"
+    );
+    assert!(
+        stdout.contains("FIXED_TOOL_NETWORK_ATTEMPT"),
+        "FixedTool child must reach the network attempt"
+    );
+    assert!(
+        stdout.contains("FIXED_TOOL_NETWORK_CONNECTED"),
+        "FixedTool child must characterize the current successful loopback connection"
+    );
+    assert!(
+        accepted.is_some(),
+        "host listener must observe the direct FixedTool TCP/IPv4 loopback connection"
+    );
 }
 
 #[tokio::test]
