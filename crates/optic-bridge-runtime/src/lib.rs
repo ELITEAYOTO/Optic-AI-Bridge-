@@ -30,6 +30,8 @@ mod task_lease_registry;
 mod tool_profile_registry;
 mod transactional_file;
 mod transport;
+#[cfg(windows)]
+mod windows_path;
 
 pub use approval_broker::{ApprovalBroker, ApprovalBrokerError, ApprovalSpec};
 pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
