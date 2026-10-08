@@ -1,18 +1,28 @@
+use std::{collections::BTreeSet, time::Duration};
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
     ActionEnvelope, ActionId, Capability, Effect, JobId, LeaseScope, NetworkAccess, ResourceBudget,
-    TaskLease, TaskLeaseId, WorkspacePath,
+    TaskLease, TaskLeaseId, ToolInvocation, WorkspacePath,
 };
 use optic_bridge_policy::{PolicyDecision, PolicyReason};
 use optic_bridge_runtime::{
     ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, SessionLifecycleError,
-    SessionLifecycleManager, TaskLeaseRegistryError,
+    SessionLifecycleManager, TaskLeaseRegistryError, ToolProfileRegistryError,
 };
-use rmcp::{ErrorData, Json, handler::server::wrapper::Parameters, tool, tool_router};
+use rmcp::{
+    ErrorData, Json,
+    handler::server::wrapper::Parameters,
+    service::{RequestContext, RoleServer},
+    tool, tool_router,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::server::ReadonlyMcpServer;
+use crate::{
+    ApprovalAuthorizationError, ApprovalAuthorizationRuntime, authorize_action_with_human_approval,
+    server::ReadonlyMcpServer,
+};
 
 const DEFAULT_PROCESS_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_PROCESS_OUTPUT_BYTES: u64 = 1024 * 1024;
@@ -30,12 +40,16 @@ impl ReadonlyMcpServer {
     pub async fn process_start(
         &self,
         params: Parameters<ProcessStartRequest>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<ProcessStartResponse>, ErrorData> {
         if params.0.network.unwrap_or(false) {
             return Err(ErrorData::invalid_request(
                 "optic.network_runtime_unavailable",
                 None,
             ));
+        }
+        if self.tool_profiles.is_some() {
+            return self.process_start_profiled(params.0, context).await;
         }
 
         let now = self.clock.now();
@@ -94,6 +108,136 @@ impl ReadonlyMcpServer {
                 workspace_read_files,
                 env_allowlist: params.0.env_allowlist,
                 resources,
+            })
+            .map_err(map_process_error)?;
+        drop(admission);
+        let response = ProcessStartResponse {
+            job_id: job_id.to_token(),
+        };
+        self.ensure_structured_payload_fits(&response)?;
+        drop(permit);
+        Ok(Json(response))
+    }
+
+    async fn process_start_profiled(
+        &self,
+        request: ProcessStartRequest,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Json<ProcessStartResponse>, ErrorData> {
+        let profiles = self.tool_profiles.as_ref().ok_or_else(|| {
+            ErrorData::internal_error("optic.process_profile_runtime_missing", None)
+        })?;
+        let now = self.clock.now();
+        let permit = self
+            .transport_guard
+            .begin_execution(now)
+            .map_err(super::server::map_transport_error)?;
+        let grant = self.active_grant(now)?;
+        let executable = self
+            .processes
+            .canonicalize_executable(&request.executable)
+            .map_err(map_process_error)?;
+        let lease_id = self
+            .process_leases
+            .get(&executable)
+            .cloned()
+            .ok_or_else(|| {
+                ErrorData::invalid_request("optic.process_executable_not_allowed", None)
+            })?;
+        let lease = self
+            .task_leases
+            .get_active(&lease_id, &self.session, now)
+            .map_err(map_task_lease_error)?;
+        let class = lease.process_execution_class(&executable).ok_or_else(|| {
+            ErrorData::internal_error("optic.process_execution_class_unavailable", None)
+        })?;
+        let resources = requested_budget(&request)?;
+        let workspace_read_files =
+            process_workspace_read_files(grant.allows(Capability::FileRead), &lease);
+        let cwd = request
+            .cwd
+            .as_deref()
+            .map(parse_workspace_path)
+            .transpose()?;
+        let env_allowlist = self
+            .processes
+            .normalize_environment_allowlist(&request.env_allowlist)
+            .map_err(map_process_error)?;
+        let invocation = ToolInvocation {
+            executable: executable.clone(),
+            class,
+            workload_class: lease.workload_class,
+            args: request.args,
+            cwd,
+            workspace_read_files: workspace_read_files.into_iter().collect::<BTreeSet<_>>(),
+            env_allowlist,
+            network: NetworkAccess::Denied,
+            resources,
+        };
+        let profile = profiles
+            .resolve_unique(&invocation)
+            .map_err(map_tool_profile_registry_error)?;
+        let action_id = ActionId::generate()
+            .map_err(|_| ErrorData::internal_error("optic.action_id_unavailable", None))?;
+        let envelope = ActionEnvelope {
+            action_id,
+            session: self.session.clone(),
+            task_lease: Some(lease.id.clone()),
+            effect: Effect::ProfiledProcessRun {
+                profile: profile.name().clone(),
+                executable: executable.clone(),
+                class,
+                network: NetworkAccess::Denied,
+                approval: profile.approval_requirement(),
+            },
+            resources,
+            policy_epoch: grant.policy_epoch,
+        };
+        let approval_timeout_ms = permit
+            .deadline()
+            .as_millis()
+            .saturating_sub(now.as_millis())
+            .max(1);
+        let message = profiled_process_approval_message(&profile, &invocation);
+        let admission = authorize_action_with_human_approval(
+            &context,
+            ApprovalAuthorizationRuntime::new(
+                &self.sessions,
+                &self.task_leases,
+                &self.approvals,
+                &self.policy,
+                self.clock.as_ref(),
+            ),
+            &envelope,
+            message,
+            Duration::from_millis(approval_timeout_ms),
+        )
+        .await
+        .map_err(map_approval_authorization_error)?;
+
+        let revalidated = profiles
+            .resolve_unique(&invocation)
+            .map_err(map_tool_profile_registry_error)?;
+        if revalidated.name() != profile.name() {
+            return Err(ErrorData::invalid_request(
+                "optic.process_profile_changed",
+                None,
+            ));
+        }
+
+        let job_id = self
+            .processes
+            .start(ProcessStartSpec {
+                session: self.session.clone(),
+                class,
+                workload_class: invocation.workload_class,
+                network: invocation.network,
+                executable: invocation.executable,
+                args: invocation.args,
+                cwd: invocation.cwd,
+                workspace_read_files: invocation.workspace_read_files.into_iter().collect(),
+                env_allowlist: invocation.env_allowlist.into_iter().collect(),
+                resources: invocation.resources,
             })
             .map_err(map_process_error)?;
         drop(admission);
@@ -341,6 +485,82 @@ fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
         }
         SessionLifecycleError::ExpiredAtProvision | SessionLifecycleError::HandleGeneration(_) => {
             ErrorData::internal_error("optic.session_lifecycle_error", None)
+        }
+    }
+}
+
+fn profiled_process_approval_message(
+    profile: &optic_bridge_core::ToolProfile,
+    invocation: &ToolInvocation,
+) -> String {
+    let cwd = invocation
+        .cwd
+        .as_ref()
+        .map_or("<workspace-root>", WorkspacePath::as_str);
+    format!(
+        "Approve exact tool profile '{}'\nExecutable: {}\nClass: {:?}\nWorkload: {:?}\nArgs: {:?}\nCwd: {}\nWorkspace read files: {:?}\nEnvironment allowlist: {:?}\nNetwork: {:?}\nRequested resources: timeout={}ms output={}B memory={}B process_count={}",
+        profile.name().as_str(),
+        invocation.executable,
+        invocation.class,
+        invocation.workload_class,
+        invocation.args,
+        cwd,
+        invocation.workspace_read_files,
+        invocation.env_allowlist,
+        invocation.network,
+        invocation.resources.timeout_ms,
+        invocation.resources.output_bytes,
+        invocation.resources.memory_bytes,
+        invocation.resources.process_count,
+    )
+}
+
+fn map_tool_profile_registry_error(error: ToolProfileRegistryError) -> ErrorData {
+    match error {
+        ToolProfileRegistryError::NoMatchingProfile
+        | ToolProfileRegistryError::UnknownProfile
+        | ToolProfileRegistryError::InvocationMismatch => {
+            ErrorData::invalid_request("optic.process_profile_not_authorized", None)
+        }
+        ToolProfileRegistryError::AmbiguousProfile => {
+            ErrorData::internal_error("optic.process_profile_ambiguous", None)
+        }
+        ToolProfileRegistryError::InvalidLimits
+        | ToolProfileRegistryError::StateUnavailable
+        | ToolProfileRegistryError::AlreadyRegistered
+        | ToolProfileRegistryError::CapacityExceeded => {
+            ErrorData::internal_error("optic.process_profile_runtime_error", None)
+        }
+    }
+}
+
+fn map_approval_authorization_error(error: ApprovalAuthorizationError) -> ErrorData {
+    match error {
+        ApprovalAuthorizationError::PolicyDenied(PolicyReason::ProcessIsolationRequired) => {
+            ErrorData::invalid_request("optic.process_isolation_unavailable", None)
+        }
+        ApprovalAuthorizationError::PolicyDenied(_) => {
+            ErrorData::invalid_request("optic.policy_denied", None)
+        }
+        ApprovalAuthorizationError::Session(error) => super::server::map_session_error(error),
+        ApprovalAuthorizationError::TaskLease(error) => map_task_lease_error(error),
+        ApprovalAuthorizationError::Declined => {
+            ErrorData::invalid_request("optic.approval_declined", None)
+        }
+        ApprovalAuthorizationError::Cancelled => {
+            ErrorData::invalid_request("optic.approval_cancelled", None)
+        }
+        ApprovalAuthorizationError::Unsupported => {
+            ErrorData::invalid_request("optic.approval_unsupported", None)
+        }
+        ApprovalAuthorizationError::PolicyChanged => {
+            ErrorData::invalid_request("optic.approval_stale", None)
+        }
+        ApprovalAuthorizationError::Elicitation(_) => {
+            ErrorData::internal_error("optic.approval_transport_error", None)
+        }
+        ApprovalAuthorizationError::Broker(_) => {
+            ErrorData::internal_error("optic.approval_broker_error", None)
         }
     }
 }
@@ -712,5 +932,78 @@ mod tests {
             map_process_error(ProcessError::ProcessMemoryCapacityExceededForSession).message,
             "optic.process_session_memory_capacity_exceeded"
         );
+    }
+
+    #[test]
+    fn profile_resolution_errors_have_fail_closed_mcp_codes() {
+        assert_eq!(
+            map_tool_profile_registry_error(ToolProfileRegistryError::NoMatchingProfile).message,
+            "optic.process_profile_not_authorized"
+        );
+        assert_eq!(
+            map_tool_profile_registry_error(ToolProfileRegistryError::AmbiguousProfile).message,
+            "optic.process_profile_ambiguous"
+        );
+    }
+
+    #[test]
+    fn profiled_approval_message_contains_the_complete_invocation_contract() {
+        let profile =
+            optic_bridge_core::ToolProfile::from_spec(optic_bridge_core::ToolProfileSpec {
+                name: optic_bridge_core::ToolProfileName::parse("node-version").expect("profile"),
+                executable: "C:/Tools/node.exe".to_owned(),
+                class: optic_bridge_core::ProcessExecutionClass::Interpreter,
+                workload_class: optic_bridge_core::WorkloadClass::Heavy,
+                exact_args: vec!["--version".to_owned()],
+                cwd: Some(WorkspacePath::parse("scratch").expect("cwd")),
+                workspace_read_files: BTreeSet::from([
+                    WorkspacePath::parse("package.json").expect("read file")
+                ]),
+                env_allowlist: BTreeSet::from(["PATH".to_owned()]),
+                network: NetworkAccess::Denied,
+                resource_ceiling: ResourceBudget {
+                    timeout_ms: 5_000,
+                    output_bytes: 1_024,
+                    memory_bytes: 64 * 1024 * 1024,
+                    process_count: 1,
+                },
+                approval: optic_bridge_core::ToolApprovalRequirement::HumanRequired,
+            })
+            .expect("profile");
+        let invocation = ToolInvocation {
+            executable: "C:/Tools/node.exe".to_owned(),
+            class: optic_bridge_core::ProcessExecutionClass::Interpreter,
+            workload_class: optic_bridge_core::WorkloadClass::Heavy,
+            args: vec!["--version".to_owned()],
+            cwd: Some(WorkspacePath::parse("scratch").expect("cwd")),
+            workspace_read_files: BTreeSet::from([
+                WorkspacePath::parse("package.json").expect("read file")
+            ]),
+            env_allowlist: BTreeSet::from(["PATH".to_owned()]),
+            network: NetworkAccess::Denied,
+            resources: ResourceBudget {
+                timeout_ms: 2_000,
+                output_bytes: 512,
+                memory_bytes: 32 * 1024 * 1024,
+                process_count: 1,
+            },
+        };
+        let message = profiled_process_approval_message(&profile, &invocation);
+        for expected in [
+            "node-version",
+            "C:/Tools/node.exe",
+            "--version",
+            "scratch",
+            "package.json",
+            "PATH",
+            "Denied",
+            "timeout=2000ms",
+            "output=512B",
+        ] {
+            assert!(
+                message.contains(expected),
+                "missing {expected:?}: {message}"
+            );
+        }
     }
 }

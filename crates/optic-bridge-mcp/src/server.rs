@@ -10,7 +10,8 @@ use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
     BoundedFileSystem, Clock, EntryKind, FileSystemError, GitIntegrationAuthoritySet,
     GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
+    SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError, TransportGuard,
+    TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -39,6 +40,7 @@ pub struct ReadonlyMcpServer {
     pub(crate) processes: Arc<ProcessManager>,
     pub(crate) task_leases: Arc<TaskLeaseRegistry>,
     pub(crate) approvals: Arc<ApprovalBroker>,
+    pub(crate) tool_profiles: Option<Arc<ToolProfileRegistry>>,
     pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
@@ -209,6 +211,43 @@ impl ReadonlyMcpServer {
         git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
         git_integration_authorities: GitIntegrationAuthoritySet,
     ) -> Result<Self, ServerBuildError> {
+        Self::new_with_git_integration_runtime_and_approvals_and_profiles(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            approvals,
+            None,
+            process_leases,
+            mutation_service,
+            mutation_authorities,
+            git_service,
+            git_integration_service,
+            git_integration_authorities,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_git_integration_runtime_and_approvals_and_profiles(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        approvals: Arc<ApprovalBroker>,
+        tool_profiles: Option<Arc<ToolProfileRegistry>>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+        mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+        mutation_authorities: MutationAuthoritySet,
+        git_service: Option<Arc<GitReadService>>,
+        git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
+        git_integration_authorities: GitIntegrationAuthoritySet,
+    ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
@@ -252,6 +291,7 @@ impl ReadonlyMcpServer {
             processes,
             task_leases,
             approvals,
+            tool_profiles,
             process_leases: Arc::new(process_leases),
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),

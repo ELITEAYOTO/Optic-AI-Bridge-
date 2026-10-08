@@ -715,6 +715,21 @@ impl ProcessManager {
         Ok(())
     }
 
+    pub fn normalize_environment_allowlist(
+        &self,
+        requested: &[String],
+    ) -> Result<BTreeSet<String>, ProcessError> {
+        let mut normalized_names = BTreeSet::new();
+        for raw in requested {
+            let normalized = normalize_env_name(raw)?;
+            if !self.allowed_env_vars.contains(&normalized) {
+                return Err(ProcessError::EnvironmentNotAllowed);
+            }
+            normalized_names.insert(normalized);
+        }
+        Ok(normalized_names)
+    }
+
     fn resolve_environment(
         &self,
         requested: &[String],
