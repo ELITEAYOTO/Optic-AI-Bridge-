@@ -89,6 +89,34 @@ jobs:
             -IsolationLauncherPath '.\target\debug\optic-bridge-isolation-launcher.exe' `
             -PluginTemplatePath '.\packaging\chatgpt-plugin' `
             -FixtureRoot $fixtureRoot
+      - name: Stage ChatGPT Desktop Node validation bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'target\chatgpt-desktop-node-validation-bundle'
+          if (Test-Path -LiteralPath $bundle) { Remove-Item -LiteralPath $bundle -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+          Copy-Item '.\target\debug\optic-bridge.exe' $bundle
+          Copy-Item '.\target\debug\optic-bridge-isolation-launcher.exe' $bundle
+          Copy-Item '.\scripts\Install-OpticAIBridge.ps1' $bundle
+          Copy-Item '.\scripts\Test-OpticAIBridge.ps1' $bundle
+          Copy-Item '.\scripts\Uninstall-OpticAIBridge.ps1' $bundle
+          Copy-Item '.\scripts\Prepare-ChatGPTDesktopNodeSmoke.ps1' $bundle
+          Copy-Item '.\packaging\chatgpt-plugin' (Join-Path $bundle 'plugin') -Recurse
+          @(
+            "source_sha=${{ github.sha }}",
+            "run_id=${{ github.run_id }}",
+            "run_attempt=${{ github.run_attempt }}",
+            "ref=${{ github.ref }}"
+          ) | Set-Content -LiteralPath (Join-Path $bundle 'SOURCE.txt') -Encoding ascii
+      - name: Upload ChatGPT Desktop Node validation bundle
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: optic-chatgpt-desktop-node-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/chatgpt-desktop-node-validation-bundle
+          if-no-files-found: error
+          retention-days: 1
 
   dependency-policy:
     name: Dependency policy

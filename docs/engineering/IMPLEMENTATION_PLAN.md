@@ -650,15 +650,19 @@ Status: **merged and post-merge validated** in PR #91 (`1cab83f4`), exact final 
 
 #### Phase 3C3C2C5F - installed Node operator profile
 
+Status: **merged and post-merge validated** in PR #92 (`b4412b08`), exact final head `df6742f3`; PR CI #386 and post-merge `main` CI #387 passed Ubuntu, Windows and dependency policy, including C5E Node admission, Git MCP, exact installer-profile configuration and the real installed `node --version` doctor. The default installer remains process-free; `-EnableIsolatedNode` is explicit/default-off, exposes only the four process lifecycle tools, prompt-gates `process_start`, and adds no workspace read authority.
+
+#### Phase 3C3C2C5G - real ChatGPT Desktop Node smoke
+
 Current gate:
 
-1. Add explicit/default-off installer switch `-EnableIsolatedNode`; auto-discover the hosted `node.exe` or accept only an optional absolute `-NodePath` when that switch is also present.
-2. Generate only the existing C5E authority pair (`--allow-executable=interpreter:<exact-node>` + `--allow-isolated-node=<exact-node>`); do not add exact-file, directory, write or network authority implicitly.
-3. Expose only `process_start`, `process_read`, `process_result` and `process_stop` in the ChatGPT plugin profile; configure `process_start` for prompt approval.
-4. Keep the default installer profile process-free and reject `-NodePath` without the explicit opt-in.
-5. Extend the installer doctor to perform a real MCP `node --version` through the installed bridge + canonical sibling helper with `process_count = 1`.
-6. Windows installer-profile CI must prove default absence, exact generated Node args/tool list, prompt gating, no automatic `--allow-process-read-file`, doctor success and owned-root uninstall cleanup.
-7. Do not admit Python, Java, Cargo, rustc, descendants, workspace-directory reads or network authority in this gate.
+1. Windows CI stages the exact already-tested debug bridge/helper plus installer, doctor, plugin and one dedicated preparation script as a short-lived validation artifact; this is a test artifact, not a release or support claim.
+2. The preparation script installs that exact bundle into the normal user-scoped Optic location with `-ReadOnly -EnableIsolatedNode`, using the real ChatGPT Desktop/Codex plugin manager rather than `-SkipPluginRegistration`.
+3. After install, re-read the installed `.mcp.json` and prove exact Node authority, the four process tools, prompt-gated `process_start`, no `--allow-process-read-file`, canonical sibling helper and byte fingerprints of installed binaries.
+4. Fully restart ChatGPT Desktop so the installed plugin/profile is reloaded.
+5. In a new normal Chat, invoke `@Optic AI Bridge` and request only the exact installed Node executable with `args=["--version"]`, `network=false`, `process_count=1`; approve only that exact `process_start` request.
+6. The ChatGPT path must then use `process_result` and `process_read` and report a valid Node version. No file-read grant, workspace mutation, network request or other executable is permitted in the gate.
+7. After the smoke, independently inspect the installed config and disposable workspace; do not infer success merely from the assistant's prose.
 
 Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
