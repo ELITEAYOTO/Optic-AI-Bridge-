@@ -44,7 +44,8 @@ Repeatable:
 
 ```text
 --allow-executable <fixed-tool|interpreter|repository-code>:<absolute-path>
---allow-env <variable-name>
+--env-grant <benign|sensitive|forbidden>:<variable-name>
+--allow-env <variable-name>  # legacy alias for benign:<variable-name>
 ```
 
 - Each allowed executable must include an explicit operator-owned execution class. Legacy unclassified `--allow-executable <absolute-path>` values are rejected rather than receiving a default class.
@@ -54,7 +55,10 @@ Repeatable:
 - Each path is canonicalized and must resolve to a regular file before a process task lease is created. The same canonical executable path may appear only once per server lifecycle; duplicate/competing classes fail startup closed.
 - `ProcessRun` is added to the application session only when at least one classified executable was authorized.
 - The process MCP tools are part of the base tool router, but `process_start` fails closed unless the requested canonical executable exactly matches an operator-created lease. The execution class is resolved from that lease and is not a caller field.
-- Child environment is cleared by default; only variables allowed by the operator may be requested for inheritance.
+- Child environment is cleared by default. Environment authority is application-owned and classified per normalized variable name.
+- Only `benign` environment grants are exportable through the current MCP `env_allowlist`. `sensitive` and `forbidden` grants remain non-exportable and fail closed if requested.
+- `--allow-env <name>` is retained as a compatibility alias for `--env-grant benign:<name>`; it does not bypass classification.
+- The authority model stores names/classes only, never environment values. Values are resolved from the bridge process only at execution time after authorization.
 - Process network access remains unavailable; a request with `network=true` fails closed.
 - Phase 3C3B adds operator-owned classification. Phase 3C3C1 now enforces that classification: `fixed-tool` may execute under the current bounded runtime, while `interpreter` and `repository-code` authority may still be provisioned/classified but `process_start` fails closed with `optic.process_isolation_unavailable` until stronger isolation is implemented and proven. Provisioning a high-risk class therefore does not currently grant executable runtime access.
 

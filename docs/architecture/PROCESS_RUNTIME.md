@@ -34,7 +34,10 @@ On Windows, every process job owns one kernel Job Object. This is per-job contai
 ## Environment and cwd
 
 - The child environment is cleared by default.
-- A request may inherit only variable names that were explicitly allowed by the operator with `--allow-env`.
+- Environment authority is keyed by normalized variable name and classified application-side as `Benign`, `Sensitive` or `Forbidden`; the authority record stores no value.
+- The current MCP request may inherit only `Benign` variables. `Sensitive`, `Forbidden`, unknown or ungranted names fail closed; callers cannot choose or downgrade the class.
+- `--env-grant <benign|sensitive|forbidden>:<name>` is the explicit operator surface. Legacy `--allow-env <name>` remains a compatibility alias for `Benign` only.
+- Authorized values are read from the bridge process environment only when preparing the child after name/class validation.
 - A requested cwd is project-relative, canonicalized, required to be a directory and required to remain under the canonical workspace root.
 - The executable is the intentional absolute-path exception: it must canonicalize to a regular file and match the operator-created executable lease exactly.
 
