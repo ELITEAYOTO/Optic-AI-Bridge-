@@ -79,7 +79,7 @@ jobs:
             -BridgePath '.\target\debug\optic-bridge.exe' `
             -GitPath $git `
             -FixtureRoot $fixtureRoot
-      - name: Validate ChatGPT installer Git integration profiles
+      - name: Validate ChatGPT installer profiles
         if: runner.os == 'Windows'
         shell: pwsh
         run: |

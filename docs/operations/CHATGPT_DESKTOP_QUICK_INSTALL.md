@@ -2,7 +2,7 @@
 
 **Status:** developer preview. The default Phase 2D2 ChatGPT Desktop profile was validated end-to-end on 2026-10-04. The optional Phase 2D3 exact-head Git-integration profile was validated end-to-end in a real normal ChatGPT Desktop chat on 2026-10-05, in addition to native-binary and installer-profile CI validation.
 
-This is the intended end-user path. It does **not** require an OpenAI API key, API credits, a tunnel, Node.js, Python, Docker, or a Rust compiler. The release bundle contains a prebuilt Windows `optic-bridge.exe` plus the local ChatGPT plugin package and installer.
+This is the intended end-user path. The **default** profile does **not** require an OpenAI API key, API credits, a tunnel, Node.js, Python, Docker, or a Rust compiler. Node.js is required only when the optional isolated-Node process profile is explicitly enabled. The release bundle contains prebuilt Windows bridge/isolation binaries plus the local ChatGPT plugin package and installer.
 
 ## Target time
 
@@ -57,6 +57,22 @@ To expose only file reads and optional Git reads:
 .\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\repository" -ReadOnly
 ```
 
+### Optional isolated Node process profile
+
+Node process execution is deliberately **off by default**. If Node.js is installed and you want ChatGPT to use the proven isolated Node profile, enable it explicitly:
+
+```powershell
+.\Install-OpticAIBridge.ps1 `
+  -Workspace "C:\path\to\your\repository" `
+  -EnableIsolatedNode
+```
+
+The installer auto-discovers the exact `node.exe`. An advanced user may instead provide `-NodePath "C:\absolute\path\to\node.exe"`, but `-NodePath` is rejected unless `-EnableIsolatedNode` is also present.
+
+This profile exposes only `process_start`, `process_read`, `process_result`, and `process_stop`; ChatGPT is configured to prompt before `process_start`. The process lease remains capped to one logical process, no network authority is added, and the installer does **not** grant Node workspace-file access automatically. Exact process file reads still require the separate server-owned exact-file grant mechanism. The installer doctor performs a real MCP `node --version` through the installed AppContainer helper before reporting success.
+
+`-ReadOnly` may be combined with `-EnableIsolatedNode`: in that combination, file mutation authority is absent, but the explicitly enabled isolated Node process can still execute. Treat `-ReadOnly` as a filesystem-mutation setting, not as a promise that no process will run.
+
 ### Optional exact-head Git integration preview
 
 Git integration is deliberately **off by default**. On a workspace that is exactly a Git repository root with an existing `HEAD`, enable the preview explicitly:
@@ -91,7 +107,7 @@ It:
 5. creates the local compatibility plugin package and `.mcp.json` with absolute paths;
 6. registers a dedicated local marketplace named `optic-ai-bridge`;
 7. installs/enables `optic-ai-bridge-local@optic-ai-bridge`;
-8. performs a real MCP `initialize` + `tools/list` doctor test;
+8. performs a real MCP `initialize` + `tools/list` doctor test and, when `-EnableIsolatedNode` is selected, a real isolated `node --version` process smoke;
 9. verifies that the `optic` MCP server is visible to ChatGPT Desktop.
 
 No administrator service is installed.

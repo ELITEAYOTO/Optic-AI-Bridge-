@@ -49,9 +49,13 @@ $FixtureRoot = (Resolve-Path -LiteralPath $FixtureRoot).Path
 $installer = Join-Path $PSScriptRoot 'Install-OpticAIBridge.ps1'
 $gitCommand = Get-Command git.exe -ErrorAction Stop | Select-Object -First 1
 $git = (Resolve-Path -LiteralPath $gitCommand.Source).Path
+$nodeCommand = Get-Command node.exe -ErrorAction Stop | Select-Object -First 1
+$node = (Resolve-Path -LiteralPath $nodeCommand.Source).Path
 $fixture = Join-Path $FixtureRoot ('installer-profiles-' + [Guid]::NewGuid().ToString('N'))
 $repo = Join-Path $fixture 'repo'
 $defaultInstall = Join-Path $fixture 'default-install'
+$nodeInstall = Join-Path $fixture 'node-install'
+$nodePathRejectedInstall = Join-Path $fixture 'node-path-rejected-install'
 $optInInstall = Join-Path $fixture 'integration-install'
 $rejectedInstall = Join-Path $fixture 'rejected-install'
 $symbolicInstall = Join-Path $fixture 'symbolic-install'
@@ -136,11 +140,80 @@ try {
     if ($defaultArgs | Where-Object { $_ -like '--git-integration-*' -or $_ -eq '--allow-git-integrate' }) {
         throw 'Default installer profile unexpectedly emitted Git integration startup authority.'
     }
+    if ($defaultArgs | Where-Object { $_ -like '--allow-isolated-node=*' -or $_ -like '--allow-executable=interpreter:*' }) {
+        throw 'Default installer profile unexpectedly emitted isolated Node authority.'
+    }
+    foreach ($processTool in @('process_start', 'process_read', 'process_result', 'process_stop')) {
+        if ($processTool -in $defaultTools) {
+            throw "Default installer profile unexpectedly enabled $processTool."
+        }
+    }
     & $git -C $repo show-ref --verify --quiet $targetRef
     $defaultRefExists = $LASTEXITCODE -eq 0
     $global:LASTEXITCODE = 0
     if ($defaultRefExists) {
         throw 'Default installer profile unexpectedly created the integration ref.'
+    }
+
+    # NodePath alone must never imply authority; the dedicated switch is mandatory.
+    $nodePathWithoutOptInRejected = $false
+    try {
+        & $installer `
+            -Workspace $repo `
+            -BinaryPath $BridgePath `
+            -IsolationLauncherPath $IsolationLauncherPath `
+            -PluginTemplatePath $PluginTemplatePath `
+            -InstallRoot $nodePathRejectedInstall `
+            -ReadOnly `
+            -NodePath $node `
+            -SkipDoctor `
+            -SkipPluginRegistration
+    }
+    catch {
+        $nodePathWithoutOptInRejected = $true
+    }
+    if (-not $nodePathWithoutOptInRejected) {
+        throw 'Installer accepted -NodePath without explicit -EnableIsolatedNode.'
+    }
+
+    # Explicit Node opt-in auto-discovers the exact hosted node.exe, emits only
+    # Node eligibility/process authority, exposes the process lifecycle, and the
+    # doctor proves a real isolated Node --version start through the installed helper.
+    & $installer `
+        -Workspace $repo `
+        -BinaryPath $BridgePath `
+        -IsolationLauncherPath $IsolationLauncherPath `
+        -PluginTemplatePath $PluginTemplatePath `
+        -InstallRoot $nodeInstall `
+        -ReadOnly `
+        -EnableIsolatedNode `
+        -SkipPluginRegistration
+
+    $nodeConfig = Read-McpConfig -InstallRoot $nodeInstall
+    $nodeServer = $nodeConfig.mcpServers.optic
+    $nodeTools = @($nodeServer.enabled_tools | ForEach-Object { [string]$_ })
+    $nodeArgs = @($nodeServer.args | ForEach-Object { [string]$_ })
+    foreach ($argument in @(
+        "--allow-executable=interpreter:$node",
+        "--allow-isolated-node=$node"
+    )) {
+        if ($argument -notin $nodeArgs) { throw "Node installer profile is missing expected argument: $argument" }
+    }
+    if ($nodeArgs | Where-Object { $_ -like '--allow-process-read-file*' }) {
+        throw 'Node installer profile silently widened workspace read authority.'
+    }
+    foreach ($processTool in @('process_start', 'process_read', 'process_result', 'process_stop')) {
+        if ($processTool -notin $nodeTools) { throw "Node installer profile is missing expected tool: $processTool" }
+    }
+    if ($nodeServer.tools.process_start.approval_mode -ne 'prompt') {
+        throw 'process_start must require prompt approval in the generated ChatGPT plugin config.'
+    }
+
+    & (Join-Path $PSScriptRoot 'Uninstall-OpticAIBridge.ps1') `
+        -InstallRoot $nodeInstall `
+        -SkipPluginRegistration
+    if (Test-Path -LiteralPath $nodeInstall) {
+        throw 'Node profile uninstall did not remove its installation root.'
     }
 
     # ReadOnly is intentionally incompatible with a mutating Git capability.
@@ -290,6 +363,12 @@ try {
         UnsafeCustomInstallRootRejected = $true
         UnsafeCustomUninstallRootProtected = $true
         DefaultGitIntegrationToolsAbsent = $true
+        DefaultIsolatedNodeAuthorityAbsent = $true
+        NodePathWithoutOptInRejected = $true
+        OptInNodeProcessToolsPresent = $true
+        OptInNodeProcessStartPromptApproval = $true
+        OptInNodeDoctorPassed = $true
+        OptInNodeDidNotGrantWorkspaceRead = $true
         ReadOnlyIntegrationRejected = $true
         SymbolicIntegrationRefRejected = $true
         OptInGitIntegrationStatusPresent = $true

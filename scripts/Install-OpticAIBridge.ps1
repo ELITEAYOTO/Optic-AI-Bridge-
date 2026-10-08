@@ -11,6 +11,8 @@ param(
     [string]$DeletePrefix = 'scratch',
     [switch]$ReadOnly,
     [switch]$EnableGitIntegration,
+    [switch]$EnableIsolatedNode,
+    [string]$NodePath,
     [switch]$SkipDoctor,
     [switch]$SkipPluginRegistration
 )
@@ -61,6 +63,9 @@ if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
 }
 if ($ReadOnly -and $EnableGitIntegration) {
     throw '-EnableGitIntegration is a mutating Git capability and cannot be combined with -ReadOnly.'
+}
+if ($NodePath -and -not $EnableIsolatedNode) {
+    throw '-NodePath requires the explicit -EnableIsolatedNode operator opt-in.'
 }
 
 $defaultInstallRoot = Normalize-PathText (Join-Path $env:LOCALAPPDATA 'OpticAIBridge')
@@ -140,6 +145,27 @@ $manifestTemplate = Join-Path $PluginTemplatePath '.codex-plugin\plugin.json'
 $logoBase64 = Join-Path $PluginTemplatePath 'assets\optic-ai-bridge.png.b64'
 if (-not (Test-Path -LiteralPath $manifestTemplate -PathType Leaf)) { throw "Missing plugin manifest: $manifestTemplate" }
 if (-not (Test-Path -LiteralPath $logoBase64 -PathType Leaf)) { throw "Missing plugin logo payload: $logoBase64" }
+
+$isolatedNodePath = $null
+if ($EnableIsolatedNode) {
+    if (-not $NodePath) {
+        $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $nodeCommand) {
+            throw '-EnableIsolatedNode requires node.exe. Install Node.js or provide -NodePath <absolute-node.exe>.'
+        }
+        $NodePath = $nodeCommand.Source
+    }
+    if (-not [IO.Path]::IsPathRooted($NodePath)) {
+        throw '-NodePath must be an absolute path to node.exe.'
+    }
+    if (-not (Test-Path -LiteralPath $NodePath -PathType Leaf)) {
+        throw "Node executable not found: $NodePath"
+    }
+    $isolatedNodePath = (Resolve-Path -LiteralPath $NodePath).Path
+    if ([IO.Path]::GetFileName($isolatedNodePath) -ine 'node.exe') {
+        throw '-EnableIsolatedNode accepts only an exact node.exe executable.'
+    }
+}
 
 $codex = $null
 if (-not $SkipPluginRegistration) {
@@ -269,6 +295,14 @@ $enabledTools = New-Object System.Collections.Generic.List[string]
 $enabledTools.Add('fs_list')
 $enabledTools.Add('fs_read')
 
+if ($EnableIsolatedNode) {
+    $mcpArgs.Add("--allow-executable=interpreter:$isolatedNodePath")
+    $mcpArgs.Add("--allow-isolated-node=$isolatedNodePath")
+    foreach ($tool in @('process_start', 'process_read', 'process_result', 'process_stop')) {
+        $enabledTools.Add($tool)
+    }
+}
+
 if ($enableGit) {
     $mcpArgs.Add("--git-executable=$gitPath")
     $enabledTools.Add('git_status')
@@ -300,6 +334,9 @@ if (-not $ReadOnly) {
 $mcpArgs.Add($Workspace)
 
 $toolApprovals = [ordered]@{}
+if ($EnableIsolatedNode) {
+    $toolApprovals.process_start = [ordered]@{ approval_mode = 'prompt' }
+}
 if (-not $ReadOnly -and $WritePrefix) {
     $toolApprovals.fs_write = [ordered]@{ approval_mode = 'prompt' }
     $toolApprovals.fs_apply_patch = [ordered]@{ approval_mode = 'prompt' }
@@ -372,6 +409,7 @@ if (-not $SkipDoctor) {
         Workspace = $Workspace
     }
     if ($enableGit) { $doctorParams.GitPath = $gitPath }
+    if ($EnableIsolatedNode) { $doctorParams.IsolatedNodePath = $isolatedNodePath }
     if ($EnableGitIntegration) {
         $doctorParams.GitIntegrationPath = $gitPath
         $doctorParams.GitIntegrationRoot = $gitIntegrationRoot
@@ -404,10 +442,13 @@ if (-not $SkipPluginRegistration) {
 Write-Host ''
 Write-Host 'Optic AI Bridge is ready.' -ForegroundColor Green
 Write-Host "Workspace : $Workspace"
-Write-Host "Isolation : helper installed (authority still requires explicit server-owned eligibility)"
+Write-Host "Isolation : helper installed"
+Write-Host "Node isolated profile: $(if ($EnableIsolatedNode) { $isolatedNodePath } else { 'disabled' })"
 Write-Host "Git read  : $enableGit"
 Write-Host "Git integrate: $EnableGitIntegration"
-Write-Host "Mode      : $(if ($ReadOnly) { 'read-only' } elseif ($EnableGitIntegration) { 'read + Git + scratch mutations + explicit Git integration' } else { 'read + Git + scratch mutations' })"
+$modeLabel = if ($ReadOnly) { 'read-only filesystem' } elseif ($EnableGitIntegration) { 'read + Git + scratch mutations + explicit Git integration' } else { 'read + Git + scratch mutations' }
+if ($EnableIsolatedNode) { $modeLabel += ' + isolated Node process' }
+Write-Host "Mode      : $modeLabel"
 Write-Host ''
 Write-Host 'Final step: fully close and reopen ChatGPT Desktop, create a new normal Chat, then type:' -ForegroundColor Yellow
 Write-Host '@Optic AI Bridge Inspect the current workspace without modifying anything.' -ForegroundColor White

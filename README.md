@@ -11,7 +11,7 @@ The repository started documentation-first and now contains an executable Rust i
 
 ## Quick install - ChatGPT Desktop (developer preview)
 
-The local ChatGPT Desktop path was integration-tested on Windows on 2026-10-04: normal Chat successfully started the `optic` MCP server and used `fs_read` against the configured workspace. The **default** compatibility profile still exposes the same intended eight file/Git tools while process/session routes remain outside the ChatGPT tool surface. An explicit `-EnableGitIntegration` preview adds only `git_integration_status` and prompt-gated `git_integrate`; this optional profile is now validated both by CI/doctor and by the final real ChatGPT Desktop disposable-repository smoke completed on 2026-10-05.
+The local ChatGPT Desktop path was integration-tested on Windows on 2026-10-04: normal Chat successfully started the `optic` MCP server and used `fs_read` against the configured workspace. The **default** compatibility profile still exposes the same intended eight file/Git tools while process/session routes remain outside the ChatGPT tool surface. Optional profiles are explicit: `-EnableGitIntegration` adds only `git_integration_status` plus prompt-gated `git_integrate`, while C5F `-EnableIsolatedNode` adds the four Node process lifecycle tools with prompt-gated `process_start` and no implicit workspace-read grant.
 
 The end-user installation target is **under 3 minutes** using a prebuilt Windows release bundle:
 
@@ -19,7 +19,7 @@ The end-user installation target is **under 3 minutes** using a prebuilt Windows
 .\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\repository"
 ```
 
-No OpenAI API key, API credits, public tunnel, Node.js, Python, Docker, or Rust compiler is required by that release-bundle path. The installer is user-scoped, detects Git, generates the local MCP configuration, registers the ChatGPT Desktop plugin, and runs an MCP self-test. Mutations are limited to `scratch/` by default and a `-ReadOnly` mode is available. Exact-head Git integration remains off by default; on an exact Git repository root it can be explicitly enabled with `-EnableGitIntegration` (not compatible with `-ReadOnly`).
+No OpenAI API key, API credits, public tunnel, Python, Docker, Rust compiler, or Node.js is required by the **default** release-bundle path. The installer is user-scoped, detects Git, generates the local MCP configuration, registers the ChatGPT Desktop plugin, and runs an MCP self-test. Mutations are limited to `scratch/` by default and a `-ReadOnly` mode is available. Exact-head Git integration remains off by default and can be explicitly enabled with `-EnableGitIntegration` on an exact repository root. Isolated Node execution also remains off by default; users who already have Node.js can explicitly enable the proven one-process profile with `-EnableIsolatedNode`.
 
 There is not yet a production-supported release; the tag-driven Windows release workflow added in this tranche is the mechanism for publishing the first prebuilt bundle. See [`docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md`](docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md).
 

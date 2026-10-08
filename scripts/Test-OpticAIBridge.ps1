@@ -7,6 +7,7 @@ param(
     [string]$Workspace,
 
     [string]$IsolationLauncherPath,
+    [string]$IsolatedNodePath,
     [string]$GitPath,
     [string]$GitIntegrationPath,
     [string]$GitIntegrationRoot,
@@ -57,6 +58,49 @@ function Read-McpResponse {
     throw "Timed out waiting for MCP response id=$Id."
 }
 
+function Invoke-McpTool {
+    param(
+        [Parameter(Mandatory = $true)]$Process,
+        [Parameter(Mandatory = $true)][int]$Id,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)]$Arguments
+    )
+    $request = [ordered]@{
+        jsonrpc = '2.0'
+        id = $Id
+        method = 'tools/call'
+        params = [ordered]@{ name = $Name; arguments = $Arguments }
+    } | ConvertTo-Json -Depth 12 -Compress
+    $Process.StandardInput.WriteLine($request)
+    $Process.StandardInput.Flush()
+    return Read-McpResponse -Process $Process -Id $Id -Timeout $TimeoutMs
+}
+
+function Get-ToolPayload {
+    param([Parameter(Mandatory = $true)]$Response)
+    if ($Response.PSObject.Properties.Name -contains 'error') {
+        throw "MCP tool call failed: $($Response.error.message)"
+    }
+    if ($Response.result.PSObject.Properties.Name -contains 'isError' -and $Response.result.isError) {
+        $detail = (@($Response.result.content) | ForEach-Object {
+            if ($_.PSObject.Properties.Name -contains 'text') { [string]$_.text }
+        }) -join "`n"
+        throw "MCP tool returned an error result: $detail"
+    }
+    foreach ($structuredName in @('structuredContent', 'structured_content')) {
+        if ($Response.result.PSObject.Properties.Name -contains $structuredName) {
+            $structured = $Response.result.$structuredName
+            if ($structured) { return $structured }
+        }
+    }
+    foreach ($item in @($Response.result.content)) {
+        if ($item -and $item.PSObject.Properties.Name -contains 'text') {
+            try { return ($item.text | ConvertFrom-Json) } catch { }
+        }
+    }
+    throw 'MCP tool result did not contain structured JSON content.'
+}
+
 $BridgePath = (Resolve-Path -LiteralPath $BridgePath).Path
 $Workspace = (Resolve-Path -LiteralPath $Workspace).Path
 if ($IsolationLauncherPath) {
@@ -67,6 +111,15 @@ if ($IsolationLauncherPath) {
     }
     if (-not (Test-Path -LiteralPath $IsolationLauncherPath -PathType Leaf)) {
         throw "Isolation launcher is not a regular file: $IsolationLauncherPath"
+    }
+}
+if ($IsolatedNodePath) {
+    if (-not $IsolationLauncherPath) {
+        throw 'IsolatedNodePath requires the canonical isolation launcher sibling.'
+    }
+    $IsolatedNodePath = (Resolve-Path -LiteralPath $IsolatedNodePath).Path
+    if ([IO.Path]::GetFileName($IsolatedNodePath) -ine 'node.exe') {
+        throw 'IsolatedNodePath must resolve to node.exe.'
     }
 }
 
@@ -92,6 +145,10 @@ if ($StateDir) {
 }
 
 $bridgeArgs = New-Object System.Collections.Generic.List[string]
+if ($IsolatedNodePath) {
+    $bridgeArgs.Add("--allow-executable=interpreter:$IsolatedNodePath")
+    $bridgeArgs.Add("--allow-isolated-node=$IsolatedNodePath")
+}
 if ($GitPath) { $bridgeArgs.Add("--git-executable=$GitPath") }
 if ($integrationParts -eq 3) {
     $bridgeArgs.Add("--git-integration-executable=$GitIntegrationPath")
@@ -180,10 +237,62 @@ try {
         $required.Add('fs_apply_patch')
     }
     if ($DeletePrefix) { $required.Add('fs_delete') }
+    if ($IsolatedNodePath) {
+        foreach ($tool in @('process_start', 'process_read', 'process_result', 'process_stop')) {
+            $required.Add($tool)
+        }
+    }
 
     $missing = @($required | Where-Object { $_ -notin $toolNames })
     if ($missing.Count -gt 0) {
         throw "Missing expected MCP tools: $($missing -join ', ')"
+    }
+
+    $isolatedNodeVersion = $null
+    if ($IsolatedNodePath) {
+        $start = Invoke-McpTool -Process $process -Id 3 -Name 'process_start' -Arguments ([ordered]@{
+            executable = $IsolatedNodePath
+            args = @('--version')
+            cwd = $null
+            env_allowlist = @()
+            network = $false
+            timeout_ms = 10000
+            output_budget = 16384
+            memory_bytes = 268435456
+            process_count = 1
+        })
+        $startPayload = Get-ToolPayload -Response $start
+        $jobId = [string]$startPayload.job_id
+        if ([string]::IsNullOrWhiteSpace($jobId)) { throw 'Node doctor process_start returned no job_id.' }
+
+        $nextId = 4
+        $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+        $resultPayload = $null
+        do {
+            $result = Invoke-McpTool -Process $process -Id $nextId -Name 'process_result' -Arguments ([ordered]@{ job_id = $jobId })
+            $nextId++
+            $resultPayload = Get-ToolPayload -Response $result
+            if ([string]$resultPayload.status -ne 'running') { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($null -eq $resultPayload -or [string]$resultPayload.status -eq 'running') {
+            throw 'Timed out waiting for isolated Node doctor process.'
+        }
+        if ([string]$resultPayload.status -ne 'exited' -or [int]$resultPayload.exit_code -ne 0) {
+            throw "Isolated Node doctor process failed. status=$($resultPayload.status) exit=$($resultPayload.exit_code)"
+        }
+
+        $read = Invoke-McpTool -Process $process -Id $nextId -Name 'process_read' -Arguments ([ordered]@{
+            job_id = $jobId
+            stream = 'stdout'
+            cursor = 0
+            max_bytes = 4096
+        })
+        $readPayload = Get-ToolPayload -Response $read
+        $isolatedNodeVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$readPayload.data)).Trim()
+        if ($isolatedNodeVersion -notmatch '^v[0-9]+\.') {
+            throw "Unexpected isolated Node version output: $isolatedNodeVersion"
+        }
     }
 
     [pscustomobject]@{
@@ -194,6 +303,8 @@ try {
         ToolCount = $toolNames.Count
         RequiredTools = @($required)
         IsolationLauncherPresent = [bool]$IsolationLauncherPath
+        IsolatedNodeProfile = [bool]$IsolatedNodePath
+        IsolatedNodeVersion = $isolatedNodeVersion
     }
 }
 finally {
