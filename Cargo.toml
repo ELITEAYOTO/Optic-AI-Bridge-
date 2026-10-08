@@ -23,7 +23,7 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 futures = "0.3"
 getrandom = { version = "0.4.3", features = ["std"] }
 process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "kill-on-drop", "process-group"] }
-rmcp = { version = "=3.4.0", default-features = false, features = ["server", "macros", "schemars", "transport-async-rw"] }
+rmcp = { version = "=3.4.0", default-features = false, features = ["server", "macros", "schemars", "transport-async-rw", "elicitation"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

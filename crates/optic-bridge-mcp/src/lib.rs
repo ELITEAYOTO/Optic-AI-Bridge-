@@ -6,6 +6,7 @@
 //! Public MCP inputs are normalized and authorized before runtime services are
 //! invoked, and stdio JSON-RPC framing is bounded independently of RMCP defaults.
 
+mod approval_elicitation;
 mod git_integrate_tools;
 mod git_tools;
 mod mutation_tools;
@@ -13,6 +14,9 @@ mod process_tools;
 mod server;
 mod transport;
 
+pub use approval_elicitation::{
+    ApprovalElicitationError, HumanApprovalDecision, request_human_approval,
+};
 pub use git_integrate_tools::{
     GitIntegrateRequest, GitIntegrateResponse, GitIntegrationStatusResponse,
 };
