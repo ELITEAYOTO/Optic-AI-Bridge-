@@ -1,7 +1,7 @@
 #[cfg(windows)]
 use std::ffi::OsString;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     future::Future,
     path::{Path, PathBuf},
@@ -129,6 +129,29 @@ pub struct ProcessStartSpec {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnvironmentVariableClass {
+    Benign,
+    Sensitive,
+    Forbidden,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnvironmentGrant {
+    pub name: String,
+    pub class: EnvironmentVariableClass,
+}
+
+impl EnvironmentGrant {
+    #[must_use]
+    pub fn benign(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            class: EnvironmentVariableClass::Benign,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessStream {
     Stdout,
     Stderr,
@@ -165,7 +188,7 @@ pub struct ProcessResult {
 pub struct ProcessManager {
     root: PathBuf,
     limits: HardLimits,
-    allowed_env_vars: BTreeSet<String>,
+    environment_grants: BTreeMap<String, EnvironmentVariableClass>,
     #[cfg(windows)]
     isolation_launcher: Option<IsolationLauncher>,
     #[cfg(windows)]
@@ -222,20 +245,38 @@ impl ProcessManager {
         limits: HardLimits,
         allowed_env_vars: impl IntoIterator<Item = String>,
     ) -> Result<Self, ProcessError> {
+        Self::new_with_environment_grants(
+            root,
+            limits,
+            allowed_env_vars.into_iter().map(EnvironmentGrant::benign),
+        )
+    }
+
+    pub fn new_with_environment_grants(
+        root: impl AsRef<Path>,
+        limits: HardLimits,
+        grants: impl IntoIterator<Item = EnvironmentGrant>,
+    ) -> Result<Self, ProcessError> {
         let limits = limits.validate_nonzero()?;
         let root = fs::canonicalize(root).map_err(ProcessError::Io)?;
         if !root.is_dir() {
             return Err(ProcessError::RootNotDirectory);
         }
-        let allowed_env_vars = allowed_env_vars
-            .into_iter()
-            .map(|name| normalize_env_name(&name))
-            .collect::<Result<BTreeSet<_>, _>>()?;
+        let mut environment_grants = BTreeMap::new();
+        for grant in grants {
+            let normalized = normalize_env_name(&grant.name)?;
+            match environment_grants.insert(normalized, grant.class) {
+                Some(existing) if existing != grant.class => {
+                    return Err(ProcessError::ConflictingEnvironmentGrant);
+                }
+                _ => {}
+            }
+        }
 
         Ok(Self {
             root,
             limits,
-            allowed_env_vars,
+            environment_grants,
             #[cfg(windows)]
             isolation_launcher: None,
             #[cfg(windows)]
@@ -252,7 +293,22 @@ impl ProcessManager {
         allowed_env_vars: impl IntoIterator<Item = String>,
         isolation_launcher: impl AsRef<Path>,
     ) -> Result<Self, ProcessError> {
-        let mut manager = Self::new(root, limits, allowed_env_vars)?;
+        Self::new_with_isolation_launcher_and_environment_grants(
+            root,
+            limits,
+            allowed_env_vars.into_iter().map(EnvironmentGrant::benign),
+            isolation_launcher,
+        )
+    }
+
+    #[cfg(windows)]
+    pub fn new_with_isolation_launcher_and_environment_grants(
+        root: impl AsRef<Path>,
+        limits: HardLimits,
+        grants: impl IntoIterator<Item = EnvironmentGrant>,
+        isolation_launcher: impl AsRef<Path>,
+    ) -> Result<Self, ProcessError> {
+        let mut manager = Self::new_with_environment_grants(root, limits, grants)?;
         let launcher = isolation_launcher.as_ref();
         if !launcher.is_absolute() {
             return Err(ProcessError::IsolationLauncherMustBeAbsolute);
@@ -722,7 +778,7 @@ impl ProcessManager {
         let mut normalized_names = BTreeSet::new();
         for raw in requested {
             let normalized = normalize_env_name(raw)?;
-            if !self.allowed_env_vars.contains(&normalized) {
+            if self.environment_grants.get(&normalized) != Some(&EnvironmentVariableClass::Benign) {
                 return Err(ProcessError::EnvironmentNotAllowed);
             }
             normalized_names.insert(normalized);
@@ -738,7 +794,7 @@ impl ProcessManager {
         let mut output = Vec::new();
         for raw in requested {
             let normalized = normalize_env_name(raw)?;
-            if !self.allowed_env_vars.contains(&normalized) {
+            if self.environment_grants.get(&normalized) != Some(&EnvironmentVariableClass::Benign) {
                 return Err(ProcessError::EnvironmentNotAllowed);
             }
             if seen.insert(normalized.clone())
@@ -1280,8 +1336,10 @@ pub enum ProcessError {
     CwdNotDirectory,
     #[error("process environment variable name is invalid")]
     InvalidEnvironmentName,
-    #[error("process environment variable is not operator-allowlisted")]
+    #[error("process environment variable is not operator-authorized for MCP export")]
     EnvironmentNotAllowed,
+    #[error("environment grants conflict after platform name normalization")]
+    ConflictingEnvironmentGrant,
     #[error("requested process resources exceed the hard ceiling")]
     ResourceBudgetExceeded,
     #[error("process request shape exceeds the hard request byte ceiling")]
@@ -1502,6 +1560,75 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("process did not reach a terminal state");
+    }
+
+    #[test]
+    fn classified_environment_grants_export_only_benign_names() {
+        let root = workspace("env-grants");
+        let manager = ProcessManager::new_with_environment_grants(
+            &root,
+            HardLimits::default(),
+            [
+                EnvironmentGrant {
+                    name: "OPTIC_BENIGN".to_owned(),
+                    class: EnvironmentVariableClass::Benign,
+                },
+                EnvironmentGrant {
+                    name: "OPTIC_SECRET".to_owned(),
+                    class: EnvironmentVariableClass::Sensitive,
+                },
+                EnvironmentGrant {
+                    name: "OPTIC_FORBIDDEN".to_owned(),
+                    class: EnvironmentVariableClass::Forbidden,
+                },
+            ],
+        )
+        .expect("classified manager");
+
+        assert_eq!(
+            manager
+                .normalize_environment_allowlist(&["OPTIC_BENIGN".to_owned()])
+                .expect("benign export"),
+            BTreeSet::from([normalize_env_name("OPTIC_BENIGN").expect("name")])
+        );
+        assert!(matches!(
+            manager.normalize_environment_allowlist(&["OPTIC_SECRET".to_owned()]),
+            Err(ProcessError::EnvironmentNotAllowed)
+        ));
+        assert!(matches!(
+            manager.normalize_environment_allowlist(&["OPTIC_FORBIDDEN".to_owned()]),
+            Err(ProcessError::EnvironmentNotAllowed)
+        ));
+        fs::remove_dir_all(root).expect("remove workspace");
+    }
+
+    #[test]
+    fn conflicting_environment_grants_fail_closed_after_normalization() {
+        let root = workspace("env-conflict");
+        let first = EnvironmentGrant {
+            name: "OPTIC_CASE".to_owned(),
+            class: EnvironmentVariableClass::Benign,
+        };
+        #[cfg(windows)]
+        let second_name = "optic_case";
+        #[cfg(not(windows))]
+        let second_name = "OPTIC_CASE";
+        let result = ProcessManager::new_with_environment_grants(
+            &root,
+            HardLimits::default(),
+            [
+                first,
+                EnvironmentGrant {
+                    name: second_name.to_owned(),
+                    class: EnvironmentVariableClass::Sensitive,
+                },
+            ],
+        );
+        assert!(matches!(
+            result,
+            Err(ProcessError::ConflictingEnvironmentGrant)
+        ));
+        fs::remove_dir_all(root).expect("remove workspace");
     }
 
     #[test]
