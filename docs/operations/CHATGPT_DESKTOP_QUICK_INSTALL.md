@@ -33,7 +33,7 @@ Building from source is a developer workflow and is intentionally not part of th
 @Optic AI Bridge Inspect the current workspace without modifying anything.
 ```
 
-The installer performs its own MCP handshake/tool self-test before reporting success.
+The installer performs its own MCP handshake/tool self-test before reporting success. For the C5G developer validation gate, CI also emits a one-day `optic-chatgpt-desktop-node-validation-*` artifact containing the exact tested bridge/helper and `Prepare-ChatGPTDesktopNodeSmoke.ps1`; this short-lived artifact is for Desktop smoke validation only and is not a release.
 
 ## Default security profile
 
