@@ -1770,6 +1770,8 @@ mod tests {
         let limits = HardLimits {
             max_active_process_jobs: 1,
             max_active_process_jobs_per_session: 1,
+            max_active_heavy_process_jobs: 1,
+            max_active_heavy_process_jobs_per_session: 1,
             max_process_records: 1,
             max_process_records_per_session: 1,
             ..defaults
