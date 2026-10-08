@@ -224,6 +224,7 @@ mod tests {
                 memory_bytes: 64 * 1024 * 1024,
                 process_count: 1,
             },
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: 1,
         }
@@ -260,6 +261,7 @@ mod tests {
         ProcessStartSpec {
             session,
             class: ProcessExecutionClass::FixedTool,
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             executable,
             args: vec![
                 "--exact".to_owned(),

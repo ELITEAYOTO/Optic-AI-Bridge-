@@ -197,6 +197,7 @@ mod tests {
             capabilities: capabilities.iter().copied().collect::<BTreeSet<_>>(),
             scopes: scopes.iter().cloned().collect::<BTreeSet<_>>(),
             resource_ceiling: budget(),
+            workload_class: optic_bridge_core::WorkloadClass::Standard,
             expires_at: now().saturating_add_millis(30_000),
             policy_epoch: session.policy_epoch,
         }

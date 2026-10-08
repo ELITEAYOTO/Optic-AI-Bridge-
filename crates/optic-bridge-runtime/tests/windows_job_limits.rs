@@ -35,6 +35,7 @@ fn spec(
     ProcessStartSpec {
         session,
         class: ProcessExecutionClass::FixedTool,
+        workload_class: optic_bridge_core::WorkloadClass::Standard,
         executable: fixture(),
         args: args.into_iter().collect(),
         cwd: None,
