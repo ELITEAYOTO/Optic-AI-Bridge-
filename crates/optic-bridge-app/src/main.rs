@@ -15,7 +15,7 @@ use optic_bridge_core::{
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
-    AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
+    ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
     GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService,
     MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, SessionGrantSpec,
     SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
@@ -89,6 +89,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let expires_at = now.saturating_add_millis(INITIAL_SESSION_TTL_MS);
     let processes = Arc::new(build_process_manager(&args, limits)?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
+    let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits)?);
 
     let canonical_process_executables =
         canonicalize_allowed_executables(&processes, &args.allowed_executables)?;
@@ -164,10 +165,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let sessions = Arc::new(SessionRegistry::from_hard_limits(limits)?);
-    let lifecycle = Arc::new(SessionLifecycleManager::new(
+    let lifecycle = Arc::new(SessionLifecycleManager::new_with_approval_broker(
         Arc::clone(&sessions),
         Arc::clone(&task_leases),
         Arc::clone(&processes),
+        Arc::clone(&approvals),
     ));
     let grant = lifecycle.provision(
         SessionGrantSpec {
@@ -262,7 +264,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     let git_read_enabled = git_service.is_some();
-    let server = ReadonlyMcpServer::new_with_git_integration_runtime(
+    let server = ReadonlyMcpServer::new_with_git_integration_runtime_and_approvals(
         &args.workspace,
         sessions,
         session,
@@ -270,6 +272,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         limits,
         processes,
         task_leases,
+        approvals,
         process_leases,
         mutation_service,
         mutation_authorities,

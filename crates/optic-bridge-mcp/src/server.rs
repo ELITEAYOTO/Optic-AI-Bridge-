@@ -7,10 +7,10 @@ use optic_bridge_core::{
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
-    AuthorizedFileMutationService, AuthorizedGitIntegrationService, BoundedFileSystem, Clock,
-    EntryKind, FileSystemError, GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet,
-    ProcessError, ProcessManager, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
-    TransportError, TransportGuard, TransportLimits,
+    ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
+    BoundedFileSystem, Clock, EntryKind, FileSystemError, GitIntegrationAuthoritySet,
+    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -38,6 +38,7 @@ pub struct ReadonlyMcpServer {
     pub(crate) limits: HardLimits,
     pub(crate) processes: Arc<ProcessManager>,
     pub(crate) task_leases: Arc<TaskLeaseRegistry>,
+    pub(crate) approvals: Arc<ApprovalBroker>,
     pub(crate) process_leases: Arc<BTreeMap<String, TaskLeaseId>>,
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
@@ -172,6 +173,42 @@ impl ReadonlyMcpServer {
         git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
         git_integration_authorities: GitIntegrationAuthoritySet,
     ) -> Result<Self, ServerBuildError> {
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits)?);
+        Self::new_with_git_integration_runtime_and_approvals(
+            root,
+            sessions,
+            session,
+            clock,
+            limits,
+            processes,
+            task_leases,
+            approvals,
+            process_leases,
+            mutation_service,
+            mutation_authorities,
+            git_service,
+            git_integration_service,
+            git_integration_authorities,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_git_integration_runtime_and_approvals(
+        root: impl AsRef<Path>,
+        sessions: Arc<SessionRegistry>,
+        session: SessionHandle,
+        clock: Arc<dyn Clock>,
+        limits: HardLimits,
+        processes: Arc<ProcessManager>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        approvals: Arc<ApprovalBroker>,
+        process_leases: BTreeMap<String, TaskLeaseId>,
+        mutation_service: Option<Arc<AuthorizedFileMutationService>>,
+        mutation_authorities: MutationAuthoritySet,
+        git_service: Option<Arc<GitReadService>>,
+        git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
+        git_integration_authorities: GitIntegrationAuthoritySet,
+    ) -> Result<Self, ServerBuildError> {
         let limits = limits.validate_nonzero()?;
         if limits.max_response_bytes <= MCP_ENVELOPE_RESERVE_BYTES + STRUCTURED_VALUE_RESERVE_BYTES
         {
@@ -214,6 +251,7 @@ impl ReadonlyMcpServer {
             limits,
             processes,
             task_leases,
+            approvals,
             process_leases: Arc::new(process_leases),
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),
@@ -638,7 +676,10 @@ mod tests {
     use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
     use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId};
-    use optic_bridge_runtime::{GitIntegrationAuthoritySpec, git_integration_resource_budget};
+    use optic_bridge_runtime::{
+        ApprovalBrokerError, ApprovalSpec, GitIntegrationAuthoritySpec,
+        git_integration_resource_budget,
+    };
 
     use super::*;
 
@@ -673,6 +714,56 @@ mod tests {
         sessions.register(grant).expect("register session");
         ReadonlyMcpServer::new(root, sessions, session, clock, HardLimits::default())
             .expect("build server")
+    }
+
+    #[tokio::test]
+    async fn session_cancel_revokes_the_servers_shared_approval_broker() {
+        let root = workspace("cancel-approval");
+        let server = server(&root, &[Capability::FileRead]);
+        let now = server.clock.now();
+        let grant = server
+            .sessions
+            .get_active(&server.session, now)
+            .expect("active session");
+        let envelope = ActionEnvelope {
+            action_id: ActionId::generate().expect("action id"),
+            session: server.session.clone(),
+            task_lease: None,
+            effect: Effect::FileRead {
+                path: WorkspacePath::parse("fixture.txt").expect("workspace path"),
+            },
+            resources: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 1_024,
+                memory_bytes: 1_024,
+                process_count: 1,
+            },
+            policy_epoch: grant.policy_epoch,
+        };
+        let approval = server
+            .approvals
+            .issue(
+                ApprovalSpec {
+                    session: envelope.session.clone(),
+                    action_id: envelope.action_id.clone(),
+                    effect: envelope.effect.clone(),
+                    resources: envelope.resources,
+                    expires_at: now.saturating_add_millis(1_000),
+                    policy_epoch: envelope.policy_epoch,
+                },
+                now,
+            )
+            .expect("issue approval");
+
+        server.session_cancel().await.expect("cancel session");
+        assert_eq!(
+            server
+                .approvals
+                .consume_exact(&approval.id, &envelope, now)
+                .expect_err("session cancellation must remove its approval"),
+            ApprovalBrokerError::UnknownApproval
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[tokio::test]
