@@ -16,7 +16,8 @@ param(
     [string]$StateDir,
     [string]$WritePrefix,
     [string]$DeletePrefix,
-    [int]$TimeoutMs = 10000
+    [ValidateRange(1000, 120000)]
+    [int]$TimeoutMs = 30000
 )
 
 Set-StrictMode -Version Latest
@@ -25,6 +26,44 @@ $ErrorActionPreference = 'Stop'
 function Quote-ProcessArgument {
     param([Parameter(Mandatory = $true)][string]$Value)
     return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function Throw-McpTimeout {
+    param(
+        [Parameter(Mandatory = $true)]$Process,
+        [Parameter(Mandatory = $true)][int]$Id,
+        [Parameter(Mandatory = $true)][int]$Timeout
+    )
+
+    $wasRunning = -not $Process.HasExited
+    if ($wasRunning) {
+        try { $Process.Kill() } catch { }
+        try { $Process.WaitForExit(2000) | Out-Null } catch { }
+    }
+
+    $finalState = if ($Process.HasExited) {
+        "exited with code $($Process.ExitCode)"
+    }
+    else {
+        'still running after bounded kill attempt'
+    }
+
+    $stderr = ''
+    if ($Process.HasExited) {
+        try { $stderr = $Process.StandardError.ReadToEnd() } catch { }
+    }
+    if ([string]::IsNullOrWhiteSpace($stderr)) {
+        $stderr = '<empty>'
+    }
+    else {
+        $stderr = $stderr.Trim()
+        if ($stderr.Length -gt 4096) {
+            $stderr = $stderr.Substring(0, 4096) + '...[truncated]'
+        }
+    }
+
+    $initialState = if ($wasRunning) { 'still running' } else { 'already exited' }
+    throw "Timed out after ${Timeout}ms waiting for MCP response id=$Id; bridge was $initialState; final state: $finalState; stderr: $stderr"
 }
 
 function Read-McpResponse {
@@ -39,7 +78,7 @@ function Read-McpResponse {
         $remaining = [Math]::Max(1, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)
         $task = $Process.StandardOutput.ReadLineAsync()
         if (-not $task.Wait($remaining)) {
-            throw "Timed out waiting for MCP response id=$Id."
+            Throw-McpTimeout -Process $Process -Id $Id -Timeout $Timeout
         }
 
         $line = $task.Result
@@ -55,7 +94,7 @@ function Read-McpResponse {
         }
     }
 
-    throw "Timed out waiting for MCP response id=$Id."
+    Throw-McpTimeout -Process $Process -Id $Id -Timeout $Timeout
 }
 
 function Invoke-McpTool {
