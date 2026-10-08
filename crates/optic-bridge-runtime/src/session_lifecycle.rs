@@ -302,6 +302,21 @@ mod tests {
     }
 
     #[test]
+    fn adversarial_process_fixture_child() {
+        let cwd = env::current_dir().expect("fixture cwd");
+        if cwd.join("fixture-adversarial-sleep").exists() {
+            thread::sleep(Duration::from_secs(10));
+        }
+    }
+
+    fn adversarial_process_spec(session: SessionHandle) -> ProcessStartSpec {
+        let mut spec = process_spec(session);
+        spec.args[1] = "session_lifecycle::tests::adversarial_process_fixture_child".to_owned();
+        spec.resources.timeout_ms = 15_000;
+        spec
+    }
+
+    #[test]
     fn provision_generates_and_registers_application_owned_session() {
         let root = workspace("provision");
         let (lifecycle, sessions, _, _) = manager(&root);
@@ -419,6 +434,166 @@ mod tests {
         task_leases
             .get_active(&lease_b.id, &session_b.handle, now)
             .expect("B lease must remain");
+
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[tokio::test]
+    async fn adversarial_multisession_pressure_revoke_and_reap_preserve_foreign_state() {
+        let root = workspace("adversarial-multisession");
+        fs::write(root.join("fixture-adversarial-sleep"), b"1")
+            .expect("write adversarial sleep marker");
+
+        let limits = HardLimits {
+            max_sessions: 2,
+            max_task_leases: 2,
+            max_task_leases_per_session: 1,
+            max_active_process_jobs: 3,
+            max_active_process_jobs_per_session: 1,
+            ..HardLimits::default()
+        };
+        let sessions =
+            Arc::new(SessionRegistry::from_hard_limits(limits).expect("session registry"));
+        let task_leases =
+            Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("lease registry"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("process manager"));
+        let lifecycle = SessionLifecycleManager::new(
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            Arc::clone(&processes),
+        );
+
+        let now = MonotonicTime::from_millis(1);
+        let session_a = lifecycle.provision(spec(1_000), now).expect("session A");
+        let session_b = lifecycle.provision(spec(1_000), now).expect("session B");
+        let lease_a = lease(session_a.handle.clone(), 1_000);
+        let lease_b = lease(session_b.handle.clone(), 1_000);
+        task_leases.register(lease_a.clone()).expect("lease A");
+        task_leases.register(lease_b.clone()).expect("lease B");
+        assert_eq!(
+            task_leases
+                .get_active(&lease_b.id, &session_a.handle, now)
+                .expect_err("A must not resolve B lease"),
+            TaskLeaseRegistryError::WrongSession
+        );
+
+        let job_a = processes
+            .start(adversarial_process_spec(session_a.handle.clone()))
+            .expect("start A job");
+        let job_b = processes
+            .start(adversarial_process_spec(session_b.handle.clone()))
+            .expect("start B job");
+
+        assert!(matches!(
+            processes.result(&session_a.handle, &job_b),
+            Err(ProcessError::UnknownJob)
+        ));
+        assert!(matches!(
+            processes.stop(&session_a.handle, &job_b),
+            Err(ProcessError::UnknownJob)
+        ));
+        assert!(matches!(
+            processes.result(&session_b.handle, &job_a),
+            Err(ProcessError::UnknownJob)
+        ));
+
+        assert!(matches!(
+            processes.start(adversarial_process_spec(session_a.handle.clone())),
+            Err(ProcessError::TooManyActiveJobsForSession)
+        ));
+        assert_eq!(
+            processes
+                .result(&session_b.handle, &job_b)
+                .expect("B result remains visible to B")
+                .status,
+            ProcessStatus::Running
+        );
+
+        assert!(matches!(
+            lifecycle.provision(spec(1_000), now),
+            Err(SessionLifecycleError::SessionRegistry(
+                SessionRegistryError::CapacityExceeded
+            ))
+        ));
+
+        let revoke = lifecycle.revoke(&session_a.handle).expect("revoke A");
+        assert!(revoke.session_changed);
+        assert_eq!(revoke.revoked_leases, 1);
+        assert_eq!(revoke.cancellation_requests, 1);
+        assert_eq!(
+            await_terminal(&processes, &session_a.handle, &job_a)
+                .await
+                .status,
+            ProcessStatus::Stopped
+        );
+
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session survives A revoke");
+        task_leases
+            .get_active(&lease_b.id, &session_b.handle, now)
+            .expect("B lease survives A revoke");
+        assert_eq!(
+            processes
+                .result(&session_b.handle, &job_b)
+                .expect("B job survives A revoke")
+                .status,
+            ProcessStatus::Running
+        );
+
+        let reap = lifecycle.try_reap(&session_a.handle, now).expect("reap A");
+        assert!(reap.session_removed);
+        assert_eq!(reap.removed_process_records, 1);
+        assert_eq!(reap.removed_leases, 1);
+        assert!(matches!(
+            task_leases.get_active(&lease_a.id, &session_a.handle, now),
+            Err(TaskLeaseRegistryError::UnknownLease)
+        ));
+        assert!(matches!(
+            processes.result(&session_a.handle, &job_a),
+            Err(ProcessError::UnknownJob)
+        ));
+
+        let session_c = lifecycle
+            .provision(spec(1_000), now)
+            .expect("C reuses reaped session capacity");
+        let lease_c = lease(session_c.handle.clone(), 1_000);
+        task_leases
+            .register(lease_c)
+            .expect("C reuses reaped lease capacity");
+        let job_c = processes
+            .start(adversarial_process_spec(session_c.handle.clone()))
+            .expect("C starts while B is still active");
+
+        sessions
+            .get_active(&session_b.handle, now)
+            .expect("B session remains active after C admission");
+        task_leases
+            .get_active(&lease_b.id, &session_b.handle, now)
+            .expect("B lease remains active after C admission");
+        assert_eq!(
+            processes
+                .result(&session_b.handle, &job_b)
+                .expect("B job remains visible after C admission")
+                .status,
+            ProcessStatus::Running
+        );
+
+        assert!(processes.stop(&session_c.handle, &job_c).expect("stop C"));
+        assert!(processes.stop(&session_b.handle, &job_b).expect("stop B"));
+        assert_eq!(
+            await_terminal(&processes, &session_c.handle, &job_c)
+                .await
+                .status,
+            ProcessStatus::Stopped
+        );
+        assert_eq!(
+            await_terminal(&processes, &session_b.handle, &job_b)
+                .await
+                .status,
+            ProcessStatus::Stopped
+        );
 
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
