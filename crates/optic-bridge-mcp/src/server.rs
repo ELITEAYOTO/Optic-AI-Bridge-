@@ -8,10 +8,10 @@ use optic_bridge_core::{
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
-    BoundedFileSystem, Clock, EntryKind, FileSystemError, GitIntegrationAuthoritySet,
-    GitReadService, MutationAuthoritySet, ProcessError, ProcessManager, ReadAuthoritySet,
-    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError,
-    TransportGuard, TransportLimits,
+    BlockingIoError, BlockingIoGovernor, BoundedFileSystem, Clock, EntryKind, FileSystemError,
+    GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, ProcessError, ProcessManager,
+    ReadAuthoritySet, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
+    ToolProfileRegistry, TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -31,6 +31,7 @@ pub(crate) const STRUCTURED_VALUE_RESERVE_BYTES: u64 = 1024;
 pub struct ReadonlyMcpServer {
     tool_router: ToolRouter<Self>,
     filesystem: Arc<BoundedFileSystem>,
+    blocking_io: BlockingIoGovernor,
     pub(crate) sessions: Arc<SessionRegistry>,
     pub(crate) session: SessionHandle,
     pub(crate) clock: Arc<dyn Clock>,
@@ -264,6 +265,7 @@ impl ReadonlyMcpServer {
         }
 
         let filesystem = Arc::new(BoundedFileSystem::from_hard_limits(root, limits)?);
+        let blocking_io = BlockingIoGovernor::new(limits.max_concurrent_requests)?;
         let transport_guard = TransportGuard::new(TransportLimits::from(limits))?;
         let mut tool_router = Self::readonly_tool_router();
         tool_router.merge(Self::process_tool_router());
@@ -283,6 +285,7 @@ impl ReadonlyMcpServer {
         Ok(Self {
             tool_router,
             filesystem,
+            blocking_io,
             sessions,
             session,
             clock,
@@ -373,15 +376,14 @@ impl ReadonlyMcpServer {
             .as_millis()
             .saturating_sub(now.as_millis())
             .max(1);
+        let blocking_io = self.blocking_io.clone();
         let chunk = tokio::time::timeout(
             Duration::from_millis(timeout_ms),
-            tokio::task::spawn_blocking(move || {
-                filesystem.read(&task_path, offset, Some(max_bytes))
-            }),
+            blocking_io.run(move || filesystem.read(&task_path, offset, Some(max_bytes))),
         )
         .await
         .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
+        .map_err(map_blocking_io_error)?
         .map_err(map_filesystem_error)?;
 
         let response = FsReadResponse {
@@ -437,13 +439,14 @@ impl ReadonlyMcpServer {
             .as_millis()
             .saturating_sub(now.as_millis())
             .max(1);
+        let blocking_io = self.blocking_io.clone();
         let page = tokio::time::timeout(
             Duration::from_millis(timeout_ms),
-            tokio::task::spawn_blocking(move || filesystem.list(task_root.as_ref(), cursor, limit)),
+            blocking_io.run(move || filesystem.list(task_root.as_ref(), cursor, limit)),
         )
         .await
         .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
+        .map_err(map_blocking_io_error)?
         .map_err(map_filesystem_error)?;
 
         let original_len = page.entries.len();
@@ -646,6 +649,8 @@ pub enum ServerBuildError {
     Limits(#[from] LimitError),
     #[error("filesystem initialization failed: {0}")]
     FileSystem(#[from] FileSystemError),
+    #[error("blocking I/O governor initialization failed: {0}")]
+    BlockingIo(#[from] BlockingIoError),
     #[error("transport guard initialization failed: {0}")]
     Transport(#[from] TransportError),
     #[error("process runtime initialization failed: {0}")]
@@ -680,6 +685,10 @@ pub(crate) fn map_transport_error(error: TransportError) -> ErrorData {
         }
         TransportError::InvalidLimits => ErrorData::internal_error("optic.invalid_limits", None),
     }
+}
+
+fn map_blocking_io_error(_error: BlockingIoError) -> ErrorData {
+    ErrorData::internal_error("optic.blocking_io_unavailable", None)
 }
 
 fn map_filesystem_error(error: FileSystemError) -> ErrorData {

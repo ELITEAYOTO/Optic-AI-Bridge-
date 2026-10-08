@@ -10,6 +10,7 @@
 mod approval_broker;
 mod authorized_file_mutation;
 mod authorized_git_integration;
+mod blocking_io;
 mod clock;
 mod filesystem;
 mod git_integrate;
@@ -35,6 +36,7 @@ pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMu
 pub use authorized_git_integration::{
     AuthorizedGitIntegrationError, AuthorizedGitIntegrationService,
 };
+pub use blocking_io::{BlockingIoError, BlockingIoGovernor};
 pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
