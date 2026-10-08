@@ -7,6 +7,7 @@
 //! those outer layers must satisfy before an effect can be authorized.
 
 mod action;
+mod approval;
 mod ids;
 mod limits;
 mod path;
@@ -17,7 +18,8 @@ pub use action::{
     ActionEnvelope, Capability, Effect, ExpectedState, GitObjectId, GitObjectIdError,
     NetworkAccess, Reversibility,
 };
-pub use ids::{ActionId, IdError, JobId, SessionHandle, TaskLeaseId, TokenParseError};
+pub use approval::ApprovalGrant;
+pub use ids::{ActionId, ApprovalId, IdError, JobId, SessionHandle, TaskLeaseId, TokenParseError};
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
 pub use session::{

@@ -38,6 +38,8 @@ pub struct HardLimits {
     pub max_sessions: u32,
     pub max_task_leases: u32,
     pub max_task_leases_per_session: u32,
+    pub max_approval_grants: u32,
+    pub max_approval_grants_per_session: u32,
     pub max_active_output_ram_bytes: u64,
     pub max_active_output_ram_bytes_per_session: u64,
     pub max_active_process_memory_bytes: u64,
@@ -75,6 +77,8 @@ impl Default for HardLimits {
             max_sessions: 16,
             max_task_leases: 128,
             max_task_leases_per_session: 32,
+            max_approval_grants: 128,
+            max_approval_grants_per_session: 32,
             max_active_output_ram_bytes: 16 * 1024 * 1024,
             max_active_output_ram_bytes_per_session: 8 * 1024 * 1024,
             max_active_process_memory_bytes: 16 * 1024 * 1024 * 1024,
@@ -118,6 +122,8 @@ impl HardLimits {
             || self.max_sessions == 0
             || self.max_task_leases == 0
             || self.max_task_leases_per_session == 0
+            || self.max_approval_grants == 0
+            || self.max_approval_grants_per_session == 0
             || self.max_active_output_ram_bytes == 0
             || self.max_active_output_ram_bytes_per_session == 0
             || self.max_active_process_memory_bytes == 0
@@ -146,6 +152,7 @@ impl HardLimits {
             return Err(LimitError::ZeroIsNotUnlimited);
         }
         if self.max_task_leases_per_session > self.max_task_leases
+            || self.max_approval_grants_per_session > self.max_approval_grants
             || self.max_process_records < self.max_active_process_jobs
             || self.max_active_process_jobs_per_session > self.max_active_process_jobs
             || self.max_active_heavy_process_jobs > self.max_active_process_jobs
@@ -529,5 +536,35 @@ mod tests {
         ] {
             assert!(limits.validate_nonzero().is_err());
         }
+    }
+
+    #[test]
+    fn approval_grant_limits_are_bounded() {
+        let defaults = HardLimits::default();
+        assert_eq!(defaults.max_approval_grants, 128);
+        assert_eq!(defaults.max_approval_grants_per_session, 32);
+        assert!(defaults.validate_nonzero().is_ok());
+
+        let zero = HardLimits {
+            max_approval_grants: 0,
+            ..defaults
+        };
+        assert_eq!(
+            zero.validate_nonzero()
+                .expect_err("zero approval capacity must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+
+        let invalid = HardLimits {
+            max_approval_grants: 1,
+            max_approval_grants_per_session: 2,
+            ..defaults
+        };
+        assert_eq!(
+            invalid
+                .validate_nonzero()
+                .expect_err("per-session approvals must fit global capacity"),
+            LimitError::InvalidRelationship
+        );
     }
 }
