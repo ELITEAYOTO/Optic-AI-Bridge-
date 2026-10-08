@@ -596,9 +596,24 @@ Status: **merged and post-merge validated** in PR #76 (`8d127a3b`), exact final 
 
 Gate passed: exact PR CI #336, SHA-guarded squash merge, and post-merge `main` CI #337.
 
+#### Phase 3C3C2C2C1 - operator-owned exact-file process read provisioning
+
+Status: **merged** in PR #78 (`70cde40f`), exact green final head `3b871bdf`; CI #347 passed Ubuntu, Windows and dependency policy, including the native real-binary MCP smoke and installer-profile validation.
+
+1. Add repeatable Windows startup configuration `--allow-process-read-file <absolute-executable> <workspace-file>`.
+2. Require the executable to already be classified and authorized by `--allow-executable`; `FixedTool` is rejected, so this authority is limited to the isolated `Interpreter` / `RepositoryCode` path.
+3. Validate each operator-supplied workspace path through the existing exact-file resolver before publishing authority: safe project-relative syntax, exact regular file, canonical workspace containment, duplicate rejection and the existing 32-file ceiling.
+4. Mint `Capability::FileRead` plus exact `LeaseScope::WorkspacePrefix(file)` only into the matching application-owned process lease. No configuration leaves historical `ProcessRun + ProcessExecutable` authority unchanged; `WorkspaceAll` is never minted by this path.
+5. MCP receives no grant field and cannot select, widen or create this authority. Session ownership, lease expiry/revoke and existing process-executable identity checks remain unchanged.
+6. Non-Windows startup and direct provisioning reject non-empty process read grants because this authority depends on the Windows AppContainer runtime.
+7. `Interpreter` / `RepositoryCode` remain denied by `ProcessIsolationRequired`; this gate provisions authority but does not re-admit execution.
+8. Validation attempts showed that ordinary `cmd.exe` / `findstr.exe` execution does not automatically consume the exact ACL grant in the same way as the controlled Rust AppContainer probe. This is recorded as a compatibility finding, not addressed by broadening ACL authority.
+
+Gate passed: exact-head Ubuntu/Windows/dependency-policy CI on PR #78.
+
 #### Later Phase 3C gates
 
-Add explicit operator-owned process read-grant provisioning and prove representative toolchain compatibility before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then evaluate broader workspace coverage/write authority and prove truthful network semantics plus broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
+Prove representative toolchain compatibility under the real helper/AppContainer path before any selected `Interpreter` / `RepositoryCode` policy re-admission. Then evaluate broader workspace coverage/write authority and prove truthful network semantics plus broader sandbox compatibility before exposing wider autonomous or public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

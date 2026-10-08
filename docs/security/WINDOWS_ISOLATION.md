@@ -114,11 +114,25 @@ The isolated helper/runtime now carries a deliberately bounded exact-file grant 
 - the Windows grant primitive opens root and target handles, rejects final reparses, resolves both final paths with `GetFinalPathNameByHandleW`, verifies final target containment beneath the opened root, and modifies the DACL on that same target handle;
 - grant guards are retained for the isolated child lifetime and revoke before the ephemeral profile is destroyed.
 
-This wiring still does **not** create public high-risk execution: current operator process leases carry `ProcessRun + ProcessExecutable` only, so they produce zero workspace read grants, while policy/MCP continue to reject `Interpreter` / `RepositoryCode`. No directory/recursive, write or network authority is added.
+This B2 wiring by itself did **not** create public high-risk execution: at that gate operator process leases still carried `ProcessRun + ProcessExecutable` only, while policy/MCP continued to reject `Interpreter` / `RepositoryCode`. No directory/recursive, write or network authority was added.
+
+## Phase 3C3C2C2C1 operator-owned exact-file process read provisioning
+
+Windows startup now owns the explicit authority bridge into the proven B2 grant path:
+
+- `--allow-process-read-file <absolute-executable> <workspace-file>` is repeatable and accepted only for an executable already classified/authorized by `--allow-executable`;
+- `FixedTool` is rejected because workspace grants are restricted to the AppContainer-isolated `Interpreter` / `RepositoryCode` path;
+- each workspace file is validated before lease publication through the existing exact-file resolver, preserving the 32-file ceiling, regular-file requirement, canonical containment and duplicate rejection;
+- only the matching process lease gains `FileRead` plus exact `WorkspacePrefix(file)` scopes; no grant configuration leaves the existing process lease unchanged and `WorkspaceAll` is never minted;
+- MCP has no process-grant parameter and cannot mint, select or widen these scopes;
+- non-Windows startup/direct provisioning fails closed for non-empty process read grants;
+- policy still returns `ProcessIsolationRequired` for `Interpreter` / `RepositoryCode`, so this is authority provisioning, not public high-risk re-admission.
+
+PR #78 merged as `70cde40f` from exact green final head `3b871bdf`; CI #347 passed Ubuntu, Windows, native real-binary smoke, installer profiles and dependency policy. During validation, `cmd.exe` / `findstr.exe` did not consume the granted temporary-file ACL like the controlled Rust probe. That result is treated as a toolchain-compatibility boundary; the grant is not broadened merely to make a representative executable pass.
 
 ## Hardened profile
 
-Current direction: add explicit operator-owned process read-grant provisioning and validate representative Rust/Node/Java toolchains before any selected high-risk policy re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: validate representative Rust/Node/Java (and other selected developer toolchain) execution under the real helper/AppContainer grant path before any selected high-risk policy re-admission. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -134,4 +148,4 @@ A caller can control only opaque `JobId` values owned by its application session
 
 ## Remaining security work
 
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher; Phase 3C3C2C2A wires that helper into the internal Windows `ProcessManager` path with executable pinning and +1 kernel-process accounting; Phase 3C3C2C2B1 adds revocable exact-file read grants; and Phase 3C3C2C2B2 wires bounded server-authority grant selection/lifecycle through the isolated path with handle-based final-path containment. The helper remains non-distributed and policy/MCP still deny high-risk classes; current operator process leases mint no `FileRead` workspace scopes. Remaining work includes explicit operator-owned process read-grant provisioning, broader workspace coverage beyond exact read-only files, representative toolchain compatibility, registry/UI decisions, network-containment proof and policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves an AppContainer identity with zero capabilities and denial of one ungranted user-file read; Phase 3C3C2B2 proves explicit captured stdio with handle-list-restricted inheritance; Phase 3C3C2C1 proves a separate bounded internal launcher; Phase 3C3C2C2A wires that helper into the internal Windows `ProcessManager` path with executable pinning and +1 kernel-process accounting; Phase 3C3C2C2B1 adds revocable exact-file read grants; Phase 3C3C2C2B2 wires bounded server-authority grant selection/lifecycle through the isolated path with handle-based final-path containment; and Phase 3C3C2C2C1 adds Windows-only explicit operator-owned exact-file read provisioning into matching high-risk process leases without changing MCP or policy admission. The helper remains non-distributed and policy/MCP still deny high-risk classes. Remaining work includes representative toolchain compatibility, broader workspace coverage beyond exact read-only files, registry/UI decisions, network-containment proof and any selected policy re-admission. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
