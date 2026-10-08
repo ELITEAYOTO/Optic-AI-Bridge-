@@ -654,15 +654,19 @@ Status: **merged and post-merge validated** in PR #92 (`b4412b08`), exact final 
 
 #### Phase 3C3C2C5G - real ChatGPT Desktop Node smoke
 
-Current gate:
+Status: **completed on the real target machine**. PR #93 merged the validation-bundle/plugin-manager path as `c6bba66`; PR #94 merged proof-surface hardening as `694ee3f`; PR #95 landed hidden-plugin-manifest artifact round-trip as `1f8449e`; and PR #97 merged the target-machine `TEMP`/`TMP` compatibility fix as `4e6f21a` from exact green head `4e27bce`. PR CI #397 and post-merge `main` CI #398 passed Ubuntu, Windows and dependency policy; Windows also passed the dedicated TEMP-only isolated-Node doctor, real Node MCP admission, Git MCP, installer profiles and validation-artifact round-trip.
 
-1. Windows CI stages the exact already-tested debug bridge/helper plus installer, doctor, plugin and one dedicated preparation script as a short-lived validation artifact; this is a test artifact, not a release or support claim.
-2. The preparation script installs that exact bundle into the normal user-scoped Optic location with `-ReadOnly -EnableIsolatedNode`, using the real ChatGPT Desktop/Codex plugin manager rather than `-SkipPluginRegistration`.
-3. After install, re-read the installed `.mcp.json` and prove exact Node authority, the four process tools, prompt-gated `process_start`, no `--allow-process-read-file`, canonical sibling helper and byte fingerprints of installed binaries.
-4. Fully restart ChatGPT Desktop so the installed plugin/profile is reloaded.
-5. In a new normal Chat, invoke `@Optic AI Bridge` and request only the exact installed Node executable with `args=["--version"]`, `network=false`, `process_count=1`; approve only that exact `process_start` request.
-6. The ChatGPT path must then use `process_result` and `process_read` and report a valid Node version. No file-read grant, workspace mutation, network request or other executable is permitted in the gate.
-7. After the smoke, independently inspect the installed config and disposable workspace; do not infer success merely from the assistant's prose.
+Final gate evidence:
+
+1. The exact CI #398 artifact from `main = 4e6f21a4693fad0db0103c950d2227537853a231` was installed into the normal user-scoped Optic location with `-ReadOnly -EnableIsolatedNode` through the real ChatGPT Desktop/Codex plugin manager.
+2. Preparation revalidated exact Node authority, exactly four `process_*` tools, zero `session_*`, prompt-gated `process_start`, no `--allow-process-read-file`, the canonical sibling helper and installed binary fingerprints; the read-only profile's `fs_list` / `fs_read` tools remained separate and were not invoked by this smoke.
+3. After a full ChatGPT Desktop restart, a new normal Chat requested only canonical `C:\Program Files\nodejs\node.exe` with `args=["--version"]`, `network=false` and `process_count=1`.
+4. Desktop displayed an explicit approval dialog for those exact values; only that one request was approved.
+5. The call completed through MCP `process_start`, `process_result` and `process_read`, returning Node `v22.15.1` with exit code 0.
+6. No workspace file tool was invoked; no process workspace-read grant, file mutation, network request, alternate executable or wider process budget was used.
+7. Independent post-smoke verification re-read the installed `.mcp.json`, confirmed the same exact Node startup arguments and prompt-gated process surface, confirmed installed bridge/helper SHA-256 values `CB4608490F77DE6B8A43AF83E0D35F7D12093C8F377F06DC7CC386B41AC4D97F` / `CD85CDCE615CD5725DAFA9054ADFDB7698B308C15B52F8D1CA4DFEB2226C1CD8`, and found the disposable workspace still present with `0` items.
+
+C5G therefore closes only the selected Windows Node Desktop profile. It does not readmit broader interpreter/repository-code profiles or establish universal network/sandbox claims.
 
 Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
