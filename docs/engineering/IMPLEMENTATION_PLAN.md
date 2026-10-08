@@ -699,6 +699,18 @@ Status: **merged and post-merge validated** in PR #101 (`097b6a37`), exact green
 
 Gate passed: exact-head CI #406, SHA-guarded squash merge, and post-merge `main` CI #407. A-02 remains partial only for host-memory headroom/emergency reserve, heavy-task scheduling/classes and optional I/O governance; Phase 3E2 targets host-memory headroom next.
 
+### Phase 3E2A — Windows host-memory observation
+
+Status: **current gate**. This is an observation-only prerequisite for host-memory headroom; it does not alter process admission.
+
+1. `optic-bridge-windows` owns a narrow `GlobalMemoryStatusEx` wrapper and keeps the Win32 `unsafe` boundary out of runtime/policy/MCP crates.
+2. The snapshot exposes only validated total and available physical bytes; zero total or available greater than total fails closed as invalid host telemetry.
+3. Windows CI must prove the real query succeeds with `total > 0` and `available <= total`; zero available memory remains a valid pressure observation, not malformed telemetry.
+4. `ProcessManager`, MCP schemas, capabilities, leases, sandboxing and process eligibility remain unchanged in 3E2A.
+5. Phase 3E2B will consume a testable host-memory provider and define the actual emergency-headroom admission rule; 3E2A alone does not close A-02.
+
+Gate requires exact-head Ubuntu/Windows/dependency-policy CI and post-merge `main` CI before the observation primitive is treated as closed.
+
 ## Phase 4 — same-repo parallelism
 
 Git worktrees, deterministic coordinator, integration/conflict gate.

@@ -17,6 +17,8 @@ mod file;
 #[cfg(windows)]
 mod job;
 #[cfg(windows)]
+mod memory;
+#[cfg(windows)]
 mod workspace_grant;
 
 #[cfg(windows)]
@@ -34,5 +36,7 @@ pub use file::{
 };
 #[cfg(windows)]
 pub use job::LimitedJobObject;
+#[cfg(windows)]
+pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
 pub use workspace_grant::AppContainerReadFileGrant;
