@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    Capability, ResourceBudget, SessionHandle, TaskLeaseId, ToolProfileName, WorkspacePath,
+    Capability, ResourceBudget, SessionHandle, TaskLeaseId, ToolApprovalRequirement,
+    ToolProfileName, WorkspacePath,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -83,7 +84,10 @@ pub enum LeaseScope {
         executable: String,
         class: ProcessExecutionClass,
     },
-    ToolProfile(ToolProfileName),
+    ToolProfile {
+        name: ToolProfileName,
+        approval: ToolApprovalRequirement,
+    },
     NetworkAny,
     NetworkEndpoint(String),
 }

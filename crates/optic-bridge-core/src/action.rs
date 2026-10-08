@@ -1,6 +1,6 @@
 use crate::{
     ActionId, ContentVersion, ProcessExecutionClass, ResourceBudget, SessionHandle, TaskLeaseId,
-    WorkspacePath,
+    ToolApprovalRequirement, ToolProfileName, WorkspacePath,
 };
 use thiserror::Error;
 
@@ -87,6 +87,13 @@ pub enum Effect {
         class: ProcessExecutionClass,
         network: NetworkAccess,
     },
+    ProfiledProcessRun {
+        profile: ToolProfileName,
+        executable: String,
+        class: ProcessExecutionClass,
+        network: NetworkAccess,
+        approval: ToolApprovalRequirement,
+    },
     NetworkAccess {
         endpoint: String,
     },
@@ -106,7 +113,9 @@ impl Effect {
             Self::GitIntegrationObserve | Self::GitIntegrate { .. } => {
                 Some(Capability::GitIntegrate)
             }
-            Self::ProcessRun { .. } => Some(Capability::ProcessRun),
+            Self::ProcessRun { .. } | Self::ProfiledProcessRun { .. } => {
+                Some(Capability::ProcessRun)
+            }
             Self::NetworkAccess { .. } => Some(Capability::NetworkAccess),
             Self::PolicyChange | Self::PrivilegeElevation => None,
         }
@@ -121,6 +130,7 @@ impl Effect {
                 | Self::GitIntegrationObserve
                 | Self::GitIntegrate { .. }
                 | Self::ProcessRun { .. }
+                | Self::ProfiledProcessRun { .. }
                 | Self::NetworkAccess { .. }
         )
     }
@@ -130,6 +140,9 @@ impl Effect {
         matches!(
             self,
             Self::ProcessRun {
+                network: NetworkAccess::Allowed,
+                ..
+            } | Self::ProfiledProcessRun {
                 network: NetworkAccess::Allowed,
                 ..
             } | Self::NetworkAccess { .. }
@@ -147,6 +160,7 @@ impl Effect {
                 Reversibility::Transactional
             }
             Self::ProcessRun { .. }
+            | Self::ProfiledProcessRun { .. }
             | Self::NetworkAccess { .. }
             | Self::PolicyChange
             | Self::PrivilegeElevation => Reversibility::Irreversible,
@@ -189,6 +203,31 @@ mod tests {
         assert_eq!(effect.required_capability(), Some(Capability::GitIntegrate));
         assert!(effect.requires_task_lease());
         assert_eq!(effect.reversibility(), Reversibility::ReadOnly);
+    }
+
+    #[test]
+    fn profiled_process_keeps_process_and_network_capabilities_explicit() {
+        let profile = ToolProfileName::parse("node-version").expect("profile");
+        let denied = Effect::ProfiledProcessRun {
+            profile: profile.clone(),
+            executable: "node".to_owned(),
+            class: ProcessExecutionClass::Interpreter,
+            network: NetworkAccess::Denied,
+            approval: ToolApprovalRequirement::HumanRequired,
+        };
+        assert_eq!(denied.required_capability(), Some(Capability::ProcessRun));
+        assert!(denied.requires_task_lease());
+        assert!(!denied.requires_network_capability());
+        assert_eq!(denied.reversibility(), Reversibility::Irreversible);
+
+        let allowed = Effect::ProfiledProcessRun {
+            profile,
+            executable: "node".to_owned(),
+            class: ProcessExecutionClass::Interpreter,
+            network: NetworkAccess::Allowed,
+            approval: ToolApprovalRequirement::HumanRequired,
+        };
+        assert!(allowed.requires_network_capability());
     }
 
     #[test]
