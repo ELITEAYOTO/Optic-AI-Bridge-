@@ -97,6 +97,48 @@ impl TaskLeaseRegistry {
         Ok(record.lease.clone())
     }
 
+    pub(crate) fn renew_active_session(
+        &self,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        expected_policy_epoch: u64,
+        new_expires_at: MonotonicTime,
+    ) -> Result<usize, TaskLeaseRenewalError> {
+        if new_expires_at <= now {
+            return Err(TaskLeaseRenewalError::ExpiryNotFuture);
+        }
+        let mut leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRenewalError::StateUnavailable)?;
+
+        for record in leases.values() {
+            if &record.lease.session != session || record.revoked {
+                continue;
+            }
+            if record.lease.is_expired_at(now) {
+                return Err(TaskLeaseRenewalError::ExpiredLease);
+            }
+            if record.lease.policy_epoch != expected_policy_epoch {
+                return Err(TaskLeaseRenewalError::PolicyEpochMismatch);
+            }
+            validate_process_authorities(record)
+                .map_err(|_| TaskLeaseRenewalError::AuthorityInvalid)?;
+        }
+
+        let mut changed = 0;
+        for record in leases.values_mut() {
+            if &record.lease.session == session
+                && !record.revoked
+                && record.lease.expires_at < new_expires_at
+            {
+                record.lease.expires_at = new_expires_at;
+                changed += 1;
+            }
+        }
+        Ok(changed)
+    }
+
     pub fn revoke(&self, id: &TaskLeaseId) -> Result<bool, TaskLeaseRegistryError> {
         let mut leases = self
             .leases
@@ -203,6 +245,20 @@ fn capture_process_authorities(
         authorities.insert(authority.canonical_path().to_owned(), authority);
     }
     Ok(authorities)
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskLeaseRenewalError {
+    #[error("task lease renewal state is unavailable")]
+    StateUnavailable,
+    #[error("task lease renewal expiry must be later than now")]
+    ExpiryNotFuture,
+    #[error("expired task leases cannot be renewed")]
+    ExpiredLease,
+    #[error("task lease policy epoch does not match the active session")]
+    PolicyEpochMismatch,
+    #[error("task lease process authority is no longer valid")]
+    AuthorityInvalid,
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
@@ -403,6 +459,87 @@ mod tests {
         assert!(registry.remove_revoked(&owned.id).expect("remove lease"));
         fs::write(&executable, b"replacement").expect("rewrite after physical removal");
         fs::remove_dir_all(root).expect("remove fixture root");
+    }
+
+    #[test]
+    fn renewal_extends_all_active_session_leases_without_changing_authority() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let first = lease(owner.clone(), 100);
+        let second = lease(owner.clone(), 150);
+        registry.register(first.clone()).expect("first lease");
+        registry.register(second.clone()).expect("second lease");
+
+        let changed = registry
+            .renew_active_session(
+                &owner,
+                MonotonicTime::from_millis(10),
+                1,
+                MonotonicTime::from_millis(200),
+            )
+            .expect("renew leases");
+        assert_eq!(changed, 2);
+        for original in [&first, &second] {
+            let renewed = registry
+                .get_active(&original.id, &owner, MonotonicTime::from_millis(160))
+                .expect("renewed lease");
+            assert_eq!(renewed.expires_at, MonotonicTime::from_millis(200));
+            assert_eq!(renewed.capabilities, original.capabilities);
+            assert_eq!(renewed.scopes, original.scopes);
+            assert_eq!(renewed.resource_ceiling, original.resource_ceiling);
+            assert_eq!(renewed.policy_epoch, original.policy_epoch);
+        }
+    }
+
+    #[test]
+    fn lease_renewal_is_all_or_nothing_when_one_active_lease_is_expired() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let expired = lease(owner.clone(), 10);
+        let active = lease(owner.clone(), 100);
+        registry.register(expired.clone()).expect("expired lease");
+        registry.register(active.clone()).expect("active lease");
+        assert_eq!(
+            registry
+                .renew_active_session(
+                    &owner,
+                    MonotonicTime::from_millis(10),
+                    1,
+                    MonotonicTime::from_millis(200),
+                )
+                .expect_err("expired member must fail whole renewal"),
+            TaskLeaseRenewalError::ExpiredLease
+        );
+        let still_active = registry
+            .get_active(&active.id, &owner, MonotonicTime::from_millis(50))
+            .expect("active lease unchanged");
+        assert_eq!(still_active.expires_at, MonotonicTime::from_millis(100));
+    }
+
+    #[test]
+    fn revoked_leases_are_never_resurrected_by_session_renewal() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let revoked = lease(owner.clone(), 100);
+        registry.register(revoked.clone()).expect("lease");
+        registry.revoke(&revoked.id).expect("revoke");
+        assert_eq!(
+            registry
+                .renew_active_session(
+                    &owner,
+                    MonotonicTime::from_millis(10),
+                    1,
+                    MonotonicTime::from_millis(200),
+                )
+                .expect("renew remaining active leases"),
+            0
+        );
+        assert_eq!(
+            registry
+                .get_active(&revoked.id, &owner, MonotonicTime::from_millis(20))
+                .expect_err("revoked stays revoked"),
+            TaskLeaseRegistryError::Revoked
+        );
     }
 
     #[test]

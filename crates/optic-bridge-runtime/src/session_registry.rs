@@ -120,6 +120,35 @@ impl SessionRegistry {
         })
     }
 
+    pub(crate) fn renew_active(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+        new_expires_at: MonotonicTime,
+    ) -> Result<SessionGrant, SessionRenewalError> {
+        if new_expires_at <= now {
+            return Err(SessionRenewalError::ExpiryNotFuture);
+        }
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRenewalError::StateUnavailable)?;
+        let record = sessions
+            .get_mut(handle)
+            .ok_or(SessionRenewalError::UnknownSession)?;
+        if record.revoked {
+            return Err(SessionRenewalError::Revoked);
+        }
+        if record.grant.is_expired_at(now) {
+            return Err(SessionRenewalError::Expired);
+        }
+        if new_expires_at <= record.grant.expires_at {
+            return Err(SessionRenewalError::MustExtend);
+        }
+        record.grant.expires_at = new_expires_at;
+        Ok(record.grant.clone())
+    }
+
     pub fn revoke(&self, handle: &SessionHandle) -> Result<bool, SessionRegistryError> {
         let mut sessions = self
             .sessions
@@ -212,6 +241,22 @@ impl SessionRegistry {
     pub fn is_empty(&self) -> Result<bool, SessionRegistryError> {
         Ok(self.len()? == 0)
     }
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionRenewalError {
+    #[error("session renewal state is unavailable")]
+    StateUnavailable,
+    #[error("session renewal target is unknown")]
+    UnknownSession,
+    #[error("revoked sessions cannot be renewed")]
+    Revoked,
+    #[error("expired sessions cannot be renewed")]
+    Expired,
+    #[error("session renewal expiry must be later than now")]
+    ExpiryNotFuture,
+    #[error("session renewal must strictly extend the current expiry")]
+    MustExtend,
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
@@ -395,6 +440,67 @@ mod tests {
                 .expect("revoke result")
         );
         worker.join().expect("revoke thread");
+    }
+
+    #[test]
+    fn renewal_extends_only_active_session_expiry() {
+        let registry = SessionRegistry::new();
+        let grant = grant(100);
+        registry.register(grant.clone()).expect("register session");
+        let renewed = registry
+            .renew_active(
+                &grant.handle,
+                MonotonicTime::from_millis(10),
+                MonotonicTime::from_millis(200),
+            )
+            .expect("renew session");
+        assert_eq!(renewed.expires_at, MonotonicTime::from_millis(200));
+        assert_eq!(renewed.capabilities, grant.capabilities);
+        assert_eq!(renewed.policy_epoch, grant.policy_epoch);
+    }
+
+    #[test]
+    fn renewal_cannot_shorten_revoke_or_resurrect_expired_session() {
+        let registry = SessionRegistry::new();
+        let active = grant(100);
+        registry.register(active.clone()).expect("active session");
+        assert_eq!(
+            registry
+                .renew_active(
+                    &active.handle,
+                    MonotonicTime::from_millis(10),
+                    MonotonicTime::from_millis(100),
+                )
+                .expect_err("equal expiry must fail"),
+            SessionRenewalError::MustExtend
+        );
+
+        let revoked = grant(100);
+        registry.register(revoked.clone()).expect("revoked session");
+        registry.revoke(&revoked.handle).expect("revoke");
+        assert_eq!(
+            registry
+                .renew_active(
+                    &revoked.handle,
+                    MonotonicTime::from_millis(10),
+                    MonotonicTime::from_millis(200),
+                )
+                .expect_err("revoked must fail"),
+            SessionRenewalError::Revoked
+        );
+
+        let expired = grant(10);
+        registry.register(expired.clone()).expect("expired session");
+        assert_eq!(
+            registry
+                .renew_active(
+                    &expired.handle,
+                    MonotonicTime::from_millis(10),
+                    MonotonicTime::from_millis(200),
+                )
+                .expect_err("expired must fail"),
+            SessionRenewalError::Expired
+        );
     }
 
     #[test]
