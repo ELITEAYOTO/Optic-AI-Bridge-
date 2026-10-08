@@ -116,7 +116,40 @@ jobs:
           name: optic-chatgpt-desktop-node-validation-${{ github.run_id }}-${{ github.run_attempt }}
           path: target/chatgpt-desktop-node-validation-bundle
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 1
+      - name: Download ChatGPT Desktop Node validation bundle for round-trip proof
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v8
+        with:
+          name: optic-chatgpt-desktop-node-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/chatgpt-desktop-node-validation-roundtrip
+      - name: Verify ChatGPT Desktop Node validation bundle round-trip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $roundtrip = Join-Path $env:GITHUB_WORKSPACE 'target\chatgpt-desktop-node-validation-roundtrip'
+          $requiredFiles = @(
+            'optic-bridge.exe',
+            'optic-bridge-isolation-launcher.exe',
+            'Install-OpticAIBridge.ps1',
+            'Test-OpticAIBridge.ps1',
+            'Uninstall-OpticAIBridge.ps1',
+            'Prepare-ChatGPTDesktopNodeSmoke.ps1',
+            'SOURCE.txt',
+            'plugin\.codex-plugin\plugin.json',
+            'plugin\assets\optic-ai-bridge.png.b64'
+          )
+          foreach ($relative in $requiredFiles) {
+            $path = Join-Path $roundtrip $relative
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Validation artifact round-trip is missing required file: $relative"
+            }
+          }
+          $sourceSha = (Get-Content -LiteralPath (Join-Path $roundtrip 'SOURCE.txt') | Where-Object { $_ -like 'source_sha=*' }) -replace '^source_sha=', ''
+          if ($sourceSha -ne '${{ github.sha }}') {
+            throw "Validation artifact source mismatch. expected=${{ github.sha }} observed=$sourceSha"
+          }
 
   dependency-policy:
     name: Dependency policy
