@@ -10,8 +10,8 @@ use std::{
 };
 
 use optic_bridge_core::{
-    Capability, HardLimits, LeaseScope, PrincipalId, ProcessExecutionClass, ProjectId, TaskLease,
-    TaskLeaseId, WorkspacePath,
+    Capability, HardLimits, LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass,
+    ProjectId, ResourceBudget, SessionHandle, TaskLease, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
@@ -73,6 +73,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let canonical_process_executables =
         canonicalize_allowed_executables(&processes, &args.allowed_executables)?;
+    let canonical_process_read_grants = canonicalize_process_read_grants(
+        &processes,
+        &canonical_process_executables,
+        &args.process_read_grants,
+    )?;
 
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
@@ -154,24 +159,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
     let session = grant.handle;
 
-    let mut process_leases = BTreeMap::new();
-    for (canonical, class) in canonical_process_executables {
-        let id = TaskLeaseId::generate()
-            .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
-        task_leases.register(TaskLease {
-            id: id.clone(),
-            session: session.clone(),
-            capabilities: BTreeSet::from([Capability::ProcessRun]),
-            scopes: BTreeSet::from([LeaseScope::ProcessExecutable {
-                executable: canonical.clone(),
-                class,
-            }]),
-            resource_ceiling: limits.max_process_budget,
-            expires_at,
-            policy_epoch: 1,
-        })?;
-        process_leases.insert(canonical, id);
-    }
+    let process_leases = provision_process_leases(
+        &task_leases,
+        &session,
+        &canonical_process_executables,
+        &canonical_process_read_grants,
+        limits.max_process_budget,
+        expires_at,
+        1,
+    )?;
 
     let mutation_authorities = MutationAuthoritySet::provision(
         &task_leases,
@@ -326,6 +322,12 @@ struct AllowedExecutableSpec {
     path: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProcessReadGrantSpec {
+    executable: String,
+    path: WorkspacePath,
+}
+
 fn canonicalize_allowed_executables(
     processes: &ProcessManager,
     executables: &[AllowedExecutableSpec],
@@ -344,10 +346,106 @@ fn canonicalize_allowed_executables(
     Ok(canonical)
 }
 
+fn canonicalize_process_read_grants(
+    processes: &ProcessManager,
+    executables: &BTreeMap<String, ProcessExecutionClass>,
+    grants: &[ProcessReadGrantSpec],
+) -> Result<BTreeMap<String, BTreeSet<WorkspacePath>>, Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if !grants.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "--allow-process-read-file requires the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
+    let mut canonical = BTreeMap::<String, BTreeSet<WorkspacePath>>::new();
+    for grant in grants {
+        let executable = processes.canonicalize_executable(&grant.executable)?;
+        let class = executables.get(&executable).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--allow-process-read-file executable must also be authorized by --allow-executable",
+            )
+        })?;
+        if *class == ProcessExecutionClass::FixedTool {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--allow-process-read-file requires interpreter or repository-code authority",
+            )
+            .into());
+        }
+        let paths = canonical.entry(executable).or_default();
+        if !paths.insert(grant.path.clone()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate --allow-process-read-file grant",
+            )
+            .into());
+        }
+    }
+
+    #[cfg(windows)]
+    for paths in canonical.values() {
+        let paths = paths.iter().cloned().collect::<Vec<_>>();
+        processes.validate_workspace_read_files(&paths)?;
+    }
+    Ok(canonical)
+}
+
+fn provision_process_leases(
+    task_leases: &TaskLeaseRegistry,
+    session: &SessionHandle,
+    executables: &BTreeMap<String, ProcessExecutionClass>,
+    read_grants: &BTreeMap<String, BTreeSet<WorkspacePath>>,
+    resource_ceiling: ResourceBudget,
+    expires_at: MonotonicTime,
+    policy_epoch: u64,
+) -> Result<BTreeMap<String, TaskLeaseId>, Box<dyn Error + Send + Sync>> {
+    #[cfg(not(windows))]
+    if read_grants.values().any(|paths| !paths.is_empty()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "process read-grant leases require the Windows AppContainer runtime",
+        )
+        .into());
+    }
+
+    let mut process_leases = BTreeMap::new();
+    for (canonical, class) in executables {
+        let id = TaskLeaseId::generate()
+            .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
+        let mut capabilities = BTreeSet::from([Capability::ProcessRun]);
+        let mut scopes = BTreeSet::from([LeaseScope::ProcessExecutable {
+            executable: canonical.clone(),
+            class: *class,
+        }]);
+        if let Some(paths) = read_grants.get(canonical)
+            && !paths.is_empty()
+        {
+            capabilities.insert(Capability::FileRead);
+            scopes.extend(paths.iter().cloned().map(LeaseScope::WorkspacePrefix));
+        }
+        task_leases.register(TaskLease {
+            id: id.clone(),
+            session: session.clone(),
+            capabilities,
+            scopes,
+            resource_ceiling,
+            expires_at,
+            policy_epoch,
+        })?;
+        process_leases.insert(canonical.clone(), id);
+    }
+    Ok(process_leases)
+}
+
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
     allowed_executables: Vec<AllowedExecutableSpec>,
+    process_read_grants: Vec<ProcessReadGrantSpec>,
     allowed_env: Vec<String>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
@@ -370,6 +468,7 @@ impl AppArgs {
     {
         let mut workspace = None;
         let mut allowed_executables = Vec::new();
+        let mut process_read_grants = Vec::new();
         let mut allowed_env = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
@@ -393,6 +492,20 @@ impl AppArgs {
                     value,
                     "classified executable authority",
                 )?)?);
+            } else if arg == "--allow-process-read-file" {
+                let executable = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-process-read-file requires <absolute-executable> <workspace-file>",
+                    )
+                })?;
+                let path = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-process-read-file requires <absolute-executable> <workspace-file>",
+                    )
+                })?;
+                process_read_grants.push(parse_process_read_grant(executable, path)?);
             } else if arg == "--allow-env" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -479,6 +592,15 @@ impl AppArgs {
                 )?;
             } else if let Some(value) = option_value(&arg, "--allow-executable=")? {
                 allowed_executables.push(parse_allowed_executable(value)?);
+            } else if let Some(executable) = option_value(&arg, "--allow-process-read-file=")? {
+                let path = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-process-read-file=<absolute-executable> requires <workspace-file>",
+                    )
+                })?;
+                process_read_grants
+                    .push(parse_process_read_grant(OsString::from(executable), path)?);
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
                 allowed_env.push(value);
             } else if let Some(value) = option_value(&arg, "--allow-write-scope=")? {
@@ -536,6 +658,7 @@ impl AppArgs {
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
             allowed_executables,
+            process_read_grants,
             allowed_env,
             write_scopes,
             delete_scopes,
@@ -668,6 +791,27 @@ fn parse_allowed_executable(value: String) -> Result<AllowedExecutableSpec, std:
     })
 }
 
+fn parse_process_read_grant(
+    executable: OsString,
+    path: OsString,
+) -> Result<ProcessReadGrantSpec, std::io::Error> {
+    let executable = os_string_to_utf8(executable, "process read executable")?;
+    if executable.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--allow-process-read-file executable must not be empty",
+        ));
+    }
+    let path = WorkspacePath::parse(&os_string_to_utf8(path, "process read workspace file")?)
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--allow-process-read-file path must be a safe project-relative workspace path",
+            )
+        })?;
+    Ok(ProcessReadGrantSpec { executable, path })
+}
+
 fn parse_mutation_scope(value: String) -> Result<LeaseScope, std::io::Error> {
     if value == "all" {
         return Ok(LeaseScope::WorkspaceAll);
@@ -720,6 +864,7 @@ mod tests {
     #[test]
     fn mutation_authority_is_absent_without_operator_flags() {
         let parsed = AppArgs::parse_from(args(&["workspace"])).expect("args");
+        assert!(parsed.process_read_grants.is_empty());
         assert!(parsed.write_scopes.is_empty());
         assert!(parsed.delete_scopes.is_empty());
         assert!(parsed.mutation_state_dir.is_none());
@@ -758,6 +903,44 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn process_read_grants_are_explicit_exact_workspace_paths() {
+        let parsed = AppArgs::parse_from(args(&[
+            "--allow-process-read-file",
+            "/opt/python",
+            "input.txt",
+            "--allow-process-read-file=/opt/cargo",
+            "Cargo.toml",
+            "workspace",
+        ]))
+        .expect("process read grants");
+        assert_eq!(
+            parsed.process_read_grants,
+            vec![
+                ProcessReadGrantSpec {
+                    executable: "/opt/python".to_owned(),
+                    path: WorkspacePath::parse("input.txt").expect("path"),
+                },
+                ProcessReadGrantSpec {
+                    executable: "/opt/cargo".to_owned(),
+                    path: WorkspacePath::parse("Cargo.toml").expect("path"),
+                },
+            ]
+        );
+
+        for invalid in ["../secret", "/absolute", "C:\\Windows\\win.ini"] {
+            assert!(
+                AppArgs::parse_from(args(&[
+                    "--allow-process-read-file=/opt/python",
+                    invalid,
+                    "workspace",
+                ]))
+                .is_err(),
+                "unsafe process read path should fail: {invalid}"
+            );
+        }
     }
 
     #[test]
@@ -800,6 +983,188 @@ mod tests {
         ];
 
         assert!(canonicalize_allowed_executables(&processes, &specs).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn operator_process_read_grants_are_bounded_to_authorized_high_risk_executables() {
+        let token = SessionHandle::generate().expect("test entropy").to_token();
+        let root = std::env::temp_dir().join(format!("optic-process-read-grants-{token}"));
+        std::fs::create_dir_all(&root).expect("create workspace");
+        std::fs::write(root.join("input.txt"), b"input").expect("write input");
+        std::fs::create_dir(root.join("directory")).expect("create directory");
+        let processes =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let grants = vec![ProcessReadGrantSpec {
+            executable: executable.clone(),
+            path: WorkspacePath::parse("input.txt").expect("path"),
+        }];
+        let interpreter =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let canonical = canonicalize_process_read_grants(&processes, &interpreter, &grants)
+            .expect("canonical exact-file grant");
+        assert_eq!(
+            canonical.get(&executable),
+            Some(&BTreeSet::from([
+                WorkspacePath::parse("input.txt").expect("path")
+            ]))
+        );
+
+        let fixed = BTreeMap::from([(executable.clone(), ProcessExecutionClass::FixedTool)]);
+        assert!(canonicalize_process_read_grants(&processes, &fixed, &grants).is_err());
+        assert!(canonicalize_process_read_grants(&processes, &BTreeMap::new(), &grants).is_err());
+        assert!(
+            canonicalize_process_read_grants(
+                &processes,
+                &interpreter,
+                &[grants[0].clone(), grants[0].clone()],
+            )
+            .is_err()
+        );
+        assert!(
+            canonicalize_process_read_grants(
+                &processes,
+                &interpreter,
+                &[ProcessReadGrantSpec {
+                    executable: executable.clone(),
+                    path: WorkspacePath::parse("directory").expect("directory path"),
+                }],
+            )
+            .is_err()
+        );
+        std::fs::remove_dir_all(root).expect("remove workspace");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn process_leases_mint_file_read_only_for_explicit_operator_grants() {
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let executables =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let exact = WorkspacePath::parse("input.txt").expect("path");
+        let read_grants = BTreeMap::from([(executable.clone(), BTreeSet::from([exact.clone()]))]);
+        let limits = HardLimits::default();
+        let expires_at = MonotonicTime::from_millis(1_000);
+        let now = MonotonicTime::from_millis(1);
+        let task_leases = TaskLeaseRegistry::from_hard_limits(limits).expect("registry");
+        let session_a = SessionHandle::generate().expect("session A");
+        let session_b = SessionHandle::generate().expect("session B");
+
+        let a = provision_process_leases(
+            &task_leases,
+            &session_a,
+            &executables,
+            &read_grants,
+            limits.max_process_budget,
+            expires_at,
+            1,
+        )
+        .expect("A process authority");
+        let a_id = a.get(&executable).expect("A lease id");
+        let a_lease = task_leases
+            .get_active(a_id, &session_a, now)
+            .expect("A active lease");
+        assert!(a_lease.allows(Capability::ProcessRun));
+        assert!(a_lease.allows(Capability::FileRead));
+        assert!(a_lease.has_scope(&LeaseScope::WorkspacePrefix(exact.clone())));
+        assert!(!a_lease.has_scope(&LeaseScope::WorkspaceAll));
+        assert_eq!(
+            task_leases
+                .get_active(a_id, &session_b, now)
+                .expect_err("A lease must not cross sessions"),
+            optic_bridge_runtime::TaskLeaseRegistryError::WrongSession
+        );
+
+        let b = provision_process_leases(
+            &task_leases,
+            &session_b,
+            &executables,
+            &BTreeMap::new(),
+            limits.max_process_budget,
+            expires_at,
+            1,
+        )
+        .expect("B process authority without read grants");
+        let b_lease = task_leases
+            .get_active(b.get(&executable).expect("B lease id"), &session_b, now)
+            .expect("B active lease");
+        assert!(b_lease.allows(Capability::ProcessRun));
+        assert!(!b_lease.allows(Capability::FileRead));
+        assert!(
+            b_lease
+                .scopes
+                .iter()
+                .all(|scope| !matches!(scope, LeaseScope::WorkspacePrefix(_)))
+        );
+
+        assert!(task_leases.revoke(a_id).expect("revoke A lease"));
+        assert_eq!(
+            task_leases
+                .get_active(a_id, &session_a, now)
+                .expect_err("revoked read authority must be inactive"),
+            optic_bridge_runtime::TaskLeaseRegistryError::Revoked
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn process_read_authority_fails_closed_without_windows_appcontainer() {
+        let root = std::env::temp_dir().join(format!(
+            "optic-nonwindows-process-read-{}",
+            SessionHandle::generate().expect("test entropy").to_token()
+        ));
+        std::fs::create_dir_all(&root).expect("create workspace");
+        std::fs::write(root.join("input.txt"), b"input").expect("write input");
+        let processes =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let executable = std::env::current_exe()
+            .expect("current executable")
+            .canonicalize()
+            .expect("canonical executable")
+            .to_string_lossy()
+            .into_owned();
+        let executables =
+            BTreeMap::from([(executable.clone(), ProcessExecutionClass::Interpreter)]);
+        let grant = ProcessReadGrantSpec {
+            executable: executable.clone(),
+            path: WorkspacePath::parse("input.txt").expect("path"),
+        };
+        assert!(
+            canonicalize_process_read_grants(&processes, &executables, &[grant]).is_err(),
+            "non-Windows startup must reject AppContainer read authority"
+        );
+
+        let task_leases = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().expect("session");
+        let read_grants = BTreeMap::from([(
+            executable,
+            BTreeSet::from([WorkspacePath::parse("input.txt").expect("path")]),
+        )]);
+        assert!(
+            provision_process_leases(
+                &task_leases,
+                &session,
+                &executables,
+                &read_grants,
+                HardLimits::default().max_process_budget,
+                MonotonicTime::from_millis(1_000),
+                1,
+            )
+            .is_err(),
+            "direct provisioning must not mint Windows-only read authority"
+        );
+        std::fs::remove_dir_all(root).expect("remove workspace");
     }
 
     #[test]

@@ -223,6 +223,14 @@ impl ProcessManager {
             .ok_or(ProcessError::NonUtf8Executable)
     }
 
+    #[cfg(windows)]
+    pub fn validate_workspace_read_files(
+        &self,
+        paths: &[WorkspacePath],
+    ) -> Result<(), ProcessError> {
+        self.resolve_workspace_read_files(paths).map(|_| ())
+    }
+
     pub fn start(&self, spec: ProcessStartSpec) -> Result<JobId, ProcessError> {
         let resources = spec.resources.validate_nonzero()?;
         if !resources.fits_within(self.limits.max_process_budget) {
