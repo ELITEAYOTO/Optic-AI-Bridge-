@@ -652,6 +652,7 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::internal_error("optic.process_session_record_limit", None)
         }
         ProcessError::InvalidLimits(_)
+        | ProcessError::ConflictingEnvironmentGrant
         | ProcessError::RootNotDirectory
         | ProcessError::WorkspaceReadGrantsRequireIsolation
         | ProcessError::TooManyWorkspaceReadGrants
