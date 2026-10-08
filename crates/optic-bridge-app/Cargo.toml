@@ -20,9 +20,9 @@ optic-bridge-core = { path = "../optic-bridge-core" }
 optic-bridge-mcp = { path = "../optic-bridge-mcp" }
 optic-bridge-runtime = { path = "../optic-bridge-runtime" }
 rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 optic-bridge-windows = { path = "../optic-bridge-windows" }
-serde.workspace = true
-serde_json.workspace = true
