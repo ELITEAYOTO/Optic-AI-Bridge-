@@ -97,6 +97,16 @@ jobs:
             -BridgePath '.\target\debug\optic-bridge.exe' `
             -NodePath $node `
             -FixtureRoot $fixtureRoot
+      - name: Smoke profiled Node MCP approval
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\tool-profile-mcp-smoke'
+          .\scripts\Test-ToolProfileMcp.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -NodePath $node `
+            -FixtureRoot $fixtureRoot
       - name: Smoke real Git integration MCP binary
         if: runner.os == 'Windows'
         shell: pwsh
