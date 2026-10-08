@@ -4,6 +4,7 @@ param(
     [string]$Workspace,
 
     [string]$BinaryPath = (Join-Path $PSScriptRoot 'optic-bridge.exe'),
+    [string]$IsolationLauncherPath,
     [string]$PluginTemplatePath,
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'OpticAIBridge'),
     [string]$WritePrefix = 'scratch',
@@ -109,6 +110,16 @@ if (-not (Test-Path -LiteralPath $Workspace -PathType Container)) {
     throw "Workspace is not a directory: $Workspace"
 }
 $BinaryPath = (Resolve-Path -LiteralPath $BinaryPath).Path
+if (-not $IsolationLauncherPath) {
+    $IsolationLauncherPath = Join-Path (Split-Path -Parent $BinaryPath) 'optic-bridge-isolation-launcher.exe'
+}
+if (-not (Test-Path -LiteralPath $IsolationLauncherPath -PathType Leaf)) {
+    throw "Isolation launcher not found: $IsolationLauncherPath"
+}
+$IsolationLauncherPath = (Resolve-Path -LiteralPath $IsolationLauncherPath).Path
+if ([IO.Path]::GetFileName($IsolationLauncherPath) -ine 'optic-bridge-isolation-launcher.exe') {
+    throw 'Isolation launcher must use the canonical optic-bridge-isolation-launcher.exe filename.'
+}
 
 if (-not $PluginTemplatePath) {
     $releasePlugin = Join-Path $PSScriptRoot 'plugin'
@@ -156,6 +167,7 @@ $pluginManifestDir = Join-Path $pluginSource '.codex-plugin'
 $pluginAssetsDir = Join-Path $pluginSource 'assets'
 $marketplaceManifestDir = Join-Path $marketplaceRoot '.agents\plugins'
 $installedBridge = Join-Path $binDir 'optic-bridge.exe'
+$installedIsolationLauncher = Join-Path $binDir 'optic-bridge-isolation-launcher.exe'
 
 # Mark ownership before creating any integration bootstrap state/ref. If a later
 # install step fails, the partial user-scoped root remains safely identifiable.
@@ -238,6 +250,7 @@ if ($EnableGitIntegration) {
     New-Item -ItemType Directory -Force -Path $gitIntegrationRoot | Out-Null
 }
 Copy-Item -LiteralPath $BinaryPath -Destination $installedBridge -Force
+Copy-Item -LiteralPath $IsolationLauncherPath -Destination $installedIsolationLauncher -Force
 Copy-Item -LiteralPath $manifestTemplate -Destination (Join-Path $pluginManifestDir 'plugin.json') -Force
 [IO.File]::WriteAllBytes(
     (Join-Path $pluginAssetsDir 'optic-ai-bridge.png'),
@@ -355,6 +368,7 @@ if (-not $SkipDoctor) {
 
     $doctorParams = @{
         BridgePath = $installedBridge
+        IsolationLauncherPath = $installedIsolationLauncher
         Workspace = $Workspace
     }
     if ($enableGit) { $doctorParams.GitPath = $gitPath }
@@ -390,6 +404,7 @@ if (-not $SkipPluginRegistration) {
 Write-Host ''
 Write-Host 'Optic AI Bridge is ready.' -ForegroundColor Green
 Write-Host "Workspace : $Workspace"
+Write-Host "Isolation : helper installed (authority still requires explicit server-owned eligibility)"
 Write-Host "Git read  : $enableGit"
 Write-Host "Git integrate: $EnableGitIntegration"
 Write-Host "Mode      : $(if ($ReadOnly) { 'read-only' } elseif ($EnableGitIntegration) { 'read + Git + scratch mutations + explicit Git integration' } else { 'read + Git + scratch mutations' })"

@@ -565,7 +565,7 @@ Status: **merged and post-merge validated** in PR #72 (`d31086e1`), exact final 
 2. `FixedTool` remains on the direct spawn path. Direct internal `Interpreter` / `RepositoryCode` starts use the bounded C1 JSON protocol only when the launcher is configured; non-Windows remains `IsolationUnavailable`.
 3. The helper is spawned inside the same bounded Job Object and the kernel process limit uses `logical process_count + 1` for the internal helper, without changing the caller-authorized logical workload budget.
 4. The helper receives its request through piped stdin while the existing runtime drains keep stdout/stderr bounded. `env_clear` is preserved and only the operator allowlist plus `SystemRoot`, `LOCALAPPDATA`, `TEMP` and `TMP` are seeded for the helper/AppContainer baseline.
-5. Exit code 126 is classified as an internal launcher failure. The app discovers only a sibling `optic-bridge-isolation-launcher.exe` when present; the release bundle is still unchanged and does not distribute it.
+5. Exit code 126 is classified as an internal launcher failure. At the C2A gate the app discovered only a sibling `optic-bridge-isolation-launcher.exe` when present; the release bundle did not yet distribute it.
 6. Policy/MCP admission is unchanged and still denies `Interpreter` / `RepositoryCode`; this gate adds no workspace ACL/capability grant, network capability or public high-risk authority.
 
 Gate passed: exact PR CI #318, SHA-guarded squash merge, and post-merge `main` CI #319.
@@ -630,9 +630,21 @@ Status: **merged** through PR #85 (`bb649833`), exact head `6fcc25d1`; PR CI #36
 3. Require the script to reach the network attempt, never report a connection, exit only through bounded socket denial/timeout, and independently require the listener to accept no AppContainer connection.
 4. Keep the claim scoped to the tested Windows TCP-loopback case; do not infer universal Internet/intranet/UDP containment, loopback-exemption behavior or containment for the direct `FixedTool` path.
 
-#### Later Phase 3C gates
+#### Phase 3C3C2C5A-C5C - exact strong-isolation eligibility
 
-Introduce an application/server-owned strong-isolation eligibility marker for selected exact executable leases before changing the blanket high-risk policy denial. Node is currently the only representative interpreter with startup + exact-file + negative-file + zero-capability TCP-loopback evidence. The marker must be absent by default, unavailable to MCP callers and impossible to infer merely from `ProcessExecutionClass`. Only after that boundary is proven should a thin selected policy re-admission be evaluated. Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
+Status: **merged and post-merge validated**. C5A merged through PR #87 as `c5cafd0`; C5B through PR #88 as `d7aca659` from exact green head `02f977f5` (PR CI #375, post-merge CI #376); C5C through PR #89 as `f5bf9e0d` from exact green head `a96fc58f` (PR CI #377, post-merge CI #378).
+
+1. `LeaseScope::ProcessIsolationEligible { executable, class }` is a separate exact server-owned marker; it grants no process scope by itself and cannot substitute for `ProcessExecutable`.
+2. Application provisioning validates the complete selected set before registering any process lease, accepts only already-authorized `Interpreter` / `RepositoryCode` exact executables, rejects `FixedTool`/unknown/non-Windows selections, and production startup still passes an empty set.
+3. Policy re-admission requires the same active lease to carry both exact `ProcessExecutable { executable, class }` and exact `ProcessIsolationEligible { executable, class }`; missing/path-mismatched/class-mismatched markers remain `ProcessIsolationRequired`.
+4. The eligibility marker does not bypass network authority, resource ceilings, session ownership, lease expiry/revoke or executable identity checks.
+5. No CLI flag or MCP field can mint the marker yet, so public high-risk execution remains unavailable despite the narrower policy semantics.
+
+#### Phase 3C3C2C5D - packaged isolation helper
+
+Current gate: distribute the already-proven `optic-bridge-isolation-launcher.exe` as the canonical sibling of `optic-bridge.exe` without adding execution authority. The installer must resolve/copy the helper, the doctor must verify the sibling layout, installer-profile CI must prove byte-exact copy/reinstall/uninstall behavior, and the Windows release ZIP must include both binaries. Helper presence alone must not mint `ProcessIsolationEligible`; Node operator opt-in remains a later gate.
+
+Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
 Evaluate a bounded ActionId idempotency ledger/replay service only when a current retry/recovery contract needs it.
 

@@ -71,7 +71,7 @@ A separate `optic-bridge-isolation-launcher` now proves the next internal bounda
 - every request creates a fresh zero-capability AppContainer; the target receives `NUL` stdin and only helper stdout/stderr are forwarded through the explicit handle list;
 - `TokenIsAppContainer` is checked before resume and the existing bounded/fail-closed child wait is retained;
 - native CI executes the real helper and proves stdout/stderr forwarding, ungranted-file denial and oversized-request rejection;
-- the release bundle still copies only `optic-bridge.exe`, and `ProcessManager` does not select this helper.
+- at the C1 proof gate the release bundle copied only `optic-bridge.exe`, and `ProcessManager` did not yet select this helper.
 
 This proof adds no workspace or network capability and does not alter the fail-closed `Interpreter` / `RepositoryCode` policy.
 
@@ -85,10 +85,10 @@ The proven helper is now wired into the internal Windows runtime without changin
 - the bounded C1 request is written through piped stdin and runtime stdout/stderr still flow through the existing bounded drains;
 - the helper runs under `env_clear`, receiving only the operator allowlist plus the Windows baseline required for AppContainer creation (`SystemRoot`, `LOCALAPPDATA`, `TEMP`, `TMP`);
 - helper exit 126 is treated as a failed process result, and launcher/protocol/environment failures map onto existing internal/MCP error contracts without adding a model-controlled isolation selector;
-- the app only discovers a sibling helper when present; the current installer/release bundle still does not distribute it;
+- at the C2A gate the app only discovered a sibling helper when present; installer/release packaging was intentionally deferred until representative compatibility and eligibility gates;
 - native Windows CI proves real runtime routing with logical `process_count = 1`, which requires the Job Object to admit both helper and isolated target.
 
-This is still **not public high-risk execution**: `optic-bridge-policy` continues to reject `Interpreter` / `RepositoryCode`, no workspace ACL/capability grant exists, and no network capability or containment claim is added.
+At the C2A gate this was still **not public high-risk execution**: `optic-bridge-policy` rejected `Interpreter` / `RepositoryCode`, no workspace ACL/capability grant existed, and no network capability or containment claim was added.
 
 ## Phase 3C3C2C2B1 exact-file read grant foundation
 
@@ -138,9 +138,15 @@ PR #82 merged as `8ea01de3` from exact green final head `915b38f4`; CI #357 pass
 
 PR #85 merged as `bb649833` from exact head `6fcc25d1`; PR CI #365 and post-merge `main` CI #366 passed. Native Windows CI first proves a normal host connection to an ephemeral `127.0.0.1` TCP listener, then launches Node through the real zero-capability high-risk AppContainer path with no workspace/env/network grants. The script reaches `NETWORK_ATTEMPT`, never reaches `NETWORK_CONNECTED`, exits through bounded denial/timeout, and the listener accepts no AppContainer connection. This is a mechanically tested property of the tested TCP-loopback path only; it is not generalized to all protocols/address families, systems with external loopback exemptions, or the direct `FixedTool` path.
 
+## Phase 3C3C2C5 exact eligibility and helper packaging
+
+C5A-C5C are merged and post-merge validated through PRs #87-#89. Strong-isolation readiness is represented by a separate exact `ProcessIsolationEligible { executable, class }` lease marker. The marker alone grants no process scope. Policy can admit `Interpreter` / `RepositoryCode` only when the same active lease also contains the matching exact `ProcessExecutable` scope; path/class mismatch remains fail-closed, and network/resource/session/identity checks remain independent. C5B production startup deliberately provisions an empty eligibility set, so no CLI or MCP caller can activate this path yet.
+
+C5D packages the already-proven helper without changing that authority boundary. The release bundle includes `optic-bridge-isolation-launcher.exe` beside `optic-bridge.exe`; the installer copies it to the same installed `bin` directory, the doctor verifies the canonical sibling layout, and installer-profile CI compares the installed/reinstalled helper SHA-256 with the supplied helper. Recursive uninstall remains bounded by the existing Optic ownership marker and removes the sibling with the rest of the owned installation root. Helper presence is runtime availability only and never implies eligibility.
+
 ## Hardened profile
 
-Current direction: representative characterization is now concrete. Node has startup + exact granted-file read + ungranted-file denial + zero-capability TCP-loopback denial evidence through the real helper/AppContainer path; direct Cargo startup also succeeds. Python/Java/direct rustc still have loader/runtime dependencies that are not authorized merely for compatibility. Before selected high-risk policy re-admission, introduce a server-owned strong-isolation eligibility marker on the exact process authority so `ProcessExecutionClass` alone can never imply readiness. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
+Current direction: representative characterization is concrete. Node has startup + exact granted-file read + ungranted-file denial + zero-capability TCP-loopback denial evidence through the real helper/AppContainer path; direct Cargo startup also succeeds. Python/Java/direct rustc still have loader/runtime dependencies that are not authorized merely for compatibility. Exact strong-isolation eligibility and policy semantics are now merged, but production still mints no eligibility marker; C5D packages the helper as authority-neutral runtime availability, and a later gate must wire only selected proven operator profiles (starting with Node) plus an end-to-end MCP admission smoke. Restricted-token and LPAC variants remain comparative compatibility/hardening research rather than implemented authority.
 
 A restricted token reduces privileges but is not equivalent to a VM sandbox.
 
@@ -155,4 +161,4 @@ Each session receives independent application-owned process/job records. Shared 
 A caller can control only opaque `JobId` values owned by its application session; no arbitrary PID termination API is exposed.
 
 ## Remaining security work
-Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves a zero-capability AppContainer identity and denial of an ungranted user-file read; later gates add captured stdio, the bounded helper, runtime routing, exact-file grants and explicit operator-owned provisioning. Phase 3C3C2C3 now characterizes Node/Python/Java/Rust/Cargo on that real path, and Phase 3C3C2C4 adds a native denial proof for the tested capability-free Node TCP-loopback attempt. The helper remains non-distributed and policy/MCP still deny high-risk classes. Remaining work includes server-owned strong-isolation eligibility and selected policy re-admission, unresolved Python/Java/rustc runtime dependencies, broader workspace/write authority, registry/UI decisions, machine-wide resource governance and network claims beyond the tested high-risk loopback path. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment as authorization.
+Phase 1 Job Objects contain lifecycle, process count and job memory. Phase 3C3C2A proves a zero-capability AppContainer identity and denial of an ungranted user-file read; later gates add captured stdio, the bounded helper, runtime routing, exact-file grants and explicit operator-owned provisioning. Phase 3C3C2C3 characterizes Node/Python/Java/Rust/Cargo on that real path, Phase 3C3C2C4 adds a native denial proof for the tested capability-free Node TCP-loopback attempt, and C5A-C5C add exact server-owned eligibility semantics without a production minting path. C5D distributes the helper as an authority-neutral installed sibling. Remaining work includes explicit selected operator eligibility wiring plus a real Node MCP admission smoke, unresolved Python/Java/rustc runtime dependencies, broader workspace/write authority, registry/UI decisions, machine-wide resource governance and network claims beyond the tested high-risk loopback path. All later hardening must preserve the existing deterministic policy/lease boundary rather than treating OS containment or helper presence as authorization.
