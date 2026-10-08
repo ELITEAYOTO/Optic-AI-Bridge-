@@ -29,17 +29,20 @@ See [`CHATGPT_DESKTOP_QUICK_INSTALL.md`](CHATGPT_DESKTOP_QUICK_INSTALL.md) for t
 3. validates the bundled/prebuilt `optic-bridge.exe`;
 4. locates the ChatGPT Desktop/Codex plugin manager;
 5. detects Git and only enables Git read when the selected workspace is the exact repository root; optional `-EnableGitIntegration` remains a distinct explicit opt-in;
-6. installs the executable under `%LOCALAPPDATA%\OpticAIBridge\bin`;
-7. provisions mutation recovery state under `%LOCALAPPDATA%\OpticAIBridge\state` when mutations are enabled;
-8. materializes the compatibility plugin from `packaging/chatgpt-plugin`;
-9. generates the local `.mcp.json` with the exact executable, Git, state and workspace paths;
-10. creates a dedicated local marketplace under `%LOCALAPPDATA%\OpticAIBridge\marketplace`;
-11. registers and installs `optic-ai-bridge-local@optic-ai-bridge` through the Codex plugin manager;
-12. runs `scripts/Test-OpticAIBridge.ps1`, which performs MCP `initialize` and `tools/list` over real stdio;
-13. verifies the installed plugin and the `optic` MCP server are visible;
-14. prints the one remaining user action: restart ChatGPT Desktop and open a new Chat.
+6. keeps process authority absent by default; optional `-EnableIsolatedNode` resolves one exact `node.exe` (or validates explicit absolute `-NodePath`) and emits only the existing C5E Node authority;
+7. installs the executable and canonical isolation helper under `%LOCALAPPDATA%\OpticAIBridge\bin`;
+8. provisions mutation recovery state under `%LOCALAPPDATA%\OpticAIBridge\state` when mutations are enabled;
+9. materializes the compatibility plugin from `packaging/chatgpt-plugin`;
+10. generates the local `.mcp.json` with the exact executable, Git, state and workspace paths;
+11. creates a dedicated local marketplace under `%LOCALAPPDATA%\OpticAIBridge\marketplace`;
+12. registers and installs `optic-ai-bridge-local@optic-ai-bridge` through the Codex plugin manager;
+13. runs `scripts/Test-OpticAIBridge.ps1`, which performs MCP `initialize` and `tools/list` over real stdio;
+14. verifies the installed plugin and the `optic` MCP server are visible;
+15. prints the one remaining user action: restart ChatGPT Desktop and open a new Chat.
 
 When `-EnableGitIntegration` is explicitly supplied, the installer additionally requires an exact Git repository root with an existing `HEAD`, allocates a non-overlapping user-scoped integration root, bootstrap-disables prompts/system+global Git config/replacement objects/hooks, rejects a symbolic internal ref, create-only initializes `refs/optic/integration/chatgpt` with `update-ref --no-deref <ref> <head> <zero>` only when absent, preserves any existing direct ref, adds `git_integration_status` + `git_integrate` to the generated allowlist, and configures `git_integrate` for prompt approval. `-ReadOnly` and `-EnableGitIntegration` are intentionally incompatible.
+
+When `-EnableIsolatedNode` is explicitly supplied, the installer auto-discovers `node.exe` unless an absolute `-NodePath` is provided, emits exact `--allow-executable=interpreter:<node>` plus `--allow-isolated-node=<node>`, exposes `process_start/read/result/stop`, prompt-gates `process_start`, and asks the doctor to run a real isolated `node --version`. `-NodePath` without the switch is rejected. No `--allow-process-read-file`, directory scope, write scope or network authority is created by this profile.
 
 ## Default grants
 
@@ -49,13 +52,13 @@ The default quick-install profile exposes:
 - Git status/diff/log only when Git and exact repository-root validation succeed;
 - write/patch under the structural `scratch/` prefix;
 - delete under the structural `scratch/` prefix;
-- no process executable allowlist;
+- no process executable allowlist unless `-EnableIsolatedNode` is explicitly supplied;
 - no network authority;
 - no Git integration authority unless `-EnableGitIntegration` is explicitly supplied.
 
-The default ChatGPT plugin itself enables only the intended eight file/Git tools. Mutation tools use prompt approval. The opt-in Git-integration profile adds `git_integration_status` plus prompt-gated `git_integrate`; it does not change the internal target ref or integration root into caller-controlled parameters.
+The default ChatGPT plugin itself enables only the intended eight file/Git tools. Mutation tools use prompt approval. The opt-in Git-integration profile adds `git_integration_status` plus prompt-gated `git_integrate`; it does not change the internal target ref or integration root into caller-controlled parameters. The opt-in Node profile adds only the four process lifecycle tools and prompt-gates `process_start`; it does not silently create workspace read grants.
 
-A `-ReadOnly` installer switch omits mutation authority entirely and cannot be combined with Git integration.
+A `-ReadOnly` installer switch omits mutation authority entirely and cannot be combined with Git integration. It may be combined with the explicit Node profile, in which case process execution is still enabled while filesystem mutation remains absent.
 
 ## Packaging
 
@@ -85,7 +88,7 @@ This removes Rust compilation from the end-user install path.
 
 ## CI guardrails
 
-Normal CI validates PowerShell script syntax on Windows and uses `--locked` for Rust Clippy/tests. Installer-profile coverage also proves that a non-empty unmarked custom install root is rejected by both install and uninstall while its sentinel content remains untouched. Windows CI also builds the real bridge, runs the exact-head MCP integration smoke, and exercises installer profiles entirely under the runner workspace: default integration absence, read-only rejection, symbolic-ref rejection, explicit opt-in arguments/tool allowlist/prompt policy/ref bootstrap/doctor, preservation of an existing direct ref across reinstall, and explicit integration-ref uninstall cleanup. This prevents dependency-manifest drift and validates packaging without touching a real ChatGPT user profile.
+Normal CI validates PowerShell script syntax on Windows and uses `--locked` for Rust Clippy/tests. Installer-profile coverage also proves that a non-empty unmarked custom install root is rejected by both install and uninstall while its sentinel content remains untouched. Windows CI also builds the real bridge, runs the exact-head MCP integration smoke, and exercises installer profiles entirely under the runner workspace: default Git/Node authority absence, `-NodePath`-without-opt-in rejection, isolated-Node exact args/process tool allowlist/prompt policy/real doctor smoke/no implicit read grants/uninstall cleanup, plus Git read-only rejection, symbolic-ref rejection, explicit integration args/tool allowlist/prompt policy/ref bootstrap/doctor, preservation of an existing direct ref across reinstall, and explicit integration-ref uninstall cleanup. This prevents dependency-manifest drift and validates packaging without touching a real ChatGPT user profile.
 
 ## Still not claimed
 

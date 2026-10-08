@@ -646,15 +646,19 @@ Status: **merged and post-merge validated** in PR #90 (`5d3f64a7`), exact final 
 
 #### Phase 3C3C2C5E - selected Node operator eligibility
 
+Status: **merged and post-merge validated** in PR #91 (`1cab83f4`), exact final head `f89cd7f6`; PR CI #383 and post-merge `main` CI #384 passed Ubuntu, Windows and dependency policy plus toolchain characterization, AppContainer network proof, real isolated-Node MCP admission, Git MCP and installer-profile regressions. The production marker is available only for exact operator-selected Windows `node.exe` already authorized as `Interpreter`; helper presence is mandatory, MCP cannot mint the marker, and eligible high-risk leases remain capped to one logical process.
+
+#### Phase 3C3C2C5F - installed Node operator profile
+
 Current gate:
 
-1. Add repeatable Windows startup opt-in `--allow-isolated-node=<absolute-node.exe>`; it is an operator configuration field, not an MCP field.
-2. Canonicalize the exact executable and require it already exists in `--allow-executable` with `ProcessExecutionClass::Interpreter`; reject fixed tools, repository-code, unknown executables and non-`node.exe` paths.
-3. Require the canonical sibling isolation launcher to exist before startup may mint Node eligibility.
-4. Feed only those exact canonical Node paths into the already-proven C5B eligibility provisioning; all unselected high-risk executables remain `ProcessIsolationRequired`.
-5. Preserve independent exact-file, network, resource, session, expiry/revoke and executable-identity checks; the Node flag grants none of those by itself. Cap every eligible high-risk lease to `process_count = 1` until descendant execution has its own proof gate.
-6. Native real-binary MCP CI must prove no-profile denial, rejection of a multi-process budget, caller-supplied spoof fields cannot mint eligibility, selected Node starts through the real helper, reads exactly the granted file, and cannot read an ungranted sibling.
-7. Do not admit Python, Java, Cargo, rustc or a generic interpreter/repository-code profile in this gate.
+1. Add explicit/default-off installer switch `-EnableIsolatedNode`; auto-discover the hosted `node.exe` or accept only an optional absolute `-NodePath` when that switch is also present.
+2. Generate only the existing C5E authority pair (`--allow-executable=interpreter:<exact-node>` + `--allow-isolated-node=<exact-node>`); do not add exact-file, directory, write or network authority implicitly.
+3. Expose only `process_start`, `process_read`, `process_result` and `process_stop` in the ChatGPT plugin profile; configure `process_start` for prompt approval.
+4. Keep the default installer profile process-free and reject `-NodePath` without the explicit opt-in.
+5. Extend the installer doctor to perform a real MCP `node --version` through the installed bridge + canonical sibling helper with `process_count = 1`.
+6. Windows installer-profile CI must prove default absence, exact generated Node args/tool list, prompt gating, no automatic `--allow-process-read-file`, doctor success and owned-root uninstall cleanup.
+7. Do not admit Python, Java, Cargo, rustc, descendants, workspace-directory reads or network authority in this gate.
 
 Broader workspace/write/runtime dependencies, machine-wide resource governance, approval/tool profiles and wider network-containment claims remain separate gates before public multi-session process orchestration.
 
