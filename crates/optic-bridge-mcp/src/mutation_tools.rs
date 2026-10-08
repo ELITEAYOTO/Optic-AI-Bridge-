@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::server::ReadonlyMcpServer;
 
+const MCP_MUTATION_REQUEST_RESERVE_BYTES: u64 = 64 * 1024;
+
 #[tool_router(router = mutation_write_tool_router, vis = "pub")]
 impl ReadonlyMcpServer {
     #[tool(
@@ -28,8 +30,13 @@ impl ReadonlyMcpServer {
     ) -> Result<Json<FsMutationResponse>, ErrorData> {
         let path = parse_workspace_path(&params.0.path)?;
         let expected = params.0.expected.into_expected_state()?;
-        let content =
-            decode_bounded_base64(&params.0.content_base64, self.limits.max_fs_mutation_bytes)?;
+        let content = decode_bounded_base64(
+            &params.0.content_base64,
+            mcp_mutation_payload_limit(
+                self.limits.max_request_bytes,
+                self.limits.max_fs_mutation_bytes,
+            ),
+        )?;
         let effect = Effect::FileWrite {
             path: path.clone(),
             expected,
@@ -53,8 +60,13 @@ impl ReadonlyMcpServer {
     ) -> Result<Json<FsMutationResponse>, ErrorData> {
         let path = parse_workspace_path(&params.0.path)?;
         let expected = parse_content_version(&params.0.expected_version)?;
-        let insert =
-            decode_bounded_base64(&params.0.insert_base64, self.limits.max_fs_mutation_bytes)?;
+        let insert = decode_bounded_base64(
+            &params.0.insert_base64,
+            mcp_mutation_payload_limit(
+                self.limits.max_request_bytes,
+                self.limits.max_fs_mutation_bytes,
+            ),
+        )?;
         let patch = BytePatch {
             offset: params.0.offset,
             remove_bytes: params.0.remove_bytes,
@@ -219,6 +231,15 @@ fn parse_workspace_path(value: &str) -> Result<WorkspacePath, ErrorData> {
 fn parse_content_version(value: &str) -> Result<ContentVersion, ErrorData> {
     ContentVersion::from_hex(value)
         .map_err(|_| ErrorData::invalid_params("optic.invalid_content_version", None))
+}
+
+fn mcp_mutation_payload_limit(max_request_bytes: u64, runtime_mutation_limit: u64) -> u64 {
+    // Mutation bytes are carried as base64 inside the same bounded JSON-RPC line.
+    // Keep a conservative fixed reserve for method/params/path/precondition/JSON
+    // framing, then convert the remaining encoded budget back to raw bytes.
+    let encoded_budget = max_request_bytes.saturating_sub(MCP_MUTATION_REQUEST_RESERVE_BYTES);
+    let raw_budget = encoded_budget.saturating_div(4).saturating_mul(3);
+    runtime_mutation_limit.min(raw_budget)
 }
 
 fn decode_bounded_base64(value: &str, limit: u64) -> Result<Vec<u8>, ErrorData> {
@@ -439,5 +460,41 @@ mod tests {
     fn invalid_base64_and_content_versions_fail_as_public_input_errors() {
         assert!(decode_bounded_base64("%%%", 1024).is_err());
         assert!(parse_content_version("not-a-version").is_err());
+    }
+
+    #[test]
+    fn mcp_mutation_limit_is_derived_from_frame_and_base64_overhead() {
+        let limits = optic_bridge_core::HardLimits::default();
+        let public_limit =
+            mcp_mutation_payload_limit(limits.max_request_bytes, limits.max_fs_mutation_bytes);
+        assert!(public_limit > 0);
+        assert!(public_limit < limits.max_fs_mutation_bytes);
+        let encoded_budget = limits
+            .max_request_bytes
+            .saturating_sub(MCP_MUTATION_REQUEST_RESERVE_BYTES);
+        assert!(public_limit.saturating_mul(4).div_ceil(3) <= encoded_budget);
+    }
+
+    #[test]
+    fn decoded_mutation_payload_fails_one_byte_over_public_limit() {
+        let limit = 12_u64;
+        let exact = STANDARD.encode(vec![0_u8; usize::try_from(limit).expect("limit")]);
+        assert_eq!(
+            decode_bounded_base64(&exact, limit)
+                .expect("exact public limit")
+                .len(),
+            usize::try_from(limit).expect("limit")
+        );
+
+        let over = STANDARD.encode(vec![
+            0_u8;
+            usize::try_from(limit + 1).expect("limit plus one")
+        ]);
+        assert_eq!(
+            decode_bounded_base64(&over, limit)
+                .expect_err("one byte over public limit must fail")
+                .message,
+            "optic.fs_mutation_limit_exceeded"
+        );
     }
 }
