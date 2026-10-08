@@ -131,8 +131,12 @@ async fn direct_fixed_tool_path_can_open_tcp_ipv4_loopback_socket() {
         .expect("canonical network test executable")
         .to_string_lossy()
         .into_owned();
-    let manager = ProcessManager::new(&workspace, HardLimits::default(), Vec::new())
-        .expect("direct fixed-tool process manager");
+    let manager = ProcessManager::new(
+        &workspace,
+        HardLimits::default(),
+        vec!["SystemRoot".to_owned()],
+    )
+    .expect("direct fixed-tool process manager");
     let session = SessionHandle::generate().expect("fixed-tool session");
 
     // B-02 characterization only: FixedTool is intentionally the direct
@@ -152,7 +156,7 @@ async fn direct_fixed_tool_path_can_open_tcp_ipv4_loopback_socket() {
             ],
             cwd: None,
             workspace_read_files: Vec::new(),
-            env_allowlist: Vec::new(),
+            env_allowlist: vec!["SystemRoot".to_owned()],
             resources: ResourceBudget {
                 timeout_ms: PROCESS_TIMEOUT_MS,
                 output_bytes: OUTPUT_BYTES,
