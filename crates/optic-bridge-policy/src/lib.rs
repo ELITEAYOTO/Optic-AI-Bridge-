@@ -155,6 +155,8 @@ impl PolicyEngine {
 
 fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
     match effect {
+        Effect::FileRead { path } => lease.covers_read_content(path),
+        Effect::FileSearch { root } => lease.covers_search_metadata(root.as_ref()),
         Effect::FileWrite { path, .. } | Effect::FileDelete { path, .. } => {
             lease.has_scope(&LeaseScope::WorkspaceAll)
                 || lease.scopes.iter().any(|scope| {
@@ -188,7 +190,7 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
         Effect::NetworkAccess { endpoint } => {
             lease.has_scope(&LeaseScope::NetworkEndpoint(endpoint.clone()))
         }
-        Effect::FileRead { .. } | Effect::FileSearch { .. } | Effect::GitRead => true,
+        Effect::GitRead => true,
         Effect::PolicyChange | Effect::PrivilegeElevation => false,
     }
 }
@@ -367,18 +369,97 @@ mod tests {
     }
 
     #[test]
-    fn read_can_be_allowed_without_task_lease() {
+    fn read_requires_matching_typed_task_lease() {
         let session = session(&[Capability::FileRead]);
-        let action = envelope(
+        let denied = envelope(
             &session,
             Effect::FileRead {
                 path: path("src/lib.rs"),
             },
             None,
         );
-
         assert_eq!(
-            PolicyEngine.evaluate(&action, &session, None, now()),
+            PolicyEngine.evaluate(&denied, &session, None, now()),
+            PolicyDecision::Deny(PolicyReason::LeaseRequired)
+        );
+
+        let wrong_scope = lease(
+            &session,
+            &[Capability::FileRead],
+            &[LeaseScope::SearchMetadata(
+                optic_bridge_core::SearchMetadataScope::all(),
+            )],
+        );
+        let denied = envelope(
+            &session,
+            Effect::FileRead {
+                path: path("src/lib.rs"),
+            },
+            Some(&wrong_scope),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&denied, &session, Some(&wrong_scope), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+
+        let read_scope = lease(
+            &session,
+            &[Capability::FileRead],
+            &[LeaseScope::ReadContent(
+                optic_bridge_core::ReadContentScope::prefix(path("src")),
+            )],
+        );
+        let allowed = envelope(
+            &session,
+            Effect::FileRead {
+                path: path("src/lib.rs"),
+            },
+            Some(&read_scope),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&allowed, &session, Some(&read_scope), now()),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn search_requires_matching_metadata_scope() {
+        let session = session(&[Capability::FileSearch]);
+        let wrong_scope = lease(
+            &session,
+            &[Capability::FileSearch],
+            &[LeaseScope::ReadContent(
+                optic_bridge_core::ReadContentScope::all(),
+            )],
+        );
+        let denied = envelope(
+            &session,
+            Effect::FileSearch {
+                root: Some(path("src")),
+            },
+            Some(&wrong_scope),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&denied, &session, Some(&wrong_scope), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+
+        let search_scope = lease(
+            &session,
+            &[Capability::FileSearch],
+            &[LeaseScope::SearchMetadata(
+                optic_bridge_core::SearchMetadataScope::prefix(path("src")),
+            )],
+        );
+        let allowed = envelope(
+            &session,
+            Effect::FileSearch {
+                root: Some(path("src")),
+            },
+            Some(&search_scope),
+        );
+        assert_eq!(
+            PolicyEngine.evaluate(&allowed, &session, Some(&search_scope), now()),
             PolicyDecision::Allow
         );
     }
