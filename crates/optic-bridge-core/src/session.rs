@@ -68,6 +68,13 @@ pub enum LeaseScope {
         executable: String,
         class: ProcessExecutionClass,
     },
+    /// Server/application-owned marker that one exact classified executable is
+    /// eligible for a later strong-isolation policy gate. This marker grants no
+    /// process authority by itself and is intentionally distinct from class.
+    ProcessIsolationEligible {
+        executable: String,
+        class: ProcessExecutionClass,
+    },
     NetworkAny,
     NetworkEndpoint(String),
 }
@@ -131,6 +138,23 @@ impl TaskLease {
             _ => None,
         })
     }
+
+    #[must_use]
+    pub fn process_isolation_eligible(
+        &self,
+        executable: &str,
+        class: ProcessExecutionClass,
+    ) -> bool {
+        self.scopes.iter().any(|scope| {
+            matches!(
+                scope,
+                LeaseScope::ProcessIsolationEligible {
+                    executable: scoped,
+                    class: scoped_class,
+                } if scoped == executable && *scoped_class == class
+            )
+        })
+    }
 }
 
 #[cfg(test)]
@@ -143,5 +167,48 @@ mod tests {
         let expires = issued.saturating_add_millis(500);
         assert!(MonotonicTime::from_millis(1_499) < expires);
         assert!(MonotonicTime::from_millis(1_500) >= expires);
+    }
+
+    #[test]
+    fn process_isolation_eligibility_is_exact_to_executable_and_class() {
+        let session = SessionHandle::generate().expect("session");
+        let lease = TaskLease {
+            id: TaskLeaseId::generate().expect("lease"),
+            session,
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
+            scopes: BTreeSet::from([
+                LeaseScope::ProcessExecutable {
+                    executable: "C:\\Tools\\node.exe".to_owned(),
+                    class: ProcessExecutionClass::Interpreter,
+                },
+                LeaseScope::ProcessIsolationEligible {
+                    executable: "C:\\Tools\\node.exe".to_owned(),
+                    class: ProcessExecutionClass::Interpreter,
+                },
+            ]),
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 1_024,
+                memory_bytes: 1_024,
+                process_count: 1,
+            },
+            expires_at: MonotonicTime::from_millis(10_000),
+            policy_epoch: 1,
+        };
+
+        assert!(
+            lease.process_isolation_eligible(
+                "C:\\Tools\\node.exe",
+                ProcessExecutionClass::Interpreter
+            )
+        );
+        assert!(!lease.process_isolation_eligible(
+            "C:\\Tools\\python.exe",
+            ProcessExecutionClass::Interpreter
+        ));
+        assert!(!lease.process_isolation_eligible(
+            "C:\\Tools\\node.exe",
+            ProcessExecutionClass::RepositoryCode
+        ));
     }
 }

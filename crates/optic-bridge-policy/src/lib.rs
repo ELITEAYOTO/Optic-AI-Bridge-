@@ -544,6 +544,71 @@ mod tests {
     }
 
     #[test]
+    fn isolation_eligibility_marker_alone_grants_no_process_scope() {
+        let session = session(&[Capability::ProcessRun]);
+        let lease = lease(
+            &session,
+            &[Capability::ProcessRun],
+            &[LeaseScope::ProcessIsolationEligible {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::Interpreter,
+            }],
+        );
+        let action = envelope(
+            &session,
+            Effect::ProcessRun {
+                executable: "tool".to_owned(),
+                class: ProcessExecutionClass::Interpreter,
+                network: NetworkAccess::Denied,
+            },
+            Some(&lease),
+        );
+
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+    }
+    #[test]
+    fn isolation_eligibility_marker_does_not_yet_re_admit_high_risk_processes() {
+        for class in [
+            ProcessExecutionClass::Interpreter,
+            ProcessExecutionClass::RepositoryCode,
+        ] {
+            let session = session(&[Capability::ProcessRun]);
+            let lease = lease(
+                &session,
+                &[Capability::ProcessRun],
+                &[
+                    LeaseScope::ProcessExecutable {
+                        executable: "tool".to_owned(),
+                        class,
+                    },
+                    LeaseScope::ProcessIsolationEligible {
+                        executable: "tool".to_owned(),
+                        class,
+                    },
+                ],
+            );
+            assert!(lease.process_isolation_eligible("tool", class));
+            let action = envelope(
+                &session,
+                Effect::ProcessRun {
+                    executable: "tool".to_owned(),
+                    class,
+                    network: NetworkAccess::Denied,
+                },
+                Some(&lease),
+            );
+
+            assert_eq!(
+                PolicyEngine.evaluate(&action, &session, Some(&lease), now()),
+                PolicyDecision::Deny(PolicyReason::ProcessIsolationRequired),
+                "C5A marker must remain policy-inert until the explicit re-admission gate"
+            );
+        }
+    }
+    #[test]
     fn fixed_tool_process_remains_allowed_without_network() {
         let session = session(&[Capability::ProcessRun]);
         let lease = lease(
