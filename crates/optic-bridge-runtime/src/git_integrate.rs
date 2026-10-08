@@ -1,27 +1,21 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsString,
-    fs,
-    io::{self, Read},
+    fs, io,
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    process::ExitStatus,
+    time::Duration,
 };
 
 use optic_bridge_core::{ActionId, GitObjectId, GitObjectIdError, HardLimits, IdError};
 use thiserror::Error;
 
-use crate::{GitReadError, GitReadService};
+use crate::{
+    GitReadError, GitReadService, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
+};
 
 const INTEGRATION_REF_PREFIX: &str = "refs/optic/integration/";
 const CAPTURE_LIMIT_BYTES: u64 = 4 * 1024;
-const PIPE_READ_CHUNK_BYTES: usize = 8 * 1024;
-const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const DISABLED_HOOKS_DIRECTORY: &str = "hooks-disabled";
 
 #[cfg(windows)]
@@ -36,7 +30,7 @@ pub struct GitIntegrationService {
     integration_root: PathBuf,
     disabled_hooks_root: PathBuf,
     target_ref: String,
-    command_timeout: Duration,
+    runner: HardenedCommandRunner,
     recovery_output_limit: u64,
     recovery_entry_limit: u32,
     recovery_owned_limit: u32,
@@ -84,7 +78,10 @@ impl GitIntegrationService {
             integration_root,
             disabled_hooks_root,
             target_ref: target_ref.into(),
-            command_timeout: Duration::from_millis(limits.max_request_duration_ms),
+            runner: HardenedCommandRunner::new(Duration::from_millis(
+                limits.max_request_duration_ms,
+            ))
+            .map_err(|_| GitIntegrationError::InvalidLimits)?,
             recovery_output_limit: limits.max_git_read_bytes,
             recovery_entry_limit: limits.max_fs_directory_scan_entries,
             recovery_owned_limit: limits.max_concurrent_requests,
@@ -528,56 +525,38 @@ impl GitIntegrationService {
         Ok(GitObjectId::parse(value.to_owned())?)
     }
 
-    fn base_command(&self, context: &Path) -> Command {
-        let mut command = Command::new(&self.git_executable);
-        command
-            .arg("--no-pager")
-            .arg("--literal-pathspecs")
-            .arg("-c")
-            .arg("core.fsmonitor=false")
-            .arg("-c")
-            .arg("core.untrackedCache=false")
-            .arg("-c")
-            .arg(format!(
+    fn base_args(&self) -> Vec<OsString> {
+        vec![
+            OsString::from("--no-pager"),
+            OsString::from("--literal-pathspecs"),
+            OsString::from("-c"),
+            OsString::from("core.fsmonitor=false"),
+            OsString::from("-c"),
+            OsString::from("core.untrackedCache=false"),
+            OsString::from("-c"),
+            OsString::from(format!(
                 "core.hooksPath={}",
                 git_path_arg(&self.disabled_hooks_root).to_string_lossy()
-            ))
-            .arg("-c")
-            .arg("commit.gpgSign=false")
-            .arg("-C")
-            .arg(git_path_arg(context))
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_PAGER", "cat")
-            .env("PAGER", "cat")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", NULL_CONFIG_PATH)
-            .env("GIT_NO_REPLACE_OBJECTS", "1")
-            .stdin(Stdio::null());
-        command
+            )),
+            OsString::from("-c"),
+            OsString::from("commit.gpgSign=false"),
+        ]
     }
 
     fn run_status<I>(&self, context: &Path, args: I) -> Result<ExitStatus, GitIntegrationError>
     where
         I: IntoIterator<Item = OsString>,
     {
-        let mut command = self.base_command(context);
-        command
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        let mut child = command.spawn()?;
-        let deadline = Instant::now() + self.command_timeout;
-        loop {
-            if let Some(status) = child.try_wait()? {
-                return Ok(status);
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(GitIntegrationError::CommandTimedOut);
-            }
-            thread::sleep(CHILD_POLL_INTERVAL);
-        }
+        let mut command_args = self.base_args();
+        command_args.extend(args);
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: context.to_path_buf(),
+            args: command_args,
+            env: git_integration_environment(),
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        Ok(self.runner.run(&spec).map_err(map_runner_error)?.status)
     }
 
     fn run_capture_small<I>(
@@ -603,92 +582,50 @@ impl GitIntegrationService {
         if output_limit == 0 {
             return Err(GitIntegrationError::CommandOutputTooLarge);
         }
-        let mut command = self.base_command(context);
-        command
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = command.spawn()?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or(GitIntegrationError::MissingChildPipe)?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or(GitIntegrationError::MissingChildPipe)?;
-        let total = Arc::new(AtomicU64::new(0));
-        let exceeded = Arc::new(AtomicBool::new(false));
-        let stdout_reader = spawn_bounded_reader(
-            stdout,
-            Arc::clone(&total),
-            Arc::clone(&exceeded),
+        let mut command_args = self.base_args();
+        command_args.extend(args);
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: context.to_path_buf(),
+            args: command_args,
+            env: git_integration_environment(),
             output_limit,
-        );
-        let stderr_reader =
-            spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), output_limit);
-
-        let started = Instant::now();
-        let mut timed_out = false;
-        let status = loop {
-            if exceeded.load(Ordering::Acquire) {
-                let _ = child.kill();
-                break child.wait()?;
-            }
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            if started.elapsed() >= self.command_timeout {
-                timed_out = true;
-                let _ = child.kill();
-                break child.wait()?;
-            }
-            thread::sleep(CHILD_POLL_INTERVAL);
         };
-
-        let stdout = stdout_reader
-            .join()
-            .map_err(|_| GitIntegrationError::ReaderThreadPanicked)??;
-        let _stderr = stderr_reader
-            .join()
-            .map_err(|_| GitIntegrationError::ReaderThreadPanicked)??;
-        if timed_out {
-            return Err(GitIntegrationError::CommandTimedOut);
-        }
-        if exceeded.load(Ordering::Acquire) {
-            return Err(GitIntegrationError::CommandOutputTooLarge);
-        }
-        Ok((status, stdout))
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        Ok((output.status, output.stdout))
     }
 }
 
-fn spawn_bounded_reader<R>(
-    mut reader: R,
-    total: Arc<AtomicU64>,
-    exceeded: Arc<AtomicBool>,
-    limit: u64,
-) -> JoinHandle<io::Result<Vec<u8>>>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let mut chunk = [0_u8; PIPE_READ_CHUNK_BYTES];
-        loop {
-            let read = reader.read(&mut chunk)?;
-            if read == 0 {
-                break;
-            }
-            let read_u64 = u64::try_from(read).unwrap_or(u64::MAX);
-            let previous = total.fetch_add(read_u64, Ordering::AcqRel);
-            if previous.saturating_add(read_u64) > limit {
-                exceeded.store(true, Ordering::Release);
-                break;
-            }
-            bytes.extend_from_slice(&chunk[..read]);
+fn git_integration_environment() -> BTreeMap<OsString, OsString> {
+    [
+        ("GIT_TERMINAL_PROMPT", "0"),
+        ("GIT_PAGER", "cat"),
+        ("PAGER", "cat"),
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_GLOBAL", NULL_CONFIG_PATH),
+        ("GIT_NO_REPLACE_OBJECTS", "1"),
+        ("GIT_ATTR_NOSYSTEM", "1"),
+        ("LC_ALL", "C"),
+    ]
+    .into_iter()
+    .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+    .collect()
+}
+
+fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
+    match error {
+        HardenedCommandError::TimedOut => GitIntegrationError::CommandTimedOut,
+        HardenedCommandError::OutputLimitExceeded { .. } => {
+            GitIntegrationError::CommandOutputTooLarge
         }
-        Ok(bytes)
-    })
+        HardenedCommandError::MissingChildPipe => GitIntegrationError::MissingChildPipe,
+        HardenedCommandError::ReaderThreadPanicked => GitIntegrationError::ReaderThreadPanicked,
+        HardenedCommandError::Io(error) => GitIntegrationError::Io(error),
+        HardenedCommandError::ExecutableMustBeAbsolute
+        | HardenedCommandError::WorkingDirectoryMustBeAbsolute
+        | HardenedCommandError::ZeroOutputLimit
+        | HardenedCommandError::ZeroTimeout => GitIntegrationError::InvalidLimits,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -929,6 +866,19 @@ mod tests {
     use std::{env, ffi::OsStr, process::Command};
 
     const TARGET_REF: &str = "refs/optic/integration/default";
+
+    #[test]
+    fn git_integration_environment_is_explicit_and_keeps_locks_enabled() {
+        let env = git_integration_environment();
+        assert!(!env.contains_key(&OsString::from("PATH")));
+        assert!(!env.contains_key(&OsString::from("HOME")));
+        assert!(!env.contains_key(&OsString::from("HTTP_PROXY")));
+        assert!(!env.contains_key(&OsString::from("GIT_OPTIONAL_LOCKS")));
+        assert_eq!(
+            env.get(&OsString::from("GIT_CONFIG_GLOBAL")),
+            Some(&OsString::from(NULL_CONFIG_PATH))
+        );
+    }
 
     struct RepoFixture {
         base: PathBuf,
