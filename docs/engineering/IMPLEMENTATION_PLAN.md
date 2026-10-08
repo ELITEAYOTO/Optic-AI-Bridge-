@@ -701,7 +701,7 @@ Gate passed: exact-head CI #406, SHA-guarded squash merge, and post-merge `main`
 
 ### Phase 3E2A — Windows host-memory observation
 
-Status: **current gate**. This is an observation-only prerequisite for host-memory headroom; it does not alter process admission.
+Status: **merged and post-merge validated** in PR #103 (`e2b37be0`), exact green head `3c765d9e`; PR CI #410 and post-merge `main` CI #411 passed Ubuntu, Windows, dependency policy and the existing Windows smoke matrix.
 
 1. `optic-bridge-windows` owns a narrow `GlobalMemoryStatusEx` wrapper and keeps the Win32 `unsafe` boundary out of runtime/policy/MCP crates.
 2. The snapshot exposes only validated total and available physical bytes; zero total or available greater than total fails closed as invalid host telemetry.
@@ -709,7 +709,20 @@ Status: **current gate**. This is an observation-only prerequisite for host-memo
 4. `ProcessManager`, MCP schemas, capabilities, leases, sandboxing and process eligibility remain unchanged in 3E2A.
 5. Phase 3E2B will consume a testable host-memory provider and define the actual emergency-headroom admission rule; 3E2A alone does not close A-02.
 
-Gate requires exact-head Ubuntu/Windows/dependency-policy CI and post-merge `main` CI before the observation primitive is treated as closed.
+Gate passed: exact-head CI #410, SHA-guarded squash merge, and post-merge `main` CI #411. This closes host-memory observation only; A-02 remains partial until admission actually preserves emergency headroom.
+
+### Phase 3E2B — host-memory emergency-headroom admission
+
+Status: **current gate**. This tranche will turn the validated 3E2A observation into a conservative Windows admission decision without making tests depend on runner RAM.
+
+1. `ProcessManager` consumes host-memory state through an injected/testable provider; production Windows uses the 3E2A snapshot primitive, while deterministic tests use controlled snapshots/errors.
+2. The headroom decision is serialized with process admission so concurrent starts cannot all rely on one stale pre-admission snapshot while bypassing the existing 3E1 declared-memory governor.
+3. Snapshot failure or malformed telemetry fails closed for the Windows headroom decision. The reserve/threshold is application-owned configuration, never caller/MCP-controlled, and must be chosen explicitly in this gate rather than inferred from one runner.
+4. 3E1 declared-memory ceilings remain independent. 3E2B must not double-subtract already-running declared reservations from Windows `available_physical_bytes`; the host snapshot already reflects current system pressure.
+5. MCP receives a distinct stable resource-capacity failure when host headroom denies admission. No new capability, lease, filesystem, network, process-eligibility or sandbox authority is introduced.
+6. Heavy-task slots/classes and optional I/O governance remain separate A-02 work even after 3E2B.
+
+Gate requires deterministic provider tests, Windows real-provider integration coverage, exact-head CI and post-merge `main` CI before the admission rule is considered closed.
 
 ## Phase 4 — same-repo parallelism
 

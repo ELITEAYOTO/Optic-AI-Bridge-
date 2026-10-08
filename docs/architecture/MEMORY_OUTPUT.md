@@ -40,9 +40,9 @@ On Windows, the individual job ceiling remains independently enforced by the Job
 
 ## Phase 3E2A host-memory observation
 
-Phase 3E2A adds a Windows-only, point-in-time host physical-memory observation primitive in `optic-bridge-windows`. It reports validated `total_physical_bytes` and `available_physical_bytes` from `GlobalMemoryStatusEx`. The Win32 `unsafe` call remains confined to the platform crate.
+Phase 3E2A is merged and validated through PR #103 (`e2b37be0`, exact head `3c765d9e`, CI #410/#411). It adds a Windows-only, point-in-time host physical-memory observation primitive in `optic-bridge-windows`, reporting validated `total_physical_bytes` and `available_physical_bytes` from `GlobalMemoryStatusEx`; the Win32 `unsafe` call remains confined to the platform crate.
 
-This sub-gate is deliberately telemetry-only: `ProcessManager` does not consume the snapshot yet, process admission is unchanged, and no MCP/session/policy authority is added. Phase 3E2B will define the conservative emergency-headroom admission rule against a testable provider instead of making runtime tests depend on runner RAM.
+3E2A remains deliberately telemetry-only: `ProcessManager` does not consume the snapshot, process admission is unchanged, and no MCP/session/policy authority was added. Phase 3E2B is the current follow-up and will define the conservative emergency-headroom admission rule against a testable provider instead of making runtime tests depend on runner RAM.
 
 ## Cursor model
 

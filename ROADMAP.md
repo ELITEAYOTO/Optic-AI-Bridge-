@@ -4,9 +4,9 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 
 **Last reviewed:** 2026-10-08
 **Current phase:** Phase 3 — multi-session runtime
-**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2D3D, Phase 3A–3D, the selected C5G isolated-Node Desktop profile, and Phase 3E1 aggregate declared-memory governance are merged
+**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2D3D, Phase 3A–3D, the selected C5G isolated-Node Desktop profile, Phase 3E1 aggregate declared-memory governance, and Phase 3E2A Windows host-memory observation are merged
 **Release state:** no production-supported release
-**Next gate:** Phase 3E2 — conservative host-memory headroom/emergency reserve for process admission. Phase 3E1 now bounds declared process-memory reservations at 16 GiB bridge-wide / 8 GiB per session / 8 GiB per job and is green through PR #101 (merge `097b6a37`, exact head `b8447deb`, PR CI #406, post-merge CI #407). 3E2 must account for host physical-memory availability without claiming that Optic controls unrelated processes; heavy-task scheduling/classes and optional I/O governance remain separate A-02 work before heavier public multi-session autonomy.
+**Next gate:** Phase 3E2B — conservative host-memory emergency-headroom admission. Phase 3E2A is green through PR #103 (merge `e2b37be0`, exact head `3c765d9e`, PR CI #410, post-merge CI #411) and can observe validated Windows total/available physical memory, but admission still does not consume that snapshot. 3E2B must add a testable, serialized, fail-closed headroom decision without claiming control over unrelated host processes; heavy-task scheduling/classes and optional I/O governance remain separate A-02 work.
 
 The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
 
