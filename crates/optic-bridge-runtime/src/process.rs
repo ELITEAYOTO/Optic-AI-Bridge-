@@ -14,8 +14,8 @@ use std::{
 };
 
 use optic_bridge_core::{
-    HardLimits, JobId, LimitError, ProcessExecutionClass, ResourceBudget, SessionHandle,
-    WorkloadClass, WorkspacePath,
+    HardLimits, JobId, LimitError, NetworkAccess, ProcessExecutionClass, ResourceBudget,
+    SessionHandle, WorkloadClass, WorkspacePath,
 };
 #[cfg(windows)]
 use optic_bridge_windows::{
@@ -119,6 +119,7 @@ pub struct ProcessStartSpec {
     pub session: SessionHandle,
     pub class: ProcessExecutionClass,
     pub workload_class: WorkloadClass,
+    pub network: NetworkAccess,
     pub executable: String,
     pub args: Vec<String>,
     pub cwd: Option<WorkspacePath>,
@@ -334,10 +335,11 @@ impl ProcessManager {
         let executable = self.canonicalize_executable(&spec.executable)?;
         let cwd = self.resolve_cwd(spec.cwd.as_ref())?;
         let environment = self.resolve_environment(&spec.env_allowlist)?;
-        let requires_isolation = matches!(
-            spec.class,
-            ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
-        );
+        let requires_isolation = spec.network == NetworkAccess::Denied
+            || matches!(
+                spec.class,
+                ProcessExecutionClass::Interpreter | ProcessExecutionClass::RepositoryCode
+            );
         if !requires_isolation && !spec.workspace_read_files.is_empty() {
             return Err(ProcessError::WorkspaceReadGrantsRequireIsolation);
         }
@@ -1402,6 +1404,7 @@ mod tests {
             session,
             class: ProcessExecutionClass::FixedTool,
             workload_class: optic_bridge_core::WorkloadClass::Standard,
+            network: NetworkAccess::Allowed,
             executable,
             args: vec![
                 "--exact".to_owned(),
