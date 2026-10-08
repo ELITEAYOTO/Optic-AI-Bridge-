@@ -19,8 +19,8 @@ use optic_bridge_core::{
 };
 #[cfg(windows)]
 use optic_bridge_windows::{
-    HostMemorySnapshot, LimitedJobObject, PinnedExecutableFile, open_pinned_executable,
-    query_host_memory_snapshot,
+    HostMemorySnapshot, LimitedJobObject, PinnedDirectoryChain, PinnedDirectoryError,
+    PinnedExecutableFile, open_pinned_executable, pin_directory_chain, query_host_memory_snapshot,
 };
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(unix)]
@@ -210,6 +210,8 @@ struct JobRecord {
     reserved_output_bytes: u64,
     reserved_memory_bytes: u64,
     reserved_cpu_percent: u32,
+    #[cfg(windows)]
+    cwd_pin: Mutex<Option<PinnedDirectoryChain>>,
     output: Mutex<OutputState>,
     state: Mutex<JobState>,
     stop_requested: AtomicBool,
@@ -389,6 +391,14 @@ impl ProcessManager {
         }
         self.validate_request_shape(&spec)?;
         let executable = self.canonicalize_executable(&spec.executable)?;
+        #[cfg(windows)]
+        let cwd_pin = pin_directory_chain(
+            &self.root,
+            spec.cwd.as_ref().map(|cwd| Path::new(cwd.as_str())),
+        )?;
+        #[cfg(windows)]
+        let cwd = cwd_pin.final_path().to_path_buf();
+        #[cfg(not(windows))]
         let cwd = self.resolve_cwd(spec.cwd.as_ref())?;
         let environment = self.resolve_environment(&spec.env_allowlist)?;
         let requires_isolation = spec.network == NetworkAccess::Denied
@@ -470,6 +480,8 @@ impl ProcessManager {
             reserved_output_bytes: resources.output_bytes,
             reserved_memory_bytes: resources.memory_bytes,
             reserved_cpu_percent,
+            #[cfg(windows)]
+            cwd_pin: Mutex::new(Some(cwd_pin)),
             output: Mutex::new(OutputState {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
@@ -856,6 +868,7 @@ impl ProcessManager {
         Ok(resolved)
     }
 
+    #[cfg(not(windows))]
     fn resolve_cwd(&self, cwd: Option<&WorkspacePath>) -> Result<PathBuf, ProcessError> {
         let Some(cwd) = cwd else {
             return Ok(self.root.clone());
@@ -1301,6 +1314,12 @@ async fn monitor_child(
         } else {
             status
         };
+    if status != ProcessStatus::TerminationUncertain {
+        #[cfg(windows)]
+        if let Ok(mut cwd_pin) = record.cwd_pin.lock() {
+            cwd_pin.take();
+        }
+    }
     if let Ok(mut state) = record.state.lock() {
         *state = JobState { status, exit_code };
     }
@@ -1334,6 +1353,9 @@ pub enum ProcessError {
     CwdOutsideWorkspace,
     #[error("process working directory must resolve to a directory")]
     CwdNotDirectory,
+    #[cfg(windows)]
+    #[error("process working directory could not be pinned safely: {0}")]
+    PinnedWorkingDirectory(#[from] PinnedDirectoryError),
     #[error("process environment variable name is invalid")]
     InvalidEnvironmentName,
     #[error("process environment variable is not operator-authorized for MCP export")]
@@ -1532,6 +1554,8 @@ mod tests {
             reserved_output_bytes: 1,
             reserved_memory_bytes,
             reserved_cpu_percent,
+            #[cfg(windows)]
+            cwd_pin: Mutex::new(None),
             output: Mutex::new(OutputState {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
@@ -2278,6 +2302,8 @@ mod tests {
                     reserved_output_bytes: 1024,
                     reserved_memory_bytes: 64 * 1024 * 1024,
                     reserved_cpu_percent: limits.max_process_cpu_percent_per_job,
+                    #[cfg(windows)]
+                    cwd_pin: Mutex::new(None),
                     output: Mutex::new(OutputState {
                         stdout: Vec::new(),
                         stderr: Vec::new(),
@@ -2317,6 +2343,38 @@ mod tests {
             manager.start(spec(&root, owner.clone(), budget(5000, 1024))),
             Err(ProcessError::TooManyActiveJobsForSession)
         ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn running_job_pins_cwd_namespace_until_terminal_state_is_proven() {
+        let root = workspace("cwd-pin-runtime");
+        let cwd = root.join("nested").join("cwd");
+        fs::create_dir_all(&cwd).expect("create cwd");
+        fs::write(cwd.join("fixture-sleep"), b"1").expect("sleep fixture");
+        let manager =
+            ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+        let owner = SessionHandle::generate().expect("owner session");
+        let mut start = spec(&root, owner.clone(), budget(5_000, 64 * 1024));
+        start.cwd = Some(WorkspacePath::parse("nested/cwd").expect("workspace cwd"));
+        let job = manager.start(start).expect("start process");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let renamed = root.join("nested-renamed");
+        assert!(
+            fs::rename(root.join("nested"), &renamed).is_err(),
+            "running job must keep the cwd ancestor namespace pinned"
+        );
+
+        assert!(manager.stop(&owner, &job).expect("stop process"));
+        let result = await_terminal(&manager, &owner, &job).await;
+        assert!(matches!(
+            result.status,
+            ProcessStatus::Stopped | ProcessStatus::Exited
+        ));
+        fs::rename(root.join("nested"), &renamed)
+            .expect("terminal proof must release cwd namespace pin");
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
