@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    Capability, ResourceBudget, SessionHandle, TaskLeaseId, ToolApprovalRequirement,
-    ToolProfileName, WorkspacePath,
+    Capability, ReadContentScope, ReadSensitiveScope, ResourceBudget, SearchMetadataScope,
+    SessionHandle, TaskLeaseId, ToolApprovalRequirement, ToolProfileName, WorkspacePath,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -73,6 +73,9 @@ pub enum LeaseScope {
     WorkspaceAll,
     WorkspacePrefix(WorkspacePath),
     Repository,
+    SearchMetadata(SearchMetadataScope),
+    ReadContent(ReadContentScope),
+    ReadSensitive(ReadSensitiveScope),
     ProcessExecutable {
         executable: String,
         class: ProcessExecutionClass,
@@ -143,6 +146,30 @@ impl TaskLease {
     }
 
     #[must_use]
+    pub fn covers_search_metadata(&self, root: Option<&WorkspacePath>) -> bool {
+        self.scopes.iter().any(|scope| match scope {
+            LeaseScope::SearchMetadata(scope) => scope.covers_search_root(root),
+            _ => false,
+        })
+    }
+
+    #[must_use]
+    pub fn covers_read_content(&self, path: &WorkspacePath) -> bool {
+        self.scopes.iter().any(|scope| match scope {
+            LeaseScope::ReadContent(scope) => scope.covers_path(path),
+            _ => false,
+        })
+    }
+
+    #[must_use]
+    pub fn covers_read_sensitive(&self, path: &WorkspacePath) -> bool {
+        self.scopes.iter().any(|scope| match scope {
+            LeaseScope::ReadSensitive(scope) => scope.covers_path(path),
+            _ => false,
+        })
+    }
+
+    #[must_use]
     pub fn process_execution_class(&self, executable: &str) -> Option<ProcessExecutionClass> {
         self.scopes.iter().find_map(|scope| match scope {
             LeaseScope::ProcessExecutable {
@@ -181,6 +208,71 @@ mod tests {
         let expires = issued.saturating_add_millis(500);
         assert!(MonotonicTime::from_millis(1_499) < expires);
         assert!(MonotonicTime::from_millis(1_500) >= expires);
+    }
+
+    #[test]
+    fn typed_read_search_scopes_do_not_alias_legacy_workspace_scopes() {
+        let prefix = WorkspacePath::parse("src").expect("workspace path");
+        let scopes = BTreeSet::from([
+            LeaseScope::SearchMetadata(SearchMetadataScope::prefix(prefix.clone())),
+            LeaseScope::ReadContent(ReadContentScope::prefix(prefix.clone())),
+            LeaseScope::ReadSensitive(ReadSensitiveScope::prefix(prefix.clone())),
+        ]);
+
+        assert!(!scopes.contains(&LeaseScope::WorkspacePrefix(prefix)));
+        assert!(!scopes.contains(&LeaseScope::WorkspaceAll));
+        assert_eq!(scopes.len(), 3);
+
+        let session = SessionHandle::generate().expect("session");
+        let lease = TaskLease {
+            id: TaskLeaseId::generate().expect("lease"),
+            session,
+            capabilities: BTreeSet::from([Capability::FileRead, Capability::FileSearch]),
+            scopes,
+            workload_class: WorkloadClass::Standard,
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 1_024,
+                memory_bytes: 1_024,
+                process_count: 1,
+            },
+            expires_at: MonotonicTime::from_millis(10_000),
+            policy_epoch: 1,
+        };
+        assert!(
+            lease.covers_search_metadata(Some(&WorkspacePath::parse("src/bin").expect("path")))
+        );
+        assert!(lease.covers_read_content(&WorkspacePath::parse("src/lib.rs").expect("path")));
+        assert!(
+            lease.covers_read_sensitive(&WorkspacePath::parse("src/secrets.txt").expect("path"))
+        );
+    }
+
+    #[test]
+    fn typed_read_search_scopes_are_not_substitutable() {
+        let prefix = WorkspacePath::parse("src").expect("workspace path");
+        let session = SessionHandle::generate().expect("session");
+        let lease = TaskLease {
+            id: TaskLeaseId::generate().expect("lease"),
+            session,
+            capabilities: BTreeSet::from([Capability::FileRead, Capability::FileSearch]),
+            scopes: BTreeSet::from([LeaseScope::SearchMetadata(SearchMetadataScope::prefix(
+                prefix,
+            ))]),
+            workload_class: WorkloadClass::Standard,
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 1_024,
+                memory_bytes: 1_024,
+                process_count: 1,
+            },
+            expires_at: MonotonicTime::from_millis(10_000),
+            policy_epoch: 1,
+        };
+        let file = WorkspacePath::parse("src/lib.rs").expect("path");
+        assert!(lease.covers_search_metadata(Some(&file)));
+        assert!(!lease.covers_read_content(&file));
+        assert!(!lease.covers_read_sensitive(&file));
     }
 
     #[test]

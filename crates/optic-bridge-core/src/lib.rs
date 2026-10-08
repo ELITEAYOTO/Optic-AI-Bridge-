@@ -11,6 +11,7 @@ mod approval;
 mod ids;
 mod limits;
 mod path;
+mod read_scope;
 mod session;
 mod tool_profile;
 mod version;
@@ -23,6 +24,9 @@ pub use approval::ApprovalGrant;
 pub use ids::{ActionId, ApprovalId, IdError, JobId, SessionHandle, TaskLeaseId, TokenParseError};
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
+pub use read_scope::{
+    ReadContentScope, ReadSensitiveScope, SearchMetadataScope, WorkspaceAuthorityScope,
+};
 pub use session::{
     LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass, ProjectId, SessionGrant,
     TaskLease, WorkloadClass,
