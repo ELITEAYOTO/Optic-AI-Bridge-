@@ -1,6 +1,6 @@
 # Multi-session and Same-Repository Concurrency
 
-Status: Phase 3 current; Phase 3A through Phase 3B3 are merged and post-merge validated. Client-visible session creation/renewal remains disabled; Phase 3C process/resource hardening is next, while same-repository merge coordination remains PROPOSED for Phase 4.
+Status: Phase 3 internal multi-session substrate is adversarially closed through Phase 3D / PR #99 (`d9068334`, CI #401/#402). Client-visible session creation/renewal remains disabled; aggregate machine memory/headroom governance and other public-autonomy hardening remain separate, while same-repository merge coordination remains PROPOSED for Phase 4.
 
 Multi-session is a first-class invariant, not a later optimization.
 
@@ -15,7 +15,7 @@ Optic owns an opaque application `SessionHandle`; transport connections are not 
 - journal/recovery authority where applicable;
 - quotas and cancellation tree.
 
-Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs remain unguessable and authorization must still validate ownership. Phase 3A enforces owner-bound `JobId` access plus global-and-per-session process quotas and owner-only terminal-record eviction. Phase 3B1 adds application-owned provisioning and coordinated revoke. Phase 3B2 adds the admission barrier for sensitive sinks. Phase 3B3 additionally bounds task-lease storage globally/per-session and automatically scans the already-bounded session registry for revoked/expired sessions, reusing the same quiescent owner-scoped reap path. No public MCP session-creation or renewal tool exists yet.
+Session A cannot address Session B jobs, spool objects or private worktree by guessing identifiers. IDs remain unguessable and authorization must still validate ownership. Phase 3A enforces owner-bound `JobId` access plus global-and-per-session process quotas and owner-only terminal-record eviction. Phase 3B1 adds application-owned provisioning and coordinated revoke. Phase 3B2 adds the admission barrier for sensitive sinks. Phase 3B3 additionally bounds task-lease storage globally/per-session and automatically scans the already-bounded session registry for revoked/expired sessions, reusing the same quiescent owner-scoped reap path. No public MCP session-creation or renewal tool exists yet. Phase 3D then composes those guarantees adversarially in one A/B/C scenario: cross-session lease and JobId access fail closed, one session hitting its local process limit does not damage the other, owner-scoped revoke/reap leaves the foreign session intact, and reclaimed capacity can be reused by a new session without evicting the survivor.
 
 ## Different projects
 
