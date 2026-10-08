@@ -38,6 +38,12 @@ Process working-set/commit memory is separate from bridge-owned stdout/stderr RA
 
 On Windows, the individual job ceiling remains independently enforced by the Job Object. The aggregate values are admission reservations, not RSS/commit telemetry and not a guarantee of physical host headroom. Dynamic RAM-pressure/emergency-headroom policy remains future ResourceGovernor work.
 
+## Phase 3E2A host-memory observation
+
+Phase 3E2A adds a Windows-only, point-in-time host physical-memory observation primitive in `optic-bridge-windows`. It reports validated `total_physical_bytes` and `available_physical_bytes` from `GlobalMemoryStatusEx`. The Win32 `unsafe` call remains confined to the platform crate.
+
+This sub-gate is deliberately telemetry-only: `ProcessManager` does not consume the snapshot yet, process admission is unchanged, and no MCP/session/policy authority is added. Phase 3E2B will define the conservative emergency-headroom admission rule against a testable provider instead of making runtime tests depend on runner RAM.
+
 ## Cursor model
 
 process_read(job_id, stream, cursor, max_bytes) returns bounded data plus next_cursor, EOF/truncation metadata and total byte counters.
