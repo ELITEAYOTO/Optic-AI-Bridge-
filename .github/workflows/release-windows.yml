@@ -20,7 +20,7 @@ jobs:
           rustup toolchain install 1.99.0 --profile minimal
           rustup default 1.99.0
 
-      - name: Build release binary
+      - name: Build release binaries
         shell: pwsh
         run: cargo build --locked --release -p optic-bridge-app
 
@@ -30,6 +30,7 @@ jobs:
           $bundle = Join-Path $PWD 'dist\Optic-AI-Bridge-windows-x64'
           New-Item -ItemType Directory -Force -Path $bundle | Out-Null
           Copy-Item 'target\release\optic-bridge.exe' $bundle
+          Copy-Item 'target\release\optic-bridge-isolation-launcher.exe' $bundle
           Copy-Item 'scripts\Install-OpticAIBridge.ps1' $bundle
           Copy-Item 'scripts\Test-OpticAIBridge.ps1' $bundle
           Copy-Item 'scripts\Uninstall-OpticAIBridge.ps1' $bundle
@@ -46,6 +47,7 @@ jobs:
              @Optic AI Bridge Inspect the current workspace without modifying anything.
 
           No OpenAI API key, tunnel, Node.js, Python or Rust compiler is required for this release bundle.
+          The bundle includes Optic's internal AppContainer isolation launcher as a sibling of the bridge; its presence grants no interpreter or repository-code authority by itself.
           Mutating file tools are limited to the workspace scratch/ prefix by default and still require ChatGPT approval.
           Exact-head Git integration is off by default. On an exact Git repository root, add -EnableGitIntegration to enable git_integration_status plus prompt-gated git_integrate.
           '@ | Set-Content -LiteralPath (Join-Path $bundle 'README-FIRST.txt') -Encoding UTF8

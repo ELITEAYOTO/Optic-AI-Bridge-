@@ -55,7 +55,7 @@ jobs:
         env:
           OPTIC_REQUIRE_HOSTED_TOOLCHAINS: "1"
         run: cargo test --locked -p optic-bridge-app --test appcontainer_network_isolation_windows -- --nocapture
-      - name: Build bridge binary for Git integration MCP smoke
+      - name: Build bridge binaries for MCP and installer smokes
         if: runner.os == 'Windows'
         shell: pwsh
         run: cargo build --locked -p optic-bridge-app -j 1
@@ -76,6 +76,7 @@ jobs:
           $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\installer-profile-smoke'
           .\scripts\Test-InstallerProfiles.ps1 `
             -BridgePath '.\target\debug\optic-bridge.exe' `
+            -IsolationLauncherPath '.\target\debug\optic-bridge-isolation-launcher.exe' `
             -PluginTemplatePath '.\packaging\chatgpt-plugin' `
             -FixtureRoot $fixtureRoot
 

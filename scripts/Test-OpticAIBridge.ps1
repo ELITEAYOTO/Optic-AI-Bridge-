@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Workspace,
 
+    [string]$IsolationLauncherPath,
     [string]$GitPath,
     [string]$GitIntegrationPath,
     [string]$GitIntegrationRoot,
@@ -58,6 +59,16 @@ function Read-McpResponse {
 
 $BridgePath = (Resolve-Path -LiteralPath $BridgePath).Path
 $Workspace = (Resolve-Path -LiteralPath $Workspace).Path
+if ($IsolationLauncherPath) {
+    $IsolationLauncherPath = (Resolve-Path -LiteralPath $IsolationLauncherPath).Path
+    $expectedLauncher = Join-Path (Split-Path -Parent $BridgePath) 'optic-bridge-isolation-launcher.exe'
+    if ([IO.Path]::GetFullPath($IsolationLauncherPath) -ine [IO.Path]::GetFullPath($expectedLauncher)) {
+        throw 'Isolation launcher must be installed as the canonical sibling of optic-bridge.exe.'
+    }
+    if (-not (Test-Path -LiteralPath $IsolationLauncherPath -PathType Leaf)) {
+        throw "Isolation launcher is not a regular file: $IsolationLauncherPath"
+    }
+}
 
 if ($GitPath) { $GitPath = (Resolve-Path -LiteralPath $GitPath).Path }
 $integrationParts = @($GitIntegrationPath, $GitIntegrationRoot, $GitIntegrationRef | Where-Object { $_ }).Count
@@ -182,6 +193,7 @@ try {
         ServerVersion = [string]$initResponse.result.serverInfo.version
         ToolCount = $toolNames.Count
         RequiredTools = @($required)
+        IsolationLauncherPresent = [bool]$IsolationLauncherPath
     }
 }
 finally {

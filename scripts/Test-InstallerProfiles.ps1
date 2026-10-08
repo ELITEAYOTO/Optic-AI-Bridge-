@@ -4,6 +4,9 @@ param(
     [string]$BridgePath,
 
     [Parameter(Mandatory = $true)]
+    [string]$IsolationLauncherPath,
+
+    [Parameter(Mandatory = $true)]
     [string]$PluginTemplatePath,
 
     [Parameter(Mandatory = $true)]
@@ -38,7 +41,9 @@ function Read-McpConfig {
 }
 
 $BridgePath = (Resolve-Path -LiteralPath $BridgePath).Path
+$IsolationLauncherPath = (Resolve-Path -LiteralPath $IsolationLauncherPath).Path
 $PluginTemplatePath = (Resolve-Path -LiteralPath $PluginTemplatePath).Path
+$sourceIsolationHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $IsolationLauncherPath).Hash
 New-Item -ItemType Directory -Force -Path $FixtureRoot | Out-Null
 $FixtureRoot = (Resolve-Path -LiteralPath $FixtureRoot).Path
 $installer = Join-Path $PSScriptRoot 'Install-OpticAIBridge.ps1'
@@ -73,6 +78,7 @@ try {
         & $installer `
             -Workspace $repo `
             -BinaryPath $BridgePath `
+            -IsolationLauncherPath $IsolationLauncherPath `
             -PluginTemplatePath $PluginTemplatePath `
             -InstallRoot $unsafeRoot `
             -ReadOnly `
@@ -103,10 +109,20 @@ try {
     & $installer `
         -Workspace $repo `
         -BinaryPath $BridgePath `
+        -IsolationLauncherPath $IsolationLauncherPath `
         -PluginTemplatePath $PluginTemplatePath `
         -InstallRoot $defaultInstall `
         -ReadOnly `
         -SkipPluginRegistration
+
+    $defaultInstalledLauncher = Join-Path $defaultInstall 'bin\optic-bridge-isolation-launcher.exe'
+    if (-not (Test-Path -LiteralPath $defaultInstalledLauncher -PathType Leaf)) {
+        throw 'Default installer profile did not install the AppContainer isolation helper.'
+    }
+    $defaultIsolationHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $defaultInstalledLauncher).Hash
+    if ($defaultIsolationHash -ne $sourceIsolationHash) {
+        throw 'Installed AppContainer isolation helper does not match the supplied helper bytes.'
+    }
 
     $defaultConfig = Read-McpConfig -InstallRoot $defaultInstall
     $defaultServer = $defaultConfig.mcpServers.optic
@@ -133,6 +149,7 @@ try {
         & $installer `
             -Workspace $repo `
             -BinaryPath $BridgePath `
+            -IsolationLauncherPath $IsolationLauncherPath `
             -PluginTemplatePath $PluginTemplatePath `
             -InstallRoot $rejectedInstall `
             -ReadOnly `
@@ -155,6 +172,7 @@ try {
         & $installer `
             -Workspace $repo `
             -BinaryPath $BridgePath `
+            -IsolationLauncherPath $IsolationLauncherPath `
             -PluginTemplatePath $PluginTemplatePath `
             -InstallRoot $symbolicInstall `
             -WritePrefix '' `
@@ -175,6 +193,7 @@ try {
     & $installer `
         -Workspace $repo `
         -BinaryPath $BridgePath `
+        -IsolationLauncherPath $IsolationLauncherPath `
         -PluginTemplatePath $PluginTemplatePath `
         -InstallRoot $optInInstall `
         -WritePrefix '' `
@@ -219,12 +238,22 @@ try {
     & $installer `
         -Workspace $repo `
         -BinaryPath $BridgePath `
+        -IsolationLauncherPath $IsolationLauncherPath `
         -PluginTemplatePath $PluginTemplatePath `
         -InstallRoot $optInInstall `
         -WritePrefix '' `
         -DeletePrefix '' `
         -EnableGitIntegration `
         -SkipPluginRegistration
+
+    $reinstalledLauncher = Join-Path $optInInstall 'bin\optic-bridge-isolation-launcher.exe'
+    if (-not (Test-Path -LiteralPath $reinstalledLauncher -PathType Leaf)) {
+        throw 'Reinstall did not preserve the installed AppContainer isolation helper.'
+    }
+    $reinstalledIsolationHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $reinstalledLauncher).Hash
+    if ($reinstalledIsolationHash -ne $sourceIsolationHash) {
+        throw 'Reinstalled AppContainer isolation helper does not match the supplied helper bytes.'
+    }
 
     $preservedRef = Invoke-Git -Git $git -Repository $repo -Arguments @('rev-parse', '--verify', $targetRef) -Capture
     if ($preservedRef -ne $secondHead) {
@@ -269,6 +298,8 @@ try {
         IntegrationRefInitializedToHead = $true
         ExistingIntegrationRefPreserved = $true
         DoctorPassed = $true
+        IsolationHelperInstalledByteExact = $true
+        IsolationHelperReinstallPreserved = $true
         ExplicitUninstallRemovedIntegrationRef = $true
         ExplicitUninstallRemovedInstallRoot = $true
     }
