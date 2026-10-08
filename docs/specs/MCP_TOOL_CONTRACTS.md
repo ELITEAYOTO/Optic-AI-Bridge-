@@ -147,7 +147,9 @@ process_send_input(job_id, data)
 - A session receives `ProcessRun` only when at least one executable was operator-authorized for that server lifecycle.
 - `args` is a structured array. An opaque shell command string is not accepted as the primitive.
 - `cwd`, when supplied, is project-relative and must canonicalize to a directory inside the workspace.
-- The child environment is cleared by default. `env_allowlist` may request inheritance only for names that the operator allowed at startup with `--allow-env`.
+- The child environment is cleared by default. `env_allowlist` may request inheritance only for normalized names classified `benign` by operator-owned startup environment grants.
+- `--env-grant=<benign|sensitive|forbidden>:<name>` is the classified startup form; legacy `--allow-env=<name>` is only an alias for `benign:<name>`.
+- `sensitive` and `forbidden` variables are never exportable through the current `process_start` request. The MCP caller cannot supply or downgrade an environment classification.
 - `network` defaults to denied and `network=true` currently fails closed because process network containment is not implemented.
 - `timeout_ms`, `output_budget`, `memory_bytes` and `process_count` must be non-zero and fit both application hard ceilings and the active exact-executable task lease resource ceiling.
 - CPU rate is deliberately not an MCP request field. Phase 3C2 applies an application-owned fixed reservation/cap with defaults of 25% per job, 75% aggregate Optic process CPU and 50% per session; aggregate/session exhaustion fails admission rather than accepting a caller-selected larger share.

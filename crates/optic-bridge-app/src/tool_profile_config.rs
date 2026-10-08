@@ -210,6 +210,7 @@ mod tests {
     use std::{env, fs, path::PathBuf};
 
     use optic_bridge_core::ActionId;
+    use optic_bridge_runtime::{EnvironmentGrant, EnvironmentVariableClass};
 
     use super::*;
 
@@ -279,6 +280,47 @@ mod tests {
         assert_eq!(spec.network, NetworkAccess::Denied);
         assert_eq!(spec.approval, ToolApprovalRequirement::HumanRequired);
         assert_eq!(spec.env_allowlist, BTreeSet::from(["PATH".to_owned()]));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn sensitive_environment_grant_cannot_be_exported_by_tool_profile() {
+        let root = workspace("sensitive-env");
+        let manager = ProcessManager::new_with_environment_grants(
+            &root,
+            HardLimits::default(),
+            [EnvironmentGrant {
+                name: "SECRET".to_owned(),
+                class: EnvironmentVariableClass::Sensitive,
+            }],
+        )
+        .expect("classified manager");
+        let executable = env::current_exe()
+            .expect("current exe")
+            .canonicalize()
+            .expect("canonical exe")
+            .to_string_lossy()
+            .into_owned();
+        let canonical = manager
+            .canonicalize_executable(&executable)
+            .expect("canonical executable");
+        let executables = BTreeMap::from([(canonical.clone(), ProcessExecutionClass::FixedTool)]);
+        let path = write_config(
+            &root,
+            Path::new(&canonical),
+            r#"[{"name":"secret-profile","executable":"__EXE__","args":[],"env_allowlist":["SECRET"],"resources":{"timeout_ms":1000,"output_bytes":1024,"memory_bytes":67108864,"process_count":1}}]"#,
+        );
+        assert!(
+            load_tool_profiles(
+                Some(&path),
+                &manager,
+                &executables,
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                HardLimits::default(),
+            )
+            .is_err()
+        );
         fs::remove_dir_all(root).expect("cleanup");
     }
 

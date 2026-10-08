@@ -19,11 +19,12 @@ use optic_bridge_core::{
 use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
-    GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService,
-    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, ReadAuthoritySet,
-    ReadAuthoritySpec, SessionGrantSpec, SessionLifecycleManager, SessionRegistry, StdClock,
-    TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
-    mutation_resource_budget, read_authority_resource_budget,
+    EnvironmentGrant, EnvironmentVariableClass, GitIntegrationAuthoritySet,
+    GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService, MutationAuthoritySet,
+    MutationAuthoritySpec, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec, SessionGrantSpec,
+    SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
+    TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
+    read_authority_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -47,12 +48,14 @@ fn build_process_manager(
             .into());
         }
         if let Some(launcher) = launcher {
-            return Ok(ProcessManager::new_with_isolation_launcher(
-                &args.workspace,
-                limits,
-                args.allowed_env.clone(),
-                launcher,
-            )?);
+            return Ok(
+                ProcessManager::new_with_isolation_launcher_and_environment_grants(
+                    &args.workspace,
+                    limits,
+                    args.environment_grants.clone(),
+                    launcher,
+                )?,
+            );
         }
     }
 
@@ -65,10 +68,10 @@ fn build_process_manager(
         .into());
     }
 
-    Ok(ProcessManager::new(
+    Ok(ProcessManager::new_with_environment_grants(
         &args.workspace,
         limits,
-        args.allowed_env.clone(),
+        args.environment_grants.clone(),
     )?)
 }
 
@@ -639,7 +642,7 @@ struct AppArgs {
     process_read_grants: Vec<ProcessReadGrantSpec>,
     isolated_node_executables: Vec<String>,
     tool_profile_file: Option<PathBuf>,
-    allowed_env: Vec<String>,
+    environment_grants: Vec<EnvironmentGrant>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
@@ -664,7 +667,7 @@ impl AppArgs {
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
         let mut tool_profile_file = None;
-        let mut allowed_env = Vec::new();
+        let mut environment_grants = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
@@ -727,7 +730,21 @@ impl AppArgs {
                         "--allow-env requires a variable name",
                     )
                 })?;
-                allowed_env.push(os_string_to_utf8(value, "environment variable name")?);
+                environment_grants.push(EnvironmentGrant::benign(os_string_to_utf8(
+                    value,
+                    "environment variable name",
+                )?));
+            } else if arg == "--env-grant" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--env-grant requires <benign|sensitive|forbidden>:<name>",
+                    )
+                })?;
+                environment_grants.push(parse_environment_grant(os_string_to_utf8(
+                    value,
+                    "classified environment grant",
+                )?)?);
             } else if arg == "--allow-write-scope" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -820,7 +837,9 @@ impl AppArgs {
             } else if let Some(value) = option_value(&arg, "--tool-profile-file=")? {
                 set_tool_profile_file(&mut tool_profile_file, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--allow-env=")? {
-                allowed_env.push(value);
+                environment_grants.push(EnvironmentGrant::benign(value));
+            } else if let Some(value) = option_value(&arg, "--env-grant=")? {
+                environment_grants.push(parse_environment_grant(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-write-scope=")? {
                 write_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-delete-scope=")? {
@@ -879,7 +898,7 @@ impl AppArgs {
             process_read_grants,
             isolated_node_executables,
             tool_profile_file,
-            allowed_env,
+            environment_grants,
             write_scopes,
             delete_scopes,
             mutation_state_dir,
@@ -890,6 +909,36 @@ impl AppArgs {
             git_integration_ref,
         })
     }
+}
+
+fn parse_environment_grant(value: String) -> Result<EnvironmentGrant, std::io::Error> {
+    let (class, name) = value.split_once(':').ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--env-grant requires <benign|sensitive|forbidden>:<name>",
+        )
+    })?;
+    if name.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--env-grant variable name must not be empty",
+        ));
+    }
+    let class = match class {
+        "benign" => EnvironmentVariableClass::Benign,
+        "sensitive" => EnvironmentVariableClass::Sensitive,
+        "forbidden" => EnvironmentVariableClass::Forbidden,
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--env-grant class must be benign, sensitive, or forbidden",
+            ));
+        }
+    };
+    Ok(EnvironmentGrant {
+        name: name.to_owned(),
+        class,
+    })
 }
 
 fn set_tool_profile_file(slot: &mut Option<PathBuf>, value: PathBuf) -> Result<(), std::io::Error> {
@@ -1101,6 +1150,27 @@ fn os_string_to_utf8(value: OsString, label: &str) -> Result<String, std::io::Er
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn classified_environment_grant_parser_preserves_operator_class() {
+        assert_eq!(
+            parse_environment_grant("benign:PATH_HINT".to_owned()).expect("benign"),
+            EnvironmentGrant {
+                name: "PATH_HINT".to_owned(),
+                class: EnvironmentVariableClass::Benign,
+            }
+        );
+        assert_eq!(
+            parse_environment_grant("sensitive:API_KEY".to_owned()).expect("sensitive"),
+            EnvironmentGrant {
+                name: "API_KEY".to_owned(),
+                class: EnvironmentVariableClass::Sensitive,
+            }
+        );
+        assert!(parse_environment_grant("unknown:VALUE".to_owned()).is_err());
+        assert!(parse_environment_grant("forbidden:".to_owned()).is_err());
+    }
+
     use super::*;
     use optic_bridge_core::{
         NetworkAccess, ToolApprovalRequirement, ToolProfileName, ToolProfileSpec,
