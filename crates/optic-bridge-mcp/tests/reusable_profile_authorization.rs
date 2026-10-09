@@ -148,10 +148,19 @@ fn budget(timeout_ms: u64) -> ResourceBudget {
     }
 }
 
-fn profile(timeout_ms: u64) -> ToolProfile {
+fn test_executable() -> String {
+    std::env::current_exe()
+        .expect("current test executable")
+        .canonicalize()
+        .expect("canonical test executable")
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn profile(executable: &str, timeout_ms: u64) -> ToolProfile {
     ToolProfile::from_spec(ToolProfileSpec {
         name: ToolProfileName::parse("cargo-check").expect("profile name"),
-        executable: "C:/tools/cargo.exe".to_owned(),
+        executable: executable.to_owned(),
         class: ProcessExecutionClass::FixedTool,
         workload_class: WorkloadClass::Standard,
         exact_args: vec!["check".to_owned()],
@@ -165,7 +174,7 @@ fn profile(timeout_ms: u64) -> ToolProfile {
     .expect("valid profile")
 }
 
-fn fixture(approved_profile: ToolProfile) -> (ProfileGateServer, Arc<ReusableApprovalBroker>) {
+fn fixture(approved_timeout_ms: u64) -> (ProfileGateServer, Arc<ReusableApprovalBroker>) {
     let now = MonotonicTime::from_millis(10);
     let session = SessionHandle::generate().expect("session");
     let sessions = Arc::new(SessionRegistry::new());
@@ -180,7 +189,9 @@ fn fixture(approved_profile: ToolProfile) -> (ProfileGateServer, Arc<ReusableApp
         })
         .expect("register session");
 
-    let expected_profile = profile(5_000);
+    let executable = test_executable();
+    let expected_profile = profile(&executable, 5_000);
+    let approved_profile = profile(&executable, approved_timeout_ms);
     let lease_id = TaskLeaseId::generate().expect("lease");
     let leases = Arc::new(TaskLeaseRegistry::new());
     leases
@@ -271,7 +282,7 @@ async fn run(server: ProfileGateServer) -> (bool, usize) {
 
 #[tokio::test]
 async fn exact_reusable_profile_grant_authorizes_without_elicitation() {
-    let (server, _reusable) = fixture(profile(5_000));
+    let (server, _reusable) = fixture(5_000);
     let (authorized, requests) = run(server).await;
     assert!(authorized);
     assert_eq!(requests, 0);
@@ -279,7 +290,7 @@ async fn exact_reusable_profile_grant_authorizes_without_elicitation() {
 
 #[tokio::test]
 async fn same_name_different_profile_fingerprint_falls_back_to_human_prompt() {
-    let (server, _reusable) = fixture(profile(5_001));
+    let (server, _reusable) = fixture(5_001);
     let (authorized, requests) = run(server).await;
     assert!(!authorized);
     assert_eq!(requests, 1);
@@ -287,7 +298,7 @@ async fn same_name_different_profile_fingerprint_falls_back_to_human_prompt() {
 
 #[tokio::test]
 async fn revoked_session_rejects_before_reusable_grant_or_elicitation_can_authorize() {
-    let (server, _reusable) = fixture(profile(5_000));
+    let (server, _reusable) = fixture(5_000);
     server
         .sessions
         .revoke(&server.envelope.session)
