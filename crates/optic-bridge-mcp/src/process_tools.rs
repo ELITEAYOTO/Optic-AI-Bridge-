@@ -480,7 +480,8 @@ fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
         }
         SessionLifecycleError::TaskLeaseRegistry(error) => map_task_lease_error(error),
         SessionLifecycleError::Process(error) => map_process_error(error),
-        SessionLifecycleError::SessionStillActive => {
+        SessionLifecycleError::SessionStillActive
+        | SessionLifecycleError::SessionJobsStillActive { .. } => {
             ErrorData::invalid_request("optic.session_still_active", None)
         }
         SessionLifecycleError::ExpiredAtProvision
