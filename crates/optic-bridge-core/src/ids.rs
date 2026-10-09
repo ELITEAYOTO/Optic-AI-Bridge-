@@ -53,6 +53,7 @@ opaque_id!(SessionHandle);
 opaque_id!(TaskLeaseId);
 opaque_id!(ActionId);
 opaque_id!(ApprovalId);
+opaque_id!(ReusableApprovalId);
 opaque_id!(JobId);
 
 fn encode_token(bytes: &[u8; TOKEN_BYTES]) -> String {
@@ -133,5 +134,20 @@ mod tests {
             job
         );
         assert_eq!(format!("{job:?}"), "JobId(REDACTED)");
+    }
+
+    #[test]
+    fn reusable_approval_ids_are_opaque_and_round_trip() {
+        let approval =
+            ReusableApprovalId::generate().expect("OS entropy should be available in tests");
+        let token = approval.to_token();
+        assert_eq!(
+            ReusableApprovalId::from_token(&token).expect("approval token must parse"),
+            approval
+        );
+        assert_eq!(
+            format!("{approval:?}"),
+            "ReusableApprovalId(REDACTED)"
+        );
     }
 }
