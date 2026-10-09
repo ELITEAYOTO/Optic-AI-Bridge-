@@ -14,6 +14,7 @@ mod blocking_io;
 mod clock;
 mod filesystem;
 mod git_blob_batch;
+mod git_change_set;
 mod git_integrate;
 mod git_integration_authority;
 mod git_read;
@@ -50,6 +51,10 @@ pub use filesystem::{
     MutationError, MutationObservation, PreparedFileRead, ReadTargetObservation,
 };
 pub use git_blob_batch::{GitBlobBatchError, SessionBlob, SessionBlobBatch};
+pub use git_change_set::{
+    SessionChange, SessionChangeKind, SessionChangeSet, SessionConflict, SessionConflictError,
+    SessionConflictKind, SessionConflictReport,
+};
 pub use git_integrate::{
     GitIntegrationError, GitIntegrationMode, GitIntegrationRecoveryReport, GitIntegrationResult,
     GitIntegrationService,
