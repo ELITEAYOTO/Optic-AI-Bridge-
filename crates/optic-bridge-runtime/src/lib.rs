@@ -105,7 +105,8 @@ pub use recovery::{
     RecoveryReport,
 };
 pub use reusable_approval_broker::{
-    ReusableApprovalBroker, ReusableApprovalBrokerError, ReusableApprovalSpec,
+    ReusableApprovalBroker, ReusableApprovalBrokerError, ReusableApprovalLimits,
+    ReusableApprovalSpec,
 };
 pub use same_repo_coordinator::{
     CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
