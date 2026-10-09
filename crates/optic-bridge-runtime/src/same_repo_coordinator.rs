@@ -69,12 +69,12 @@ impl SameRepositorySessionCoordinator {
                     }
                     Ok(_) => Err(
                         SameRepositoryCoordinatorError::ProvisionRollbackIncomplete {
-                            worktree: worktree_error,
+                            worktree: Box::new(worktree_error),
                         },
                     ),
                     Err(rollback) => Err(SameRepositoryCoordinatorError::ProvisionRollbackFailed {
-                        worktree: worktree_error,
-                        rollback,
+                        worktree: Box::new(worktree_error),
+                        rollback: Box::new(rollback),
                     }),
                 }
             }
@@ -113,13 +113,13 @@ pub enum SameRepositoryCoordinatorError {
     #[error(
         "session rollback after worktree provisioning failure did not reach physical reap: {worktree}"
     )]
-    ProvisionRollbackIncomplete { worktree: SessionWorktreeError },
+    ProvisionRollbackIncomplete { worktree: Box<SessionWorktreeError> },
     #[error(
         "session rollback after worktree provisioning failure failed; worktree error: {worktree}; rollback error: {rollback}"
     )]
     ProvisionRollbackFailed {
-        worktree: SessionWorktreeError,
-        rollback: SessionLifecycleError,
+        worktree: Box<SessionWorktreeError>,
+        rollback: Box<SessionLifecycleError>,
     },
 }
 

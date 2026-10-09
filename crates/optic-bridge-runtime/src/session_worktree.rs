@@ -15,8 +15,10 @@ use crate::{
     GitBlobBatchError, GitReadError, GitReadService, GitTreeEntryKind, GitTreeManifest,
     GitTreeManifestError, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
     SessionBlobBatch, SessionChangeSet, SessionConflictError, SessionConflictReport,
+    SessionMergePlan, SessionMergePlanError,
     git_blob_batch::{ExpectedGitBlob, expected_batch_output_bytes, parse_cat_file_batch},
     git_change_set::{build_change_set, detect_conflicts},
+    git_merge_plan::build_merge_plan,
     git_tree_manifest::parse_git_tree_manifest,
     git_worktree::{
         RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
@@ -288,6 +290,27 @@ impl SessionWorktreeManager {
         }
         parse_git_tree_manifest(head.clone(), &output.stdout, self.recovery_entry_limit)
             .map_err(SessionWorktreeError::TreeManifest)
+    }
+
+    pub fn merge_plan(
+        &self,
+        left: &SessionHandle,
+        right: &SessionHandle,
+    ) -> Result<SessionMergePlan, SessionWorktreeError> {
+        let left_worktree = self.get(left)?;
+        let right_worktree = self.get(right)?;
+        let base = self.manifest_for_head(&left_worktree.base_head)?;
+        let left_current = self.manifest_for_head(&left_worktree.current_head)?;
+        let right_current = self.manifest_for_head(&right_worktree.current_head)?;
+        let left_changes = build_change_set(left.clone(), &base, &left_current);
+        let right_changes = build_change_set(right.clone(), &base, &right_current);
+        build_merge_plan(
+            &base,
+            &left_changes,
+            &right_changes,
+            self.conflict_report_limit,
+        )
+        .map_err(SessionWorktreeError::MergePlan)
     }
 
     pub fn read_blob_batch(
@@ -727,6 +750,8 @@ pub enum SessionWorktreeError {
     TreeManifest(#[from] GitTreeManifestError),
     #[error(transparent)]
     Conflict(#[from] SessionConflictError),
+    #[error(transparent)]
+    MergePlan(#[from] SessionMergePlanError),
     #[error(transparent)]
     BlobBatch(#[from] GitBlobBatchError),
     #[error("Git blob batch must request at least one manifest path")]
