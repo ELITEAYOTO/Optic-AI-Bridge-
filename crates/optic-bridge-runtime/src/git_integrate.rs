@@ -12,16 +12,15 @@ use thiserror::Error;
 
 use crate::{
     GitReadError, GitReadService, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
+    git_worktree::{
+        RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
+        git_path_arg, parse_worktree_list, path_is_lexically_within, paths_lexically_equal,
+    },
 };
 
 const INTEGRATION_REF_PREFIX: &str = "refs/optic/integration/";
 const CAPTURE_LIMIT_BYTES: u64 = 4 * 1024;
 const DISABLED_HOOKS_DIRECTORY: &str = "hooks-disabled";
-
-#[cfg(windows)]
-const NULL_CONFIG_PATH: &str = "NUL";
-#[cfg(not(windows))]
-const NULL_CONFIG_PATH: &str = "/dev/null";
 
 #[derive(Debug)]
 pub struct GitIntegrationService {
@@ -224,7 +223,12 @@ impl GitIntegrationService {
         if !status.success() {
             return Err(GitIntegrationError::GitCommandFailed);
         }
-        parse_worktree_list(&bytes, self.recovery_entry_limit)
+        parse_worktree_list(&bytes, self.recovery_entry_limit).map_err(|error| match error {
+            WorktreeListError::Malformed => GitIntegrationError::RecoveryWorktreeListMalformed,
+            WorktreeListError::EntryLimitExceeded => {
+                GitIntegrationError::RecoveryEntryLimitExceeded
+            }
+        })
     }
 
     fn validate_owned_recovery_snapshot(
@@ -526,21 +530,7 @@ impl GitIntegrationService {
     }
 
     fn base_args(&self) -> Vec<OsString> {
-        vec![
-            OsString::from("--no-pager"),
-            OsString::from("--literal-pathspecs"),
-            OsString::from("-c"),
-            OsString::from("core.fsmonitor=false"),
-            OsString::from("-c"),
-            OsString::from("core.untrackedCache=false"),
-            OsString::from("-c"),
-            OsString::from(format!(
-                "core.hooksPath={}",
-                git_path_arg(&self.disabled_hooks_root).to_string_lossy()
-            )),
-            OsString::from("-c"),
-            OsString::from("commit.gpgSign=false"),
-        ]
+        git_mutation_base_args(&self.disabled_hooks_root)
     }
 
     fn run_status<I>(&self, context: &Path, args: I) -> Result<ExitStatus, GitIntegrationError>
@@ -553,7 +543,7 @@ impl GitIntegrationService {
             executable: self.git_executable.clone(),
             cwd: context.to_path_buf(),
             args: command_args,
-            env: git_integration_environment(),
+            env: git_mutation_environment(),
             output_limit: CAPTURE_LIMIT_BYTES,
         };
         Ok(self.runner.run(&spec).map_err(map_runner_error)?.status)
@@ -588,28 +578,12 @@ impl GitIntegrationService {
             executable: self.git_executable.clone(),
             cwd: context.to_path_buf(),
             args: command_args,
-            env: git_integration_environment(),
+            env: git_mutation_environment(),
             output_limit,
         };
         let output = self.runner.run(&spec).map_err(map_runner_error)?;
         Ok((output.status, output.stdout))
     }
-}
-
-fn git_integration_environment() -> BTreeMap<OsString, OsString> {
-    [
-        ("GIT_TERMINAL_PROMPT", "0"),
-        ("GIT_PAGER", "cat"),
-        ("PAGER", "cat"),
-        ("GIT_CONFIG_NOSYSTEM", "1"),
-        ("GIT_CONFIG_GLOBAL", NULL_CONFIG_PATH),
-        ("GIT_NO_REPLACE_OBJECTS", "1"),
-        ("GIT_ATTR_NOSYSTEM", "1"),
-        ("LC_ALL", "C"),
-    ]
-    .into_iter()
-    .map(|(key, value)| (OsString::from(key), OsString::from(value)))
-    .collect()
 }
 
 fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
@@ -629,122 +603,8 @@ fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct RegisteredWorktree {
-    path: PathBuf,
-    locked: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 struct OwnedRecoveryWorktree {
     canonical_path: PathBuf,
-}
-
-fn parse_worktree_list(
-    bytes: &[u8],
-    entry_limit: u32,
-) -> Result<Vec<RegisteredWorktree>, GitIntegrationError> {
-    if bytes.is_empty() || !bytes.ends_with(b"\0\0") {
-        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
-    }
-
-    let mut records = Vec::new();
-    let mut fields: Vec<&[u8]> = Vec::new();
-    for field in bytes.split(|byte| *byte == 0) {
-        if field.is_empty() {
-            if fields.is_empty() {
-                continue;
-            }
-            if records.len() >= usize::try_from(entry_limit).unwrap_or(usize::MAX) {
-                return Err(GitIntegrationError::RecoveryEntryLimitExceeded);
-            }
-            records.push(parse_worktree_record(&fields)?);
-            fields.clear();
-        } else {
-            fields.push(field);
-        }
-    }
-    if !fields.is_empty() || records.is_empty() {
-        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
-    }
-    Ok(records)
-}
-
-fn parse_worktree_record(fields: &[&[u8]]) -> Result<RegisteredWorktree, GitIntegrationError> {
-    let first = fields
-        .first()
-        .ok_or(GitIntegrationError::RecoveryWorktreeListMalformed)?;
-    let raw_path = first
-        .strip_prefix(b"worktree ")
-        .ok_or(GitIntegrationError::RecoveryWorktreeListMalformed)?;
-    if raw_path.is_empty()
-        || fields[1..]
-            .iter()
-            .any(|field| field.starts_with(b"worktree "))
-    {
-        return Err(GitIntegrationError::RecoveryWorktreeListMalformed);
-    }
-    let path = std::str::from_utf8(raw_path)
-        .map_err(|_| GitIntegrationError::RecoveryWorktreeListMalformed)?;
-    let locked = fields[1..]
-        .iter()
-        .any(|field| *field == b"locked" || field.starts_with(b"locked "));
-    Ok(RegisteredWorktree {
-        path: PathBuf::from(path),
-        locked,
-    })
-}
-
-#[cfg(windows)]
-fn normalized_windows_path(path: &Path) -> String {
-    let mut value = path.as_os_str().to_string_lossy().replace('/', "\\");
-    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
-        value = format!(r"\\{rest}");
-    } else if let Some(rest) = value.strip_prefix(r"\\?\") {
-        value = rest.to_owned();
-    }
-    while value.len() > 3 && value.ends_with('\\') {
-        value.pop();
-    }
-    value.to_lowercase()
-}
-
-#[cfg(windows)]
-fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
-    normalized_windows_path(left) == normalized_windows_path(right)
-}
-
-#[cfg(not(windows))]
-fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
-    left == right
-}
-
-#[cfg(windows)]
-fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
-    let root = normalized_windows_path(root);
-    let candidate = normalized_windows_path(candidate);
-    candidate == root
-        || candidate
-            .strip_prefix(&root)
-            .is_some_and(|suffix| suffix.starts_with('\\'))
-}
-
-#[cfg(not(windows))]
-fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
-    candidate.starts_with(root)
-}
-
-fn git_path_arg(path: &Path) -> OsString {
-    #[cfg(windows)]
-    {
-        let value = path.as_os_str().to_string_lossy();
-        if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
-            return OsString::from(format!(r"\\{rest}"));
-        }
-        if let Some(rest) = value.strip_prefix(r"\\?\") {
-            return OsString::from(rest);
-        }
-    }
-    path.as_os_str().to_os_string()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -869,14 +729,15 @@ mod tests {
 
     #[test]
     fn git_integration_environment_is_explicit_and_keeps_locks_enabled() {
-        let env = git_integration_environment();
+        let env = git_mutation_environment();
+        let expected_null_config = OsString::from(if cfg!(windows) { "NUL" } else { "/dev/null" });
         assert!(!env.contains_key(&OsString::from("PATH")));
         assert!(!env.contains_key(&OsString::from("HOME")));
         assert!(!env.contains_key(&OsString::from("HTTP_PROXY")));
         assert!(!env.contains_key(&OsString::from("GIT_OPTIONAL_LOCKS")));
         assert_eq!(
             env.get(&OsString::from("GIT_CONFIG_GLOBAL")),
-            Some(&OsString::from(NULL_CONFIG_PATH))
+            Some(&expected_null_config)
         );
     }
 
@@ -1276,11 +1137,11 @@ mod tests {
         assert!(parsed[1].locked);
         assert!(matches!(
             parse_worktree_list(raw, 1),
-            Err(GitIntegrationError::RecoveryEntryLimitExceeded)
+            Err(WorktreeListError::EntryLimitExceeded)
         ));
         assert!(matches!(
             parse_worktree_list(&raw[..raw.len() - 1], 2),
-            Err(GitIntegrationError::RecoveryWorktreeListMalformed)
+            Err(WorktreeListError::Malformed)
         ));
     }
 

@@ -16,6 +16,7 @@ mod filesystem;
 mod git_integrate;
 mod git_integration_authority;
 mod git_read;
+mod git_worktree;
 mod hardened_command;
 mod journaled_mutation;
 mod mutation;
@@ -26,6 +27,7 @@ mod read_authority;
 mod recovery;
 mod session_lifecycle;
 mod session_registry;
+mod session_worktree;
 mod task_lease_registry;
 mod tool_profile_registry;
 mod transactional_file;
@@ -87,6 +89,9 @@ pub use session_lifecycle::{
     SessionRenewalReport, SessionRevokeReport,
 };
 pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
+pub use session_worktree::{
+    SessionWorktree, SessionWorktreeError, SessionWorktreeManager, SessionWorktreeRecoveryReport,
+};
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
 pub use tool_profile_registry::{ToolProfileRegistry, ToolProfileRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
