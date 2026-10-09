@@ -16,7 +16,8 @@ mod transport;
 
 pub use approval_elicitation::{
     ApprovalAuthorizationError, ApprovalAuthorizationRuntime, ApprovalElicitationError,
-    HumanApprovalDecision, authorize_action_with_human_approval, request_human_approval,
+    HumanApprovalDecision, authorize_action_with_human_approval,
+    authorize_profiled_action_with_reusable_or_human_approval, request_human_approval,
 };
 pub use git_integrate_tools::{
     GitIntegrateRequest, GitIntegrateResponse, GitIntegrationStatusResponse,
