@@ -56,6 +56,9 @@ pub enum SessionMergePublishOutcome {
     AlreadyPublished {
         merge: SessionMergeCommit,
     },
+    NoChanges {
+        head: GitObjectId,
+    },
 }
 
 impl SameRepositoryMergeOrchestrator {
@@ -160,6 +163,25 @@ impl SameRepositoryMergePublisher {
             return Err(SameRepositoryMergePublishError::SessionBaseMismatch);
         }
 
+        if left_worktree.current_head == right_worktree.current_head {
+            let shared_head = left_worktree.current_head.clone();
+            if shared_head != left_worktree.base_head {
+                return Err(
+                    SameRepositoryMergePublishError::SharedChangedHeadUnsupported {
+                        head: shared_head,
+                    },
+                );
+            }
+            let observed_target = self.integration.target_head()?;
+            if observed_target != shared_head {
+                return Err(SameRepositoryMergePublishError::TargetNotAtSessionBase {
+                    expected: shared_head,
+                    observed: observed_target,
+                });
+            }
+            return Ok(SessionMergePublishOutcome::NoChanges { head: shared_head });
+        }
+
         let merge = self
             .worktrees
             .write_merge_commit(left.session(), right.session())?;
@@ -225,6 +247,10 @@ pub enum SameRepositoryMergePublishError {
     SameSession,
     #[error("sealed sessions do not share the same exact base HEAD")]
     SessionBaseMismatch,
+    #[error(
+        "sealed sessions share changed HEAD {head:?}; direct shared-head publication is not yet lineage-validated"
+    )]
+    SharedChangedHeadUnsupported { head: GitObjectId },
     #[error("deterministic merge output no longer matches the sealed session base")]
     MergeContractMismatch,
     #[error(
@@ -379,6 +405,173 @@ mod tests {
     }
 
     #[test]
+    fn unchanged_shared_base_is_explicit_noop_and_cleanup_succeeds() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git);
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.repo, limits, Vec::new()).expect("process manager"),
+        );
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let worktrees = Arc::new(
+            SessionWorktreeManager::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.worktrees,
+                limits,
+            )
+            .expect("worktree manager"),
+        );
+        let coordinator = SameRepositorySessionCoordinator::new(
+            sessions,
+            leases,
+            processes,
+            approvals,
+            Arc::clone(&worktrees),
+        );
+        let integration = Arc::new(
+            GitIntegrationService::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.integration,
+                TARGET_REF,
+                limits,
+            )
+            .expect("integration"),
+        );
+        let orchestrator = SameRepositoryMergeOrchestrator::new(
+            coordinator.lifecycle(),
+            Arc::clone(&worktrees),
+            Arc::clone(&integration),
+        )
+        .expect("orchestrator");
+        let now = MonotonicTime::from_millis(10);
+        let left = coordinator
+            .provision(spec("noop-left"), &fixture.head, now)
+            .expect("left session");
+        let right = coordinator
+            .provision(spec("noop-right"), &fixture.head, now)
+            .expect("right session");
+
+        let outcome = orchestrator
+            .merge_publish_and_cleanup(&left.grant.handle, &right.grant.handle, now)
+            .expect("no-op merge lifecycle");
+        match &outcome.publication {
+            SessionMergePublishOutcome::NoChanges { head } => {
+                assert_eq!(head, &fixture.head);
+            }
+            _ => panic!("unchanged shared base must not create a merge commit"),
+        }
+        assert!(outcome.cleanup_complete());
+        assert_eq!(integration.target_head().expect("target"), fixture.head);
+        assert!(!left.worktree.path.exists());
+        assert!(!right.worktree.path.exists());
+    }
+
+    #[test]
+    fn shared_changed_head_fails_closed_before_duplicate_parent_commit() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git);
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.repo, limits, Vec::new()).expect("process manager"),
+        );
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let worktrees = Arc::new(
+            SessionWorktreeManager::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.worktrees,
+                limits,
+            )
+            .expect("worktree manager"),
+        );
+        let coordinator = SameRepositorySessionCoordinator::new(
+            sessions,
+            leases,
+            processes,
+            approvals,
+            Arc::clone(&worktrees),
+        );
+        let integration = Arc::new(
+            GitIntegrationService::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.integration,
+                TARGET_REF,
+                limits,
+            )
+            .expect("integration"),
+        );
+        let publisher =
+            SameRepositoryMergePublisher::new(Arc::clone(&worktrees), Arc::clone(&integration))
+                .expect("publisher");
+        let now = MonotonicTime::from_millis(10);
+        let left = coordinator
+            .provision(spec("shared-left"), &fixture.head, now)
+            .expect("left session");
+        let right = coordinator
+            .provision(spec("shared-right"), &fixture.head, now)
+            .expect("right session");
+
+        let tree = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &["rev-parse", "HEAD^{tree}"],
+        ));
+        let shared_head = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &[
+                "commit-tree",
+                tree.as_str(),
+                "-p",
+                fixture.head.as_str(),
+                "-m",
+                "shared changed head",
+            ],
+        ));
+        run_git(
+            &fixture.git,
+            &left.worktree.path,
+            &["update-ref", "HEAD", shared_head.as_str()],
+        );
+        run_git(
+            &fixture.git,
+            &right.worktree.path,
+            &["update-ref", "HEAD", shared_head.as_str()],
+        );
+
+        let lifecycle = coordinator.lifecycle();
+        let left_seal = lifecycle
+            .seal_quiescent(&left.grant.handle)
+            .expect("left seal");
+        let right_seal = lifecycle
+            .seal_quiescent(&right.grant.handle)
+            .expect("right seal");
+        assert!(matches!(
+            publisher.publish(&left_seal, &right_seal),
+            Err(SameRepositoryMergePublishError::SharedChangedHeadUnsupported { head })
+                if head == shared_head
+        ));
+        assert_eq!(integration.target_head().expect("target"), fixture.head);
+    }
+
+    #[test]
     fn published_merge_reports_cleanup_failure_without_hiding_publication() {
         let Some(git) = find_git_executable() else {
             return;
@@ -431,9 +624,6 @@ mod tests {
             .provision(spec("cleanup-right"), &fixture.head, now)
             .expect("right session");
 
-        // Give each worker a distinct, valid descendant HEAD. Using the shared base as both
-        // merge parents is a degenerate shape that makes Git warn about a duplicate parent on
-        // stderr; this test is about post-publication cleanup failure, not merge normalization.
         let tree = parse_oid(&git_output(
             &fixture.git,
             &fixture.repo,
@@ -488,6 +678,7 @@ mod tests {
         let published_commit = match &publication {
             SessionMergePublishOutcome::Published { merge, .. }
             | SessionMergePublishOutcome::AlreadyPublished { merge } => merge.commit.clone(),
+            SessionMergePublishOutcome::NoChanges { head } => head.clone(),
         };
         assert_eq!(integration.target_head().expect("target"), published_commit);
 
@@ -633,6 +824,9 @@ mod tests {
             SessionMergePublishOutcome::AlreadyPublished { .. } => {
                 panic!("first publish cannot already be complete")
             }
+            SessionMergePublishOutcome::NoChanges { .. } => {
+                panic!("changed workers cannot publish as no-op")
+            }
         };
         assert_eq!(integration.target_head().expect("target"), published_commit);
 
@@ -645,6 +839,9 @@ mod tests {
             }
             SessionMergePublishOutcome::Published { .. } => {
                 panic!("retry must not mutate the ref twice")
+            }
+            SessionMergePublishOutcome::NoChanges { .. } => {
+                panic!("retry of changed merge cannot become no-op")
             }
         }
 
