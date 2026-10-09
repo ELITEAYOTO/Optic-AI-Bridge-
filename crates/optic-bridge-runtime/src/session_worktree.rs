@@ -12,7 +12,9 @@ use optic_bridge_core::{GitObjectId, GitObjectIdError, HardLimits, SessionHandle
 use thiserror::Error;
 
 use crate::{
-    GitReadError, GitReadService, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
+    GitReadError, GitReadService, GitTreeManifest, GitTreeManifestError, HardenedCommandError,
+    HardenedCommandRunner, HardenedCommandSpec,
+    git_tree_manifest::parse_git_tree_manifest,
     git_worktree::{
         RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
         git_path_arg, parse_worktree_list, path_is_lexically_within, paths_lexically_equal,
@@ -217,6 +219,38 @@ impl SessionWorktreeManager {
             base_head: record.base_head.clone(),
             current_head,
         })
+    }
+
+    pub fn manifest(&self, owner: &SessionHandle) -> Result<GitTreeManifest, SessionWorktreeError> {
+        let worktree = self.get(owner)?;
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([
+            OsString::from("ls-tree"),
+            OsString::from("-r"),
+            OsString::from("-z"),
+            OsString::from("--full-tree"),
+            OsString::from("-l"),
+            OsString::from(worktree.current_head.as_str()),
+        ]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: self.recovery_output_limit,
+        };
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        parse_git_tree_manifest(
+            worktree.current_head,
+            &output.stdout,
+            self.recovery_entry_limit,
+        )
+        .map_err(SessionWorktreeError::TreeManifest)
     }
 
     pub fn release(&self, owner: &SessionHandle) -> Result<(), SessionWorktreeError> {
@@ -562,6 +596,8 @@ pub enum SessionWorktreeError {
     RecoveryUnexpectedEntry,
     #[error("session worktree exists on disk but is not registered with Git")]
     RecoveryUnregisteredOwnedPath,
+    #[error(transparent)]
+    TreeManifest(#[from] GitTreeManifestError),
     #[error("Git command failed")]
     GitCommandFailed,
     #[error("Git command timed out")]
@@ -733,6 +769,16 @@ mod tests {
             !worktree.path.join("tracked.txt").exists(),
             "Phase 4A must not materialize repository-controlled checkout content"
         );
+        let manifest = manager.manifest(&a).expect("session manifest");
+        assert_eq!(manifest.head, fixture.head);
+        assert_eq!(manifest.entries.len(), 1);
+        assert_eq!(manifest.entries[0].path.as_str(), "tracked.txt");
+        assert_eq!(
+            manifest.entries[0].kind,
+            crate::GitTreeEntryKind::RegularFile
+        );
+        assert_eq!(manifest.entries[0].blob_size, Some(5));
+        assert_eq!(manifest.total_blob_bytes, 5);
         assert_eq!(
             worktree.path.file_name().and_then(|v| v.to_str()),
             Some(a.to_token().as_str())
