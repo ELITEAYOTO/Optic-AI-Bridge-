@@ -593,12 +593,15 @@ fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
             GitIntegrationError::CommandOutputTooLarge
         }
         HardenedCommandError::MissingChildPipe => GitIntegrationError::MissingChildPipe,
-        HardenedCommandError::ReaderThreadPanicked => GitIntegrationError::ReaderThreadPanicked,
+        HardenedCommandError::ReaderThreadPanicked | HardenedCommandError::WriterThreadPanicked => {
+            GitIntegrationError::ReaderThreadPanicked
+        }
         HardenedCommandError::Io(error) => GitIntegrationError::Io(error),
         HardenedCommandError::ExecutableMustBeAbsolute
         | HardenedCommandError::WorkingDirectoryMustBeAbsolute
         | HardenedCommandError::ZeroOutputLimit
-        | HardenedCommandError::ZeroTimeout => GitIntegrationError::InvalidLimits,
+        | HardenedCommandError::ZeroTimeout
+        | HardenedCommandError::InputLimitExceeded { .. } => GitIntegrationError::InvalidLimits,
     }
 }
 
