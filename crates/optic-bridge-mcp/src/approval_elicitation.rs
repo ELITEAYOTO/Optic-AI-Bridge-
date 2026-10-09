@@ -268,9 +268,7 @@ pub async fn authorize_profiled_action_with_reusable_or_human_approval<'a>(
     authorize_action_with_human_approval(context, runtime, envelope, message, timeout).await
 }
 
-fn map_reusable_approval_error(
-    error: SessionReusableApprovalError,
-) -> ApprovalAuthorizationError {
+fn map_reusable_approval_error(error: SessionReusableApprovalError) -> ApprovalAuthorizationError {
     match error {
         SessionReusableApprovalError::Session(error) => ApprovalAuthorizationError::Session(error),
         SessionReusableApprovalError::Broker(error) => {
