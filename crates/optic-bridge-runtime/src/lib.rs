@@ -36,6 +36,7 @@ mod same_repo_coordinator;
 mod same_repo_merge;
 mod session_lifecycle;
 mod session_registry;
+mod session_reusable_approval;
 mod session_worktree;
 mod task_lease_registry;
 mod tool_profile_registry;
@@ -121,6 +122,9 @@ pub use session_lifecycle::{
     SessionReapReport, SessionRenewalReport, SessionRevokeReport,
 };
 pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
+pub use session_reusable_approval::{
+    SessionReusableApprovalError, SessionReusableApprovalService,
+};
 pub use session_worktree::{
     SessionWorktree, SessionWorktreeError, SessionWorktreeManager, SessionWorktreeRecoveryReport,
 };
