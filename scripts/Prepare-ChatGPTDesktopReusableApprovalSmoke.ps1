@@ -90,6 +90,7 @@ $installerParams = @{
     EnableIsolatedNode = $true
     NodePath = $NodePath
     SkipDoctor = $true
+    SkipPluginRegistration = $true
 }
 
 Write-Host '[Optic A-08E] Installing the exact CI-built binaries into a separate validation root...' -ForegroundColor Cyan
@@ -157,7 +158,8 @@ if ([string]$configJson.tool_profile_file -ine $profilePath) { throw 'A-08E conf
 if (@($configJson.process_read_grants).Count -ne 0) { throw 'A-08E config unexpectedly grants process workspace read authority.' }
 if (@($configJson.environment_grants).Count -ne 0) { throw 'A-08E config unexpectedly grants process environment authority.' }
 
-$mcpPath = Join-Path $InstallRoot 'marketplace\plugins\optic-ai-bridge-local\.mcp.json'
+$marketplaceRoot = Require-Directory -Path (Join-Path $InstallRoot 'marketplace') -Label 'A-08E marketplace root'
+$mcpPath = Join-Path $marketplaceRoot 'plugins\optic-ai-bridge-local\.mcp.json'
 $mcpPath = Require-Leaf -Path $mcpPath -Label 'Installed MCP config'
 $mcp = Get-Content -Raw -LiteralPath $mcpPath | ConvertFrom-Json
 $server = $mcp.mcpServers.optic
@@ -205,7 +207,10 @@ $preSmokeResult = & $preSmoke -BridgePath $installedBridge -NodePath $NodePath -
 if (-not $preSmokeResult.Ok) { throw 'A-08E direct reusable-approval pre-smoke failed.' }
 
 $codex = Get-CodexCommand
+Write-Host '[Optic A-08E] Temporarily switching the optic-ai-bridge marketplace to the A-08E validation root...' -ForegroundColor Cyan
 Invoke-Codex -Command $codex -Arguments @('plugin','remove','optic-ai-bridge-local@optic-ai-bridge','--json') -AllowFailure | Out-Null
+Invoke-Codex -Command $codex -Arguments @('plugin','marketplace','remove','optic-ai-bridge') -AllowFailure | Out-Null
+Invoke-Codex -Command $codex -Arguments @('plugin','marketplace','add',$marketplaceRoot,'--json') | Out-Null
 Invoke-Codex -Command $codex -Arguments @('plugin','add','optic-ai-bridge-local@optic-ai-bridge','--json') | Out-Null
 $pluginListText = (Invoke-Codex -Command $codex -Arguments @('plugin','list','--json')) -join "`n"
 $pluginList = $pluginListText | ConvertFrom-Json
@@ -213,7 +218,7 @@ $registered = @($pluginList.installed | Where-Object { $_.pluginId -eq 'optic-ai
 if ($registered.Count -ne 1 -or -not $registered[0].enabled) {
     throw 'The expected A-08E Optic plugin is not uniquely installed and enabled.'
 }
-$expectedPluginSource = (Resolve-Path -LiteralPath (Join-Path $InstallRoot 'marketplace\plugins\optic-ai-bridge-local')).Path
+$expectedPluginSource = (Resolve-Path -LiteralPath (Join-Path $marketplaceRoot 'plugins\optic-ai-bridge-local')).Path
 $registeredPluginSource = [IO.Path]::GetFullPath([string]$registered[0].source.path).TrimEnd('\','/')
 if ($registeredPluginSource -ine $expectedPluginSource.TrimEnd('\','/')) {
     throw "ChatGPT Desktop active plugin source mismatch. expected=$expectedPluginSource observed=$registeredPluginSource"
@@ -250,6 +255,7 @@ Write-Host 'A-08E preparation succeeded.' -ForegroundColor Green
 Write-Host 'The exact installed binary/config passed the direct reusable-approval smoke.' -ForegroundColor Green
 Write-Host 'Now fully close ChatGPT Desktop, reopen it, create ONE new normal Chat, and send these prompts in order.' -ForegroundColor Yellow
 Write-Host 'Host-level ChatGPT confirmations are independent; record them separately from Optic elicitation.' -ForegroundColor Yellow
+Write-Host 'This validation temporarily replaces the registered optic-ai-bridge marketplace. After the smoke, rerun the normal Optic installer to restore your usual profile.' -ForegroundColor Yellow
 Write-Host ''
 foreach ($entry in @(
     [pscustomobject]@{ Label='1 - mint current-session approval'; Text=$prompt1 },
@@ -279,5 +285,6 @@ Write-Host 'Policy-epoch note: this build has no live epoch-rotation API. Epoch 
     DirectReusableApprovalSmoke = [bool]$preSmokeResult.Ok
     PolicyEpoch = 1
     LivePolicyEpochRotationAvailable = $false
+    NormalMarketplaceRestoreRequired = $true
     Prompts = @($prompt1, $prompt2, $prompt3, $prompt4, $prompt5)
 }
