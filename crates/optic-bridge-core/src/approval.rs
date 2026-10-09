@@ -175,12 +175,7 @@ mod tests {
         assert!(!grant.matches_profile(&session, &profile, 7, MonotonicTime::from_millis(100)));
 
         let other_session = SessionHandle::generate().expect("other session");
-        assert!(!grant.matches_profile(
-            &other_session,
-            &profile,
-            7,
-            MonotonicTime::from_millis(1)
-        ));
+        assert!(!grant.matches_profile(&other_session, &profile, 7, MonotonicTime::from_millis(1)));
         assert!(!grant.matches_profile(&session, &profile, 8, MonotonicTime::from_millis(1)));
 
         let widened_profile = profile(5_001);
