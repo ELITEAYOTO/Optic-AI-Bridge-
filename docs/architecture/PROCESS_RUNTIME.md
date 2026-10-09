@@ -38,7 +38,8 @@ On Windows, every process job owns one kernel Job Object. This is per-job contai
 - The current MCP request may inherit only `Benign` variables. `Sensitive`, `Forbidden`, unknown or ungranted names fail closed; callers cannot choose or downgrade the class.
 - `--env-grant <benign|sensitive|forbidden>:<name>` is the explicit operator surface. Legacy `--allow-env <name>` remains a compatibility alias for `Benign` only.
 - Authorized values are read from the bridge process environment only when preparing the child after name/class validation.
-- A requested cwd is project-relative, canonicalized, required to be a directory and required to remain under the canonical workspace root.
+- A requested cwd is project-relative and must remain under the configured workspace root. Non-Windows runtimes canonicalize and validate it before spawn.
+- On Windows, `ProcessManager` instead pins the workspace root and every requested cwd component with no-reparse directory handles that omit delete sharing, then uses the final path obtained from the pinned cwd handle. The pin is owned by the job record while the job is running or `TerminationUncertain`, and is released only after a terminal state is proved. This stabilizes the cwd namespace for both direct children and the isolation-launcher/AppContainer path.
 - The executable is the intentional absolute-path exception: it must canonicalize to a regular file and match the operator-created executable lease exactly.
 
 ## Windows lifecycle and resource enforcement

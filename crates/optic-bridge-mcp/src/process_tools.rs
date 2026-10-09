@@ -595,6 +595,10 @@ fn map_process_error(error: ProcessError) -> ErrorData {
         | ProcessError::NonUtf8WorkingDirectory => {
             ErrorData::invalid_params("optic.invalid_process_cwd", None)
         }
+        #[cfg(windows)]
+        ProcessError::PinnedWorkingDirectory(_) => {
+            ErrorData::invalid_params("optic.invalid_process_cwd", None)
+        }
         ProcessError::InvalidEnvironmentName | ProcessError::EnvironmentNotAllowed => {
             ErrorData::invalid_params("optic.process_environment_not_allowed", None)
         }
