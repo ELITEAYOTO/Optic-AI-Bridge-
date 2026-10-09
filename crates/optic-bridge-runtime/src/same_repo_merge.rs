@@ -166,9 +166,11 @@ impl SameRepositoryMergePublisher {
         if left_worktree.current_head == right_worktree.current_head {
             let shared_head = left_worktree.current_head.clone();
             if shared_head != left_worktree.base_head {
-                return Err(SameRepositoryMergePublishError::SharedChangedHeadUnsupported {
-                    head: shared_head,
-                });
+                return Err(
+                    SameRepositoryMergePublishError::SharedChangedHeadUnsupported {
+                        head: shared_head,
+                    },
+                );
             }
             let observed_target = self.integration.target_head()?;
             if observed_target != shared_head {
@@ -245,7 +247,9 @@ pub enum SameRepositoryMergePublishError {
     SameSession,
     #[error("sealed sessions do not share the same exact base HEAD")]
     SessionBaseMismatch,
-    #[error("sealed sessions share changed HEAD {head:?}; direct shared-head publication is not yet lineage-validated")]
+    #[error(
+        "sealed sessions share changed HEAD {head:?}; direct shared-head publication is not yet lineage-validated"
+    )]
     SharedChangedHeadUnsupported { head: GitObjectId },
     #[error("deterministic merge output no longer matches the sealed session base")]
     MergeContractMismatch,
@@ -459,9 +463,9 @@ mod tests {
         let outcome = orchestrator
             .merge_publish_and_cleanup(&left.grant.handle, &right.grant.handle, now)
             .expect("no-op merge lifecycle");
-        match outcome.publication {
+        match &outcome.publication {
             SessionMergePublishOutcome::NoChanges { head } => {
-                assert_eq!(head, fixture.head);
+                assert_eq!(head, &fixture.head);
             }
             _ => panic!("unchanged shared base must not create a merge commit"),
         }
