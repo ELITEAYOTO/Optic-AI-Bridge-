@@ -360,12 +360,15 @@ pub async fn authorize_profiled_action_with_reusable_or_human_approval<'a>(
         drop(admission);
     }
 
-    let reuse_for_session = match request_profile_approval_choice(context, message, timeout).await? {
+    let reuse_for_session = match request_profile_approval_choice(context, message, timeout).await?
+    {
         ProfileApprovalDecision::Once => false,
         ProfileApprovalDecision::CurrentSession => true,
         ProfileApprovalDecision::Declined => return Err(ApprovalAuthorizationError::Declined),
         ProfileApprovalDecision::Cancelled => return Err(ApprovalAuthorizationError::Cancelled),
-        ProfileApprovalDecision::Unsupported => return Err(ApprovalAuthorizationError::Unsupported),
+        ProfileApprovalDecision::Unsupported => {
+            return Err(ApprovalAuthorizationError::Unsupported);
+        }
     };
 
     let now = runtime.clock.now();
