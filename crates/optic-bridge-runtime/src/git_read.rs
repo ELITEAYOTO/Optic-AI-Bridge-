@@ -452,12 +452,15 @@ fn map_runner_error(error: HardenedCommandError) -> GitReadError {
             GitReadError::OutputLimitExceeded { limit }
         }
         HardenedCommandError::MissingChildPipe => GitReadError::MissingChildPipe,
-        HardenedCommandError::ReaderThreadPanicked => GitReadError::ReaderThreadPanicked,
+        HardenedCommandError::ReaderThreadPanicked | HardenedCommandError::WriterThreadPanicked => {
+            GitReadError::ReaderThreadPanicked
+        }
         HardenedCommandError::Io(error) => GitReadError::Io(error),
         HardenedCommandError::ExecutableMustBeAbsolute
         | HardenedCommandError::WorkingDirectoryMustBeAbsolute
         | HardenedCommandError::ZeroOutputLimit
-        | HardenedCommandError::ZeroTimeout => GitReadError::InvalidLimits,
+        | HardenedCommandError::ZeroTimeout
+        | HardenedCommandError::InputLimitExceeded { .. } => GitReadError::InvalidLimits,
     }
 }
 

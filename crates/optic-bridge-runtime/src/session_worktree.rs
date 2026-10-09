@@ -12,8 +12,10 @@ use optic_bridge_core::{GitObjectId, GitObjectIdError, HardLimits, SessionHandle
 use thiserror::Error;
 
 use crate::{
-    GitReadError, GitReadService, GitTreeManifest, GitTreeManifestError, HardenedCommandError,
-    HardenedCommandRunner, HardenedCommandSpec,
+    GitBlobBatchError, GitReadError, GitReadService, GitTreeEntryKind, GitTreeManifest,
+    GitTreeManifestError, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
+    SessionBlobBatch,
+    git_blob_batch::{ExpectedGitBlob, expected_batch_output_bytes, parse_cat_file_batch},
     git_tree_manifest::parse_git_tree_manifest,
     git_worktree::{
         RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
@@ -33,6 +35,10 @@ pub struct SessionWorktreeManager {
     max_worktrees: usize,
     recovery_entry_limit: u32,
     recovery_output_limit: u64,
+    blob_batch_entry_limit: u32,
+    blob_batch_input_limit: u64,
+    blob_batch_output_limit: u64,
+    blob_size_limit: u64,
     records: Mutex<HashMap<SessionHandle, SessionWorktreeRecord>>,
 }
 
@@ -102,6 +108,10 @@ impl SessionWorktreeManager {
                 .map_err(|_| SessionWorktreeError::InvalidLimits)?,
             recovery_entry_limit: limits.max_fs_directory_scan_entries,
             recovery_output_limit: limits.max_git_read_bytes,
+            blob_batch_entry_limit: limits.max_fs_list_page_entries,
+            blob_batch_input_limit: limits.max_git_read_bytes,
+            blob_batch_output_limit: limits.max_active_output_ram_bytes_per_session,
+            blob_size_limit: limits.max_fs_mutation_bytes,
             records: Mutex::new(HashMap::new()),
         })
     }
@@ -251,6 +261,93 @@ impl SessionWorktreeManager {
             self.recovery_entry_limit,
         )
         .map_err(SessionWorktreeError::TreeManifest)
+    }
+
+    pub fn read_blob_batch(
+        &self,
+        owner: &SessionHandle,
+        paths: &[optic_bridge_core::WorkspacePath],
+    ) -> Result<SessionBlobBatch, SessionWorktreeError> {
+        if paths.is_empty() {
+            return Err(SessionWorktreeError::EmptyBlobBatch);
+        }
+        if paths.len() > usize::try_from(self.blob_batch_entry_limit).unwrap_or(usize::MAX) {
+            return Err(SessionWorktreeError::BlobBatchEntryLimitExceeded);
+        }
+
+        let manifest = self.manifest(owner)?;
+        let mut expected = Vec::with_capacity(paths.len());
+        let mut input = Vec::new();
+        let mut previous = None::<&str>;
+        let mut sorted_paths = paths.iter().collect::<Vec<_>>();
+        sorted_paths.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        for path in &sorted_paths {
+            if previous == Some(path.as_str()) {
+                return Err(SessionWorktreeError::DuplicateBlobBatchPath);
+            }
+            previous = Some(path.as_str());
+            let entry = manifest
+                .entries
+                .iter()
+                .find(|entry| entry.path.as_str() == path.as_str())
+                .ok_or(SessionWorktreeError::UnknownBlobBatchPath)?;
+            let executable = match entry.kind {
+                GitTreeEntryKind::RegularFile => false,
+                GitTreeEntryKind::ExecutableFile => true,
+                GitTreeEntryKind::Symlink | GitTreeEntryKind::Gitlink => {
+                    return Err(SessionWorktreeError::UnsupportedBlobBatchEntry);
+                }
+            };
+            let size = entry
+                .blob_size
+                .ok_or(SessionWorktreeError::UnsupportedBlobBatchEntry)?;
+            if size > self.blob_size_limit {
+                return Err(SessionWorktreeError::BlobTooLarge);
+            }
+            input.extend_from_slice(entry.object.as_str().as_bytes());
+            input.push(b'\n');
+            expected.push(ExpectedGitBlob {
+                path: entry.path.clone(),
+                object: entry.object.clone(),
+                size,
+                executable,
+            });
+        }
+        if u64::try_from(input.len()).unwrap_or(u64::MAX) > self.blob_batch_input_limit {
+            return Err(SessionWorktreeError::BlobBatchInputLimitExceeded);
+        }
+        let output_limit = expected_batch_output_bytes(&expected)?;
+        if output_limit == 0 || output_limit > self.blob_batch_output_limit {
+            return Err(SessionWorktreeError::BlobBatchOutputLimitExceeded);
+        }
+
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([OsString::from("cat-file"), OsString::from("--batch")]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit,
+        };
+        let output = self
+            .runner
+            .run_with_input(&spec, &input, self.blob_batch_input_limit)
+            .map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::BlobBatchUnexpectedStderr);
+        }
+        let blobs = parse_cat_file_batch(&expected, &output.stdout)
+            .map_err(SessionWorktreeError::BlobBatch)?;
+        Ok(SessionBlobBatch {
+            head: manifest.head,
+            blobs,
+        })
     }
 
     pub fn release(&self, owner: &SessionHandle) -> Result<(), SessionWorktreeError> {
@@ -527,12 +624,15 @@ fn map_runner_error(error: HardenedCommandError) -> SessionWorktreeError {
             SessionWorktreeError::CommandOutputTooLarge
         }
         HardenedCommandError::MissingChildPipe => SessionWorktreeError::MissingChildPipe,
-        HardenedCommandError::ReaderThreadPanicked => SessionWorktreeError::ReaderThreadPanicked,
+        HardenedCommandError::ReaderThreadPanicked | HardenedCommandError::WriterThreadPanicked => {
+            SessionWorktreeError::ReaderThreadPanicked
+        }
         HardenedCommandError::Io(error) => SessionWorktreeError::Io(error),
         HardenedCommandError::ExecutableMustBeAbsolute
         | HardenedCommandError::WorkingDirectoryMustBeAbsolute
         | HardenedCommandError::ZeroOutputLimit
-        | HardenedCommandError::ZeroTimeout => SessionWorktreeError::InvalidLimits,
+        | HardenedCommandError::ZeroTimeout
+        | HardenedCommandError::InputLimitExceeded { .. } => SessionWorktreeError::InvalidLimits,
     }
 }
 
@@ -598,6 +698,26 @@ pub enum SessionWorktreeError {
     RecoveryUnregisteredOwnedPath,
     #[error(transparent)]
     TreeManifest(#[from] GitTreeManifestError),
+    #[error(transparent)]
+    BlobBatch(#[from] GitBlobBatchError),
+    #[error("Git blob batch must request at least one manifest path")]
+    EmptyBlobBatch,
+    #[error("Git blob batch entry count exceeded its hard ceiling")]
+    BlobBatchEntryLimitExceeded,
+    #[error("Git blob batch contains duplicate requested paths")]
+    DuplicateBlobBatchPath,
+    #[error("Git blob batch path is not present in the current session manifest")]
+    UnknownBlobBatchPath,
+    #[error("Git blob batch cannot materialize symlink or gitlink entries")]
+    UnsupportedBlobBatchEntry,
+    #[error("Git blob exceeds the single-file hard ceiling")]
+    BlobTooLarge,
+    #[error("Git blob batch request exceeded its input byte ceiling")]
+    BlobBatchInputLimitExceeded,
+    #[error("Git blob batch response would exceed the per-session RAM ceiling")]
+    BlobBatchOutputLimitExceeded,
+    #[error("Git blob batch wrote unexpected stderr")]
+    BlobBatchUnexpectedStderr,
     #[error("Git command failed")]
     GitCommandFailed,
     #[error("Git command timed out")]
@@ -779,6 +899,19 @@ mod tests {
         );
         assert_eq!(manifest.entries[0].blob_size, Some(5));
         assert_eq!(manifest.total_blob_bytes, 5);
+        let blob = manager
+            .read_blob_batch(
+                &a,
+                &[optic_bridge_core::WorkspacePath::parse("tracked.txt").expect("blob path")],
+            )
+            .expect("blob batch");
+        assert_eq!(blob.blobs.len(), 1);
+        assert_eq!(
+            blob.blobs[0].bytes,
+            b"base
+"
+        );
+        assert!(!blob.blobs[0].executable);
         assert_eq!(
             worktree.path.file_name().and_then(|v| v.to_str()),
             Some(a.to_token().as_str())

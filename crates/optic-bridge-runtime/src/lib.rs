@@ -13,6 +13,7 @@ mod authorized_git_integration;
 mod blocking_io;
 mod clock;
 mod filesystem;
+mod git_blob_batch;
 mod git_integrate;
 mod git_integration_authority;
 mod git_read;
@@ -48,6 +49,7 @@ pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation, PreparedFileRead, ReadTargetObservation,
 };
+pub use git_blob_batch::{GitBlobBatchError, SessionBlob, SessionBlobBatch};
 pub use git_integrate::{
     GitIntegrationError, GitIntegrationMode, GitIntegrationRecoveryReport, GitIntegrationResult,
     GitIntegrationService,

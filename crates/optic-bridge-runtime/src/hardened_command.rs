@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::PathBuf,
     process::{Command, ExitStatus, Stdio},
     sync::{
@@ -58,6 +58,27 @@ impl HardenedCommandRunner {
         &self,
         spec: &HardenedCommandSpec,
     ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        self.run_inner(spec, None)
+    }
+
+    pub fn run_with_input(
+        &self,
+        spec: &HardenedCommandSpec,
+        input: &[u8],
+        input_limit: u64,
+    ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        let input_len = u64::try_from(input.len()).unwrap_or(u64::MAX);
+        if input_limit == 0 || input_len > input_limit {
+            return Err(HardenedCommandError::InputLimitExceeded { limit: input_limit });
+        }
+        self.run_inner(spec, Some(input.to_vec()))
+    }
+
+    fn run_inner(
+        &self,
+        spec: &HardenedCommandSpec,
+        input: Option<Vec<u8>>,
+    ) -> Result<HardenedCommandOutput, HardenedCommandError> {
         spec.validate()?;
 
         let mut command = Command::new(&spec.executable);
@@ -65,12 +86,28 @@ impl HardenedCommandRunner {
             .current_dir(&spec.cwd)
             .args(&spec.args)
             .env_clear()
-            .envs(&spec.env)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .envs(&spec.env);
+        if input.is_some() {
+            command.stdin(Stdio::piped());
+        } else {
+            command.stdin(Stdio::null());
+        }
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
+        let input_writer = if let Some(input) = input {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or(HardenedCommandError::MissingChildPipe)?;
+            Some(thread::spawn(move || -> Result<(), io::Error> {
+                stdin.write_all(&input)?;
+                stdin.flush()?;
+                Ok(())
+            }))
+        } else {
+            None
+        };
         let stdout = child
             .stdout
             .take()
@@ -114,6 +151,13 @@ impl HardenedCommandRunner {
         let stderr = stderr_reader
             .join()
             .map_err(|_| HardenedCommandError::ReaderThreadPanicked)??;
+        let input_result = input_writer
+            .map(|writer| {
+                writer
+                    .join()
+                    .map_err(|_| HardenedCommandError::WriterThreadPanicked)
+            })
+            .transpose()?;
 
         if timed_out {
             return Err(HardenedCommandError::TimedOut);
@@ -122,6 +166,9 @@ impl HardenedCommandRunner {
             return Err(HardenedCommandError::OutputLimitExceeded {
                 limit: spec.output_limit,
             });
+        }
+        if let Some(result) = input_result {
+            result?;
         }
 
         Ok(HardenedCommandOutput {
@@ -153,10 +200,14 @@ pub enum HardenedCommandError {
     TimedOut,
     #[error("command output exceeded byte ceiling {limit}")]
     OutputLimitExceeded { limit: u64 },
+    #[error("command input exceeded byte ceiling {limit}")]
+    InputLimitExceeded { limit: u64 },
     #[error("command child pipe was unavailable")]
     MissingChildPipe,
     #[error("command output reader thread panicked")]
     ReaderThreadPanicked,
+    #[error("command input writer thread panicked")]
+    WriterThreadPanicked,
     #[error("command process operation failed: {0}")]
     Io(#[from] io::Error),
 }
@@ -210,6 +261,15 @@ mod tests {
         assert!(matches!(
             HardenedCommandRunner::new(Duration::ZERO),
             Err(HardenedCommandError::ZeroTimeout)
+        ));
+
+        assert!(matches!(
+            runner.run_with_input(&relative_executable, b"ab", 1),
+            Err(HardenedCommandError::InputLimitExceeded { limit: 1 })
+        ));
+        assert!(matches!(
+            runner.run_with_input(&relative_executable, b"", 0),
+            Err(HardenedCommandError::InputLimitExceeded { limit: 0 })
         ));
     }
 }
