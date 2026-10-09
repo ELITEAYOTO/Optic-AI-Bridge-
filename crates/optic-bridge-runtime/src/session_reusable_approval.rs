@@ -97,7 +97,7 @@ pub enum SessionReusableApprovalError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeSet, HashSet};
+    use std::collections::BTreeSet;
 
     use optic_bridge_core::{
         Capability, NetworkAccess, PrincipalId, ProcessExecutionClass, ProjectId, ResourceBudget,
@@ -133,7 +133,7 @@ mod tests {
             handle: SessionHandle::generate().expect("session"),
             principal: PrincipalId::new("principal").expect("principal"),
             project: ProjectId::new("project").expect("project"),
-            capabilities: HashSet::from([Capability::ProcessRun]),
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch,
         }
@@ -152,10 +152,8 @@ mod tests {
         let broker = Arc::new(ReusableApprovalBroker::new());
         let session = active_session(expires_at, policy_epoch);
         sessions.register(session.clone()).expect("register session");
-        let service = SessionReusableApprovalService::new(
-            Arc::clone(&sessions),
-            Arc::clone(&broker),
-        );
+        let service =
+            SessionReusableApprovalService::new(Arc::clone(&sessions), Arc::clone(&broker));
         (service, sessions, broker, session)
     }
 
