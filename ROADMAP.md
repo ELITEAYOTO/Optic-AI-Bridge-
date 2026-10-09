@@ -2,15 +2,28 @@
 
 The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md).
 
-**Last reviewed:** 2026-10-08
-**Current phase:** Phase 3 — multi-session runtime
-**Implementation state:** executable Rust pre-alpha; Phase 1, Phase 2A–2D3D, Phase 3A–3D, the selected C5G isolated-Node Desktop profile, Phase 3E1 aggregate declared-memory governance, Phase 3E2A Windows host-memory observation, Phase 3E2B emergency-headroom admission, Phase 3E3 bounded heavy-workload admission, B-02A/B-02B truthful network-denied containment, and A-07A–A-07D exact approval foundations are merged
+**Last reviewed:** 2026-10-09
+**Current phase:** Phase 4 — same-repository parallelism, with the approval/autonomy track continuing in parallel
+**Implementation state:** executable Rust pre-alpha; Phase 1 and Phase 2 are complete; Phase 3 multi-session/resource isolation is substantially closed through Phase 3E3; truthful network-denied containment, exact human approval foundations and ToolProfile authorization are merged; Phase 4 same-repository worktree/merge orchestration is active through Phase 4AP
 **Release state:** no production-supported release
-**Current gate:** B-01D — optional MCP profiled-process authorization. B-01C is merged as `5fe458d3` from exact green head `9ce5fcc2`: ToolProfile batches register atomically and authority resolves uniquely from the normalized invocation rather than a caller-supplied profile name. B-01D keeps every existing constructor/default path legacy, but an explicitly injected application-owned profile registry makes `process_start` normalize executable/args/cwd/read-files/env/network/resources, resolve the unique profile, route authorization through A-07D, re-resolve under the returned session admission, and only then spawn. Human approval text shows the complete invocation contract. No application startup profile configuration is enabled in this gate.
+**Current gate:** post-Phase-4AP closure and A-08 conversation-scoped reusable approval design. Phase 4AP merged as `acf94ed1` and closes converged shared-session HEAD publication through the hardened fast-forward path. ADR-0011 defines the next autonomy target: keep existing one-shot approvals, then add a bounded reusable session/profile approval that can be presented as “allow for this conversation” only after the adapter proves a trustworthy one-to-one conversation ↔ Optic-session binding.
 
-The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end. These are integration/security validations, not production-readiness claims.
+The A-08 reusable-approval track is deliberately narrow:
 
-The user-scoped Windows quick installer, MCP doctor, uninstaller and tag-driven prerelease bundle workflow have also been pulled forward as developer-preview Phase 5 groundwork. No public release has been tagged yet, so the repository remains pre-alpha with release state `none`.
+- A-08A: bounded reusable approval domain model, tied to one application session, ToolProfile fingerprint, policy epoch and monotonic expiry;
+- A-08B: broker lifecycle, revocation and invalidation without changing existing one-shot approval behavior;
+- A-08C: profiled process authorization can reuse an active grant only after full per-invocation policy/profile/resource/isolation revalidation;
+- A-08D: MCP elicitation can offer one-shot vs session/profile approval when the host supports it, while unsupported hosts remain one-shot/fail-closed;
+- A-08E: real ChatGPT Desktop proof with multiple allowed invocations plus negative profile/revoke/policy-change cases;
+- A-08F: only after measuring the real host lifecycle may user-facing Desktop wording say “this conversation”; until then it must say “current Optic session”.
+
+This reusable approval never mints capability, file/network authority, process eligibility or broader resource ceilings, and it does not claim to suppress confirmation dialogs imposed independently by ChatGPT or another MCP host.
+
+The FranceStudent/remote-MCP target stays in Phase 5. The transport direction remains Streamable HTTP over a replaceable user-owned tunnel such as Tailscale or Cloudflare, but the tunnel is connectivity only. Remote principal/session mapping must reuse Optic-owned authorization and cannot trust a tunnel URL or caller-supplied conversation id as authority.
+
+The first real Windows developer smoke passed on 2026-10-04 against the Phase 2D2 file/Git-read surface. The later 2026-10-05 disposable-repository ChatGPT Desktop smoke completed the Phase 2D3 exact-head integration gate end-to-end, and the selected isolated-Node Desktop profile has also been validated on a real machine. These are integration/security validations, not production-readiness claims.
+
+The user-scoped Windows quick installer, MCP doctor, uninstaller and tag-driven prerelease bundle workflow have already been pulled forward as developer-preview Phase 5 groundwork. No public release has been tagged yet, so the repository remains pre-alpha with release state `none`.
 
 Roadmap status is maintained with the repository. Every milestone change must update `STATUS.md`; user-visible changes update `CHANGELOG.md`; architecture/security changes update the owning canonical document and an ADR when a decision changes.
 
