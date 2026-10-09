@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     ffi::OsString,
     fs, io,
     path::{Path, PathBuf},
@@ -15,11 +15,15 @@ use crate::{
     GitBlobBatchError, GitReadError, GitReadService, GitTreeEntryKind, GitTreeManifest,
     GitTreeManifestError, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
     SessionBlobBatch, SessionChangeSet, SessionConflictError, SessionConflictReport,
-    SessionMergePlan, SessionMergePlanError,
+    SessionMergePlan, SessionMergePlanError, SessionMergeTree, SessionMergeTreeError,
     git_blob_batch::{ExpectedGitBlob, expected_batch_output_bytes, parse_cat_file_batch},
     git_change_set::{build_change_set, detect_conflicts},
     git_merge_plan::build_merge_plan,
     git_tree_manifest::parse_git_tree_manifest,
+    git_tree_write::{
+        MergeTreeDirectory, MergeTreeNode, build_directory_tree, encode_mktree_directory,
+        parse_mktree_output,
+    },
     git_worktree::{
         RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
         git_path_arg, parse_worktree_list, path_is_lexically_within, paths_lexically_equal,
@@ -43,6 +47,8 @@ pub struct SessionWorktreeManager {
     blob_batch_output_limit: u64,
     blob_size_limit: u64,
     conflict_report_limit: u32,
+    merge_tree_input_limit: u64,
+    merge_tree_object_limit: u32,
     records: Mutex<HashMap<SessionHandle, SessionWorktreeRecord>>,
 }
 
@@ -117,6 +123,8 @@ impl SessionWorktreeManager {
             blob_batch_output_limit: limits.max_active_output_ram_bytes_per_session,
             blob_size_limit: limits.max_fs_mutation_bytes,
             conflict_report_limit: limits.max_fs_list_page_entries,
+            merge_tree_input_limit: limits.max_request_bytes,
+            merge_tree_object_limit: limits.max_fs_directory_scan_entries,
             records: Mutex::new(HashMap::new()),
         })
     }
@@ -311,6 +319,84 @@ impl SessionWorktreeManager {
             self.conflict_report_limit,
         )
         .map_err(SessionWorktreeError::MergePlan)
+    }
+
+    pub fn write_merge_tree(
+        &self,
+        left: &SessionHandle,
+        right: &SessionHandle,
+    ) -> Result<SessionMergeTree, SessionWorktreeError> {
+        let plan = self.merge_plan(left, right)?;
+        let directory = build_directory_tree(&plan)?;
+        let mut created = 0_u32;
+        let tree = self.write_tree_directory(&directory, &mut created)?;
+        let observed = self.manifest_for_head(&tree)?;
+        if observed.entries != plan.entries || observed.total_blob_bytes != plan.total_blob_bytes {
+            return Err(SessionWorktreeError::MergeTree(
+                SessionMergeTreeError::VerificationMismatch,
+            ));
+        }
+        let entry_count = u32::try_from(plan.entries.len()).map_err(|_| {
+            SessionWorktreeError::MergeTree(SessionMergeTreeError::TreeObjectLimitExceeded)
+        })?;
+        Ok(SessionMergeTree {
+            tree,
+            base_head: plan.base_head,
+            left_head: plan.left_head,
+            right_head: plan.right_head,
+            entry_count,
+            total_blob_bytes: plan.total_blob_bytes,
+        })
+    }
+
+    fn write_tree_directory(
+        &self,
+        directory: &MergeTreeDirectory,
+        created: &mut u32,
+    ) -> Result<GitObjectId, SessionWorktreeError> {
+        if *created >= self.merge_tree_object_limit {
+            return Err(SessionWorktreeError::MergeTree(
+                SessionMergeTreeError::TreeObjectLimitExceeded,
+            ));
+        }
+        let mut child_trees = BTreeMap::new();
+        for (name, node) in &directory.children {
+            if let MergeTreeNode::Directory(child) = node {
+                let object = self.write_tree_directory(child, created)?;
+                child_trees.insert(name.clone(), object);
+            }
+        }
+        let input = encode_mktree_directory(directory, &child_trees, self.merge_tree_input_limit)?;
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([OsString::from("mktree"), OsString::from("-z")]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        let output = self
+            .runner
+            .run_with_input(&spec, &input, self.merge_tree_input_limit)
+            .map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::MergeTree(
+                SessionMergeTreeError::MktreeUnexpectedStderr,
+            ));
+        }
+        let object = parse_mktree_output(&output.stdout)?;
+        *created = created
+            .checked_add(1)
+            .ok_or(SessionWorktreeError::MergeTree(
+                SessionMergeTreeError::TreeObjectLimitExceeded,
+            ))?;
+        Ok(object)
     }
 
     pub fn read_blob_batch(
@@ -753,6 +839,8 @@ pub enum SessionWorktreeError {
     #[error(transparent)]
     MergePlan(#[from] SessionMergePlanError),
     #[error(transparent)]
+    MergeTree(#[from] SessionMergeTreeError),
+    #[error(transparent)]
     BlobBatch(#[from] GitBlobBatchError),
     #[error("Git blob batch must request at least one manifest path")]
     EmptyBlobBatch,
@@ -992,6 +1080,42 @@ mod tests {
             .expect("capacity reused");
         manager.release(&b).expect("release b");
         assert!(!second.path.exists());
+    }
+
+    #[test]
+    fn identical_session_heads_write_a_verified_merge_tree_without_checkout() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "merge-tree");
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let manager = fixture.manager(limits);
+        let left = SessionHandle::generate().expect("left");
+        let right = SessionHandle::generate().expect("right");
+        manager
+            .provision(&left, &fixture.head)
+            .expect("left worktree");
+        manager
+            .provision(&right, &fixture.head)
+            .expect("right worktree");
+
+        let merged = manager.write_merge_tree(&left, &right).expect("merge tree");
+        assert_eq!(merged.base_head, fixture.head);
+        assert_eq!(merged.left_head, fixture.head);
+        assert_eq!(merged.right_head, fixture.head);
+        assert_eq!(merged.entry_count, 1);
+        assert_eq!(merged.total_blob_bytes, 5);
+        let observed = manager
+            .manifest_for_head(&merged.tree)
+            .expect("written tree manifest");
+        assert_eq!(observed.entries.len(), 1);
+        assert_eq!(observed.entries[0].path.as_str(), "tracked.txt");
+
+        manager.release(&left).expect("release left");
+        manager.release(&right).expect("release right");
     }
 
     #[test]

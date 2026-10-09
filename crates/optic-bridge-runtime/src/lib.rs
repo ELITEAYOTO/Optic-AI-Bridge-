@@ -20,6 +20,7 @@ mod git_integration_authority;
 mod git_merge_plan;
 mod git_read;
 mod git_tree_manifest;
+mod git_tree_write;
 mod git_worktree;
 mod hardened_command;
 mod journaled_mutation;
@@ -72,6 +73,7 @@ pub use git_read::{
 pub use git_tree_manifest::{
     GitTreeEntry, GitTreeEntryKind, GitTreeManifest, GitTreeManifestError,
 };
+pub use git_tree_write::{SessionMergeTree, SessionMergeTreeError};
 pub use hardened_command::{
     HardenedCommandError, HardenedCommandOutput, HardenedCommandRunner, HardenedCommandSpec,
 };
