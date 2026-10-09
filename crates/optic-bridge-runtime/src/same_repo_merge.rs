@@ -59,6 +59,13 @@ pub enum SessionMergePublishOutcome {
     NoChanges {
         head: GitObjectId,
     },
+    SharedHeadPublished {
+        head: GitObjectId,
+        integration: GitIntegrationResult,
+    },
+    SharedHeadAlreadyPublished {
+        head: GitObjectId,
+    },
 }
 
 impl SameRepositoryMergeOrchestrator {
@@ -165,21 +172,67 @@ impl SameRepositoryMergePublisher {
 
         if left_worktree.current_head == right_worktree.current_head {
             let shared_head = left_worktree.current_head.clone();
-            if shared_head != left_worktree.base_head {
-                return Err(
-                    SameRepositoryMergePublishError::SharedChangedHeadUnsupported {
-                        head: shared_head,
-                    },
-                );
+            if shared_head == left_worktree.base_head {
+                let observed_target = self.integration.target_head()?;
+                if observed_target != shared_head {
+                    return Err(SameRepositoryMergePublishError::TargetNotAtSessionBase {
+                        expected: shared_head,
+                        observed: observed_target,
+                    });
+                }
+                return Ok(SessionMergePublishOutcome::NoChanges { head: shared_head });
             }
+
+            let plan = self.worktrees.merge_plan(left.session(), right.session())?;
+            if plan.base_head != left_worktree.base_head
+                || plan.left_head != shared_head
+                || plan.right_head != shared_head
+            {
+                return Err(SameRepositoryMergePublishError::MergeContractMismatch);
+            }
+
             let observed_target = self.integration.target_head()?;
-            if observed_target != shared_head {
+            if observed_target == shared_head {
+                return Ok(SessionMergePublishOutcome::SharedHeadAlreadyPublished {
+                    head: shared_head,
+                });
+            }
+            if observed_target != plan.base_head {
                 return Err(SameRepositoryMergePublishError::TargetNotAtSessionBase {
-                    expected: shared_head,
+                    expected: plan.base_head.clone(),
                     observed: observed_target,
                 });
             }
-            return Ok(SessionMergePublishOutcome::NoChanges { head: shared_head });
+
+            let action_id = ActionId::generate()
+                .map_err(SameRepositoryMergePublishError::ActionIdGeneration)?;
+            let integration = match self.integration.integrate_fast_forward(
+                &action_id,
+                &shared_head,
+                &plan.base_head,
+            ) {
+                Ok(result) => result,
+                Err(GitIntegrationError::StaleTarget { observed, .. })
+                    if observed == shared_head =>
+                {
+                    return Ok(SessionMergePublishOutcome::SharedHeadAlreadyPublished {
+                        head: shared_head,
+                    });
+                }
+                Err(error) => return Err(error.into()),
+            };
+
+            if integration.mode != GitIntegrationMode::FastForward
+                || integration.previous_target_head != plan.base_head
+                || integration.new_target_head != shared_head
+            {
+                return Err(SameRepositoryMergePublishError::IntegrationVerificationMismatch);
+            }
+
+            return Ok(SessionMergePublishOutcome::SharedHeadPublished {
+                head: shared_head,
+                integration,
+            });
         }
 
         let merge = self
@@ -247,10 +300,6 @@ pub enum SameRepositoryMergePublishError {
     SameSession,
     #[error("sealed sessions do not share the same exact base HEAD")]
     SessionBaseMismatch,
-    #[error(
-        "sealed sessions share changed HEAD {head:?}; direct shared-head publication is not yet lineage-validated"
-    )]
-    SharedChangedHeadUnsupported { head: GitObjectId },
     #[error("deterministic merge output no longer matches the sealed session base")]
     MergeContractMismatch,
     #[error(
@@ -284,8 +333,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        ApprovalBroker, ProcessManager, SameRepositorySessionCoordinator, SessionRegistry,
-        TaskLeaseRegistry,
+        ApprovalBroker, ProcessManager, SameRepositorySessionCoordinator, SessionMergePlanError,
+        SessionRegistry, TaskLeaseRegistry,
     };
 
     const TARGET_REF: &str = "refs/optic/integration/session-merge";
@@ -476,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_changed_head_fails_closed_before_duplicate_parent_commit() {
+    fn shared_changed_head_is_validated_published_and_retry_is_idempotent() {
         let Some(git) = find_git_executable() else {
             return;
         };
@@ -528,22 +577,17 @@ mod tests {
             .provision(spec("shared-right"), &fixture.head, now)
             .expect("right session");
 
-        let tree = parse_oid(&git_output(
+        fs::write(fixture.repo.join("tracked.txt"), b"shared\n").expect("shared content");
+        run_git(&fixture.git, &fixture.repo, &["add", "tracked.txt"]);
+        run_git(
             &fixture.git,
             &fixture.repo,
-            &["rev-parse", "HEAD^{tree}"],
-        ));
+            &["commit", "--quiet", "-m", "shared changed head"],
+        );
         let shared_head = parse_oid(&git_output(
             &fixture.git,
             &fixture.repo,
-            &[
-                "commit-tree",
-                tree.as_str(),
-                "-p",
-                fixture.head.as_str(),
-                "-m",
-                "shared changed head",
-            ],
+            &["rev-parse", "HEAD"],
         ));
         run_git(
             &fixture.git,
@@ -563,10 +607,117 @@ mod tests {
         let right_seal = lifecycle
             .seal_quiescent(&right.grant.handle)
             .expect("right seal");
+
+        let first = publisher
+            .publish(&left_seal, &right_seal)
+            .expect("publish shared head");
+        match first {
+            SessionMergePublishOutcome::SharedHeadPublished { head, integration } => {
+                assert_eq!(head, shared_head);
+                assert_eq!(integration.previous_target_head, fixture.head);
+                assert_eq!(integration.new_target_head, shared_head);
+            }
+            _ => panic!("first converged publication must fast-forward shared HEAD"),
+        }
+        assert_eq!(integration.target_head().expect("target"), shared_head);
+
+        let second = publisher
+            .publish(&left_seal, &right_seal)
+            .expect("idempotent shared-head retry");
+        match second {
+            SessionMergePublishOutcome::SharedHeadAlreadyPublished { head } => {
+                assert_eq!(head, shared_head);
+            }
+            _ => panic!("retry must recognize already-published shared HEAD"),
+        }
+    }
+
+    #[test]
+    fn unrelated_shared_changed_head_fails_ancestry_gate() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git);
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.repo, limits, Vec::new()).expect("process manager"),
+        );
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let worktrees = Arc::new(
+            SessionWorktreeManager::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.worktrees,
+                limits,
+            )
+            .expect("worktree manager"),
+        );
+        let coordinator = SameRepositorySessionCoordinator::new(
+            sessions,
+            leases,
+            processes,
+            approvals,
+            Arc::clone(&worktrees),
+        );
+        let integration = Arc::new(
+            GitIntegrationService::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.integration,
+                TARGET_REF,
+                limits,
+            )
+            .expect("integration"),
+        );
+        let publisher =
+            SameRepositoryMergePublisher::new(Arc::clone(&worktrees), Arc::clone(&integration))
+                .expect("publisher");
+        let now = MonotonicTime::from_millis(10);
+        let left = coordinator
+            .provision(spec("unrelated-left"), &fixture.head, now)
+            .expect("left session");
+        let right = coordinator
+            .provision(spec("unrelated-right"), &fixture.head, now)
+            .expect("right session");
+
+        let tree = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &["rev-parse", "HEAD^{tree}"],
+        ));
+        let unrelated_head = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &["commit-tree", tree.as_str(), "-m", "unrelated root"],
+        ));
+        run_git(
+            &fixture.git,
+            &left.worktree.path,
+            &["update-ref", "HEAD", unrelated_head.as_str()],
+        );
+        run_git(
+            &fixture.git,
+            &right.worktree.path,
+            &["update-ref", "HEAD", unrelated_head.as_str()],
+        );
+
+        let lifecycle = coordinator.lifecycle();
+        let left_seal = lifecycle
+            .seal_quiescent(&left.grant.handle)
+            .expect("left seal");
+        let right_seal = lifecycle
+            .seal_quiescent(&right.grant.handle)
+            .expect("right seal");
         assert!(matches!(
             publisher.publish(&left_seal, &right_seal),
-            Err(SameRepositoryMergePublishError::SharedChangedHeadUnsupported { head })
-                if head == shared_head
+            Err(SameRepositoryMergePublishError::Worktree(
+                SessionWorktreeError::MergePlan(SessionMergePlanError::HeadNotDescendant)
+            ))
         ));
         assert_eq!(integration.target_head().expect("target"), fixture.head);
     }
@@ -678,7 +829,9 @@ mod tests {
         let published_commit = match &publication {
             SessionMergePublishOutcome::Published { merge, .. }
             | SessionMergePublishOutcome::AlreadyPublished { merge } => merge.commit.clone(),
-            SessionMergePublishOutcome::NoChanges { head } => head.clone(),
+            SessionMergePublishOutcome::NoChanges { head }
+            | SessionMergePublishOutcome::SharedHeadAlreadyPublished { head }
+            | SessionMergePublishOutcome::SharedHeadPublished { head, .. } => head.clone(),
         };
         assert_eq!(integration.target_head().expect("target"), published_commit);
 
@@ -824,8 +977,10 @@ mod tests {
             SessionMergePublishOutcome::AlreadyPublished { .. } => {
                 panic!("first publish cannot already be complete")
             }
-            SessionMergePublishOutcome::NoChanges { .. } => {
-                panic!("changed workers cannot publish as no-op")
+            SessionMergePublishOutcome::NoChanges { .. }
+            | SessionMergePublishOutcome::SharedHeadPublished { .. }
+            | SessionMergePublishOutcome::SharedHeadAlreadyPublished { .. } => {
+                panic!("divergent workers cannot publish as shared-head outcome")
             }
         };
         assert_eq!(integration.target_head().expect("target"), published_commit);
@@ -840,8 +995,10 @@ mod tests {
             SessionMergePublishOutcome::Published { .. } => {
                 panic!("retry must not mutate the ref twice")
             }
-            SessionMergePublishOutcome::NoChanges { .. } => {
-                panic!("retry of changed merge cannot become no-op")
+            SessionMergePublishOutcome::NoChanges { .. }
+            | SessionMergePublishOutcome::SharedHeadPublished { .. }
+            | SessionMergePublishOutcome::SharedHeadAlreadyPublished { .. } => {
+                panic!("divergent retry cannot become shared-head outcome")
             }
         }
 

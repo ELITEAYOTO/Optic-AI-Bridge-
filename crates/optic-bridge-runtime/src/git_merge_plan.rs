@@ -28,9 +28,23 @@ pub(crate) fn build_merge_plan(
     if base.head != left.base_head || base.head != right.base_head {
         return Err(SessionMergePlanError::BaseManifestMismatch);
     }
-    let conflicts = detect_conflicts(left, right, max_conflicts)?;
-    if conflicts.truncated || !conflicts.conflicts.is_empty() {
-        return Err(SessionMergePlanError::Conflicts(conflicts));
+    if left.owner == right.owner {
+        return Err(SessionConflictError::SameOwner.into());
+    }
+    if max_conflicts == 0 {
+        return Err(SessionConflictError::InvalidLimit.into());
+    }
+
+    let converged = left.current_head == right.current_head;
+    if converged {
+        if left.changes != right.changes {
+            return Err(SessionMergePlanError::InvalidChangeSet);
+        }
+    } else {
+        let conflicts = detect_conflicts(left, right, max_conflicts)?;
+        if conflicts.truncated || !conflicts.conflicts.is_empty() {
+            return Err(SessionMergePlanError::Conflicts(conflicts));
+        }
     }
 
     let mut entries = base
@@ -40,7 +54,9 @@ pub(crate) fn build_merge_plan(
         .map(|entry| (entry.path.as_str().to_owned(), entry))
         .collect::<BTreeMap<_, _>>();
     apply_changes(&mut entries, &left.changes)?;
-    apply_changes(&mut entries, &right.changes)?;
+    if !converged {
+        apply_changes(&mut entries, &right.changes)?;
+    }
 
     let mut total_blob_bytes = 0_u64;
     for entry in entries.values() {
@@ -204,6 +220,66 @@ mod tests {
         assert_eq!(plan.entries[1], base_b);
         assert_eq!(plan.entries[2], right_c);
         assert_eq!(plan.total_blob_bytes, 9);
+    }
+
+    #[test]
+    fn converged_sessions_apply_identical_changes_once() {
+        let base_entry = entry("same.txt", '1', 1);
+        let base = GitTreeManifest {
+            head: oid('a'),
+            entries: vec![base_entry.clone()],
+            total_blob_bytes: 1,
+        };
+        let current = entry("same.txt", '2', 2);
+        let shared_head = oid('b');
+        let change = |owner: SessionHandle| SessionChangeSet {
+            owner,
+            base_head: base.head.clone(),
+            current_head: shared_head.clone(),
+            changes: vec![SessionChange {
+                path: base_entry.path.clone(),
+                kind: SessionChangeKind::Modified,
+                base: Some(base_entry.clone()),
+                current: Some(current.clone()),
+            }],
+        };
+        let left = change(SessionHandle::generate().expect("left"));
+        let right = change(SessionHandle::generate().expect("right"));
+
+        let plan = build_merge_plan(&base, &left, &right, 8).expect("converged plan");
+        assert_eq!(plan.left_head, shared_head);
+        assert_eq!(plan.right_head, shared_head);
+        assert_eq!(plan.entries, vec![current]);
+        assert_eq!(plan.total_blob_bytes, 2);
+    }
+
+    #[test]
+    fn converged_head_with_inconsistent_changes_fails_closed() {
+        let base_entry = entry("same.txt", '1', 1);
+        let base = GitTreeManifest {
+            head: oid('a'),
+            entries: vec![base_entry.clone()],
+            total_blob_bytes: 1,
+        };
+        let shared_head = oid('b');
+        let change = |owner: SessionHandle, object: char| SessionChangeSet {
+            owner,
+            base_head: base.head.clone(),
+            current_head: shared_head.clone(),
+            changes: vec![SessionChange {
+                path: base_entry.path.clone(),
+                kind: SessionChangeKind::Modified,
+                base: Some(base_entry.clone()),
+                current: Some(entry("same.txt", object, 1)),
+            }],
+        };
+        let left = change(SessionHandle::generate().expect("left"), '2');
+        let right = change(SessionHandle::generate().expect("right"), '3');
+
+        assert!(matches!(
+            build_merge_plan(&base, &left, &right, 8),
+            Err(SessionMergePlanError::InvalidChangeSet)
+        ));
     }
 
     #[test]
