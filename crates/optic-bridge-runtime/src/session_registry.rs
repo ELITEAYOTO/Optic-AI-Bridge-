@@ -11,6 +11,7 @@ pub struct SessionRegistry {
     sessions: Mutex<HashMap<SessionHandle, SessionRecord>>,
     admissions_drained: Condvar,
     max_sessions: u32,
+    max_renewal_horizon_ms: u64,
 }
 
 impl Default for SessionRegistry {
@@ -19,6 +20,7 @@ impl Default for SessionRegistry {
             sessions: Mutex::new(HashMap::new()),
             admissions_drained: Condvar::new(),
             max_sessions: HardLimits::default().max_sessions,
+            max_renewal_horizon_ms: HardLimits::default().max_session_renewal_horizon_ms,
         }
     }
 }
@@ -42,6 +44,7 @@ impl SessionRegistry {
             sessions: Mutex::new(HashMap::new()),
             admissions_drained: Condvar::new(),
             max_sessions: limits.max_sessions,
+            max_renewal_horizon_ms: limits.max_session_renewal_horizon_ms,
         })
     }
 
@@ -120,15 +123,29 @@ impl SessionRegistry {
         })
     }
 
+    pub(crate) fn validate_renewal(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+        new_expires_at: MonotonicTime,
+    ) -> Result<SessionGrant, SessionRenewalError> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRenewalError::StateUnavailable)?;
+        let record = sessions
+            .get(handle)
+            .ok_or(SessionRenewalError::UnknownSession)?;
+        validate_renewal_record(record, now, new_expires_at, self.max_renewal_horizon_ms)?;
+        Ok(record.grant.clone())
+    }
+
     pub(crate) fn renew_active(
         &self,
         handle: &SessionHandle,
         now: MonotonicTime,
         new_expires_at: MonotonicTime,
     ) -> Result<SessionGrant, SessionRenewalError> {
-        if new_expires_at <= now {
-            return Err(SessionRenewalError::ExpiryNotFuture);
-        }
         let mut sessions = self
             .sessions
             .lock()
@@ -136,15 +153,7 @@ impl SessionRegistry {
         let record = sessions
             .get_mut(handle)
             .ok_or(SessionRenewalError::UnknownSession)?;
-        if record.revoked {
-            return Err(SessionRenewalError::Revoked);
-        }
-        if record.grant.is_expired_at(now) {
-            return Err(SessionRenewalError::Expired);
-        }
-        if new_expires_at <= record.grant.expires_at {
-            return Err(SessionRenewalError::MustExtend);
-        }
+        validate_renewal_record(record, now, new_expires_at, self.max_renewal_horizon_ms)?;
         record.grant.expires_at = new_expires_at;
         Ok(record.grant.clone())
     }
@@ -243,6 +252,30 @@ impl SessionRegistry {
     }
 }
 
+fn validate_renewal_record(
+    record: &SessionRecord,
+    now: MonotonicTime,
+    new_expires_at: MonotonicTime,
+    max_renewal_horizon_ms: u64,
+) -> Result<(), SessionRenewalError> {
+    if new_expires_at <= now {
+        return Err(SessionRenewalError::ExpiryNotFuture);
+    }
+    if new_expires_at > now.saturating_add_millis(max_renewal_horizon_ms) {
+        return Err(SessionRenewalError::BeyondHorizon);
+    }
+    if record.revoked {
+        return Err(SessionRenewalError::Revoked);
+    }
+    if record.grant.is_expired_at(now) {
+        return Err(SessionRenewalError::Expired);
+    }
+    if new_expires_at <= record.grant.expires_at {
+        return Err(SessionRenewalError::MustExtend);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SessionRenewalError {
     #[error("session renewal state is unavailable")]
@@ -255,6 +288,8 @@ pub(crate) enum SessionRenewalError {
     Expired,
     #[error("session renewal expiry must be later than now")]
     ExpiryNotFuture,
+    #[error("session renewal exceeds the configured future horizon")]
+    BeyondHorizon,
     #[error("session renewal must strictly extend the current expiry")]
     MustExtend,
 }
@@ -457,6 +492,27 @@ mod tests {
         assert_eq!(renewed.expires_at, MonotonicTime::from_millis(200));
         assert_eq!(renewed.capabilities, grant.capabilities);
         assert_eq!(renewed.policy_epoch, grant.policy_epoch);
+    }
+
+    #[test]
+    fn renewal_cannot_exceed_configured_future_horizon() {
+        let limits = HardLimits {
+            max_session_renewal_horizon_ms: 50,
+            ..HardLimits::default()
+        };
+        let registry = SessionRegistry::from_hard_limits(limits).expect("limits");
+        let grant = grant(100);
+        registry.register(grant.clone()).expect("session");
+        assert_eq!(
+            registry
+                .renew_active(
+                    &grant.handle,
+                    MonotonicTime::from_millis(10),
+                    MonotonicTime::from_millis(61),
+                )
+                .expect_err("horizon must fail"),
+            SessionRenewalError::BeyondHorizon
+        );
     }
 
     #[test]

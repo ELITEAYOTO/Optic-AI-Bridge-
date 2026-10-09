@@ -36,6 +36,7 @@ pub struct HardLimits {
     pub max_request_duration_ms: u64,
     pub max_concurrent_requests: u32,
     pub max_sessions: u32,
+    pub max_session_renewal_horizon_ms: u64,
     pub max_task_leases: u32,
     pub max_task_leases_per_session: u32,
     pub max_tool_profiles: u32,
@@ -76,6 +77,7 @@ impl Default for HardLimits {
             max_request_duration_ms: 30_000,
             max_concurrent_requests: 16,
             max_sessions: 16,
+            max_session_renewal_horizon_ms: 30 * 60 * 1000,
             max_task_leases: 128,
             max_task_leases_per_session: 32,
             max_tool_profiles: 128,
@@ -122,6 +124,7 @@ impl HardLimits {
             || self.max_request_duration_ms == 0
             || self.max_concurrent_requests == 0
             || self.max_sessions == 0
+            || self.max_session_renewal_horizon_ms == 0
             || self.max_task_leases == 0
             || self.max_task_leases_per_session == 0
             || self.max_tool_profiles == 0
@@ -210,6 +213,18 @@ mod tests {
         };
         assert_eq!(
             budget.validate_nonzero().expect_err("zero must fail"),
+            LimitError::ZeroIsNotUnlimited
+        );
+    }
+
+    #[test]
+    fn hard_limits_reject_zero_session_renewal_horizon() {
+        let limits = HardLimits {
+            max_session_renewal_horizon_ms: 0,
+            ..HardLimits::default()
+        };
+        assert_eq!(
+            limits.validate_nonzero().expect_err("zero must fail"),
             LimitError::ZeroIsNotUnlimited
         );
     }

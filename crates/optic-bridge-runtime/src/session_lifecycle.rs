@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::{
     ApprovalBroker, ApprovalBrokerError, ProcessError, ProcessManager, SessionRegistry,
     SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
+    session_registry::SessionRenewalError, task_lease_registry::TaskLeaseRenewalError,
 };
 
 #[derive(Clone, Debug)]
@@ -25,6 +26,13 @@ pub struct SessionRevokeReport {
     pub revoked_approvals: usize,
     pub revoked_leases: usize,
     pub cancellation_requests: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionRenewalReport {
+    pub previous_expires_at: MonotonicTime,
+    pub expires_at: MonotonicTime,
+    pub renewed_leases: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -94,6 +102,49 @@ impl SessionLifecycleManager {
         };
         self.sessions.register(grant.clone())?;
         Ok(grant)
+    }
+
+    pub fn renew(
+        &self,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        new_expires_at: MonotonicTime,
+    ) -> Result<SessionRenewalReport, SessionLifecycleError> {
+        if new_expires_at <= now {
+            return Err(SessionLifecycleError::RenewalExpiryNotFuture);
+        }
+
+        // Hold an admission permit across both registry updates. A concurrent revoke may
+        // mark the session revoked, but it cannot finish authority cleanup until this
+        // renewal attempt leaves the admission critical section.
+        let admission = self.sessions.begin_admission(session, now)?;
+        let previous_expires_at = admission.grant().expires_at;
+        let validated = self
+            .sessions
+            .validate_renewal(session, now, new_expires_at)
+            .map_err(map_session_renewal_error)?;
+        debug_assert_eq!(validated.expires_at, previous_expires_at);
+        let policy_epoch = admission.grant().policy_epoch;
+
+        // Renew subordinate authority first. If this fails, the session expiry remains
+        // untouched. If a concurrent revoke wins before the final session update, longer
+        // lease expiries remain bounded by the revoked/old-expiry session and are therefore
+        // not effective authority; revoke then owner-scopes their cleanup.
+        let renewed_leases = self
+            .task_leases
+            .renew_active_session(session, now, policy_epoch, new_expires_at)
+            .map_err(map_task_lease_renewal_error)?;
+        let renewed = self
+            .sessions
+            .renew_active(session, now, new_expires_at)
+            .map_err(map_session_renewal_error)?;
+
+        debug_assert_eq!(renewed.policy_epoch, policy_epoch);
+        Ok(SessionRenewalReport {
+            previous_expires_at,
+            expires_at: renewed.expires_at,
+            renewed_leases,
+        })
     }
 
     pub fn revoke(
@@ -188,6 +239,16 @@ pub enum SessionLifecycleError {
     ExpiredAtProvision,
     #[error("active sessions cannot be physically reaped")]
     SessionStillActive,
+    #[error("session renewal expiry must be later than now")]
+    RenewalExpiryNotFuture,
+    #[error("session renewal must strictly extend the current expiry")]
+    RenewalMustExtend,
+    #[error("session renewal exceeds the configured future horizon")]
+    RenewalBeyondHorizon,
+    #[error("session renewal target became unavailable or inactive")]
+    RenewalSessionInactive,
+    #[error("session renewal lease set is not safely renewable")]
+    RenewalLeaseSetInvalid,
     #[error("failed to generate application-owned session handle: {0}")]
     HandleGeneration(IdError),
     #[error(transparent)]
@@ -198,6 +259,22 @@ pub enum SessionLifecycleError {
     TaskLeaseRegistry(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
     Process(#[from] ProcessError),
+}
+
+fn map_session_renewal_error(error: SessionRenewalError) -> SessionLifecycleError {
+    match error {
+        SessionRenewalError::ExpiryNotFuture => SessionLifecycleError::RenewalExpiryNotFuture,
+        SessionRenewalError::BeyondHorizon => SessionLifecycleError::RenewalBeyondHorizon,
+        SessionRenewalError::MustExtend => SessionLifecycleError::RenewalMustExtend,
+        SessionRenewalError::StateUnavailable
+        | SessionRenewalError::UnknownSession
+        | SessionRenewalError::Revoked
+        | SessionRenewalError::Expired => SessionLifecycleError::RenewalSessionInactive,
+    }
+}
+
+fn map_task_lease_renewal_error(_error: TaskLeaseRenewalError) -> SessionLifecycleError {
+    SessionLifecycleError::RenewalLeaseSetInvalid
 }
 
 #[cfg(test)]
@@ -404,6 +481,127 @@ mod tests {
             Err(SessionLifecycleError::ExpiredAtProvision)
         ));
         assert_eq!(sessions.len().expect("registry length"), 0);
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn renewal_extends_session_and_active_leases_without_mutating_authority() {
+        let root = workspace("renew");
+        let (lifecycle, sessions, task_leases, _) = manager(&root);
+        let now = MonotonicTime::from_millis(10);
+        let session = lifecycle.provision(spec(100), now).expect("session");
+        let owned = lease(session.handle.clone(), 100);
+        task_leases.register(owned.clone()).expect("lease");
+
+        let report = lifecycle
+            .renew(&session.handle, now, MonotonicTime::from_millis(200))
+            .expect("renew lifecycle");
+        assert_eq!(report.previous_expires_at, MonotonicTime::from_millis(100));
+        assert_eq!(report.expires_at, MonotonicTime::from_millis(200));
+        assert_eq!(report.renewed_leases, 1);
+
+        let renewed_session = sessions
+            .get_active(&session.handle, MonotonicTime::from_millis(150))
+            .expect("renewed session");
+        assert_eq!(renewed_session.expires_at, MonotonicTime::from_millis(200));
+        assert_eq!(renewed_session.capabilities, session.capabilities);
+        assert_eq!(renewed_session.policy_epoch, session.policy_epoch);
+        let renewed_lease = task_leases
+            .get_active(&owned.id, &session.handle, MonotonicTime::from_millis(150))
+            .expect("renewed lease");
+        assert_eq!(renewed_lease.expires_at, MonotonicTime::from_millis(200));
+        assert_eq!(renewed_lease.capabilities, owned.capabilities);
+        assert_eq!(renewed_lease.scopes, owned.scopes);
+        assert_eq!(renewed_lease.resource_ceiling, owned.resource_ceiling);
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn renewal_beyond_horizon_is_rejected_before_any_lease_change() {
+        let root = workspace("renew-horizon");
+        let limits = HardLimits {
+            max_session_renewal_horizon_ms: 50,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("limits"));
+        let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("process manager"));
+        let lifecycle = SessionLifecycleManager::new(
+            Arc::clone(&sessions),
+            Arc::clone(&task_leases),
+            processes,
+        );
+        let now = MonotonicTime::from_millis(10);
+        let mut session_spec = spec(50);
+        session_spec.expires_at = MonotonicTime::from_millis(50);
+        let session = lifecycle.provision(session_spec, now).expect("session");
+        let owned = lease(session.handle.clone(), 50);
+        task_leases.register(owned.clone()).expect("lease");
+
+        assert!(matches!(
+            lifecycle.renew(&session.handle, now, MonotonicTime::from_millis(61),),
+            Err(SessionLifecycleError::RenewalBeyondHorizon)
+        ));
+        let unchanged = task_leases
+            .get_active(&owned.id, &session.handle, MonotonicTime::from_millis(20))
+            .expect("lease unchanged");
+        assert_eq!(unchanged.expires_at, MonotonicTime::from_millis(50));
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn renewal_failure_in_lease_set_leaves_session_expiry_unchanged() {
+        let root = workspace("renew-lease-fail");
+        let (lifecycle, sessions, task_leases, _) = manager(&root);
+        let now = MonotonicTime::from_millis(10);
+        let session = lifecycle.provision(spec(100), now).expect("session");
+        let expired = lease(session.handle.clone(), 10);
+        task_leases.register(expired).expect("expired lease record");
+
+        assert!(matches!(
+            lifecycle.renew(&session.handle, now, MonotonicTime::from_millis(200),),
+            Err(SessionLifecycleError::RenewalLeaseSetInvalid)
+        ));
+        let unchanged = sessions
+            .get_active(&session.handle, MonotonicTime::from_millis(50))
+            .expect("session remains active at original horizon");
+        assert_eq!(unchanged.expires_at, MonotonicTime::from_millis(100));
+        fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn revoked_or_expired_session_cannot_be_renewed() {
+        let root = workspace("renew-inactive");
+        let (lifecycle, _, _, _) = manager(&root);
+        let active = lifecycle
+            .provision(spec(100), MonotonicTime::from_millis(1))
+            .expect("active session");
+        lifecycle.revoke(&active.handle).expect("revoke session");
+        assert!(matches!(
+            lifecycle.renew(
+                &active.handle,
+                MonotonicTime::from_millis(10),
+                MonotonicTime::from_millis(200),
+            ),
+            Err(SessionLifecycleError::SessionRegistry(
+                SessionRegistryError::Revoked
+            ))
+        ));
+
+        let expired = lifecycle
+            .provision(spec(10), MonotonicTime::from_millis(1))
+            .expect("expiring session");
+        assert!(matches!(
+            lifecycle.renew(
+                &expired.handle,
+                MonotonicTime::from_millis(10),
+                MonotonicTime::from_millis(200),
+            ),
+            Err(SessionLifecycleError::SessionRegistry(
+                SessionRegistryError::Expired
+            ))
+        ));
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
 
