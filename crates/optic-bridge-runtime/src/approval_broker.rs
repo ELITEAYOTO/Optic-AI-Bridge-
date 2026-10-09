@@ -43,10 +43,7 @@ impl ApprovalBroker {
     }
 
     pub fn from_hard_limits(limits: HardLimits) -> Result<Self, LimitError> {
-        Self::from_hard_limits_with_reusable(
-            limits,
-            Arc::new(ReusableApprovalBroker::new()),
-        )
+        Self::from_hard_limits_with_reusable(limits, Arc::new(ReusableApprovalBroker::new()))
     }
 
     /// Build the one-shot broker while associating the exact reusable broker owned
