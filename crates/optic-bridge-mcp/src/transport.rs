@@ -4,22 +4,23 @@ use futures::StreamExt;
 use rmcp::{
     RoleServer,
     service::{RxJsonRpcMessage, TxJsonRpcMessage},
-    transport::{Transport, async_rw::JsonRpcMessageCodec},
+    transport::Transport,
 };
 use serde::Serialize;
+use serde_json::Value;
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     sync::Mutex,
 };
-use tokio_util::codec::FramedRead;
+use tokio_util::codec::{FramedRead, LinesCodec};
 
 pub struct BoundedJsonLineTransport<R, W>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    read: FramedRead<R, JsonRpcMessageCodec<RxJsonRpcMessage<RoleServer>>>,
+    read: FramedRead<R, LinesCodec>,
     write: Arc<Mutex<Option<W>>>,
     max_response_bytes: usize,
     receive_failed: bool,
@@ -41,12 +42,7 @@ where
         }
 
         Ok(Self {
-            read: FramedRead::new(
-                read,
-                JsonRpcMessageCodec::<RxJsonRpcMessage<RoleServer>>::new_with_max_length(
-                    max_request_bytes,
-                ),
-            ),
+            read: FramedRead::new(read, LinesCodec::new_with_max_length(max_request_bytes)),
             write: Arc::new(Mutex::new(Some(write))),
             max_response_bytes,
             receive_failed: false,
@@ -90,7 +86,13 @@ where
         }
 
         match self.read.next().await {
-            Some(Ok(message)) => Some(message),
+            Some(Ok(line)) => match decode_strict_jsonrpc_line(&line) {
+                Ok(message) => Some(message),
+                Err(()) => {
+                    self.receive_failed = true;
+                    None
+                }
+            },
             Some(Err(_)) => {
                 self.receive_failed = true;
                 None
@@ -106,6 +108,38 @@ where
         }
         Ok(())
     }
+}
+
+/// Decode one already-bounded JSON line only after Optic has rejected JSON-RPC
+/// shapes whose fields are mutually exclusive by specification.
+///
+/// RMCP 3.4.0 uses an untagged enum for JsonRpcMessage. Without this preflight,
+/// a response containing both `result` and `error` can deserialize as a success
+/// while silently ignoring the error field. Optic therefore validates field
+/// presence before handing the value to RMCP. Unknown extension fields remain
+/// allowed and all variant-specific validation stays owned by RMCP.
+fn decode_strict_jsonrpc_line(line: &str) -> Result<RxJsonRpcMessage<RoleServer>, ()> {
+    let value: Value = serde_json::from_str(line).map_err(|_| ())?;
+    validate_jsonrpc_shape(&value)?;
+    serde_json::from_value(value).map_err(|_| ())
+}
+
+fn validate_jsonrpc_shape(value: &Value) -> Result<(), ()> {
+    let object = value.as_object().ok_or(())?;
+    let has_method = object.contains_key("method");
+    let has_result = object.contains_key("result");
+    let has_error = object.contains_key("error");
+
+    if has_result && has_error {
+        return Err(());
+    }
+    if has_method && (has_result || has_error) {
+        return Err(());
+    }
+    if !has_method && !has_result && !has_error {
+        return Err(());
+    }
+    Ok(())
 }
 
 struct BoundedJsonBuffer {
@@ -205,6 +239,80 @@ mod tests {
         assert!(result.is_err());
         assert!(writer.overflowed);
         assert!(writer.bytes.len() <= 32);
+    }
+
+    #[test]
+    fn strict_jsonrpc_shape_rejects_conflicting_result_error_or_method_fields() {
+        for value in [
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {},
+                "error": {"code": -32603, "message": "injected"}
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "ping",
+                "result": {}
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "error": {"code": -32603, "message": "injected"}
+            }),
+        ] {
+            assert!(validate_jsonrpc_shape(&value).is_err());
+        }
+    }
+
+    #[test]
+    fn strict_jsonrpc_shape_preserves_clean_shapes_and_extension_fields() {
+        for value in [
+            serde_json::json!({"jsonrpc":"2.0","id":1,"method":"ping","x-extra":true}),
+            serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized","x-extra":true}),
+            serde_json::json!({"jsonrpc":"2.0","id":1,"result":{},"x-extra":true}),
+            serde_json::json!({
+                "jsonrpc":"2.0",
+                "id":1,
+                "error":{"code":-32603,"message":"boom"},
+                "x-extra":true
+            }),
+        ] {
+            validate_jsonrpc_shape(&value).expect("clean JSON-RPC shape");
+        }
+    }
+
+    #[tokio::test]
+    async fn conflicting_jsonrpc_response_closes_receive_side_before_rmcp_deserialization() {
+        let (mut peer, transport_side) = duplex(1024);
+        let (read, write) = split(transport_side);
+        let mut transport =
+            BoundedJsonLineTransport::new(read, write, 512, 512).expect("valid transport");
+
+        peer.write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{},\"error\":{\"code\":-32603,\"message\":\"injected\"}}\n",
+        )
+        .await
+        .expect("write fixture");
+
+        assert!(transport.receive().await.is_none());
+        assert!(transport.receive_failed());
+    }
+
+    #[tokio::test]
+    async fn clean_request_with_extension_field_reaches_rmcp_decoder() {
+        let (mut peer, transport_side) = duplex(1024);
+        let (read, write) = split(transport_side);
+        let mut transport =
+            BoundedJsonLineTransport::new(read, write, 512, 512).expect("valid transport");
+
+        peer.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"x-extra\":true}\n")
+            .await
+            .expect("write fixture");
+
+        assert!(transport.receive().await.is_some());
+        assert!(!transport.receive_failed());
     }
 
     #[tokio::test]
