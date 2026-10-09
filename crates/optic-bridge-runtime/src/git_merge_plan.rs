@@ -128,6 +128,8 @@ pub enum SessionMergePlanError {
     BaseManifestMismatch,
     #[error("session change set is internally inconsistent with its exact base manifest")]
     InvalidChangeSet,
+    #[error("session current HEAD is not a descendant of its exact base HEAD")]
+    HeadNotDescendant,
     #[error("session merge plan contains conflicts")]
     Conflicts(SessionConflictReport),
     #[error("session merge-plan aggregate blob size overflowed")]

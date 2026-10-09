@@ -314,6 +314,13 @@ impl SessionWorktreeManager {
     ) -> Result<SessionMergePlan, SessionWorktreeError> {
         let left_worktree = self.get(left)?;
         let right_worktree = self.get(right)?;
+        if left_worktree.base_head != right_worktree.base_head {
+            return Err(SessionWorktreeError::MergePlan(
+                SessionMergePlanError::BaseManifestMismatch,
+            ));
+        }
+        self.require_descendant(&left_worktree.base_head, &left_worktree.current_head)?;
+        self.require_descendant(&right_worktree.base_head, &right_worktree.current_head)?;
         let base = self.manifest_for_head(&left_worktree.base_head)?;
         let left_current = self.manifest_for_head(&left_worktree.current_head)?;
         let right_current = self.manifest_for_head(&right_worktree.current_head)?;
@@ -326,6 +333,45 @@ impl SessionWorktreeManager {
             self.conflict_report_limit,
         )
         .map_err(SessionWorktreeError::MergePlan)
+    }
+
+    fn require_descendant(
+        &self,
+        base: &GitObjectId,
+        current: &GitObjectId,
+    ) -> Result<(), SessionWorktreeError> {
+        if base == current {
+            return Ok(());
+        }
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            OsString::from(base.as_str()),
+            OsString::from(current.as_str()),
+        ]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        if !output.stdout.is_empty() || !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if output.status.success() {
+            return Ok(());
+        }
+        if output.status.code() == Some(1) {
+            return Err(SessionWorktreeError::MergePlan(
+                SessionMergePlanError::HeadNotDescendant,
+            ));
+        }
+        Err(SessionWorktreeError::GitCommandFailed)
     }
 
     pub fn write_merge_tree(
@@ -1400,6 +1446,76 @@ mod tests {
         assert_eq!(observed.tree, tree);
         assert_eq!(observed.parents, vec![left_head, right_head]);
         assert_eq!(observed.commit_time_unix_seconds, expected_time);
+
+        manager.release(&left).expect("release left");
+        manager.release(&right).expect("release right");
+    }
+
+    #[test]
+    fn unrelated_session_head_is_rejected_before_merge_planning() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "ancestry");
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let manager = fixture.manager(limits);
+        let left = SessionHandle::generate().expect("left");
+        let right = SessionHandle::generate().expect("right");
+        let left_worktree = manager
+            .provision(&left, &fixture.head)
+            .expect("left worktree");
+        manager
+            .provision(&right, &fixture.head)
+            .expect("right worktree");
+
+        let tree_bytes = git_output(
+            &fixture.git,
+            &fixture.repo,
+            [OsStr::new("rev-parse"), OsStr::new("HEAD^{tree}")],
+        );
+        let tree = GitObjectId::parse(
+            std::str::from_utf8(&tree_bytes)
+                .expect("tree utf8")
+                .trim()
+                .to_owned(),
+        )
+        .expect("tree oid");
+        let unrelated_bytes = git_output(
+            &fixture.git,
+            &fixture.repo,
+            [
+                OsStr::new("commit-tree"),
+                OsStr::new(tree.as_str()),
+                OsStr::new("-m"),
+                OsStr::new("unrelated root"),
+            ],
+        );
+        let unrelated = GitObjectId::parse(
+            std::str::from_utf8(&unrelated_bytes)
+                .expect("unrelated utf8")
+                .trim()
+                .to_owned(),
+        )
+        .expect("unrelated oid");
+        run_git(
+            &fixture.git,
+            Some(&left_worktree.path),
+            [
+                OsStr::new("update-ref"),
+                OsStr::new("HEAD"),
+                OsStr::new(unrelated.as_str()),
+            ],
+        );
+
+        assert!(matches!(
+            manager.merge_plan(&left, &right),
+            Err(SessionWorktreeError::MergePlan(
+                SessionMergePlanError::HeadNotDescendant
+            ))
+        ));
 
         manager.release(&left).expect("release left");
         manager.release(&right).expect("release right");
