@@ -31,6 +31,7 @@ mod process;
 mod process_authority;
 mod read_authority;
 mod recovery;
+mod reusable_approval_broker;
 mod same_repo_coordinator;
 mod same_repo_merge;
 mod session_lifecycle;
@@ -102,6 +103,10 @@ pub use read_authority::{
 pub use recovery::{
     JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
     RecoveryReport,
+};
+pub use reusable_approval_broker::{
+    ReusableApprovalBroker, ReusableApprovalBrokerError, ReusableApprovalLimits,
+    ReusableApprovalSpec,
 };
 pub use same_repo_coordinator::{
     CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
