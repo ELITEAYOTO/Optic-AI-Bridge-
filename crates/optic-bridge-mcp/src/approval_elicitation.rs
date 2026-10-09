@@ -288,15 +288,15 @@ pub async fn authorize_action_with_human_approval<'a>(
 }
 
 /// Authorize an exact profiled action by reusing a matching active session/profile
-/// approval when possible, otherwise falling back to the unchanged one-shot human
-/// approval flow.
+/// approval when possible, otherwise asking the human whether approval is one-shot
+/// or reusable for the current Optic session.
 ///
 /// Reusable approval is consulted only after deterministic policy already returned
 /// `RequireApproval` for the exact envelope. A successful reusable lookup transfers a
 /// live session admission permit, then the exact task lease and policy decision are
-/// revalidated again under that permit before it is returned to the caller. The grant
-/// therefore cannot bypass profile, capability, scope, resource, isolation, policy-epoch
-/// or session-lifecycle checks.
+/// revalidated again under that permit before it is returned to the caller. When a
+/// new human choice is required, no authority is minted until the same lease/policy
+/// revalidation succeeds under a fresh admission after the prompt.
 pub async fn authorize_profiled_action_with_reusable_or_human_approval<'a>(
     context: &RequestContext<RoleServer>,
     runtime: ApprovalAuthorizationRuntime<'a>,
@@ -360,7 +360,55 @@ pub async fn authorize_profiled_action_with_reusable_or_human_approval<'a>(
         drop(admission);
     }
 
-    authorize_action_with_human_approval(context, runtime, envelope, message, timeout).await
+    let reuse_for_session = match request_profile_approval_choice(context, message, timeout).await? {
+        ProfileApprovalDecision::Once => false,
+        ProfileApprovalDecision::CurrentSession => true,
+        ProfileApprovalDecision::Declined => return Err(ApprovalAuthorizationError::Declined),
+        ProfileApprovalDecision::Cancelled => return Err(ApprovalAuthorizationError::Cancelled),
+        ProfileApprovalDecision::Unsupported => return Err(ApprovalAuthorizationError::Unsupported),
+    };
+
+    let now = runtime.clock.now();
+    let admission = runtime.sessions.begin_admission(&envelope.session, now)?;
+    let lease = active_task_lease(runtime.task_leases, envelope, now)?;
+    match runtime
+        .policy
+        .evaluate(envelope, admission.grant(), lease.as_ref(), now)
+    {
+        PolicyDecision::RequireApproval(reason) if reason == approval_reason => {}
+        PolicyDecision::Deny(reason) => {
+            return Err(ApprovalAuthorizationError::PolicyDenied(reason));
+        }
+        PolicyDecision::Allow | PolicyDecision::RequireApproval(_) => {
+            return Err(ApprovalAuthorizationError::PolicyChanged);
+        }
+    }
+
+    if reuse_for_session {
+        let _grant = reusable_approvals
+            .issue(
+                &envelope.session,
+                profile.clone(),
+                admission.grant().expires_at,
+                now,
+            )
+            .map_err(map_reusable_approval_error)?;
+    } else {
+        let grant = runtime.approvals.issue(
+            ApprovalSpec {
+                session: envelope.session.clone(),
+                action_id: envelope.action_id.clone(),
+                effect: envelope.effect.clone(),
+                resources: envelope.resources,
+                expires_at: admission.grant().expires_at,
+                policy_epoch: envelope.policy_epoch,
+            },
+            now,
+        )?;
+        runtime.approvals.consume_exact(&grant.id, envelope, now)?;
+    }
+
+    Ok(admission)
 }
 
 fn map_reusable_approval_error(error: SessionReusableApprovalError) -> ApprovalAuthorizationError {
