@@ -378,7 +378,10 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(revoke_started, "revoke must mark the session inactive first");
+        assert!(
+            revoke_started,
+            "revoke must mark the session inactive first"
+        );
         assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
 
         drop(admission);
