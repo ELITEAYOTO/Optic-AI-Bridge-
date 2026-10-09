@@ -14,8 +14,9 @@ use thiserror::Error;
 use crate::{
     GitBlobBatchError, GitReadError, GitReadService, GitTreeEntryKind, GitTreeManifest,
     GitTreeManifestError, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
-    SessionBlobBatch,
+    SessionBlobBatch, SessionChangeSet, SessionConflictError, SessionConflictReport,
     git_blob_batch::{ExpectedGitBlob, expected_batch_output_bytes, parse_cat_file_batch},
+    git_change_set::{build_change_set, detect_conflicts},
     git_tree_manifest::parse_git_tree_manifest,
     git_worktree::{
         RegisteredWorktree, WorktreeListError, git_mutation_base_args, git_mutation_environment,
@@ -39,6 +40,7 @@ pub struct SessionWorktreeManager {
     blob_batch_input_limit: u64,
     blob_batch_output_limit: u64,
     blob_size_limit: u64,
+    conflict_report_limit: u32,
     records: Mutex<HashMap<SessionHandle, SessionWorktreeRecord>>,
 }
 
@@ -112,6 +114,7 @@ impl SessionWorktreeManager {
             blob_batch_input_limit: limits.max_git_read_bytes,
             blob_batch_output_limit: limits.max_active_output_ram_bytes_per_session,
             blob_size_limit: limits.max_fs_mutation_bytes,
+            conflict_report_limit: limits.max_fs_list_page_entries,
             records: Mutex::new(HashMap::new()),
         })
     }
@@ -233,6 +236,34 @@ impl SessionWorktreeManager {
 
     pub fn manifest(&self, owner: &SessionHandle) -> Result<GitTreeManifest, SessionWorktreeError> {
         let worktree = self.get(owner)?;
+        self.manifest_for_head(&worktree.current_head)
+    }
+
+    pub fn change_set(
+        &self,
+        owner: &SessionHandle,
+    ) -> Result<SessionChangeSet, SessionWorktreeError> {
+        let worktree = self.get(owner)?;
+        let base = self.manifest_for_head(&worktree.base_head)?;
+        let current = self.manifest_for_head(&worktree.current_head)?;
+        Ok(build_change_set(owner.clone(), &base, &current))
+    }
+
+    pub fn conflicts(
+        &self,
+        left: &SessionHandle,
+        right: &SessionHandle,
+    ) -> Result<SessionConflictReport, SessionWorktreeError> {
+        let left = self.change_set(left)?;
+        let right = self.change_set(right)?;
+        detect_conflicts(&left, &right, self.conflict_report_limit)
+            .map_err(SessionWorktreeError::Conflict)
+    }
+
+    fn manifest_for_head(
+        &self,
+        head: &GitObjectId,
+    ) -> Result<GitTreeManifest, SessionWorktreeError> {
         let mut args = git_mutation_base_args(&self.disabled_hooks_root);
         args.extend([
             OsString::from("ls-tree"),
@@ -240,7 +271,7 @@ impl SessionWorktreeManager {
             OsString::from("-z"),
             OsString::from("--full-tree"),
             OsString::from("-l"),
-            OsString::from(worktree.current_head.as_str()),
+            OsString::from(head.as_str()),
         ]);
         let mut env = git_mutation_environment();
         env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
@@ -255,12 +286,8 @@ impl SessionWorktreeManager {
         if !output.status.success() {
             return Err(SessionWorktreeError::GitCommandFailed);
         }
-        parse_git_tree_manifest(
-            worktree.current_head,
-            &output.stdout,
-            self.recovery_entry_limit,
-        )
-        .map_err(SessionWorktreeError::TreeManifest)
+        parse_git_tree_manifest(head.clone(), &output.stdout, self.recovery_entry_limit)
+            .map_err(SessionWorktreeError::TreeManifest)
     }
 
     pub fn read_blob_batch(
@@ -698,6 +725,8 @@ pub enum SessionWorktreeError {
     RecoveryUnregisteredOwnedPath,
     #[error(transparent)]
     TreeManifest(#[from] GitTreeManifestError),
+    #[error(transparent)]
+    Conflict(#[from] SessionConflictError),
     #[error(transparent)]
     BlobBatch(#[from] GitBlobBatchError),
     #[error("Git blob batch must request at least one manifest path")]
