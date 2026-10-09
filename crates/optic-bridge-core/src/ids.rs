@@ -145,9 +145,6 @@ mod tests {
             ReusableApprovalId::from_token(&token).expect("approval token must parse"),
             approval
         );
-        assert_eq!(
-            format!("{approval:?}"),
-            "ReusableApprovalId(REDACTED)"
-        );
+        assert_eq!(format!("{approval:?}"), "ReusableApprovalId(REDACTED)");
     }
 }
