@@ -1,10 +1,15 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use optic_bridge_core::{
     ActionEnvelope, ActionId, ApprovalGrant, ApprovalId, Effect, HardLimits, IdError, LimitError,
     MonotonicTime, ResourceBudget, SessionHandle,
 };
 use thiserror::Error;
+
+use crate::ReusableApprovalBroker;
 
 #[derive(Clone, Debug)]
 pub struct ApprovalSpec {
@@ -21,16 +26,13 @@ pub struct ApprovalBroker {
     grants: Mutex<HashMap<ApprovalId, ApprovalGrant>>,
     max_grants: u32,
     max_grants_per_session: u32,
+    reusable_approvals: Arc<ReusableApprovalBroker>,
 }
 
 impl Default for ApprovalBroker {
     fn default() -> Self {
-        let limits = HardLimits::default();
-        Self {
-            grants: Mutex::new(HashMap::new()),
-            max_grants: limits.max_approval_grants,
-            max_grants_per_session: limits.max_approval_grants_per_session,
-        }
+        Self::from_hard_limits(HardLimits::default())
+            .expect("default hard limits must produce a valid approval broker")
     }
 }
 
@@ -41,12 +43,31 @@ impl ApprovalBroker {
     }
 
     pub fn from_hard_limits(limits: HardLimits) -> Result<Self, LimitError> {
+        Self::from_hard_limits_with_reusable(limits, Arc::new(ReusableApprovalBroker::new()))
+    }
+
+    /// Build the one-shot broker while associating the exact reusable broker owned
+    /// by the same application runtime.
+    ///
+    /// The one-shot and reusable maps, capacities and semantics remain independent;
+    /// this association only gives adapters that already share the one-shot broker a
+    /// deterministic way to reach the same reusable broker as the session lifecycle.
+    pub fn from_hard_limits_with_reusable(
+        limits: HardLimits,
+        reusable_approvals: Arc<ReusableApprovalBroker>,
+    ) -> Result<Self, LimitError> {
         let limits = limits.validate_nonzero()?;
         Ok(Self {
             grants: Mutex::new(HashMap::new()),
             max_grants: limits.max_approval_grants,
             max_grants_per_session: limits.max_approval_grants_per_session,
+            reusable_approvals,
         })
+    }
+
+    #[must_use]
+    pub fn reusable_approvals(&self) -> Arc<ReusableApprovalBroker> {
+        Arc::clone(&self.reusable_approvals)
     }
 
     pub fn issue(
@@ -225,6 +246,17 @@ mod tests {
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: envelope.policy_epoch,
         }
+    }
+
+    #[test]
+    fn associated_reusable_broker_preserves_exact_runtime_identity() {
+        let reusable = Arc::new(ReusableApprovalBroker::new());
+        let broker = ApprovalBroker::from_hard_limits_with_reusable(
+            HardLimits::default(),
+            Arc::clone(&reusable),
+        )
+        .expect("approval broker");
+        assert!(Arc::ptr_eq(&reusable, &broker.reusable_approvals()));
     }
 
     #[test]

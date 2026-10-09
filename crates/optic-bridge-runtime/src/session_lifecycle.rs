@@ -84,12 +84,14 @@ impl SessionLifecycleManager {
         task_leases: Arc<TaskLeaseRegistry>,
         processes: Arc<ProcessManager>,
     ) -> Self {
+        let approvals = Arc::new(ApprovalBroker::new());
+        let reusable_approvals = approvals.reusable_approvals();
         Self::new_with_approval_brokers_and_worktrees(
             sessions,
             task_leases,
             processes,
-            Arc::new(ApprovalBroker::new()),
-            Arc::new(ReusableApprovalBroker::new()),
+            approvals,
+            reusable_approvals,
             None,
         )
     }
@@ -101,12 +103,13 @@ impl SessionLifecycleManager {
         processes: Arc<ProcessManager>,
         approvals: Arc<ApprovalBroker>,
     ) -> Self {
+        let reusable_approvals = approvals.reusable_approvals();
         Self::new_with_approval_brokers_and_worktrees(
             sessions,
             task_leases,
             processes,
             approvals,
-            Arc::new(ReusableApprovalBroker::new()),
+            reusable_approvals,
             None,
         )
     }
@@ -137,12 +140,13 @@ impl SessionLifecycleManager {
         approvals: Arc<ApprovalBroker>,
         session_worktrees: Option<Arc<SessionWorktreeManager>>,
     ) -> Self {
+        let reusable_approvals = approvals.reusable_approvals();
         Self::new_with_approval_brokers_and_worktrees(
             sessions,
             task_leases,
             processes,
             approvals,
-            Arc::new(ReusableApprovalBroker::new()),
+            reusable_approvals,
             session_worktrees,
         )
     }

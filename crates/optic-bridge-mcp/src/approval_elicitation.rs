@@ -1,10 +1,11 @@
 use std::time::Duration;
 
-use optic_bridge_core::{ActionEnvelope, MonotonicTime, TaskLease};
+use optic_bridge_core::{ActionEnvelope, MonotonicTime, TaskLease, ToolProfile};
 use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use optic_bridge_runtime::{
-    ApprovalBroker, ApprovalBrokerError, ApprovalSpec, Clock, SessionAdmissionPermit,
-    SessionRegistry, SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
+    ApprovalBroker, ApprovalBrokerError, ApprovalSpec, Clock, ReusableApprovalBrokerError,
+    SessionAdmissionPermit, SessionRegistry, SessionRegistryError, SessionReusableApprovalError,
+    SessionReusableApprovalService, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 use rmcp::{
     model::{ElicitRequestParams, ElicitationAction, ElicitationSchema},
@@ -79,6 +80,8 @@ pub enum ApprovalAuthorizationError {
     TaskLease(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
     Broker(#[from] ApprovalBrokerError),
+    #[error(transparent)]
+    ReusableBroker(#[from] ReusableApprovalBrokerError),
     #[error("policy denied the exact action: {0:?}")]
     PolicyDenied(PolicyReason),
     #[error("the user declined the exact action")]
@@ -87,7 +90,7 @@ pub enum ApprovalAuthorizationError {
     Cancelled,
     #[error("the connected MCP client does not support form elicitation")]
     Unsupported,
-    #[error("the approval-required policy decision changed while awaiting the user")]
+    #[error("the approval-required policy decision changed while awaiting authorization")]
     PolicyChanged,
 }
 
@@ -186,6 +189,95 @@ pub async fn authorize_action_with_human_approval<'a>(
     )?;
     approvals.consume_exact(&grant.id, envelope, now)?;
     Ok(admission)
+}
+
+/// Authorize an exact profiled action by reusing a matching active session/profile
+/// approval when possible, otherwise falling back to the unchanged one-shot human
+/// approval flow.
+///
+/// Reusable approval is consulted only after deterministic policy already returned
+/// `RequireApproval` for the exact envelope. A successful reusable lookup transfers a
+/// live session admission permit, then the exact task lease and policy decision are
+/// revalidated again under that permit before it is returned to the caller. The grant
+/// therefore cannot bypass profile, capability, scope, resource, isolation, policy-epoch
+/// or session-lifecycle checks.
+pub async fn authorize_profiled_action_with_reusable_or_human_approval<'a>(
+    context: &RequestContext<RoleServer>,
+    runtime: ApprovalAuthorizationRuntime<'a>,
+    reusable_approvals: &'a SessionReusableApprovalService,
+    profile: &ToolProfile,
+    envelope: &ActionEnvelope,
+    message: impl Into<String>,
+    timeout: Duration,
+) -> Result<SessionAdmissionPermit<'a>, ApprovalAuthorizationError> {
+    let now = runtime.clock.now();
+    let session = runtime.sessions.get_active(&envelope.session, now)?;
+    let lease = active_task_lease(runtime.task_leases, envelope, now)?;
+    let approval_reason = match runtime
+        .policy
+        .evaluate(envelope, &session, lease.as_ref(), now)
+    {
+        PolicyDecision::Allow => {
+            return admit_and_revalidate_allow(
+                runtime.sessions,
+                runtime.task_leases,
+                runtime.policy,
+                runtime.clock,
+                envelope,
+            );
+        }
+        PolicyDecision::RequireApproval(reason) => reason,
+        PolicyDecision::Deny(reason) => {
+            return Err(ApprovalAuthorizationError::PolicyDenied(reason));
+        }
+    };
+
+    let reusable = reusable_approvals
+        .admit_active_for_profile(&envelope.session, profile, now)
+        .map_err(map_reusable_approval_error)?;
+    if let Some((grant, admission)) = reusable {
+        let revalidate_now = runtime.clock.now();
+        if grant.matches_profile(
+            &envelope.session,
+            profile,
+            admission.grant().policy_epoch,
+            revalidate_now,
+        ) {
+            let lease = active_task_lease(runtime.task_leases, envelope, revalidate_now)?;
+            match runtime.policy.evaluate(
+                envelope,
+                admission.grant(),
+                lease.as_ref(),
+                revalidate_now,
+            ) {
+                PolicyDecision::RequireApproval(reason) if reason == approval_reason => {
+                    return Ok(admission);
+                }
+                PolicyDecision::Deny(reason) => {
+                    return Err(ApprovalAuthorizationError::PolicyDenied(reason));
+                }
+                PolicyDecision::Allow | PolicyDecision::RequireApproval(_) => {
+                    return Err(ApprovalAuthorizationError::PolicyChanged);
+                }
+            }
+        }
+        drop(admission);
+    }
+
+    authorize_action_with_human_approval(context, runtime, envelope, message, timeout).await
+}
+
+fn map_reusable_approval_error(error: SessionReusableApprovalError) -> ApprovalAuthorizationError {
+    match error {
+        SessionReusableApprovalError::Session(error) => ApprovalAuthorizationError::Session(error),
+        SessionReusableApprovalError::Broker(error) => {
+            ApprovalAuthorizationError::ReusableBroker(error)
+        }
+        SessionReusableApprovalError::ExpiryNotFuture
+        | SessionReusableApprovalError::ExpiryBeyondSession => {
+            ApprovalAuthorizationError::PolicyChanged
+        }
+    }
 }
 
 fn admit_and_revalidate_allow<'a>(

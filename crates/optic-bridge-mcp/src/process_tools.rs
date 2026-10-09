@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, time::Duration};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
@@ -8,7 +8,8 @@ use optic_bridge_core::{
 use optic_bridge_policy::{PolicyDecision, PolicyReason};
 use optic_bridge_runtime::{
     ProcessError, ProcessStartSpec, ProcessStatus, ProcessStream, SessionLifecycleError,
-    SessionLifecycleManager, TaskLeaseRegistryError, ToolProfileRegistryError,
+    SessionLifecycleManager, SessionReusableApprovalService, TaskLeaseRegistryError,
+    ToolProfileRegistryError,
 };
 use rmcp::{
     ErrorData, Json,
@@ -20,8 +21,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ApprovalAuthorizationError, ApprovalAuthorizationRuntime, authorize_action_with_human_approval,
-    server::ReadonlyMcpServer,
+    ApprovalAuthorizationError, ApprovalAuthorizationRuntime,
+    authorize_profiled_action_with_reusable_or_human_approval, server::ReadonlyMcpServer,
 };
 
 const DEFAULT_PROCESS_TIMEOUT_MS: u64 = 30_000;
@@ -199,7 +200,11 @@ impl ReadonlyMcpServer {
             .saturating_sub(now.as_millis())
             .max(1);
         let message = profiled_process_approval_message(&profile, &invocation);
-        let admission = authorize_action_with_human_approval(
+        let reusable_approvals = SessionReusableApprovalService::new(
+            Arc::clone(&self.sessions),
+            self.approvals.reusable_approvals(),
+        );
+        let admission = authorize_profiled_action_with_reusable_or_human_approval(
             &context,
             ApprovalAuthorizationRuntime::new(
                 &self.sessions,
@@ -208,6 +213,8 @@ impl ReadonlyMcpServer {
                 &self.policy,
                 self.clock.as_ref(),
             ),
+            &reusable_approvals,
+            &profile,
             &envelope,
             message,
             Duration::from_millis(approval_timeout_ms),
@@ -366,11 +373,12 @@ impl ReadonlyMcpServer {
             .transport_guard
             .begin_execution(now)
             .map_err(super::server::map_transport_error)?;
-        let lifecycle = SessionLifecycleManager::new_with_approval_broker(
+        let lifecycle = SessionLifecycleManager::new_with_approval_brokers(
             self.sessions.clone(),
             self.task_leases.clone(),
             self.processes.clone(),
             self.approvals.clone(),
+            self.approvals.reusable_approvals(),
         );
         let report = lifecycle
             .revoke(&self.session)
@@ -568,7 +576,7 @@ fn map_approval_authorization_error(error: ApprovalAuthorizationError) -> ErrorD
         ApprovalAuthorizationError::Elicitation(_) => {
             ErrorData::internal_error("optic.approval_transport_error", None)
         }
-        ApprovalAuthorizationError::Broker(_) => {
+        ApprovalAuthorizationError::Broker(_) | ApprovalAuthorizationError::ReusableBroker(_) => {
             ErrorData::internal_error("optic.approval_broker_error", None)
         }
     }
