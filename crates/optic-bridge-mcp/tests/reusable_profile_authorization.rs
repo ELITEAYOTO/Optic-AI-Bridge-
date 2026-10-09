@@ -31,6 +31,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug)]
 struct FixedClock(MonotonicTime);
@@ -47,19 +48,34 @@ struct GateResponse {
 }
 
 #[derive(Clone)]
-struct CancelClient {
+struct ApprovalClient {
+    action: ElicitationAction,
+    content: Option<Value>,
     request_count: Arc<Mutex<usize>>,
 }
 
-impl CancelClient {
-    fn new() -> Self {
+impl ApprovalClient {
+    fn new(action: ElicitationAction, content: Option<Value>) -> Self {
         Self {
+            action,
+            content,
             request_count: Arc::new(Mutex::new(0)),
         }
     }
+
+    fn cancel() -> Self {
+        Self::new(ElicitationAction::Cancel, None)
+    }
+
+    fn accept_scope(scope: &str) -> Self {
+        Self::new(
+            ElicitationAction::Accept,
+            Some(serde_json::json!({"approval_scope":scope})),
+        )
+    }
 }
 
-impl ClientHandler for CancelClient {
+impl ClientHandler for ApprovalClient {
     fn get_info(&self) -> ClientConfig {
         ClientConfig::new(
             ClientCapabilities::builder().enable_elicitation().build(),
@@ -73,7 +89,11 @@ impl ClientHandler for CancelClient {
         _context: RequestContext<RoleClient>,
     ) -> Result<ElicitResult, ErrorData> {
         *self.request_count.lock().expect("request count") += 1;
-        Ok(ElicitResult::new(ElicitationAction::Cancel))
+        let mut result = ElicitResult::new(self.action.clone());
+        if let Some(content) = &self.content {
+            result = result.with_content(content.clone());
+        }
+        Ok(result)
     }
 }
 
@@ -174,7 +194,7 @@ fn profile(executable: &str, timeout_ms: u64) -> ToolProfile {
     .expect("valid profile")
 }
 
-fn fixture(approved_timeout_ms: u64) -> (ProfileGateServer, Arc<ReusableApprovalBroker>) {
+fn fixture(approved_timeout_ms: Option<u64>) -> (ProfileGateServer, Arc<ReusableApprovalBroker>) {
     let now = MonotonicTime::from_millis(10);
     let session = SessionHandle::generate().expect("session");
     let sessions = Arc::new(SessionRegistry::new());
@@ -191,7 +211,6 @@ fn fixture(approved_timeout_ms: u64) -> (ProfileGateServer, Arc<ReusableApproval
 
     let executable = test_executable();
     let expected_profile = profile(&executable, 5_000);
-    let approved_profile = profile(&executable, approved_timeout_ms);
     let lease_id = TaskLeaseId::generate().expect("lease");
     let leases = Arc::new(TaskLeaseRegistry::new());
     leases
@@ -224,14 +243,17 @@ fn fixture(approved_timeout_ms: u64) -> (ProfileGateServer, Arc<ReusableApproval
         )
         .expect("approval broker"),
     );
-    SessionReusableApprovalService::new(Arc::clone(&sessions), Arc::clone(&reusable))
-        .issue(
-            &session,
-            approved_profile,
-            MonotonicTime::from_millis(9_000),
-            now,
-        )
-        .expect("issue reusable approval");
+    if let Some(approved_timeout_ms) = approved_timeout_ms {
+        let approved_profile = profile(&executable, approved_timeout_ms);
+        SessionReusableApprovalService::new(Arc::clone(&sessions), Arc::clone(&reusable))
+            .issue(
+                &session,
+                approved_profile,
+                MonotonicTime::from_millis(9_000),
+                now,
+            )
+            .expect("issue reusable approval");
+    }
 
     let envelope = ActionEnvelope {
         action_id: ActionId::generate().expect("action"),
@@ -263,8 +285,13 @@ fn fixture(approved_timeout_ms: u64) -> (ProfileGateServer, Arc<ReusableApproval
     )
 }
 
-async fn run(server: ProfileGateServer) -> (bool, usize) {
-    let client = CancelClient::new();
+fn next_invocation(server: &ProfileGateServer) -> ProfileGateServer {
+    let mut next = server.clone();
+    next.envelope.action_id = ActionId::generate().expect("next action");
+    next
+}
+
+async fn run(server: ProfileGateServer, client: ApprovalClient) -> (bool, usize) {
     let requests = Arc::clone(&client.request_count);
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);
     let server_start = tokio::spawn(async move { server.serve(server_io).await });
@@ -282,28 +309,108 @@ async fn run(server: ProfileGateServer) -> (bool, usize) {
 
 #[tokio::test]
 async fn exact_reusable_profile_grant_authorizes_without_elicitation() {
-    let (server, _reusable) = fixture(5_000);
-    let (authorized, requests) = run(server).await;
+    let (server, _reusable) = fixture(Some(5_000));
+    let (authorized, requests) = run(server, ApprovalClient::cancel()).await;
     assert!(authorized);
     assert_eq!(requests, 0);
 }
 
 #[tokio::test]
 async fn same_name_different_profile_fingerprint_falls_back_to_human_prompt() {
-    let (server, _reusable) = fixture(5_001);
-    let (authorized, requests) = run(server).await;
+    let (server, _reusable) = fixture(Some(5_001));
+    let (authorized, requests) = run(server, ApprovalClient::cancel()).await;
     assert!(!authorized);
     assert_eq!(requests, 1);
 }
 
 #[tokio::test]
 async fn revoked_session_rejects_before_reusable_grant_or_elicitation_can_authorize() {
-    let (server, _reusable) = fixture(5_000);
+    let (server, _reusable) = fixture(Some(5_000));
     server
         .sessions
         .revoke(&server.envelope.session)
         .expect("revoke session");
-    let (authorized, requests) = run(server).await;
+    let (authorized, requests) = run(server, ApprovalClient::cancel()).await;
     assert!(!authorized);
     assert_eq!(requests, 0);
+}
+
+#[tokio::test]
+async fn current_session_choice_mints_profile_grant_and_second_action_skips_prompt() {
+    let (server, reusable) = fixture(None);
+    let second = next_invocation(&server);
+    let session = server.envelope.session.clone();
+    let approved_profile = server.profile.clone();
+    let now = server.clock.now();
+
+    let (authorized, requests) = run(
+        server,
+        ApprovalClient::accept_scope("current_session"),
+    )
+    .await;
+    assert!(authorized);
+    assert_eq!(requests, 1);
+    assert!(
+        reusable
+            .find_active_for_profile(&session, &approved_profile, 7, now)
+            .expect("reusable lookup")
+            .is_some()
+    );
+
+    let (authorized, requests) = run(second, ApprovalClient::cancel()).await;
+    assert!(authorized);
+    assert_eq!(requests, 0);
+}
+
+#[tokio::test]
+async fn once_choice_does_not_mint_profile_grant_and_second_action_prompts_again() {
+    let (server, reusable) = fixture(None);
+    let second = next_invocation(&server);
+    let session = server.envelope.session.clone();
+    let approved_profile = server.profile.clone();
+    let now = server.clock.now();
+
+    let (authorized, requests) = run(server, ApprovalClient::accept_scope("once")).await;
+    assert!(authorized);
+    assert_eq!(requests, 1);
+    assert!(
+        reusable
+            .find_active_for_profile(&session, &approved_profile, 7, now)
+            .expect("reusable lookup")
+            .is_none()
+    );
+
+    let (authorized, requests) = run(second, ApprovalClient::cancel()).await;
+    assert!(!authorized);
+    assert_eq!(requests, 1);
+}
+
+#[tokio::test]
+async fn ambiguous_accepted_scope_remains_one_shot_and_never_mints_profile_grant() {
+    let (server, reusable) = fixture(None);
+    let second = next_invocation(&server);
+    let session = server.envelope.session.clone();
+    let approved_profile = server.profile.clone();
+    let now = server.clock.now();
+    let ambiguous = ApprovalClient::new(
+        ElicitationAction::Accept,
+        Some(serde_json::json!({
+            "approval_scope":"current_session",
+            "extra":true
+        })),
+    );
+
+    let (authorized, requests) = run(server, ambiguous).await;
+    assert!(authorized);
+    assert_eq!(requests, 1);
+    assert!(
+        reusable
+            .find_active_for_profile(&session, &approved_profile, 7, now)
+            .expect("reusable lookup")
+            .is_none()
+    );
+
+    let (authorized, requests) = run(second, ApprovalClient::cancel()).await;
+    assert!(!authorized);
+    assert_eq!(requests, 1);
 }
