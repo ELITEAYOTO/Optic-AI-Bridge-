@@ -161,25 +161,45 @@ mod tests {
     #[test]
     fn reusable_approval_matches_only_same_session_profile_epoch_and_lifetime() {
         let session = SessionHandle::generate().expect("session");
-        let profile = profile(5_000);
+        let approved_profile = profile(5_000);
         let grant = ReusableApprovalGrant {
             id: ReusableApprovalId::generate().expect("reusable approval id"),
             session: session.clone(),
-            profile: profile.name().clone(),
-            profile_fingerprint: profile.fingerprint(),
+            profile: approved_profile.name().clone(),
+            profile_fingerprint: approved_profile.fingerprint(),
             expires_at: MonotonicTime::from_millis(100),
             policy_epoch: 7,
         };
 
-        assert!(grant.matches_profile(&session, &profile, 7, MonotonicTime::from_millis(99)));
-        assert!(!grant.matches_profile(&session, &profile, 7, MonotonicTime::from_millis(100)));
+        assert!(grant.matches_profile(
+            &session,
+            &approved_profile,
+            7,
+            MonotonicTime::from_millis(99)
+        ));
+        assert!(!grant.matches_profile(
+            &session,
+            &approved_profile,
+            7,
+            MonotonicTime::from_millis(100)
+        ));
 
         let other_session = SessionHandle::generate().expect("other session");
-        assert!(!grant.matches_profile(&other_session, &profile, 7, MonotonicTime::from_millis(1)));
-        assert!(!grant.matches_profile(&session, &profile, 8, MonotonicTime::from_millis(1)));
+        assert!(!grant.matches_profile(
+            &other_session,
+            &approved_profile,
+            7,
+            MonotonicTime::from_millis(1)
+        ));
+        assert!(!grant.matches_profile(
+            &session,
+            &approved_profile,
+            8,
+            MonotonicTime::from_millis(1)
+        ));
 
         let widened_profile = profile(5_001);
-        assert_eq!(widened_profile.name(), profile.name());
+        assert_eq!(widened_profile.name(), approved_profile.name());
         assert!(!grant.matches_profile(
             &session,
             &widened_profile,
