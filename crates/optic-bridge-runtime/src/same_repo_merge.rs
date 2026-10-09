@@ -204,8 +204,8 @@ impl SameRepositoryMergePublisher {
                 });
             }
 
-            let action_id =
-                ActionId::generate().map_err(SameRepositoryMergePublishError::ActionIdGeneration)?;
+            let action_id = ActionId::generate()
+                .map_err(SameRepositoryMergePublishError::ActionIdGeneration)?;
             let integration = match self.integration.integrate_fast_forward(
                 &action_id,
                 &shared_head,
