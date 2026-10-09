@@ -25,6 +25,7 @@ mod process;
 mod process_authority;
 mod read_authority;
 mod recovery;
+mod same_repo_coordinator;
 mod session_lifecycle;
 mod session_registry;
 mod session_worktree;
@@ -83,6 +84,9 @@ pub use read_authority::{
 pub use recovery::{
     JournalTicket, MutationRecoveryJournal, RecoveryJournalError, RecoveryOutcome, RecoveryRecord,
     RecoveryReport,
+};
+pub use same_repo_coordinator::{
+    CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
 };
 pub use session_lifecycle::{
     SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionReapReport,
