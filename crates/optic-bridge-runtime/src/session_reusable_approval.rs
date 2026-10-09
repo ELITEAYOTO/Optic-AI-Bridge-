@@ -20,10 +20,7 @@ pub struct SessionReusableApprovalService {
 
 impl SessionReusableApprovalService {
     #[must_use]
-    pub fn new(
-        sessions: Arc<SessionRegistry>,
-        broker: Arc<ReusableApprovalBroker>,
-    ) -> Self {
+    pub fn new(sessions: Arc<SessionRegistry>, broker: Arc<ReusableApprovalBroker>) -> Self {
         Self { sessions, broker }
     }
 
@@ -151,7 +148,9 @@ mod tests {
         let sessions = Arc::new(SessionRegistry::new());
         let broker = Arc::new(ReusableApprovalBroker::new());
         let session = active_session(expires_at, policy_epoch);
-        sessions.register(session.clone()).expect("register session");
+        sessions
+            .register(session.clone())
+            .expect("register session");
         let service =
             SessionReusableApprovalService::new(Arc::clone(&sessions), Arc::clone(&broker));
         (service, sessions, broker, session)
