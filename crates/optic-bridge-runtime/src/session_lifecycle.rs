@@ -6,9 +6,10 @@ use optic_bridge_core::{
 use thiserror::Error;
 
 use crate::{
-    ApprovalBroker, ApprovalBrokerError, ProcessError, ProcessManager, SessionRegistry,
-    SessionRegistryError, SessionWorktreeError, SessionWorktreeManager, TaskLeaseRegistry,
-    TaskLeaseRegistryError, session_registry::SessionRenewalError,
+    ApprovalBroker, ApprovalBrokerError, ProcessError, ProcessManager, ReusableApprovalBroker,
+    ReusableApprovalBrokerError, SessionRegistry, SessionRegistryError,
+    SessionReusableApprovalService, SessionWorktreeError, SessionWorktreeManager,
+    TaskLeaseRegistry, TaskLeaseRegistryError, session_registry::SessionRenewalError,
     task_lease_registry::TaskLeaseRenewalError,
 };
 
@@ -25,6 +26,7 @@ pub struct SessionGrantSpec {
 pub struct SessionRevokeReport {
     pub session_changed: bool,
     pub revoked_approvals: usize,
+    pub revoked_reusable_approvals: usize,
     pub revoked_leases: usize,
     pub cancellation_requests: usize,
 }
@@ -40,6 +42,7 @@ pub struct SessionRenewalReport {
 pub struct SessionReapReport {
     pub session_removed: bool,
     pub revoked_approvals: usize,
+    pub revoked_reusable_approvals: usize,
     pub revoked_leases: usize,
     pub cancellation_requests: usize,
     pub active_jobs: u32,
@@ -70,6 +73,7 @@ pub struct SessionLifecycleManager {
     task_leases: Arc<TaskLeaseRegistry>,
     processes: Arc<ProcessManager>,
     approvals: Arc<ApprovalBroker>,
+    reusable_approvals: Arc<ReusableApprovalBroker>,
     session_worktrees: Option<Arc<SessionWorktreeManager>>,
 }
 
@@ -80,11 +84,12 @@ impl SessionLifecycleManager {
         task_leases: Arc<TaskLeaseRegistry>,
         processes: Arc<ProcessManager>,
     ) -> Self {
-        Self::new_with_approval_broker_and_worktrees(
+        Self::new_with_approval_brokers_and_worktrees(
             sessions,
             task_leases,
             processes,
             Arc::new(ApprovalBroker::new()),
+            Arc::new(ReusableApprovalBroker::new()),
             None,
         )
     }
@@ -96,11 +101,30 @@ impl SessionLifecycleManager {
         processes: Arc<ProcessManager>,
         approvals: Arc<ApprovalBroker>,
     ) -> Self {
-        Self::new_with_approval_broker_and_worktrees(
+        Self::new_with_approval_brokers_and_worktrees(
             sessions,
             task_leases,
             processes,
             approvals,
+            Arc::new(ReusableApprovalBroker::new()),
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn new_with_approval_brokers(
+        sessions: Arc<SessionRegistry>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        processes: Arc<ProcessManager>,
+        approvals: Arc<ApprovalBroker>,
+        reusable_approvals: Arc<ReusableApprovalBroker>,
+    ) -> Self {
+        Self::new_with_approval_brokers_and_worktrees(
+            sessions,
+            task_leases,
+            processes,
+            approvals,
+            reusable_approvals,
             None,
         )
     }
@@ -113,13 +137,41 @@ impl SessionLifecycleManager {
         approvals: Arc<ApprovalBroker>,
         session_worktrees: Option<Arc<SessionWorktreeManager>>,
     ) -> Self {
+        Self::new_with_approval_brokers_and_worktrees(
+            sessions,
+            task_leases,
+            processes,
+            approvals,
+            Arc::new(ReusableApprovalBroker::new()),
+            session_worktrees,
+        )
+    }
+
+    #[must_use]
+    pub fn new_with_approval_brokers_and_worktrees(
+        sessions: Arc<SessionRegistry>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        processes: Arc<ProcessManager>,
+        approvals: Arc<ApprovalBroker>,
+        reusable_approvals: Arc<ReusableApprovalBroker>,
+        session_worktrees: Option<Arc<SessionWorktreeManager>>,
+    ) -> Self {
         Self {
             sessions,
             task_leases,
             processes,
             approvals,
+            reusable_approvals,
             session_worktrees,
         }
+    }
+
+    #[must_use]
+    pub fn reusable_approval_service(&self) -> SessionReusableApprovalService {
+        SessionReusableApprovalService::new(
+            Arc::clone(&self.sessions),
+            Arc::clone(&self.reusable_approvals),
+        )
     }
 
     pub fn provision(
@@ -199,15 +251,18 @@ impl SessionLifecycleManager {
         // authority cleanup begins. Attempt every owner-scoped cleanup operation before
         // propagating an error so one registry failure cannot leave other authority live.
         let approval_result = self.approvals.revoke_session(session);
+        let reusable_approval_result = self.reusable_approvals.revoke_session(session);
         let lease_result = self.task_leases.revoke_session(session);
         let process_result = self.processes.cancel_session(session);
         let revoked_approvals = approval_result?;
+        let revoked_reusable_approvals = reusable_approval_result?;
         let revoked_leases = lease_result?;
         let cancellation_requests = process_result?;
 
         Ok(SessionRevokeReport {
             session_changed,
             revoked_approvals,
+            revoked_reusable_approvals,
             revoked_leases,
             cancellation_requests,
         })
@@ -260,6 +315,7 @@ impl SessionLifecycleManager {
             return Ok(SessionReapReport {
                 session_removed: false,
                 revoked_approvals: revoke.revoked_approvals,
+                revoked_reusable_approvals: revoke.revoked_reusable_approvals,
                 revoked_leases: revoke.revoked_leases,
                 cancellation_requests: revoke.cancellation_requests,
                 active_jobs,
@@ -281,6 +337,7 @@ impl SessionLifecycleManager {
         Ok(SessionReapReport {
             session_removed,
             revoked_approvals: revoke.revoked_approvals,
+            revoked_reusable_approvals: revoke.revoked_reusable_approvals,
             revoked_leases: revoke.revoked_leases,
             cancellation_requests: revoke.cancellation_requests,
             active_jobs: 0,
@@ -314,6 +371,8 @@ pub enum SessionLifecycleError {
     SessionRegistry(#[from] SessionRegistryError),
     #[error(transparent)]
     ApprovalBroker(#[from] ApprovalBrokerError),
+    #[error(transparent)]
+    ReusableApprovalBroker(#[from] ReusableApprovalBrokerError),
     #[error(transparent)]
     TaskLeaseRegistry(#[from] TaskLeaseRegistryError),
     #[error(transparent)]

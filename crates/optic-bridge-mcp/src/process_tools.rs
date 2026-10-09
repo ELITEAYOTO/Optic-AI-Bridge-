@@ -475,7 +475,8 @@ fn map_task_lease_error(error: TaskLeaseRegistryError) -> ErrorData {
 fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
     match error {
         SessionLifecycleError::SessionRegistry(error) => super::server::map_session_error(error),
-        SessionLifecycleError::ApprovalBroker(_) => {
+        SessionLifecycleError::ApprovalBroker(_)
+        | SessionLifecycleError::ReusableApprovalBroker(_) => {
             ErrorData::internal_error("optic.approval_broker_unavailable", None)
         }
         SessionLifecycleError::TaskLeaseRegistry(error) => map_task_lease_error(error),
