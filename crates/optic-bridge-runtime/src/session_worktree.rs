@@ -15,9 +15,14 @@ use crate::{
     GitBlobBatchError, GitReadError, GitReadService, GitTreeEntryKind, GitTreeManifest,
     GitTreeManifestError, HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
     SessionBlobBatch, SessionChangeSet, SessionConflictError, SessionConflictReport,
-    SessionMergePlan, SessionMergePlanError, SessionMergeTree, SessionMergeTreeError,
+    SessionMergeCommit, SessionMergeCommitError, SessionMergePlan, SessionMergePlanError,
+    SessionMergeTree, SessionMergeTreeError,
     git_blob_batch::{ExpectedGitBlob, expected_batch_output_bytes, parse_cat_file_batch},
     git_change_set::{build_change_set, detect_conflicts},
+    git_merge_commit::{
+        MERGE_AUTHOR_EMAIL, MERGE_AUTHOR_NAME, canonical_merge_message, deterministic_merge_time,
+        parse_commit_metadata, parse_commit_output, parse_commit_time,
+    },
     git_merge_plan::build_merge_plan,
     git_tree_manifest::parse_git_tree_manifest,
     git_tree_write::{
@@ -49,6 +54,7 @@ pub struct SessionWorktreeManager {
     conflict_report_limit: u32,
     merge_tree_input_limit: u64,
     merge_tree_object_limit: u32,
+    merge_commit_input_limit: u64,
     records: Mutex<HashMap<SessionHandle, SessionWorktreeRecord>>,
 }
 
@@ -125,6 +131,7 @@ impl SessionWorktreeManager {
             conflict_report_limit: limits.max_fs_list_page_entries,
             merge_tree_input_limit: limits.max_request_bytes,
             merge_tree_object_limit: limits.max_fs_directory_scan_entries,
+            merge_commit_input_limit: limits.max_request_bytes,
             records: Mutex::new(HashMap::new()),
         })
     }
@@ -347,6 +354,150 @@ impl SessionWorktreeManager {
             entry_count,
             total_blob_bytes: plan.total_blob_bytes,
         })
+    }
+
+    pub fn write_merge_commit(
+        &self,
+        left: &SessionHandle,
+        right: &SessionHandle,
+    ) -> Result<SessionMergeCommit, SessionWorktreeError> {
+        let merge_tree = self.write_merge_tree(left, right)?;
+        let left_time = self.commit_time_for_head(&merge_tree.left_head)?;
+        let right_time = self.commit_time_for_head(&merge_tree.right_head)?;
+        let commit_time = deterministic_merge_time(left_time, right_time)?;
+        let message = canonical_merge_message();
+        if u64::try_from(message.len()).unwrap_or(u64::MAX) > self.merge_commit_input_limit {
+            return Err(SessionWorktreeError::MergeCommit(
+                SessionMergeCommitError::MessageLimitExceeded {
+                    limit: self.merge_commit_input_limit,
+                },
+            ));
+        }
+
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([
+            OsString::from("commit-tree"),
+            OsString::from(merge_tree.tree.as_str()),
+            OsString::from("-p"),
+            OsString::from(merge_tree.left_head.as_str()),
+            OsString::from("-p"),
+            OsString::from(merge_tree.right_head.as_str()),
+            OsString::from("-F"),
+            OsString::from("-"),
+        ]);
+        let mut env = git_mutation_environment();
+        let git_date = format!("{commit_time} +0000");
+        for (key, value) in [
+            ("GIT_AUTHOR_NAME", MERGE_AUTHOR_NAME),
+            ("GIT_AUTHOR_EMAIL", MERGE_AUTHOR_EMAIL),
+            ("GIT_AUTHOR_DATE", git_date.as_str()),
+            ("GIT_COMMITTER_NAME", MERGE_AUTHOR_NAME),
+            ("GIT_COMMITTER_EMAIL", MERGE_AUTHOR_EMAIL),
+            ("GIT_COMMITTER_DATE", git_date.as_str()),
+            ("GIT_OPTIONAL_LOCKS", "0"),
+        ] {
+            env.insert(OsString::from(key), OsString::from(value));
+        }
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        let output = self
+            .runner
+            .run_with_input(&spec, message, self.merge_commit_input_limit)
+            .map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::MergeCommit(
+                SessionMergeCommitError::UnexpectedStderr,
+            ));
+        }
+        let commit = parse_commit_output(&output.stdout)?;
+        let observed = self.merge_commit_metadata(&commit)?;
+        let expected_parents = vec![merge_tree.left_head.clone(), merge_tree.right_head.clone()];
+        if observed.tree != merge_tree.tree
+            || observed.parents != expected_parents
+            || observed.commit_time_unix_seconds != commit_time
+        {
+            return Err(SessionWorktreeError::MergeCommit(
+                SessionMergeCommitError::VerificationMismatch,
+            ));
+        }
+
+        Ok(SessionMergeCommit {
+            commit,
+            tree: merge_tree.tree,
+            base_head: merge_tree.base_head,
+            left_head: merge_tree.left_head,
+            right_head: merge_tree.right_head,
+            commit_time_unix_seconds: commit_time,
+        })
+    }
+
+    fn commit_time_for_head(&self, head: &GitObjectId) -> Result<u64, SessionWorktreeError> {
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([
+            OsString::from("show"),
+            OsString::from("-s"),
+            OsString::from("--format=%ct"),
+            OsString::from(head.as_str()),
+        ]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::MergeCommit(
+                SessionMergeCommitError::UnexpectedStderr,
+            ));
+        }
+        parse_commit_time(&output.stdout).map_err(SessionWorktreeError::MergeCommit)
+    }
+
+    fn merge_commit_metadata(
+        &self,
+        commit: &GitObjectId,
+    ) -> Result<crate::git_merge_commit::ObservedMergeCommit, SessionWorktreeError> {
+        let mut args = git_mutation_base_args(&self.disabled_hooks_root);
+        args.extend([
+            OsString::from("show"),
+            OsString::from("-s"),
+            OsString::from("--format=%T%x09%P%x09%ct"),
+            OsString::from(commit.as_str()),
+        ]);
+        let mut env = git_mutation_environment();
+        env.insert(OsString::from("GIT_OPTIONAL_LOCKS"), OsString::from("0"));
+        let spec = HardenedCommandSpec {
+            executable: self.git_executable.clone(),
+            cwd: self.repository_root.clone(),
+            args,
+            env,
+            output_limit: CAPTURE_LIMIT_BYTES,
+        };
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(SessionWorktreeError::GitCommandFailed);
+        }
+        if !output.stderr.is_empty() {
+            return Err(SessionWorktreeError::MergeCommit(
+                SessionMergeCommitError::UnexpectedStderr,
+            ));
+        }
+        parse_commit_metadata(&output.stdout).map_err(SessionWorktreeError::MergeCommit)
     }
 
     fn write_tree_directory(
@@ -841,6 +992,8 @@ pub enum SessionWorktreeError {
     #[error(transparent)]
     MergeTree(#[from] SessionMergeTreeError),
     #[error(transparent)]
+    MergeCommit(#[from] SessionMergeCommitError),
+    #[error(transparent)]
     BlobBatch(#[from] GitBlobBatchError),
     #[error("Git blob batch must request at least one manifest path")]
     EmptyBlobBatch,
@@ -995,6 +1148,19 @@ mod tests {
         None
     }
 
+    fn git_output<const N: usize>(git: &Path, repo: &Path, args: [&OsStr; N]) -> Vec<u8> {
+        let output = Command::new(git)
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .expect("fixture git output");
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+        output.stdout
+    }
+
     fn run_git<const N: usize>(git: &Path, repo: Option<&Path>, args: [&OsStr; N]) {
         let mut command = Command::new(git);
         if let Some(repo) = repo {
@@ -1113,6 +1279,127 @@ mod tests {
             .expect("written tree manifest");
         assert_eq!(observed.entries.len(), 1);
         assert_eq!(observed.entries[0].path.as_str(), "tracked.txt");
+
+        manager.release(&left).expect("release left");
+        manager.release(&right).expect("release right");
+    }
+
+    #[test]
+    fn merge_commit_is_parent_derived_verified_and_reproducible() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "merge-commit");
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let manager = fixture.manager(limits);
+        let left = SessionHandle::generate().expect("left");
+        let right = SessionHandle::generate().expect("right");
+        let left_worktree = manager
+            .provision(&left, &fixture.head)
+            .expect("left worktree");
+        let right_worktree = manager
+            .provision(&right, &fixture.head)
+            .expect("right worktree");
+
+        let tree_bytes = git_output(
+            &fixture.git,
+            &fixture.repo,
+            [OsStr::new("rev-parse"), OsStr::new("HEAD^{tree}")],
+        );
+        let tree = GitObjectId::parse(
+            std::str::from_utf8(&tree_bytes)
+                .expect("tree utf8")
+                .trim()
+                .to_owned(),
+        )
+        .expect("tree oid");
+        let left_bytes = git_output(
+            &fixture.git,
+            &fixture.repo,
+            [
+                OsStr::new("commit-tree"),
+                OsStr::new(tree.as_str()),
+                OsStr::new("-p"),
+                OsStr::new(fixture.head.as_str()),
+                OsStr::new("-m"),
+                OsStr::new("left session"),
+            ],
+        );
+        let left_head = GitObjectId::parse(
+            std::str::from_utf8(&left_bytes)
+                .expect("left utf8")
+                .trim()
+                .to_owned(),
+        )
+        .expect("left oid");
+        let right_bytes = git_output(
+            &fixture.git,
+            &fixture.repo,
+            [
+                OsStr::new("commit-tree"),
+                OsStr::new(tree.as_str()),
+                OsStr::new("-p"),
+                OsStr::new(fixture.head.as_str()),
+                OsStr::new("-m"),
+                OsStr::new("right session"),
+            ],
+        );
+        let right_head = GitObjectId::parse(
+            std::str::from_utf8(&right_bytes)
+                .expect("right utf8")
+                .trim()
+                .to_owned(),
+        )
+        .expect("right oid");
+        assert_ne!(left_head, right_head);
+
+        run_git(
+            &fixture.git,
+            Some(&left_worktree.path),
+            [
+                OsStr::new("update-ref"),
+                OsStr::new("HEAD"),
+                OsStr::new(left_head.as_str()),
+            ],
+        );
+        run_git(
+            &fixture.git,
+            Some(&right_worktree.path),
+            [
+                OsStr::new("update-ref"),
+                OsStr::new("HEAD"),
+                OsStr::new(right_head.as_str()),
+            ],
+        );
+
+        let expected_time = deterministic_merge_time(
+            manager.commit_time_for_head(&left_head).expect("left time"),
+            manager
+                .commit_time_for_head(&right_head)
+                .expect("right time"),
+        )
+        .expect("merge time");
+        let first = manager
+            .write_merge_commit(&left, &right)
+            .expect("first merge commit");
+        let second = manager
+            .write_merge_commit(&left, &right)
+            .expect("repeated merge commit");
+        assert_eq!(first.commit, second.commit);
+        assert_eq!(first.tree, tree);
+        assert_eq!(first.base_head, fixture.head);
+        assert_eq!(first.left_head, left_head);
+        assert_eq!(first.right_head, right_head);
+        assert_eq!(first.commit_time_unix_seconds, expected_time);
+        let observed = manager
+            .merge_commit_metadata(&first.commit)
+            .expect("observed merge commit");
+        assert_eq!(observed.tree, tree);
+        assert_eq!(observed.parents, vec![left_head, right_head]);
+        assert_eq!(observed.commit_time_unix_seconds, expected_time);
 
         manager.release(&left).expect("release left");
         manager.release(&right).expect("release right");

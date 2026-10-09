@@ -17,6 +17,7 @@ mod git_blob_batch;
 mod git_change_set;
 mod git_integrate;
 mod git_integration_authority;
+mod git_merge_commit;
 mod git_merge_plan;
 mod git_read;
 mod git_tree_manifest;
@@ -65,6 +66,7 @@ pub use git_integration_authority::{
     GitIntegrationAuthorityError, GitIntegrationAuthoritySet, GitIntegrationAuthoritySpec,
     git_integration_resource_budget,
 };
+pub use git_merge_commit::{SessionMergeCommit, SessionMergeCommitError};
 pub use git_merge_plan::{SessionMergePlan, SessionMergePlanError};
 pub use git_read::{
     GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
