@@ -529,7 +529,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "optic-bridge-app"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "optic-bridge-core",
  "optic-bridge-mcp",
@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "optic-bridge-core"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "blake3",
  "getrandom",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "optic-bridge-mcp"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "base64",
  "futures",
@@ -570,14 +570,14 @@ dependencies = [
 
 [[package]]
 name = "optic-bridge-policy"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "optic-bridge-core",
 ]
 
 [[package]]
 name = "optic-bridge-runtime"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "optic-bridge-core",
  "optic-bridge-policy",
@@ -591,7 +591,7 @@ dependencies = [
 
 [[package]]
 name = "optic-bridge-windows"
-version = "0.0.1"
+version = "0.1.4"
 dependencies = [
  "getrandom",
  "process-wrap",
