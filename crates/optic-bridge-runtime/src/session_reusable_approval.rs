@@ -4,8 +4,8 @@ use optic_bridge_core::{MonotonicTime, ReusableApprovalGrant, SessionHandle, Too
 use thiserror::Error;
 
 use crate::{
-    ReusableApprovalBroker, ReusableApprovalBrokerError, ReusableApprovalSpec, SessionRegistry,
-    SessionRegistryError,
+    ReusableApprovalBroker, ReusableApprovalBrokerError, ReusableApprovalSpec,
+    SessionAdmissionPermit, SessionRegistry, SessionRegistryError,
 };
 
 /// Runtime boundary that binds reusable approvals to the live application session.
@@ -74,6 +74,34 @@ impl SessionReusableApprovalService {
             .map_err(SessionReusableApprovalError::Broker)
     }
 
+    /// Resolve a reusable approval and keep the owning session admitted for the
+    /// effect that is about to consume that authorization decision.
+    ///
+    /// A successful result transfers the admission permit to the caller. Session
+    /// revoke marks the session inactive immediately but cannot finish owner-scoped
+    /// authority cleanup until this permit is dropped. This gives reusable approval
+    /// the same revoke ordering as other already-admitted effects.
+    ///
+    /// Explicit approval revocation may race after this lookup, but at that point the
+    /// invocation is already admitted. Revocation prevents later admissions; it does
+    /// not retroactively cancel an invocation that already crossed this boundary.
+    pub fn admit_active_for_profile(
+        &self,
+        session: &SessionHandle,
+        profile: &ToolProfile,
+        now: MonotonicTime,
+    ) -> Result<
+        Option<(ReusableApprovalGrant, SessionAdmissionPermit<'_>)>,
+        SessionReusableApprovalError,
+    > {
+        let admission = self.sessions.begin_admission(session, now)?;
+        let reusable = self
+            .broker
+            .find_active_for_profile(session, profile, admission.grant().policy_epoch, now)
+            .map_err(SessionReusableApprovalError::Broker)?;
+        Ok(reusable.map(|grant| (grant, admission)))
+    }
+
     #[must_use]
     pub fn broker(&self) -> &Arc<ReusableApprovalBroker> {
         &self.broker
@@ -94,7 +122,12 @@ pub enum SessionReusableApprovalError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{
+        collections::BTreeSet,
+        sync::{Arc, mpsc},
+        thread,
+        time::Duration,
+    };
 
     use optic_bridge_core::{
         Capability, NetworkAccess, PrincipalId, ProcessExecutionClass, ProjectId, ResourceBudget,
@@ -302,5 +335,59 @@ mod tests {
                 .expect("lookup")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn admitted_reusable_lookup_blocks_session_revoke_until_effect_releases_permit() {
+        let (service, sessions, _broker, session) = service_with_session(100, 13);
+        let approved_profile = profile("cargo-check");
+        service
+            .issue(
+                &session.handle,
+                approved_profile.clone(),
+                MonotonicTime::from_millis(90),
+                MonotonicTime::from_millis(1),
+            )
+            .expect("issue reusable approval");
+
+        let (_grant, admission) = service
+            .admit_active_for_profile(
+                &session.handle,
+                &approved_profile,
+                MonotonicTime::from_millis(2),
+            )
+            .expect("lookup")
+            .expect("reusable grant");
+        let sessions_for_revoke = Arc::clone(&sessions);
+        let revoke_session = session.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoke_thread = thread::spawn(move || {
+            done_tx
+                .send(sessions_for_revoke.revoke(&revoke_session))
+                .expect("send revoke");
+        });
+
+        let mut revoke_started = false;
+        for _ in 0..100 {
+            if matches!(
+                sessions.get_active(&session.handle, MonotonicTime::from_millis(2)),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                revoke_started = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(revoke_started, "revoke must mark the session inactive first");
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+        drop(admission);
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke completes after admission drains")
+                .expect("revoke result")
+        );
+        revoke_thread.join().expect("revoke thread");
     }
 }
