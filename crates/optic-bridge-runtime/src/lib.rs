@@ -32,6 +32,7 @@ mod process_authority;
 mod read_authority;
 mod recovery;
 mod same_repo_coordinator;
+mod same_repo_merge;
 mod session_lifecycle;
 mod session_registry;
 mod session_worktree;
@@ -104,6 +105,9 @@ pub use recovery::{
 };
 pub use same_repo_coordinator::{
     CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
+};
+pub use same_repo_merge::{
+    SameRepositoryMergePublishError, SameRepositoryMergePublisher, SessionMergePublishOutcome,
 };
 pub use session_lifecycle::{
     QuiescentSessionSeal, SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager,
