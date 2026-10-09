@@ -1,10 +1,36 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use optic_bridge_core::{
-    HardLimits, IdError, LimitError, MonotonicTime, ReusableApprovalGrant, ReusableApprovalId,
-    SessionHandle, ToolProfile,
+    IdError, MonotonicTime, ReusableApprovalGrant, ReusableApprovalId, SessionHandle, ToolProfile,
 };
 use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReusableApprovalLimits {
+    pub max_grants: u32,
+    pub max_grants_per_session: u32,
+}
+
+impl Default for ReusableApprovalLimits {
+    fn default() -> Self {
+        Self {
+            max_grants: 128,
+            max_grants_per_session: 32,
+        }
+    }
+}
+
+impl ReusableApprovalLimits {
+    pub fn validate(self) -> Result<Self, ReusableApprovalBrokerError> {
+        if self.max_grants == 0 || self.max_grants_per_session == 0 {
+            return Err(ReusableApprovalBrokerError::InvalidLimits);
+        }
+        if self.max_grants_per_session > self.max_grants {
+            return Err(ReusableApprovalBrokerError::InvalidLimits);
+        }
+        Ok(self)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ReusableApprovalSpec {
@@ -23,12 +49,8 @@ pub struct ReusableApprovalBroker {
 
 impl Default for ReusableApprovalBroker {
     fn default() -> Self {
-        let limits = HardLimits::default();
-        Self {
-            grants: Mutex::new(HashMap::new()),
-            max_grants: limits.max_approval_grants,
-            max_grants_per_session: limits.max_approval_grants_per_session,
-        }
+        Self::from_limits(ReusableApprovalLimits::default())
+            .expect("default reusable approval limits must be valid")
     }
 }
 
@@ -38,12 +60,14 @@ impl ReusableApprovalBroker {
         Self::default()
     }
 
-    pub fn from_hard_limits(limits: HardLimits) -> Result<Self, LimitError> {
-        let limits = limits.validate_nonzero()?;
+    pub fn from_limits(
+        limits: ReusableApprovalLimits,
+    ) -> Result<Self, ReusableApprovalBrokerError> {
+        let limits = limits.validate()?;
         Ok(Self {
             grants: Mutex::new(HashMap::new()),
-            max_grants: limits.max_approval_grants,
-            max_grants_per_session: limits.max_approval_grants_per_session,
+            max_grants: limits.max_grants,
+            max_grants_per_session: limits.max_grants_per_session,
         })
     }
 
@@ -147,6 +171,8 @@ impl ReusableApprovalBroker {
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum ReusableApprovalBrokerError {
+    #[error("reusable approval limits are invalid")]
+    InvalidLimits,
     #[error("reusable approval broker state is unavailable")]
     StateUnavailable,
     #[error("reusable approval expiry must be later than issuance")]
@@ -202,6 +228,26 @@ mod tests {
     }
 
     #[test]
+    fn dedicated_limits_are_nonzero_and_relationally_validated() {
+        assert_eq!(
+            ReusableApprovalBroker::from_limits(ReusableApprovalLimits {
+                max_grants: 0,
+                max_grants_per_session: 1,
+            })
+            .expect_err("zero capacity must fail"),
+            ReusableApprovalBrokerError::InvalidLimits
+        );
+        assert_eq!(
+            ReusableApprovalBroker::from_limits(ReusableApprovalLimits {
+                max_grants: 1,
+                max_grants_per_session: 2,
+            })
+            .expect_err("session capacity must fit global capacity"),
+            ReusableApprovalBrokerError::InvalidLimits
+        );
+    }
+
+    #[test]
     fn successful_lookup_is_reusable_and_exact() {
         let broker = ReusableApprovalBroker::new();
         let session = SessionHandle::generate().expect("session");
@@ -231,7 +277,7 @@ mod tests {
         let widened = profile("cargo-check", 5_001);
         assert!(
             broker
-                .find_active_for_profile(&session, &widened, 7, MonotonicTime::from_millis(4),)
+                .find_active_for_profile(&session, &widened, 7, MonotonicTime::from_millis(4))
                 .expect("lookup")
                 .is_none()
         );
@@ -250,12 +296,11 @@ mod tests {
 
     #[test]
     fn expiry_is_reclaimed_and_cannot_match() {
-        let limits = HardLimits {
-            max_approval_grants: 1,
-            max_approval_grants_per_session: 1,
-            ..HardLimits::default()
-        };
-        let broker = ReusableApprovalBroker::from_hard_limits(limits).expect("limits");
+        let broker = ReusableApprovalBroker::from_limits(ReusableApprovalLimits {
+            max_grants: 1,
+            max_grants_per_session: 1,
+        })
+        .expect("limits");
         let first_session = SessionHandle::generate().expect("session");
         let mut first = spec(first_session, profile("first", 5_000));
         first.expires_at = MonotonicTime::from_millis(2);
@@ -275,12 +320,11 @@ mod tests {
 
     #[test]
     fn storage_is_bounded_globally_and_per_session() {
-        let limits = HardLimits {
-            max_approval_grants: 2,
-            max_approval_grants_per_session: 1,
-            ..HardLimits::default()
-        };
-        let broker = ReusableApprovalBroker::from_hard_limits(limits).expect("limits");
+        let broker = ReusableApprovalBroker::from_limits(ReusableApprovalLimits {
+            max_grants: 2,
+            max_grants_per_session: 1,
+        })
+        .expect("limits");
         let session_a = SessionHandle::generate().expect("A");
         broker
             .issue(
