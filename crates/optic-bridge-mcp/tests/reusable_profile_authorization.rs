@@ -343,11 +343,7 @@ async fn current_session_choice_mints_profile_grant_and_second_action_skips_prom
     let approved_profile = server.profile.clone();
     let now = server.clock.now();
 
-    let (authorized, requests) = run(
-        server,
-        ApprovalClient::accept_scope("current_session"),
-    )
-    .await;
+    let (authorized, requests) = run(server, ApprovalClient::accept_scope("current_session")).await;
     assert!(authorized);
     assert_eq!(requests, 1);
     assert!(
