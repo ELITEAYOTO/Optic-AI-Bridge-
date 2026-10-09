@@ -20,8 +20,11 @@ pub use action::{
     ActionEnvelope, Capability, Effect, ExpectedState, GitObjectId, GitObjectIdError,
     NetworkAccess, Reversibility,
 };
-pub use approval::ApprovalGrant;
-pub use ids::{ActionId, ApprovalId, IdError, JobId, SessionHandle, TaskLeaseId, TokenParseError};
+pub use approval::{ApprovalGrant, ReusableApprovalGrant};
+pub use ids::{
+    ActionId, ApprovalId, IdError, JobId, ReusableApprovalId, SessionHandle, TaskLeaseId,
+    TokenParseError,
+};
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
 pub use read_scope::{
@@ -32,7 +35,7 @@ pub use session::{
     TaskLease, WorkloadClass,
 };
 pub use tool_profile::{
-    ToolApprovalRequirement, ToolInvocation, ToolProfile, ToolProfileError, ToolProfileName,
-    ToolProfileSpec,
+    ToolApprovalRequirement, ToolInvocation, ToolProfile, ToolProfileError, ToolProfileFingerprint,
+    ToolProfileName, ToolProfileSpec,
 };
 pub use version::{ContentVersion, ContentVersionParseError, ContentVersionReadError};

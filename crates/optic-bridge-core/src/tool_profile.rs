@@ -11,6 +11,7 @@ const MAX_PROFILE_ARGS: usize = 128;
 const MAX_PROFILE_READ_FILES: usize = 32;
 const MAX_PROFILE_ENV_VARS: usize = 64;
 const MAX_PROFILE_SHAPE_BYTES: usize = 64 * 1024;
+const PROFILE_FINGERPRINT_DOMAIN: &[u8] = b"optic.tool-profile.v1\0";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ToolProfileName(String);
@@ -32,6 +33,27 @@ impl ToolProfileName {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ToolProfileFingerprint([u8; 32]);
+
+impl ToolProfileFingerprint {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn to_hex(&self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut output = String::with_capacity(64);
+        for byte in self.0 {
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        output
     }
 }
 
@@ -109,6 +131,94 @@ impl ToolProfile {
     #[must_use]
     pub fn spec(&self) -> &ToolProfileSpec {
         &self.spec
+    }
+
+    /// Stable application-owned identity for the complete normalized profile.
+    ///
+    /// Reusable approvals bind to this fingerprint so a profile replacement or
+    /// widening cannot inherit authority from an approval issued for an older
+    /// profile shape.
+    #[must_use]
+    pub fn fingerprint(&self) -> ToolProfileFingerprint {
+        let spec = &self.spec;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(PROFILE_FINGERPRINT_DOMAIN);
+        hash_str(&mut hasher, spec.name.as_str());
+        hash_str(&mut hasher, &spec.executable);
+        hash_u8(&mut hasher, process_class_tag(spec.class));
+        hash_u8(&mut hasher, workload_class_tag(spec.workload_class));
+        hash_string_list(&mut hasher, &spec.exact_args);
+        match &spec.cwd {
+            Some(path) => {
+                hash_u8(&mut hasher, 1);
+                hash_str(&mut hasher, path.as_str());
+            }
+            None => hash_u8(&mut hasher, 0),
+        }
+        hash_u64(&mut hasher, spec.workspace_read_files.len() as u64);
+        for path in &spec.workspace_read_files {
+            hash_str(&mut hasher, path.as_str());
+        }
+        hash_u64(&mut hasher, spec.env_allowlist.len() as u64);
+        for name in &spec.env_allowlist {
+            hash_str(&mut hasher, name);
+        }
+        hash_u8(&mut hasher, network_access_tag(spec.network));
+        hash_u64(&mut hasher, spec.resource_ceiling.timeout_ms);
+        hash_u64(&mut hasher, spec.resource_ceiling.output_bytes);
+        hash_u64(&mut hasher, spec.resource_ceiling.memory_bytes);
+        hash_u64(&mut hasher, u64::from(spec.resource_ceiling.process_count));
+        hash_u8(&mut hasher, approval_requirement_tag(spec.approval));
+        ToolProfileFingerprint(*hasher.finalize().as_bytes())
+    }
+}
+
+fn hash_string_list(hasher: &mut blake3::Hasher, values: &[String]) {
+    hash_u64(hasher, values.len() as u64);
+    for value in values {
+        hash_str(hasher, value);
+    }
+}
+
+fn hash_str(hasher: &mut blake3::Hasher, value: &str) {
+    hash_u64(hasher, value.len() as u64);
+    hasher.update(value.as_bytes());
+}
+
+fn hash_u8(hasher: &mut blake3::Hasher, value: u8) {
+    hasher.update(&[value]);
+}
+
+fn hash_u64(hasher: &mut blake3::Hasher, value: u64) {
+    hasher.update(&value.to_le_bytes());
+}
+
+const fn process_class_tag(value: ProcessExecutionClass) -> u8 {
+    match value {
+        ProcessExecutionClass::FixedTool => 0,
+        ProcessExecutionClass::Interpreter => 1,
+        ProcessExecutionClass::RepositoryCode => 2,
+    }
+}
+
+const fn workload_class_tag(value: WorkloadClass) -> u8 {
+    match value {
+        WorkloadClass::Standard => 0,
+        WorkloadClass::Heavy => 1,
+    }
+}
+
+const fn network_access_tag(value: NetworkAccess) -> u8 {
+    match value {
+        NetworkAccess::Denied => 0,
+        NetworkAccess::Allowed => 1,
+    }
+}
+
+const fn approval_requirement_tag(value: ToolApprovalRequirement) -> u8 {
+    match value {
+        ToolApprovalRequirement::NotRequired => 0,
+        ToolApprovalRequirement::HumanRequired => 1,
     }
 }
 
@@ -256,6 +366,29 @@ mod tests {
         assert!(profile.matches_invocation(&invocation));
         invocation.resources.timeout_ms = 5_001;
         assert!(!profile.matches_invocation(&invocation));
+    }
+
+    #[test]
+    fn profile_fingerprint_is_stable_and_covers_authority_shape() {
+        let profile = profile();
+        let first = profile.fingerprint();
+        let second = profile.fingerprint();
+        assert_eq!(first, second);
+        assert_eq!(first.to_hex().len(), 64);
+
+        let mut spec = profile.spec().clone();
+        spec.resource_ceiling.timeout_ms += 1;
+        let changed = ToolProfile::from_spec(spec)
+            .expect("changed profile remains valid")
+            .fingerprint();
+        assert_ne!(first, changed);
+
+        let mut spec = profile.spec().clone();
+        spec.approval = ToolApprovalRequirement::NotRequired;
+        let changed = ToolProfile::from_spec(spec)
+            .expect("changed profile remains valid")
+            .fingerprint();
+        assert_ne!(first, changed);
     }
 
     #[test]
