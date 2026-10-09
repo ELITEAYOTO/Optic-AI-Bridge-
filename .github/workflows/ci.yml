@@ -107,6 +107,16 @@ jobs:
             -BridgePath '.\target\debug\optic-bridge.exe' `
             -NodePath $node `
             -FixtureRoot $fixtureRoot
+      - name: Smoke reusable profiled Node MCP approval
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $fixtureRoot = Join-Path $env:GITHUB_WORKSPACE 'target\reusable-approval-mcp-smoke'
+          .\scripts\Test-ReusableApprovalMcp.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -NodePath $node `
+            -FixtureRoot $fixtureRoot
       - name: Smoke real Git integration MCP binary
         if: runner.os == 'Windows'
         shell: pwsh
@@ -138,8 +148,10 @@ jobs:
           Copy-Item '.\target\debug\optic-bridge-isolation-launcher.exe' $bundle
           Copy-Item '.\scripts\Install-OpticAIBridge.ps1' $bundle
           Copy-Item '.\scripts\Test-OpticAIBridge.ps1' $bundle
+          Copy-Item '.\scripts\Test-ReusableApprovalMcp.ps1' $bundle
           Copy-Item '.\scripts\Uninstall-OpticAIBridge.ps1' $bundle
           Copy-Item '.\scripts\Prepare-ChatGPTDesktopNodeSmoke.ps1' $bundle
+          Copy-Item '.\scripts\Prepare-ChatGPTDesktopReusableApprovalSmoke.ps1' $bundle
           Copy-Item '.\packaging\chatgpt-plugin' (Join-Path $bundle 'plugin') -Recurse
           @(
             "source_sha=${{ github.sha }}",
@@ -172,8 +184,10 @@ jobs:
             'optic-bridge-isolation-launcher.exe',
             'Install-OpticAIBridge.ps1',
             'Test-OpticAIBridge.ps1',
+            'Test-ReusableApprovalMcp.ps1',
             'Uninstall-OpticAIBridge.ps1',
             'Prepare-ChatGPTDesktopNodeSmoke.ps1',
+            'Prepare-ChatGPTDesktopReusableApprovalSmoke.ps1',
             'SOURCE.txt',
             'plugin\.codex-plugin\plugin.json',
             'plugin\assets\optic-ai-bridge.png.b64'
