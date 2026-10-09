@@ -14,6 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath 'VERSION').Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'VERSION must not be empty.'
+          }
+          if ('${{ github.ref_name }}' -ne "v$version") {
+            throw "Release tag/version mismatch. tag=${{ github.ref_name }} version=$version"
+          }
+
       - name: Install pinned Rust toolchain
         shell: pwsh
         run: |
