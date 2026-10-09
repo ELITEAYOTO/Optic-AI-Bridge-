@@ -367,19 +367,42 @@ impl ReadonlyMcpServer {
             .begin_execution(now)
             .map_err(map_transport_error)?;
         let grant = self.active_grant(now)?;
-        self.authorize(&grant, Effect::FileRead { path: path.clone() }, now)?;
 
         let filesystem = Arc::clone(&self.filesystem);
         let task_path = path.clone();
-        let timeout_ms = permit
+        let prepare_timeout_ms = permit
             .deadline()
             .as_millis()
             .saturating_sub(now.as_millis())
             .max(1);
         let blocking_io = self.blocking_io.clone();
+        let prepared = tokio::time::timeout(
+            Duration::from_millis(prepare_timeout_ms),
+            blocking_io.run(move || filesystem.prepare_read(&task_path, offset, Some(max_bytes))),
+        )
+        .await
+        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
+        .map_err(map_blocking_io_error)?
+        .map_err(map_filesystem_error)?;
+
+        let canonical_path = prepared.observation().canonical_path.clone();
+        let authorize_now = self.clock.now();
+        self.authorize(
+            &grant,
+            Effect::FileRead {
+                path: canonical_path.clone(),
+            },
+            authorize_now,
+        )?;
+
+        let read_timeout_ms = permit
+            .deadline()
+            .as_millis()
+            .saturating_sub(authorize_now.as_millis())
+            .max(1);
         let chunk = tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            blocking_io.run(move || filesystem.read(&task_path, offset, Some(max_bytes))),
+            Duration::from_millis(read_timeout_ms),
+            blocking_io.run(move || prepared.read()),
         )
         .await
         .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
@@ -387,7 +410,7 @@ impl ReadonlyMcpServer {
         .map_err(map_filesystem_error)?;
 
         let response = FsReadResponse {
-            path: path.as_str().to_owned(),
+            path: canonical_path.as_str().to_owned(),
             encoding: "base64".to_owned(),
             data: STANDARD.encode(chunk.bytes),
             offset: chunk.offset,

@@ -5,13 +5,16 @@ use std::{
 };
 
 #[cfg(windows)]
-use crate::windows_path::windows_path_is_within;
+use crate::windows_path::windows_relative_path;
 use optic_bridge_core::{
     ContentVersion, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
     WorkspacePathError,
 };
 #[cfg(windows)]
-use optic_bridge_windows::{WindowsFileError, inspect_directory_no_reparse, open_file_no_reparse};
+use optic_bridge_windows::{
+    OpenedWindowsFile, WindowsFileError, WindowsFileIdentity, inspect_directory_no_reparse,
+    open_file_no_reparse,
+};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -98,6 +101,15 @@ impl BoundedFileSystem {
         offset: u64,
         max_bytes: Option<u64>,
     ) -> Result<FsReadChunk, FileSystemError> {
+        self.prepare_read(path, offset, max_bytes)?.read()
+    }
+
+    pub fn prepare_read(
+        &self,
+        path: &WorkspacePath,
+        offset: u64,
+        max_bytes: Option<u64>,
+    ) -> Result<PreparedFileRead, FileSystemError> {
         let requested = max_bytes.unwrap_or(self.max_read_bytes);
         if requested == 0 || requested > self.max_read_bytes {
             return Err(FileSystemError::ReadLimitExceeded);
@@ -107,71 +119,44 @@ impl BoundedFileSystem {
 
         #[cfg(windows)]
         {
-            self.read_windows(path, offset, buffer_len)
+            let candidate = self.join_workspace_path(path);
+            let mut opened = open_file_no_reparse(&candidate)?;
+            let relative =
+                windows_relative_path(&self.windows_root_final_path, opened.final_path())
+                    .ok_or(FileSystemError::OutsideWorkspace)?;
+            let canonical_path = workspace_path_from_relative(&relative)?;
+            let metadata = opened.file_mut().metadata().map_err(FileSystemError::Io)?;
+            if !metadata.is_file() {
+                return Err(FileSystemError::NotFile);
+            }
+            let observation = ReadTargetObservation {
+                canonical_path,
+                windows_identity: opened.identity(),
+            };
+            Ok(PreparedFileRead {
+                observation,
+                offset,
+                buffer_len,
+                opened,
+            })
         }
 
         #[cfg(not(windows))]
         {
             let resolved = self.resolve_existing(path)?;
-            let mut file = File::open(&resolved).map_err(FileSystemError::Io)?;
+            let canonical_path = self.workspace_path_from_absolute_read(&resolved)?;
+            let file = File::open(&resolved).map_err(FileSystemError::Io)?;
             let metadata = file.metadata().map_err(FileSystemError::Io)?;
             if !metadata.is_file() {
                 return Err(FileSystemError::NotFile);
             }
-            if offset > metadata.len() {
-                return Err(FileSystemError::OffsetOutOfRange);
-            }
-
-            file.seek(SeekFrom::Start(offset))
-                .map_err(FileSystemError::Io)?;
-            let mut bytes = vec![0_u8; buffer_len];
-            let read = file.read(&mut bytes).map_err(FileSystemError::Io)?;
-            bytes.truncate(read);
-
-            let read = u64::try_from(read).map_err(|_| FileSystemError::ReadLimitExceeded)?;
-            let next_offset = offset.saturating_add(read);
-            Ok(FsReadChunk {
-                bytes,
+            Ok(PreparedFileRead {
+                observation: ReadTargetObservation { canonical_path },
                 offset,
-                next_offset,
-                eof: next_offset >= metadata.len(),
+                buffer_len,
+                file,
             })
         }
-    }
-
-    #[cfg(windows)]
-    fn read_windows(
-        &self,
-        path: &WorkspacePath,
-        offset: u64,
-        buffer_len: usize,
-    ) -> Result<FsReadChunk, FileSystemError> {
-        let candidate = self.join_workspace_path(path);
-        let mut opened = open_file_no_reparse(&candidate)?;
-        if !windows_path_is_within(&self.windows_root_final_path, opened.final_path()) {
-            return Err(FileSystemError::OutsideWorkspace);
-        }
-        let file = opened.file_mut();
-        let metadata = file.metadata().map_err(FileSystemError::Io)?;
-        if !metadata.is_file() {
-            return Err(FileSystemError::NotFile);
-        }
-        if offset > metadata.len() {
-            return Err(FileSystemError::OffsetOutOfRange);
-        }
-        file.seek(SeekFrom::Start(offset))
-            .map_err(FileSystemError::Io)?;
-        let mut bytes = vec![0_u8; buffer_len];
-        let read = file.read(&mut bytes).map_err(FileSystemError::Io)?;
-        bytes.truncate(read);
-        let read = u64::try_from(read).map_err(|_| FileSystemError::ReadLimitExceeded)?;
-        let next_offset = offset.saturating_add(read);
-        Ok(FsReadChunk {
-            bytes,
-            offset,
-            next_offset,
-            eof: next_offset >= metadata.len(),
-        })
     }
 
     pub fn list(
@@ -368,6 +353,18 @@ impl BoundedFileSystem {
         }
     }
 
+    #[cfg(not(windows))]
+    fn workspace_path_from_absolute_read(
+        &self,
+        path: &Path,
+    ) -> Result<WorkspacePath, FileSystemError> {
+        self.ensure_inside_workspace(path)?;
+        let relative = path
+            .strip_prefix(&self.root)
+            .map_err(|_| FileSystemError::OutsideWorkspace)?;
+        workspace_path_from_relative(relative)
+    }
+
     fn workspace_path_from_absolute(&self, path: &Path) -> Result<WorkspacePath, MutationError> {
         self.ensure_inside_workspace(path)
             .map_err(MutationError::FileSystem)?;
@@ -390,6 +387,78 @@ impl BoundedFileSystem {
             return Err(MutationError::InvalidTarget);
         }
         WorkspacePath::parse(&segments.join("/")).map_err(MutationError::Path)
+    }
+}
+
+fn workspace_path_from_relative(path: &Path) -> Result<WorkspacePath, FileSystemError> {
+    let mut segments = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(segment) => segments.push(
+                segment
+                    .to_str()
+                    .ok_or(FileSystemError::NonUtf8Name)?
+                    .to_owned(),
+            ),
+            _ => return Err(FileSystemError::OutsideWorkspace),
+        }
+    }
+    if segments.is_empty() {
+        return Err(FileSystemError::NotFile);
+    }
+    WorkspacePath::parse(&segments.join("/")).map_err(FileSystemError::Path)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadTargetObservation {
+    pub canonical_path: WorkspacePath,
+    #[cfg(windows)]
+    pub windows_identity: WindowsFileIdentity,
+}
+
+#[derive(Debug)]
+pub struct PreparedFileRead {
+    observation: ReadTargetObservation,
+    offset: u64,
+    buffer_len: usize,
+    #[cfg(windows)]
+    opened: OpenedWindowsFile,
+    #[cfg(not(windows))]
+    file: File,
+}
+
+impl PreparedFileRead {
+    #[must_use]
+    pub fn observation(&self) -> &ReadTargetObservation {
+        &self.observation
+    }
+
+    pub fn read(mut self) -> Result<FsReadChunk, FileSystemError> {
+        #[cfg(windows)]
+        let file = self.opened.file_mut();
+        #[cfg(not(windows))]
+        let file = &mut self.file;
+
+        let metadata = file.metadata().map_err(FileSystemError::Io)?;
+        if !metadata.is_file() {
+            return Err(FileSystemError::NotFile);
+        }
+        if self.offset > metadata.len() {
+            return Err(FileSystemError::OffsetOutOfRange);
+        }
+        file.seek(SeekFrom::Start(self.offset))
+            .map_err(FileSystemError::Io)?;
+        let mut bytes = vec![0_u8; self.buffer_len];
+        let read = file.read(&mut bytes).map_err(FileSystemError::Io)?;
+        bytes.truncate(read);
+        let read = u64::try_from(read).map_err(|_| FileSystemError::ReadLimitExceeded)?;
+        let next_offset = self.offset.saturating_add(read);
+        Ok(FsReadChunk {
+            bytes,
+            offset: self.offset,
+            next_offset,
+            eof: next_offset >= metadata.len(),
+        })
     }
 }
 
@@ -523,6 +592,27 @@ mod tests {
                 .to_string(),
             FileSystemError::ReadLimitExceeded.to_string()
         );
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn prepared_read_exposes_observed_target_and_reads_from_that_handle() {
+        let root = workspace("prepared-read");
+        fs::create_dir(root.join("nested")).expect("create nested");
+        fs::write(root.join("nested").join("hello.txt"), b"abcdef").expect("write fixture");
+        let service = BoundedFileSystem::new(&root, 4, 4, 16).expect("filesystem service");
+        let requested = WorkspacePath::parse("nested/hello.txt").expect("safe path");
+
+        let prepared = service
+            .prepare_read(&requested, 1, Some(3))
+            .expect("prepare read");
+        assert_eq!(prepared.observation().canonical_path, requested);
+        let chunk = prepared.read().expect("consume prepared handle");
+        assert_eq!(chunk.bytes, b"bcd");
+        assert_eq!(chunk.offset, 1);
+        assert_eq!(chunk.next_offset, 4);
+        assert!(!chunk.eof);
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
