@@ -4,7 +4,7 @@
 
 Configuration is layered: secure compiled ceilings → operator startup configuration → application-owned session/task authority. Lower layers cannot override hard security invariants.
 
-There is no general TOML configuration loader yet. The compiled `HardLimits` plus the current command-line startup options are authoritative today.
+The compiled `HardLimits` remain the non-overridable security ceiling. Operator authority may be supplied either through the existing command-line startup surface or through one strict versioned JSON configuration file. The two modes are intentionally exclusive; Optic does not merge CLI authority into a persistent config implicitly.
 
 ## Current compiled hard ceilings
 
@@ -37,6 +37,38 @@ Zero is rejected for every hard safety limit; it never means unlimited. Phase 3A
 ## Current startup surface
 
 The application accepts one optional positional workspace path. When omitted, the current directory is used.
+
+### Versioned persistent config
+
+```text
+optic-bridge --config <absolute-json-file>
+```
+
+`--config` is an exclusive startup mode: it cannot be mixed with positional workspace or authority flags. The file is read once at startup from the exact opened handle, must be a regular file, is capped at 256 KiB, and is parsed with unknown-field rejection. Unknown config versions fail closed.
+
+Version 1 requires `version`, `policy_epoch` and `workspace`; authority sections are optional and default to empty. `policy_epoch` must be greater than zero and is reused consistently when provisioning the application session and its read, mutation, process and Git-integration leases. MCP callers cannot set or change it.
+
+The v1 structure mirrors the existing operator surface rather than creating a second authorization model: executable classes, exact process-read grants, isolated Node selections, ToolProfile file, classified environment grants, mutation scopes/state, Git read and Git integration settings are compiled into the same internal startup arguments and therefore pass through the same canonicalization and fail-closed validation as CLI configuration.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "policy_epoch": 2,
+  "workspace": "C:\\work\\project",
+  "executables": [
+    { "class": "interpreter", "path": "C:\\Program Files\\nodejs\\node.exe" }
+  ],
+  "isolated_node_executables": ["C:\\Program Files\\nodejs\\node.exe"],
+  "environment_grants": [
+    { "class": "benign", "name": "TEMP" },
+    { "class": "sensitive", "name": "API_KEY" }
+  ]
+}
+```
+
+A config version migration is explicit: Optic does not silently reinterpret an unknown version, and changing persistent authority should be accompanied by an operator-selected `policy_epoch` bump when stale authority must be invalidated.
 
 ### Process authority
 

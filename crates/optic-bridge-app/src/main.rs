@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod persistent_config;
 mod tool_profile_config;
 
 use std::{
@@ -28,7 +29,9 @@ use optic_bridge_runtime::{
 };
 use rmcp::ServiceExt;
 
-use crate::tool_profile_config::load_tool_profiles;
+use crate::{
+    persistent_config::load_exclusive_config_args, tool_profile_config::load_tool_profiles,
+};
 
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
 const SESSION_REAP_INTERVAL_MS: u64 = 5_000;
@@ -201,7 +204,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 .ok_or_else(|| std::io::Error::other("invalid local project id"))?,
             capabilities,
             expires_at,
-            policy_epoch: 1,
+            policy_epoch: args.policy_epoch,
         },
         now,
     )?;
@@ -213,7 +216,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &ReadAuthoritySpec::workspace_all_non_sensitive(),
         read_authority_resource_budget(limits),
         expires_at,
-        1,
+        args.policy_epoch,
     )?;
 
     // C5E keeps the first production minting path deliberately profile-specific:
@@ -229,7 +232,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             workload_class: WorkloadClass::Heavy,
             resource_ceiling: limits.max_process_budget,
             expires_at,
-            policy_epoch: 1,
+            policy_epoch: args.policy_epoch,
         },
     )?;
     let tool_profile_count = configured_tool_profiles.len();
@@ -241,7 +244,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &mutation_spec,
         mutation_resource_budget(limits),
         expires_at,
-        1,
+        args.policy_epoch,
     )?;
 
     let git_integration_authorities = GitIntegrationAuthoritySet::provision(
@@ -252,7 +255,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
         git_integration_resource_budget(limits),
         expires_at,
-        1,
+        args.policy_epoch,
     )?;
 
     let git_integration_service = match (
@@ -638,6 +641,7 @@ fn provision_process_leases(
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
+    policy_epoch: u64,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
     isolated_node_executables: Vec<String>,
@@ -662,6 +666,13 @@ impl AppArgs {
     where
         I: IntoIterator<Item = OsString>,
     {
+        let args = args.into_iter().collect::<Vec<_>>();
+        if let Some(config) = load_exclusive_config_args(&args)? {
+            let mut parsed = Self::parse_from(config.args)?;
+            parsed.policy_epoch = config.policy_epoch;
+            return Ok(parsed);
+        }
+
         let mut workspace = None;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
@@ -894,6 +905,7 @@ impl AppArgs {
 
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
+            policy_epoch: 1,
             allowed_executables,
             process_read_grants,
             isolated_node_executables,
@@ -1178,6 +1190,35 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn persistent_v1_config_reuses_cli_validation_and_sets_policy_epoch() {
+        let token = SessionHandle::generate().expect("test entropy").to_token();
+        let path = std::env::temp_dir().join(format!("optic-config-{token}.json"));
+        std::fs::write(
+            &path,
+            r#"{
+                "version": 1,
+                "policy_epoch": 9,
+                "workspace": "workspace-from-config",
+                "environment_grants": [{"class":"benign","name":"PATH_HINT"}]
+            }"#,
+        )
+        .expect("write config");
+
+        let parsed = AppArgs::parse_from(vec![
+            OsString::from("--config"),
+            path.clone().into_os_string(),
+        ])
+        .expect("persistent config");
+        assert_eq!(parsed.policy_epoch, 9);
+        assert_eq!(parsed.workspace, PathBuf::from("workspace-from-config"));
+        assert_eq!(
+            parsed.environment_grants,
+            vec![EnvironmentGrant::benign("PATH_HINT")]
+        );
+        std::fs::remove_file(path).expect("remove config");
     }
 
     #[test]
