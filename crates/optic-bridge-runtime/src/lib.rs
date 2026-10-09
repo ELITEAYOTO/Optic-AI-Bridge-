@@ -42,7 +42,7 @@ pub use blocking_io::{BlockingIoError, BlockingIoGovernor};
 pub use clock::{Clock, StdClock};
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
-    MutationError, MutationObservation,
+    MutationError, MutationObservation, PreparedFileRead, ReadTargetObservation,
 };
 pub use git_integrate::{
     GitIntegrationError, GitIntegrationMode, GitIntegrationRecoveryReport, GitIntegrationResult,

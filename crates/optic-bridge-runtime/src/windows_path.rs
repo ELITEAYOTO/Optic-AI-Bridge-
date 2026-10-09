@@ -1,22 +1,29 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+fn component_key(component: &std::ffi::OsStr) -> String {
+    component.to_string_lossy().to_lowercase()
+}
+
+pub(crate) fn windows_relative_path(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let mut candidate_components = candidate.components();
+    for root_component in root.components() {
+        let candidate_component = candidate_components.next()?;
+        if component_key(root_component.as_os_str())
+            != component_key(candidate_component.as_os_str())
+        {
+            return None;
+        }
+    }
+
+    let mut relative = PathBuf::new();
+    for component in candidate_components {
+        relative.push(component.as_os_str());
+    }
+    Some(relative)
+}
 
 pub(crate) fn windows_path_is_within(root: &Path, candidate: &Path) -> bool {
-    fn key(path: &Path) -> String {
-        path.as_os_str()
-            .to_string_lossy()
-            .replace('/', "\\")
-            .trim_end_matches('\\')
-            .to_lowercase()
-    }
-
-    let root = key(root);
-    let candidate = key(candidate);
-    if candidate == root {
-        return true;
-    }
-    candidate
-        .strip_prefix(&root)
-        .is_some_and(|suffix| suffix.starts_with('\\'))
+    windows_relative_path(root, candidate).is_some()
 }
 
 #[cfg(test)]
@@ -35,5 +42,23 @@ mod tests {
             Path::new(r"\\?\C:\Workspace"),
             Path::new(r"\\?\C:\Workspace-escape\secret.txt")
         ));
+    }
+
+    #[test]
+    fn relative_path_preserves_observed_component_spelling() {
+        assert_eq!(
+            windows_relative_path(
+                Path::new(r"\\?\C:\Workspace"),
+                Path::new(r"\\?\c:\workspace\ActualCase\File.txt")
+            ),
+            Some(PathBuf::from(r"ActualCase\File.txt"))
+        );
+        assert_eq!(
+            windows_relative_path(
+                Path::new(r"\\?\C:\Workspace"),
+                Path::new(r"\\?\C:\Workspace")
+            ),
+            Some(PathBuf::new())
+        );
     }
 }
