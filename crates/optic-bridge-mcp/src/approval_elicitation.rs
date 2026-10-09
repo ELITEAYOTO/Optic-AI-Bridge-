@@ -8,16 +8,35 @@ use optic_bridge_runtime::{
     SessionReusableApprovalService, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 use rmcp::{
-    model::{ElicitRequestParams, ElicitationAction, ElicitationSchema},
+    model::{ElicitRequestParams, ElicitationAction, ElicitationSchema, EnumSchema},
     service::{ElicitationMode, RequestContext, RoleServer, ServiceError},
 };
+use serde_json::Value;
 use thiserror::Error;
+
+const PROFILE_APPROVAL_SCOPE_FIELD: &str = "approval_scope";
+const PROFILE_APPROVAL_ONCE: &str = "once";
+const PROFILE_APPROVAL_CURRENT_SESSION: &str = "current_session";
 
 /// Application interpretation of one MCP elicitation response.
 /// Only `Accepted` may be used by a higher layer to mint an ApprovalGrant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HumanApprovalDecision {
     Accepted,
+    Declined,
+    Cancelled,
+    Unsupported,
+}
+
+/// Bounded user choice for an exact ToolProfile approval prompt.
+///
+/// `CurrentSession` is intentionally named after the Optic application session,
+/// not a chat/conversation. The stronger user-facing conversation claim remains
+/// gated on proving a trustworthy host conversation-to-session lifecycle mapping.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileApprovalDecision {
+    Once,
+    CurrentSession,
     Declined,
     Cancelled,
     Unsupported,
@@ -67,6 +86,83 @@ pub async fn request_human_approval(
         ElicitationAction::Decline => Ok(HumanApprovalDecision::Declined),
         ElicitationAction::Cancel => Ok(HumanApprovalDecision::Cancelled),
         _ => Err(ApprovalElicitationError::UnknownAction),
+    }
+}
+
+/// Ask the MCP host for the approval lifetime of one exact ToolProfile action.
+///
+/// The requested form contains exactly one required single-select enum. `once` is
+/// the least-authority default. A client that accepts but omits, corrupts or adds
+/// ambiguous form content degrades to `Once`; malformed content can therefore never
+/// mint reusable authority. A client without form elicitation remains `Unsupported`,
+/// preserving the pre-existing fail-closed behavior.
+pub async fn request_profile_approval_choice(
+    context: &RequestContext<RoleServer>,
+    message: impl Into<String>,
+    timeout: Duration,
+) -> Result<ProfileApprovalDecision, ApprovalElicitationError> {
+    if !context
+        .peer
+        .supported_elicitation_modes()
+        .contains(&ElicitationMode::Form)
+    {
+        return Ok(ProfileApprovalDecision::Unsupported);
+    }
+
+    let scope_schema = EnumSchema::builder(vec![
+        PROFILE_APPROVAL_ONCE.to_owned(),
+        PROFILE_APPROVAL_CURRENT_SESSION.to_owned(),
+    ])
+    .with_default(PROFILE_APPROVAL_ONCE)
+    .map_err(|_| ApprovalElicitationError::InvalidSchema)?
+    .enum_titles(vec![
+        "Allow once".to_owned(),
+        "Allow for current Optic session".to_owned(),
+    ])
+    .map_err(|_| ApprovalElicitationError::InvalidSchema)?
+    .description(
+        "Reusable approval applies only to this exact tool profile while the current Optic session remains active. Every invocation is revalidated.",
+    )
+    .build();
+    let requested_schema = ElicitationSchema::builder()
+        .required_enum_schema(PROFILE_APPROVAL_SCOPE_FIELD, scope_schema)
+        .title("Approval scope")
+        .description("Choose how long Optic may reuse approval for this exact tool profile.")
+        .build()
+        .map_err(|_| ApprovalElicitationError::InvalidSchema)?;
+    let params = ElicitRequestParams::FormElicitationParams {
+        meta: None,
+        message: message.into(),
+        requested_schema,
+    };
+    let result = context
+        .peer
+        .create_elicitation_with_timeout(params, Some(timeout))
+        .await?;
+
+    #[allow(unreachable_patterns)]
+    match result.action {
+        ElicitationAction::Accept => Ok(accepted_profile_approval_scope(result.content.as_ref())),
+        ElicitationAction::Decline => Ok(ProfileApprovalDecision::Declined),
+        ElicitationAction::Cancel => Ok(ProfileApprovalDecision::Cancelled),
+        _ => Err(ApprovalElicitationError::UnknownAction),
+    }
+}
+
+fn accepted_profile_approval_scope(content: Option<&Value>) -> ProfileApprovalDecision {
+    let Some(object) = content.and_then(Value::as_object) else {
+        return ProfileApprovalDecision::Once;
+    };
+    if object.len() != 1 {
+        return ProfileApprovalDecision::Once;
+    }
+    match object
+        .get(PROFILE_APPROVAL_SCOPE_FIELD)
+        .and_then(Value::as_str)
+    {
+        Some(PROFILE_APPROVAL_CURRENT_SESSION) => ProfileApprovalDecision::CurrentSession,
+        Some(PROFILE_APPROVAL_ONCE) => ProfileApprovalDecision::Once,
+        Some(_) | None => ProfileApprovalDecision::Once,
     }
 }
 
