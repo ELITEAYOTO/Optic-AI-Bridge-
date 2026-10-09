@@ -4,15 +4,15 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 
 **Last reviewed:** 2026-10-09
 **Current phase:** Phase 4 — same-repository parallelism, with the approval/autonomy track continuing in parallel
-**Implementation state:** executable Rust pre-alpha; Phase 1 and Phase 2 are complete; Phase 3 multi-session/resource isolation is substantially closed through Phase 3E3; truthful network-denied containment, exact human approval foundations and ToolProfile authorization are merged; Phase 4 same-repository worktree/merge orchestration is active through Phase 4AP
+**Implementation state:** executable Rust pre-alpha; Phase 1 and Phase 2 are complete; Phase 3 multi-session/resource isolation is substantially closed through Phase 3E3; truthful network-denied containment, exact human approval foundations and ToolProfile authorization are merged; Phase 4 same-repository worktree/merge orchestration is active through Phase 4AP; A-08 reusable-approval foundations are merged through A-08B3
 **Release state:** no production-supported release
-**Current gate:** post-Phase-4AP closure and A-08 conversation-scoped reusable approval design. Phase 4AP merged as `acf94ed1` and closes converged shared-session HEAD publication through the hardened fast-forward path. ADR-0011 defines the next autonomy target: keep existing one-shot approvals, then add a bounded reusable session/profile approval that can be presented as “allow for this conversation” only after the adapter proves a trustworthy one-to-one conversation ↔ Optic-session binding.
+**Current gate:** A-08C — profiled process authorization may reuse an active session/profile approval only after the normal invocation, ToolProfile, policy, resource and isolation checks are revalidated for that invocation. A-08A merged as `06fcfc94`; A-08B1/B2/B3 merged as `d441ca20`, `1f1cde2a` and `b669ca76`. Existing one-shot approval semantics remain available and unchanged.
 
 The A-08 reusable-approval track is deliberately narrow:
 
-- A-08A: bounded reusable approval domain model, tied to one application session, ToolProfile fingerprint, policy epoch and monotonic expiry;
-- A-08B: broker lifecycle, revocation and invalidation without changing existing one-shot approval behavior;
-- A-08C: profiled process authorization can reuse an active grant only after full per-invocation policy/profile/resource/isolation revalidation;
+- A-08A: **complete** — bounded reusable approval domain model tied to one application session, ToolProfile fingerprint, policy epoch and monotonic expiry;
+- A-08B: **complete** — bounded broker lifecycle, active-session binding, owner-scoped revocation and physical cleanup after admitted work drains, without changing existing one-shot approval behavior;
+- A-08C: **current** — profiled process authorization can reuse an active grant only after full per-invocation policy/profile/resource/isolation revalidation;
 - A-08D: MCP elicitation can offer one-shot vs session/profile approval when the host supports it, while unsupported hosts remain one-shot/fail-closed;
 - A-08E: real ChatGPT Desktop proof with multiple allowed invocations plus negative profile/revoke/policy-change cases;
 - A-08F: only after measuring the real host lifecycle may user-facing Desktop wording say “this conversation”; until then it must say “current Optic session”.
