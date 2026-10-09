@@ -106,8 +106,8 @@ pub use same_repo_coordinator::{
     CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
 };
 pub use session_lifecycle::{
-    SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager, SessionReapReport,
-    SessionRenewalReport, SessionRevokeReport,
+    QuiescentSessionSeal, SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager,
+    SessionReapReport, SessionRenewalReport, SessionRevokeReport,
 };
 pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
 pub use session_worktree::{

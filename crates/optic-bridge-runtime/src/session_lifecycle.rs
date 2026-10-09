@@ -47,6 +47,24 @@ pub struct SessionReapReport {
     pub removed_leases: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuiescentSessionSeal {
+    session: SessionHandle,
+    revoke: SessionRevokeReport,
+}
+
+impl QuiescentSessionSeal {
+    #[must_use]
+    pub fn session(&self) -> &SessionHandle {
+        &self.session
+    }
+
+    #[must_use]
+    pub fn revoke_report(&self) -> SessionRevokeReport {
+        self.revoke
+    }
+}
+
 pub struct SessionLifecycleManager {
     sessions: Arc<SessionRegistry>,
     task_leases: Arc<TaskLeaseRegistry>,
@@ -195,6 +213,21 @@ impl SessionLifecycleManager {
         })
     }
 
+    pub fn seal_quiescent(
+        &self,
+        session: &SessionHandle,
+    ) -> Result<QuiescentSessionSeal, SessionLifecycleError> {
+        let revoke = self.revoke(session)?;
+        let active_jobs = self.processes.active_session_job_count(session)?;
+        if active_jobs != 0 {
+            return Err(SessionLifecycleError::SessionJobsStillActive { active_jobs });
+        }
+        Ok(QuiescentSessionSeal {
+            session: session.clone(),
+            revoke,
+        })
+    }
+
     pub fn reap_inactive(&self, now: MonotonicTime) -> Result<usize, SessionLifecycleError> {
         let handles = self.sessions.inactive_handles(now)?;
         let mut removed_sessions = 0;
@@ -263,6 +296,8 @@ pub enum SessionLifecycleError {
     ExpiredAtProvision,
     #[error("active sessions cannot be physically reaped")]
     SessionStillActive,
+    #[error("session still owns {active_jobs} active process job(s) after revoke")]
+    SessionJobsStillActive { active_jobs: u32 },
     #[error("session renewal expiry must be later than now")]
     RenewalExpiryNotFuture,
     #[error("session renewal must strictly extend the current expiry")]
@@ -379,6 +414,32 @@ mod tests {
             Arc::clone(&processes),
         );
         (lifecycle, sessions, task_leases, processes)
+    }
+
+    #[test]
+    fn quiescent_seal_revokes_session_and_remains_reapable() {
+        let root = workspace("quiescent-seal");
+        let (lifecycle, sessions, _leases, _processes) = manager(&root);
+        let now = MonotonicTime::from_millis(10);
+        let grant = lifecycle
+            .provision(spec(1_000), now)
+            .expect("provision session");
+
+        let seal = lifecycle
+            .seal_quiescent(&grant.handle)
+            .expect("quiescent seal");
+        assert_eq!(seal.session(), &grant.handle);
+        assert!(seal.revoke_report().session_changed);
+        assert!(matches!(
+            sessions.get_active(&grant.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+
+        let reaped = lifecycle
+            .try_reap(&grant.handle, now)
+            .expect("reap sealed session");
+        assert!(reaped.session_removed);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     fn approval_envelope(session: SessionHandle) -> ActionEnvelope {
