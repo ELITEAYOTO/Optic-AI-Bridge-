@@ -107,7 +107,9 @@ pub use same_repo_coordinator::{
     CoordinatedSession, SameRepositoryCoordinatorError, SameRepositorySessionCoordinator,
 };
 pub use same_repo_merge::{
-    SameRepositoryMergePublishError, SameRepositoryMergePublisher, SessionMergePublishOutcome,
+    SameRepositoryMergeOrchestrationError, SameRepositoryMergeOrchestrator,
+    SameRepositoryMergePublishError, SameRepositoryMergePublisher, SessionMergeCleanupOutcome,
+    SessionMergeLifecycleOutcome, SessionMergePublishOutcome,
 };
 pub use session_lifecycle::{
     QuiescentSessionSeal, SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager,

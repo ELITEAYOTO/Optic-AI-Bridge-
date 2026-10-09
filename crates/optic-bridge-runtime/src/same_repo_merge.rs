@@ -5,12 +5,46 @@ use thiserror::Error;
 
 use crate::{
     GitIntegrationError, GitIntegrationMode, GitIntegrationResult, GitIntegrationService,
-    QuiescentSessionSeal, SessionMergeCommit, SessionWorktreeError, SessionWorktreeManager,
+    QuiescentSessionSeal, SessionLifecycleError, SessionLifecycleManager, SessionMergeCommit,
+    SessionReapReport, SessionWorktreeError, SessionWorktreeManager,
 };
 
 pub struct SameRepositoryMergePublisher {
     worktrees: Arc<SessionWorktreeManager>,
     integration: Arc<GitIntegrationService>,
+}
+
+pub struct SameRepositoryMergeOrchestrator {
+    lifecycle: Arc<SessionLifecycleManager>,
+    publisher: SameRepositoryMergePublisher,
+}
+
+#[derive(Debug)]
+pub struct SessionMergeLifecycleOutcome {
+    pub publication: SessionMergePublishOutcome,
+    pub left_cleanup: SessionMergeCleanupOutcome,
+    pub right_cleanup: SessionMergeCleanupOutcome,
+}
+
+impl SessionMergeLifecycleOutcome {
+    #[must_use]
+    pub fn cleanup_complete(&self) -> bool {
+        self.left_cleanup.is_reaped() && self.right_cleanup.is_reaped()
+    }
+}
+
+#[derive(Debug)]
+pub enum SessionMergeCleanupOutcome {
+    Reaped(SessionReapReport),
+    Incomplete(SessionReapReport),
+    Failed(SessionLifecycleError),
+}
+
+impl SessionMergeCleanupOutcome {
+    #[must_use]
+    pub fn is_reaped(&self) -> bool {
+        matches!(self, Self::Reaped(_))
+    }
 }
 
 #[derive(Debug)]
@@ -22,6 +56,72 @@ pub enum SessionMergePublishOutcome {
     AlreadyPublished {
         merge: SessionMergeCommit,
     },
+}
+
+impl SameRepositoryMergeOrchestrator {
+    pub fn new(
+        lifecycle: Arc<SessionLifecycleManager>,
+        worktrees: Arc<SessionWorktreeManager>,
+        integration: Arc<GitIntegrationService>,
+    ) -> Result<Self, SameRepositoryMergePublishError> {
+        let publisher = SameRepositoryMergePublisher::new(worktrees, integration)?;
+        Ok(Self {
+            lifecycle,
+            publisher,
+        })
+    }
+
+    pub fn merge_publish_and_cleanup(
+        &self,
+        left: &optic_bridge_core::SessionHandle,
+        right: &optic_bridge_core::SessionHandle,
+        now: optic_bridge_core::MonotonicTime,
+    ) -> Result<SessionMergeLifecycleOutcome, SameRepositoryMergeOrchestrationError> {
+        if left == right {
+            return Err(SameRepositoryMergeOrchestrationError::SameSession);
+        }
+        let left_seal = self
+            .lifecycle
+            .seal_quiescent(left)
+            .map_err(SameRepositoryMergeOrchestrationError::LeftSeal)?;
+        let right_seal = self
+            .lifecycle
+            .seal_quiescent(right)
+            .map_err(SameRepositoryMergeOrchestrationError::RightSeal)?;
+        let publication = self
+            .publisher
+            .publish(&left_seal, &right_seal)
+            .map_err(SameRepositoryMergeOrchestrationError::Publish)?;
+        Ok(self.cleanup_after_publish(publication, left, right, now))
+    }
+
+    fn cleanup_after_publish(
+        &self,
+        publication: SessionMergePublishOutcome,
+        left: &optic_bridge_core::SessionHandle,
+        right: &optic_bridge_core::SessionHandle,
+        now: optic_bridge_core::MonotonicTime,
+    ) -> SessionMergeLifecycleOutcome {
+        let left_cleanup = cleanup_session(&self.lifecycle, left, now);
+        let right_cleanup = cleanup_session(&self.lifecycle, right, now);
+        SessionMergeLifecycleOutcome {
+            publication,
+            left_cleanup,
+            right_cleanup,
+        }
+    }
+}
+
+fn cleanup_session(
+    lifecycle: &SessionLifecycleManager,
+    session: &optic_bridge_core::SessionHandle,
+    now: optic_bridge_core::MonotonicTime,
+) -> SessionMergeCleanupOutcome {
+    match lifecycle.try_reap(session, now) {
+        Ok(report) if report.session_removed => SessionMergeCleanupOutcome::Reaped(report),
+        Ok(report) => SessionMergeCleanupOutcome::Incomplete(report),
+        Err(error) => SessionMergeCleanupOutcome::Failed(error),
+    }
 }
 
 impl SameRepositoryMergePublisher {
@@ -101,6 +201,18 @@ impl SameRepositoryMergePublisher {
 
         Ok(SessionMergePublishOutcome::Published { merge, integration })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum SameRepositoryMergeOrchestrationError {
+    #[error("a session cannot be merged with itself")]
+    SameSession,
+    #[error("left session could not be sealed quiescently: {0}")]
+    LeftSeal(SessionLifecycleError),
+    #[error("right session could not be sealed quiescently after left-session revoke: {0}")]
+    RightSeal(SessionLifecycleError),
+    #[error("sealed sessions could not be published: {0}")]
+    Publish(SameRepositoryMergePublishError),
 }
 
 #[derive(Debug, Error)]
@@ -264,6 +376,145 @@ mod tests {
             expires_at: MonotonicTime::from_millis(10_000),
             policy_epoch: 1,
         }
+    }
+
+    #[test]
+    fn published_merge_reports_cleanup_failure_without_hiding_publication() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git);
+        let limits = HardLimits {
+            max_sessions: 2,
+            ..HardLimits::default()
+        };
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.repo, limits, Vec::new()).expect("process manager"),
+        );
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let worktrees = Arc::new(
+            SessionWorktreeManager::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.worktrees,
+                limits,
+            )
+            .expect("worktree manager"),
+        );
+        let coordinator = SameRepositorySessionCoordinator::new(
+            sessions,
+            leases,
+            processes,
+            approvals,
+            Arc::clone(&worktrees),
+        );
+        let integration = Arc::new(
+            GitIntegrationService::from_hard_limits(
+                &fixture.repo,
+                &fixture.git,
+                &fixture.integration,
+                TARGET_REF,
+                limits,
+            )
+            .expect("integration"),
+        );
+        let publisher =
+            SameRepositoryMergePublisher::new(Arc::clone(&worktrees), Arc::clone(&integration))
+                .expect("publisher");
+        let now = MonotonicTime::from_millis(10);
+        let left = coordinator
+            .provision(spec("cleanup-left"), &fixture.head, now)
+            .expect("left session");
+        let right = coordinator
+            .provision(spec("cleanup-right"), &fixture.head, now)
+            .expect("right session");
+
+        // Give each worker a distinct, valid descendant HEAD. Using the shared base as both
+        // merge parents is a degenerate shape that makes Git warn about a duplicate parent on
+        // stderr; this test is about post-publication cleanup failure, not merge normalization.
+        let tree = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &["rev-parse", "HEAD^{tree}"],
+        ));
+        let left_head = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &[
+                "commit-tree",
+                tree.as_str(),
+                "-p",
+                fixture.head.as_str(),
+                "-m",
+                "cleanup left",
+            ],
+        ));
+        let right_head = parse_oid(&git_output(
+            &fixture.git,
+            &fixture.repo,
+            &[
+                "commit-tree",
+                tree.as_str(),
+                "-p",
+                fixture.head.as_str(),
+                "-m",
+                "cleanup right",
+            ],
+        ));
+        assert_ne!(left_head, right_head);
+        run_git(
+            &fixture.git,
+            &left.worktree.path,
+            &["update-ref", "HEAD", left_head.as_str()],
+        );
+        run_git(
+            &fixture.git,
+            &right.worktree.path,
+            &["update-ref", "HEAD", right_head.as_str()],
+        );
+
+        let lifecycle = coordinator.lifecycle();
+        let left_seal = lifecycle
+            .seal_quiescent(&left.grant.handle)
+            .expect("left seal");
+        let right_seal = lifecycle
+            .seal_quiescent(&right.grant.handle)
+            .expect("right seal");
+        let publication = publisher
+            .publish(&left_seal, &right_seal)
+            .expect("publication");
+        let published_commit = match &publication {
+            SessionMergePublishOutcome::Published { merge, .. }
+            | SessionMergePublishOutcome::AlreadyPublished { merge } => merge.commit.clone(),
+        };
+        assert_eq!(integration.target_head().expect("target"), published_commit);
+
+        fs::remove_dir_all(&left.worktree.path).expect("sabotage left cleanup path");
+        let orchestrator = SameRepositoryMergeOrchestrator {
+            lifecycle: Arc::clone(&lifecycle),
+            publisher,
+        };
+        let outcome = orchestrator.cleanup_after_publish(
+            publication,
+            &left.grant.handle,
+            &right.grant.handle,
+            now,
+        );
+        assert!(!outcome.cleanup_complete());
+        assert!(matches!(
+            outcome.left_cleanup,
+            SessionMergeCleanupOutcome::Failed(_)
+        ));
+        assert!(matches!(
+            outcome.right_cleanup,
+            SessionMergeCleanupOutcome::Reaped(_)
+        ));
+        assert_eq!(
+            integration.target_head().expect("target after cleanup"),
+            published_commit
+        );
     }
 
     #[test]
