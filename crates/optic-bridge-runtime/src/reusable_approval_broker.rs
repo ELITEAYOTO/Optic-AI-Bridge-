@@ -77,8 +77,8 @@ impl ReusableApprovalBroker {
             return Err(ReusableApprovalBrokerError::SessionCapacityExceeded);
         }
 
-        let id = ReusableApprovalId::generate()
-            .map_err(ReusableApprovalBrokerError::IdGeneration)?;
+        let id =
+            ReusableApprovalId::generate().map_err(ReusableApprovalBrokerError::IdGeneration)?;
         let grant = ReusableApprovalGrant {
             id: id.clone(),
             session: spec.session,
@@ -115,10 +115,7 @@ impl ReusableApprovalBroker {
             .cloned())
     }
 
-    pub fn revoke(
-        &self,
-        id: &ReusableApprovalId,
-    ) -> Result<bool, ReusableApprovalBrokerError> {
+    pub fn revoke(&self, id: &ReusableApprovalId) -> Result<bool, ReusableApprovalBrokerError> {
         let mut grants = self
             .grants
             .lock()
@@ -234,12 +231,7 @@ mod tests {
         let widened = profile("cargo-check", 5_001);
         assert!(
             broker
-                .find_active_for_profile(
-                    &session,
-                    &widened,
-                    7,
-                    MonotonicTime::from_millis(4),
-                )
+                .find_active_for_profile(&session, &widened, 7, MonotonicTime::from_millis(4),)
                 .expect("lookup")
                 .is_none()
         );
