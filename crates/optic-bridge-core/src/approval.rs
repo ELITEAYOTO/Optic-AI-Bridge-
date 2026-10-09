@@ -69,7 +69,7 @@ impl ReusableApprovalGrant {
     ) -> bool {
         !self.is_expired_at(now)
             && &self.session == session
-            && self.profile == *profile.name()
+            && &self.profile == profile.name()
             && self.profile_fingerprint == profile.fingerprint()
             && self.policy_epoch == policy_epoch
     }
