@@ -35,7 +35,7 @@ pub use session::{
     TaskLease, WorkloadClass,
 };
 pub use tool_profile::{
-    ToolApprovalRequirement, ToolInvocation, ToolProfile, ToolProfileError,
-    ToolProfileFingerprint, ToolProfileName, ToolProfileSpec,
+    ToolApprovalRequirement, ToolInvocation, ToolProfile, ToolProfileError, ToolProfileFingerprint,
+    ToolProfileName, ToolProfileSpec,
 };
 pub use version::{ContentVersion, ContentVersionParseError, ContentVersionReadError};
