@@ -1,5 +1,6 @@
 use crate::{
-    ActionEnvelope, ActionId, ApprovalId, Effect, MonotonicTime, ResourceBudget, SessionHandle,
+    ActionEnvelope, ActionId, ApprovalId, Effect, MonotonicTime, ResourceBudget,
+    ReusableApprovalId, SessionHandle, ToolProfile, ToolProfileFingerprint, ToolProfileName,
 };
 
 /// One exact, application-owned approval for one normalized action.
@@ -35,10 +36,54 @@ impl ApprovalGrant {
     }
 }
 
+/// Reusable human approval for one immutable ToolProfile inside one application session.
+///
+/// Unlike `ApprovalGrant`, this value intentionally does not contain an `ActionId`:
+/// every covered invocation remains a new action and must independently pass normal
+/// session/task/profile/policy/resource/isolation checks. The reusable grant only
+/// suppresses repeated human elicitation when the exact approved profile identity is
+/// still active under the same session and policy epoch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReusableApprovalGrant {
+    pub id: ReusableApprovalId,
+    pub session: SessionHandle,
+    pub profile: ToolProfileName,
+    pub profile_fingerprint: ToolProfileFingerprint,
+    pub expires_at: MonotonicTime,
+    pub policy_epoch: u64,
+}
+
+impl ReusableApprovalGrant {
+    #[must_use]
+    pub fn is_expired_at(&self, now: MonotonicTime) -> bool {
+        now >= self.expires_at
+    }
+
+    #[must_use]
+    pub fn matches_profile(
+        &self,
+        session: &SessionHandle,
+        profile: &ToolProfile,
+        policy_epoch: u64,
+        now: MonotonicTime,
+    ) -> bool {
+        !self.is_expired_at(now)
+            && &self.session == session
+            && self.profile == *profile.name()
+            && self.profile_fingerprint == profile.fingerprint()
+            && self.policy_epoch == policy_epoch
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
-    use crate::{NetworkAccess, ProcessExecutionClass};
+    use crate::{
+        NetworkAccess, ProcessExecutionClass, ToolApprovalRequirement, ToolProfileSpec,
+        WorkloadClass,
+    };
 
     fn envelope(action_id: ActionId, session: SessionHandle) -> ActionEnvelope {
         ActionEnvelope {
@@ -58,6 +103,28 @@ mod tests {
             },
             policy_epoch: 7,
         }
+    }
+
+    fn profile(timeout_ms: u64) -> ToolProfile {
+        ToolProfile::from_spec(ToolProfileSpec {
+            name: ToolProfileName::parse("cargo-check").expect("profile name"),
+            executable: "C:/tools/cargo.exe".to_owned(),
+            class: ProcessExecutionClass::FixedTool,
+            workload_class: WorkloadClass::Heavy,
+            exact_args: vec!["check".to_owned()],
+            cwd: None,
+            workspace_read_files: BTreeSet::new(),
+            env_allowlist: BTreeSet::new(),
+            network: NetworkAccess::Denied,
+            resource_ceiling: ResourceBudget {
+                timeout_ms,
+                output_bytes: 1024,
+                memory_bytes: 1024,
+                process_count: 1,
+            },
+            approval: ToolApprovalRequirement::HumanRequired,
+        })
+        .expect("profile")
     }
 
     #[test]
@@ -89,5 +156,40 @@ mod tests {
         let mut changed = envelope.clone();
         changed.policy_epoch += 1;
         assert!(!grant.exactly_matches(&changed, MonotonicTime::from_millis(1)));
+    }
+
+    #[test]
+    fn reusable_approval_matches_only_same_session_profile_epoch_and_lifetime() {
+        let session = SessionHandle::generate().expect("session");
+        let profile = profile(5_000);
+        let grant = ReusableApprovalGrant {
+            id: ReusableApprovalId::generate().expect("reusable approval id"),
+            session: session.clone(),
+            profile: profile.name().clone(),
+            profile_fingerprint: profile.fingerprint(),
+            expires_at: MonotonicTime::from_millis(100),
+            policy_epoch: 7,
+        };
+
+        assert!(grant.matches_profile(&session, &profile, 7, MonotonicTime::from_millis(99)));
+        assert!(!grant.matches_profile(&session, &profile, 7, MonotonicTime::from_millis(100)));
+
+        let other_session = SessionHandle::generate().expect("other session");
+        assert!(!grant.matches_profile(
+            &other_session,
+            &profile,
+            7,
+            MonotonicTime::from_millis(1)
+        ));
+        assert!(!grant.matches_profile(&session, &profile, 8, MonotonicTime::from_millis(1)));
+
+        let widened_profile = profile(5_001);
+        assert_eq!(widened_profile.name(), profile.name());
+        assert!(!grant.matches_profile(
+            &session,
+            &widened_profile,
+            7,
+            MonotonicTime::from_millis(1)
+        ));
     }
 }
