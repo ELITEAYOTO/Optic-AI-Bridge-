@@ -35,7 +35,10 @@ fn lifecycle_single_broker_constructor_reuses_associated_reusable_broker() {
     let service = lifecycle.reusable_approval_service();
 
     assert!(Arc::ptr_eq(&reusable, service.broker()));
-    assert!(Arc::ptr_eq(&approvals.reusable_approvals(), service.broker()));
+    assert!(Arc::ptr_eq(
+        &approvals.reusable_approvals(),
+        service.broker()
+    ));
 
     fs::remove_dir_all(root).expect("remove workspace");
 }
