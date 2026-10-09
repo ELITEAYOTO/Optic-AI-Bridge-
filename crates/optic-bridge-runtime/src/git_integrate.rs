@@ -730,13 +730,14 @@ mod tests {
     #[test]
     fn git_integration_environment_is_explicit_and_keeps_locks_enabled() {
         let env = git_mutation_environment();
+        let expected_null_config = OsString::from(if cfg!(windows) { "NUL" } else { "/dev/null" });
         assert!(!env.contains_key(&OsString::from("PATH")));
         assert!(!env.contains_key(&OsString::from("HOME")));
         assert!(!env.contains_key(&OsString::from("HTTP_PROXY")));
         assert!(!env.contains_key(&OsString::from("GIT_OPTIONAL_LOCKS")));
         assert_eq!(
             env.get(&OsString::from("GIT_CONFIG_GLOBAL")),
-            Some(&OsString::from(NULL_CONFIG_PATH))
+            Some(&expected_null_config)
         );
     }
 
