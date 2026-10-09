@@ -8,7 +8,6 @@ use optic_bridge_runtime::{
     SessionReusableApprovalService, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 use rmcp::{
-    ErrorData,
     model::{ElicitRequestParams, ElicitationAction, ElicitationSchema},
     service::{ElicitationMode, RequestContext, RoleServer, ServiceError},
 };
