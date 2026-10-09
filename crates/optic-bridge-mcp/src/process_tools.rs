@@ -484,6 +484,7 @@ fn map_session_lifecycle_error(error: SessionLifecycleError) -> ErrorData {
             ErrorData::invalid_request("optic.session_still_active", None)
         }
         SessionLifecycleError::ExpiredAtProvision
+        | SessionLifecycleError::SessionWorktree(_)
         | SessionLifecycleError::HandleGeneration(_)
         | SessionLifecycleError::RenewalExpiryNotFuture
         | SessionLifecycleError::RenewalMustExtend

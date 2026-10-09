@@ -220,18 +220,25 @@ impl SessionWorktreeManager {
     }
 
     pub fn release(&self, owner: &SessionHandle) -> Result<(), SessionWorktreeError> {
+        if self.release_if_owned(owner)? {
+            Ok(())
+        } else {
+            Err(SessionWorktreeError::UnknownSessionWorktree)
+        }
+    }
+
+    pub fn release_if_owned(&self, owner: &SessionHandle) -> Result<bool, SessionWorktreeError> {
         let mut records = self
             .records
             .lock()
             .map_err(|_| SessionWorktreeError::RegistryPoisoned)?;
-        let record = records
-            .get(owner)
-            .ok_or(SessionWorktreeError::UnknownSessionWorktree)?
-            .clone();
+        let Some(record) = records.get(owner).cloned() else {
+            return Ok(false);
+        };
         let canonical = self.validate_owned_path(owner, &record.path)?;
         self.remove_owned_worktree(&canonical)?;
         records.remove(owner);
-        Ok(())
+        Ok(true)
     }
 
     pub fn recover_stale(&self) -> Result<SessionWorktreeRecoveryReport, SessionWorktreeError> {

@@ -7,8 +7,9 @@ use thiserror::Error;
 
 use crate::{
     ApprovalBroker, ApprovalBrokerError, ProcessError, ProcessManager, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
-    session_registry::SessionRenewalError, task_lease_registry::TaskLeaseRenewalError,
+    SessionRegistryError, SessionWorktreeError, SessionWorktreeManager, TaskLeaseRegistry,
+    TaskLeaseRegistryError, session_registry::SessionRenewalError,
+    task_lease_registry::TaskLeaseRenewalError,
 };
 
 #[derive(Clone, Debug)]
@@ -51,6 +52,7 @@ pub struct SessionLifecycleManager {
     task_leases: Arc<TaskLeaseRegistry>,
     processes: Arc<ProcessManager>,
     approvals: Arc<ApprovalBroker>,
+    session_worktrees: Option<Arc<SessionWorktreeManager>>,
 }
 
 impl SessionLifecycleManager {
@@ -60,11 +62,12 @@ impl SessionLifecycleManager {
         task_leases: Arc<TaskLeaseRegistry>,
         processes: Arc<ProcessManager>,
     ) -> Self {
-        Self::new_with_approval_broker(
+        Self::new_with_approval_broker_and_worktrees(
             sessions,
             task_leases,
             processes,
             Arc::new(ApprovalBroker::new()),
+            None,
         )
     }
 
@@ -75,11 +78,29 @@ impl SessionLifecycleManager {
         processes: Arc<ProcessManager>,
         approvals: Arc<ApprovalBroker>,
     ) -> Self {
+        Self::new_with_approval_broker_and_worktrees(
+            sessions,
+            task_leases,
+            processes,
+            approvals,
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn new_with_approval_broker_and_worktrees(
+        sessions: Arc<SessionRegistry>,
+        task_leases: Arc<TaskLeaseRegistry>,
+        processes: Arc<ProcessManager>,
+        approvals: Arc<ApprovalBroker>,
+        session_worktrees: Option<Arc<SessionWorktreeManager>>,
+    ) -> Self {
         Self {
             sessions,
             task_leases,
             processes,
             approvals,
+            session_worktrees,
         }
     }
 
@@ -219,6 +240,9 @@ impl SessionLifecycleManager {
         // session record so capacity is reclaimed only after subordinate state is gone.
         let removed_process_records = self.processes.remove_terminal_session_records(session)?;
         let removed_leases = self.task_leases.remove_session(session)?;
+        if let Some(worktrees) = &self.session_worktrees {
+            worktrees.release_if_owned(session)?;
+        }
         let session_removed = self.sessions.remove_quiescent_inactive(session, now)?;
 
         Ok(SessionReapReport {
@@ -259,6 +283,8 @@ pub enum SessionLifecycleError {
     TaskLeaseRegistry(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
     Process(#[from] ProcessError),
+    #[error(transparent)]
+    SessionWorktree(#[from] SessionWorktreeError),
 }
 
 fn map_session_renewal_error(error: SessionRenewalError) -> SessionLifecycleError {
