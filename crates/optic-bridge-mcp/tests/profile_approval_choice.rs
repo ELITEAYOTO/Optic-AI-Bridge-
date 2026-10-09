@@ -76,11 +76,7 @@ struct ChoiceClient {
 }
 
 impl ChoiceClient {
-    fn new(
-        action: ElicitationAction,
-        content: Option<Value>,
-        advertise_elicitation: bool,
-    ) -> Self {
+    fn new(action: ElicitationAction, content: Option<Value>, advertise_elicitation: bool) -> Self {
         Self {
             action,
             content,
@@ -213,12 +209,8 @@ async fn accepted_missing_or_malformed_scope_degrades_to_once_never_reusable() {
     ];
 
     for content in malformed {
-        let (result, decisions, requests, _) = run_choice(ChoiceClient::new(
-            ElicitationAction::Accept,
-            content,
-            true,
-        ))
-        .await;
+        let (result, decisions, requests, _) =
+            run_choice(ChoiceClient::new(ElicitationAction::Accept, content, true)).await;
         assert!(result.is_ok());
         assert_eq!(decisions, vec![ProfileApprovalDecision::Once]);
         assert_eq!(requests, 1);
@@ -228,8 +220,14 @@ async fn accepted_missing_or_malformed_scope_degrades_to_once_never_reusable() {
 #[tokio::test]
 async fn decline_cancel_and_unsupported_remain_distinct() {
     for (action, expected) in [
-        (ElicitationAction::Decline, ProfileApprovalDecision::Declined),
-        (ElicitationAction::Cancel, ProfileApprovalDecision::Cancelled),
+        (
+            ElicitationAction::Decline,
+            ProfileApprovalDecision::Declined,
+        ),
+        (
+            ElicitationAction::Cancel,
+            ProfileApprovalDecision::Cancelled,
+        ),
     ] {
         let (result, decisions, requests, _) =
             run_choice(ChoiceClient::new(action, None, true)).await;
