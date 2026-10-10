@@ -9,7 +9,13 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.transport_security import TransportSecuritySettings
 
-from probe_core import CorrelationStore, PROBE_VERSION, build_observation, validate_run_id
+from probe_core import (
+    CorrelationStore,
+    PROBE_VERSION,
+    build_observation,
+    sanitize_meta,
+    validate_run_id,
+)
 
 HOST = os.environ.get("OPTIC_HOST_PROBE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OPTIC_HOST_PROBE_PORT", "8000"))
@@ -29,12 +35,26 @@ mcp = MCPServer(
 def _observation(ctx: Context) -> dict[str, Any]:
     request_context = ctx.request_context
     meta = request_context.meta if request_context is not None else None
-    return build_observation(
+    headers = ctx.headers
+    transport_session_id = headers.get("mcp-session-id") if headers else None
+
+    observation = build_observation(
         request_id=ctx.request_id,
-        session_id=ctx.session_id,
-        headers=ctx.headers,
+        session_id=transport_session_id,
+        headers=headers,
         meta=meta,
     )
+    observation["protocol_version"] = ctx.protocol_version
+
+    capabilities = ctx.client_capabilities
+    if capabilities is None:
+        capability_map = None
+    elif hasattr(capabilities, "model_dump"):
+        capability_map = capabilities.model_dump(mode="json", by_alias=True, exclude_none=True)
+    else:
+        capability_map = dict(capabilities)
+    observation["client_capabilities"] = sanitize_meta(capability_map)
+    return observation
 
 
 @mcp.tool()
