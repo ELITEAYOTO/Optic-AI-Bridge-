@@ -12,7 +12,7 @@ The existing core security/runtime work remains authoritative. This track change
 2. **The student must not need a paid connectivity service.** Free third-party connectivity such as Tailscale or Cloudflare is acceptable. No single provider is mandatory.
 3. **MCP is an adapter, not the product boundary.** FranceStudent AI and ChatGPT are V1 host targets, but Optic core must remain usable through additional adapters if a host does not expose the required MCP capabilities on a given plan/surface.
 4. **The bridge remains local-first.** Project data and execution stay on the student's machine unless an explicitly authorized action requires otherwise.
-5. **Connectivity is never authority.** A stdio connection, HTTP endpoint, tunnel URL, bearer token, host conversation id or provider account must never mint project/process/file authority by itself.
+5. **Connectivity is never authority.** A stdio connection, HTTP endpoint, tunnel URL, bearer credential, host conversation id or provider account must never mint project/process/file authority by itself.
 6. **Trust is session-scoped for V1.** A human may grant autonomy for the current Optic session/chat mapping. The internal model must remain extensible so a later release can add longer-lived grants without changing the execution-policy core.
 7. **Normal trusted development must not become a prompt loop.** Once a bounded autonomy grant is active, repeated reads, edits, builds, tests and approved toolchain use inside its scope should not require repeated human confirmation.
 8. **Revocation must remain immediate and local.** The user must be able to stop/revoke a session from Optic even if the remote host remains connected.
@@ -175,60 +175,90 @@ A prior isolated test used a deliberately harmless Python MCP server with only `
 
 That test is accepted as evidence that the basic FranceStudent remote-MCP transport path is viable on the tested environment. It does **not** yet prove Optic authentication, session correlation, reconnect semantics, parallel calls, local approval or autonomy.
 
+### H-01 reproducible host probe
+
+Draft PR #170 adds an authority-free, redacted characterization probe under `experiments/host-probe/` with:
+
+- `probe_ping`;
+- `probe_host_context`;
+- `probe_session_correlation`;
+- `probe_parallel`;
+- `probe_reset`;
+- bounded in-memory correlation state;
+- complete omission of credential-like header values/names from observations;
+- one-way fingerprints for non-secret correlation candidates;
+- protocol-version and declared-client-capability observations;
+- Windows setup/test helpers;
+- a reproducible real-host result template.
+
+On H-01 commit `2645e6b7`, the dedicated CI proves the unit redaction/correlation tests, PowerShell helper parsing and a real local MCP Streamable HTTP server/client smoke. The remaining H-01 evidence is host-specific and is tracked in issue #171 for FranceStudent: same-conversation stability, new-conversation separation, reconnect behavior, parallel calls, host confirmation behavior and harmless custom-header delivery.
+
+No H-01 signal is authority. The probe measures possible correlation inputs only.
+
 ### A-08 reusable approval proof
 
 A-08A through A-08D remain valid core/runtime work. The direct real-binary proof shows reusable profile authority works inside Optic. A-08E is now treated as **host-interaction blocked**, not as a failure of the reusable approval model: current host surfaces did not provide the expected reusable approval interaction consistently.
 
 The reusable broker should be preserved and reused by the later local-approval/session-autonomy design where appropriate.
 
+## Remote-authentication constraints already fixed
+
+H-02 implementation is not started yet, but two constraints are already safe to freeze:
+
+1. provider/tunnel identity never substitutes for Optic endpoint authentication;
+2. access tokens are never placed in URI query strings.
+
+For HTTP hosts that can carry a custom `Authorization` header, a bearer-style path is the preferred simple candidate. If FranceStudent cannot carry the required header/auth flow, H-02 must choose another standards-compatible adapter path based on measured host behavior rather than weakening these constraints. The H-01 `X-Optic-Probe` test exists specifically to answer the custom-header transport question without transmitting a real credential.
+
 ## Gates before production refactor
 
-### H-00 — evidence and architecture freeze — CURRENT
+### H-00 — evidence and architecture freeze — COMPLETE
 
-- record zero-cost/product invariants;
-- preserve existing core security boundaries;
-- record FranceStudent Streamable HTTP evidence;
-- record host-interaction limitations discovered during A-08E;
-- define the host-adapter/session/autonomy research gates;
-- make no production transport/runtime refactor yet.
+Completed by the documentation/architecture branch and PR #169:
 
-### H-01 — harmless host capability probe
+- zero-cost/product invariants recorded;
+- existing core security boundaries explicitly preserved;
+- prior FranceStudent Streamable HTTP evidence recorded;
+- A-08E host-interaction limitation separated from reusable-approval correctness;
+- host-adapter/session/autonomy gates defined;
+- no production transport/runtime refactor performed.
 
-Build a separate, non-privileged experiment with no filesystem, Git or process authority. Suggested tools:
+### H-01 — harmless host capability probe — CURRENT
 
-- `probe_ping`;
-- `probe_host_context`;
-- `probe_session_correlation`;
-- `probe_parallel`;
-- `probe_approval_capability`.
+The isolated probe implementation and automated validation are complete in draft PR #170. It has no filesystem, Git, process, Optic-runtime or mutation authority.
 
 Measure on each available host/surface:
 
 - tool discovery and invocation;
 - Streamable HTTP compatibility;
+- protocol version and declared client capabilities;
 - request metadata actually delivered to the server;
+- harmless custom-header delivery where configurable;
 - same-chat correlation across distinct calls;
 - reconnect behavior;
 - new-chat behavior;
 - parallel/concurrent calls;
 - host confirmations;
 - elicitation support/behavior if advertised;
-- request cancellation/timeouts.
+- request cancellation/timeouts where observable.
 
-Targets: FranceStudent first; ChatGPT normal Chat/Work only where the user's plan/surface actually permits connection.
+FranceStudent real-host evidence is tracked in issue #171. ChatGPT is probed only on surfaces/plans that actually allow connecting the endpoint.
 
-### H-02 — transport/authentication proof
+H-01 is not complete until at least the primary FranceStudent V1 target has reproducible real-host evidence sufficient to inform H-02/H-03.
 
-Using the harmless probe:
+### H-02 — transport/authentication proof — PENDING
+
+Using the harmless probe architecture:
 
 - prove a local Streamable HTTP server behind at least one zero-cost provider;
 - preserve provider replaceability;
 - add real endpoint authentication separate from tunnel identity;
 - reject missing/invalid/revoked credentials;
+- keep credentials out of URLs/logs;
 - test replay/basic rate/size bounds;
 - test provider reconnect without silently preserving invalid authority.
 
-Cloudflare and Tailscale are reference providers, not mandatory dependencies.
+Cloudflare and Tailscale are reference providers, not mandatory dependencies. The exact FranceStudent header/auth contract must come from H-01 evidence.
 
 ### H-03 — SessionResolver contract
 
@@ -321,7 +351,8 @@ Do not yet:
 - bind authority to a tunnel URL or host conversation id;
 - begin the full desktop UI implementation;
 - promise ChatGPT Free/Plus compatibility without a real compatible host path;
-- require Tailscale or Cloudflare as the only provider.
+- require Tailscale or Cloudflare as the only provider;
+- invent a FranceStudent auth/header behavior that H-01 has not measured.
 
 ## Definition of done for this track
 
