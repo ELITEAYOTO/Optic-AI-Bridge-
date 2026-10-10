@@ -1,8 +1,10 @@
 # A-08 — Reusable ToolProfile approval track
 
-Status: LIVING SUBTRACK. Last reviewed: 2026-10-09.
+Status: LIVING SUBTRACK. Last reviewed: 2026-10-10.
 
-This document records the active A-08 reusable-approval gates while the larger `docs/product/SCOPE_AND_ROADMAP.md` retains substantial historical roadmap material that should not be rewritten wholesale through a contents-API replacement. The security decision remains owned by `docs/decisions/ADR-0011-CONVERSATION_SCOPED_APPROVAL.md`.
+This document records the A-08 reusable-approval gates while the larger `docs/product/SCOPE_AND_ROADMAP.md` retains substantial historical roadmap material that should not be rewritten wholesale through a contents-API replacement. The security decision remains owned by `docs/decisions/ADR-0011-CONVERSATION_SCOPED_APPROVAL.md`.
+
+Host/session/autonomy research that became necessary during A-08E is now tracked separately in [`HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md`](HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md). A-08A through A-08D remain valid implementation work and must not be discarded merely because one tested host does not expose the expected approval interaction.
 
 ## Security boundary
 
@@ -10,7 +12,7 @@ The reusable primitive is scoped to one application-owned Optic session and one 
 
 It does not mint capabilities, leases, file/network authority, process eligibility, resource expansion or generic shell authority. It is memory-only in the initial implementation and is invalidated by session lifecycle, policy/profile mismatch or expiry. ChatGPT or another host may still impose independent confirmation UI.
 
-The product must say **current Optic session** until A-08F proves a trustworthy one-to-one mapping between the host's user-visible conversation lifecycle and the application-owned Optic session. A caller-supplied conversation id, MCP connection, tunnel URL or reconnect is not authorization authority.
+The product must say **current Optic session** until an adapter-specific lifecycle proof demonstrates a trustworthy mapping between the host's user-visible conversation lifecycle and an application-owned Optic session. A caller-supplied conversation id, MCP connection, tunnel URL or reconnect is not authorization authority.
 
 ## Completed gates
 
@@ -40,15 +42,17 @@ A-08D was deliberately split so untrusted host-form content could not become aut
 
 Exact D2 head `30d4d82c` passed Ubuntu format/Clippy/tests, Windows Clippy/tests, dependency policy, AppContainer loopback proof, isolated Node doctor/admission, profiled-process approval, Git MCP, ChatGPT installer-profile validation and Desktop artifact round-trip before merge.
 
-## Current gate
+## Host-blocked gate
 
-### A-08E — real ChatGPT Desktop reusable-approval proof — CURRENT
+### A-08E — real ChatGPT Desktop reusable-approval proof — BLOCKED BY HOST INTERACTION
 
-The gate is not satisfied by CI or by earlier one-shot Desktop smokes. It requires a real installed ChatGPT Desktop session to prove the actual host interaction and lifecycle:
+A-08E was designed to prove that a real host could surface the bounded Optic choice and then reuse the resulting grant across distinct invocations. The direct real-binary/server-side proof is valid, but the tested ChatGPT host behavior did not consistently expose the nested approval interaction required to complete the gate. This is treated as a host-integration limitation, not evidence that the reusable broker or its security model is incorrect.
 
-1. an allowed exact ToolProfile invocation surfaces the bounded Optic scope choice;
-2. selecting `current_session` succeeds;
-3. a second distinct invocation of the same exact ToolProfile succeeds without another Optic elicitation;
+The original acceptance criteria remain useful evidence targets:
+
+1. an allowed exact ToolProfile invocation surfaces an appropriate bounded human choice;
+2. selecting session-scoped reuse succeeds;
+3. a second distinct invocation of the same exact ToolProfile succeeds without another Optic approval;
 4. a different ToolProfile does not reuse the grant;
 5. a changed policy epoch does not reuse the grant;
 6. a revoked/cancelled session cannot reuse the grant;
@@ -57,10 +61,12 @@ The gate is not satisfied by CI or by earlier one-shot Desktop smokes. It requir
 
 Host-level confirmations imposed independently by ChatGPT are recorded separately and are not treated as an Optic failure or as evidence that Optic can suppress them.
 
-## Later gate
+The new H-track will first prove host capability/session behavior with harmless probes and then evaluate a local Optic approval broker so human authority does not depend exclusively on host MCP elicitation.
 
-### A-08F — conversation-binding proof — PENDING
+## Conversation-binding proof moved behind H-03
 
-Measure the real Desktop host lifecycle, reconnect behavior and plugin/session ownership. Only if a trustworthy adapter-owned one-to-one mapping is demonstrated may UI/docs replace **current Optic session** with **this conversation**. Otherwise the session wording remains permanent.
+The former A-08F question is now an adapter-level lifecycle problem. `H-03 — SessionResolver contract` owns the proof of same-chat correlation, reconnect behavior, new-chat separation and host-context mapping.
 
-File mutation and Git mutation reusable approvals remain separate future work; A-08 does not automatically extend session/profile process approval to those sinks.
+Only if a specific adapter demonstrates a trustworthy mapping may its UI/docs replace **current Optic session** with **this conversation**. Otherwise the session wording remains permanent for that adapter.
+
+File mutation and Git mutation reusable approvals remain separate work. A-08 does not automatically extend session/profile process approval to those sinks. Broader project autonomy is owned by H-04 and must reuse the same fail-closed capability/lease/policy/isolation foundations rather than bypassing them.
