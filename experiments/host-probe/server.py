@@ -73,34 +73,46 @@ def probe_reset(run_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def probe_parallel(delay_ms: int = 250, ctx: Context | None = None) -> dict[str, Any]:
+async def probe_parallel(ctx: Context, delay_ms: int = 250) -> dict[str, Any]:
     """Sleep briefly so two harmless calls can characterize host concurrency."""
     delay_ms = max(0, min(int(delay_ms), 1500))
     start = time.monotonic_ns()
     await asyncio.sleep(delay_ms / 1000.0)
     end = time.monotonic_ns()
-    observation = _observation(ctx) if ctx is not None else None
     return {
         "probe_version": PROBE_VERSION,
         "delay_ms": delay_ms,
         "elapsed_ms": round((end - start) / 1_000_000, 3),
-        "observation": observation,
+        "observation": _observation(ctx),
     }
 
 
 if __name__ == "__main__":
-    security = TransportSecuritySettings(
-        # Only enable this for a temporary random-host tunnel such as trycloudflare.com.
-        # The probe carries no project/runtime authority, but keeping the opt-in explicit
-        # prevents this experimental setting from silently becoming a production default.
-        enable_dns_rebinding_protection=not ALLOW_RANDOM_TUNNEL_HOST
-    )
+    if ALLOW_RANDOM_TUNNEL_HOST:
+        # H-01 only: a Cloudflare Quick Tunnel uses a random public hostname that cannot
+        # be predeclared. This experiment has zero project/runtime authority. Production
+        # transport must never inherit this relaxation; H-02 owns authenticated remote
+        # exposure and a provider-aware host policy.
+        security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        security_mode = "random tunnel host allowed (H-01 only)"
+    else:
+        security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
+            allowed_origins=[
+                "http://127.0.0.1:*",
+                "http://localhost:*",
+                "http://[::1]:*",
+            ],
+        )
+        security_mode = "DNS-rebinding protection enabled; loopback hosts only"
 
     print("=== Optic H-01 Host Probe ===")
     print(f"Local endpoint : http://{HOST}:{PORT}{PATH}")
     print("Transport      : MCP Streamable HTTP")
     print("Mode           : stateless + JSON responses")
     print("Authority      : NONE (no files, Git, processes, Optic runtime, or mutation)")
+    print(f"Transport guard: {security_mode}")
     print(f"Probe version  : {PROBE_VERSION}")
     print()
 
