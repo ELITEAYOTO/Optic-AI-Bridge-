@@ -44,6 +44,10 @@ def _structured(result: Any) -> Any:
 
 async def _exercise(url: str) -> None:
     async with Client(url) as client:
+        client_protocol = str(client.protocol_version)
+        if not client_protocol:
+            raise AssertionError("MCP client did not report a negotiated protocol version")
+
         tools = await client.list_tools()
         names = {tool.name for tool in tools.tools}
         expected = {
@@ -55,11 +59,20 @@ async def _exercise(url: str) -> None:
         }
         missing = expected.difference(names)
         if missing:
-            raise AssertionError(f"missing tools: {sorted(missing)}")
+            raise AssertionError(f"missing probe tools: {sorted(missing)}")
 
         ping = _structured(await client.call_tool("probe_ping", {}))
         if not isinstance(ping, dict) or ping.get("ok") is not True:
             raise AssertionError(f"unexpected ping result: {ping!r}")
+        observation = ping.get("observation")
+        if not isinstance(observation, dict):
+            raise AssertionError(f"ping did not include an observation: {ping!r}")
+        server_protocol = str(observation.get("protocol_version") or "")
+        if server_protocol != client_protocol:
+            raise AssertionError(
+                f"protocol mismatch: client={client_protocol!r}, server={server_protocol!r}"
+            )
+        print(f"Negotiated MCP protocol version: {client_protocol}")
 
         run_id = "ci-host-probe-0001"
         first = _structured(
