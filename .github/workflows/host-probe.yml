@@ -1,0 +1,56 @@
+name: H-01 Host Probe
+
+on:
+  pull_request:
+    paths:
+      - "experiments/host-probe/**"
+      - ".github/workflows/host-probe.yml"
+  push:
+    branches: [main]
+    paths:
+      - "experiments/host-probe/**"
+      - ".github/workflows/host-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h01-host-probe-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol-smoke:
+    name: Streamable HTTP probe smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Prepare isolated Python environment
+        shell: bash
+        run: |
+          python3 --version
+          python3 -m venv .venv-host-probe
+          . .venv-host-probe/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install -r experiments/host-probe/requirements.txt
+      - name: Run redaction and correlation unit tests
+        shell: bash
+        run: |
+          . .venv-host-probe/bin/activate
+          PYTHONPATH=experiments/host-probe python -m unittest discover -s experiments/host-probe/tests -v
+      - name: Run real local MCP Streamable HTTP smoke
+        shell: bash
+        run: |
+          . .venv-host-probe/bin/activate
+          python experiments/host-probe/ci_smoke.py
+
+  windows-helper-syntax:
+    name: Windows helper syntax
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Parse host-probe PowerShell helpers
+        shell: pwsh
+        run: |
+          Get-ChildItem experiments/host-probe/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
