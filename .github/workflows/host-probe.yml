@@ -30,7 +30,6 @@ jobs:
           python3 --version
           python3 -m venv .venv-host-probe
           . .venv-host-probe/bin/activate
-          python -m pip install --upgrade pip
           python -m pip install -r experiments/host-probe/requirements.txt
       - name: Run redaction and correlation unit tests
         shell: bash
