@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from hashlib import sha256
+import hmac
 import json
 import re
+import secrets
 import threading
 from typing import Any, Mapping
 
@@ -14,6 +16,12 @@ MAX_META_ITEMS = 64
 MAX_RUNS = 32
 MAX_EVENTS_PER_RUN = 16
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}$")
+META_KEY_RE = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
+
+# Fingerprints only need to correlate observations while one probe process is alive.
+# A fresh key on every start prevents the probe output from becoming a durable
+# cross-run tracking identifier or an easy offline dictionary target.
+_FINGERPRINT_KEY = secrets.token_bytes(32)
 
 _SENSITIVE_HEADER_FRAGMENTS = (
     "authorization",
@@ -26,23 +34,19 @@ _SENSITIVE_HEADER_FRAGMENTS = (
 )
 _SAFE_HEADER_VALUES = {
     "mcp-protocol-version",
-    "mcp-session-id",
-    "mcp-method",
-    "mcp-name",
-    "user-agent",
     "content-type",
     "accept",
-    "origin",
 }
 
 
 def stable_fingerprint(value: Any) -> str:
-    """Return a short one-way fingerprint for correlation, never authority."""
+    """Return a process-local one-way fingerprint for correlation, never authority."""
     try:
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     except (TypeError, ValueError):
         encoded = repr(value)
-    return sha256(("optic-host-probe-v1\x00" + encoded).encode("utf-8", "replace")).hexdigest()[:20]
+    digest = hmac.new(_FINGERPRINT_KEY, encoded.encode("utf-8", "replace"), sha256)
+    return digest.hexdigest()[:20]
 
 
 def validate_run_id(run_id: str) -> str:
@@ -58,6 +62,13 @@ def _is_sensitive_header(name: str) -> bool:
     return any(fragment in lowered for fragment in _SENSITIVE_HEADER_FRAGMENTS)
 
 
+def _safe_meta_key(raw_key: Any) -> str:
+    key = str(raw_key)
+    if META_KEY_RE.fullmatch(key):
+        return key
+    return f"key#{stable_fingerprint(key)}"
+
+
 def sanitize_headers(headers: Mapping[str, str] | None) -> dict[str, Any]:
     if not headers:
         return {"present": False, "names": [], "safe_values": {}, "fingerprints": {}}
@@ -71,15 +82,11 @@ def sanitize_headers(headers: Mapping[str, str] | None) -> dict[str, Any]:
         if not name or _is_sensitive_header(name):
             continue
         names.append(name)
+        value = str(raw_value)
         if name in _SAFE_HEADER_VALUES:
-            value = str(raw_value)
-            # Session ids remain correlation data, not something worth echoing raw.
-            if name == "mcp-session-id":
-                fingerprints[name] = stable_fingerprint(value)
-            else:
-                safe_values[name] = value[:256]
+            safe_values[name] = value[:256]
         else:
-            fingerprints[name] = stable_fingerprint(str(raw_value))
+            fingerprints[name] = stable_fingerprint(value)
 
     names = sorted(set(names))[:MAX_META_ITEMS]
     safe_values = {k: safe_values[k] for k in sorted(safe_values) if k in names}
@@ -96,16 +103,19 @@ def _summarize_meta_value(value: Any, depth: int) -> Any:
     if depth >= MAX_META_DEPTH:
         return {"type": type(value).__name__, "fingerprint": stable_fingerprint(value)}
 
-    if value is None or isinstance(value, bool) or isinstance(value, (int, float)):
+    if value is None or isinstance(value, bool):
         return value
 
+    if isinstance(value, (int, float)):
+        return {"type": type(value).__name__, "fingerprint": stable_fingerprint(value)}
+
     if isinstance(value, str):
-        return {"type": "string", "fingerprint": stable_fingerprint(value), "length": len(value)}
+        return {"type": "string", "fingerprint": stable_fingerprint(value)}
 
     if isinstance(value, Mapping):
         items = list(value.items())[:MAX_META_ITEMS]
         return {
-            str(key): _summarize_meta_value(child, depth + 1)
+            _safe_meta_key(key): _summarize_meta_value(child, depth + 1)
             for key, child in sorted(items, key=lambda item: str(item[0]))
         }
 
@@ -124,11 +134,12 @@ def sanitize_meta(meta: Mapping[str, Any] | None) -> dict[str, Any]:
         return {"present": False, "keys": [], "summary": {}, "fingerprints": {}}
 
     items = list(meta.items())[:MAX_META_ITEMS]
+    normalized = [(_safe_meta_key(key), value) for key, value in items]
     summary = {
-        str(key): _summarize_meta_value(value, 0)
-        for key, value in sorted(items, key=lambda item: str(item[0]))
+        key: _summarize_meta_value(value, 0)
+        for key, value in sorted(normalized, key=lambda item: item[0])
     }
-    fingerprints = {str(key): stable_fingerprint(value) for key, value in items}
+    fingerprints = {key: stable_fingerprint(value) for key, value in normalized}
     return {
         "present": True,
         "keys": sorted(summary),
@@ -185,7 +196,13 @@ class CorrelationStore:
         with self._lock:
             events = self._runs.pop(run_id, [])
             if len(events) >= self._max_events_per_run:
-                events = events[-(self._max_events_per_run - 1) :]
+                # Keep the original baseline stable. Silently dropping it would make a later
+                # call appear to compare with "the first request" when it no longer does.
+                self._runs[run_id] = events
+                raise ValueError(
+                    f"run_id reached the {self._max_events_per_run}-event limit; reset it before reuse"
+                )
+
             events.append(observation)
             self._runs[run_id] = events
             while len(self._runs) > self._max_runs:
