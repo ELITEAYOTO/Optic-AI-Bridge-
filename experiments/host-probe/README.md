@@ -14,7 +14,17 @@ It is intentionally incapable of accessing project files, Git, processes, the Op
 
 Header names containing credential-like terms are omitted completely. Other unknown header/meta values are represented only by short one-way fingerprints so repeated values can be compared without exposing raw identifiers.
 
+Fingerprints are intentionally keyed with a fresh random secret each time the probe starts. They are stable only while that one probe process remains alive and cannot be compared across restarts. Keep the same server process running for same-conversation, new-conversation and reconnect comparisons.
+
+Each test run is bounded to 16 observations and the process retains at most 32 run ids. Reaching the event limit fails explicitly so the original correlation baseline is never silently replaced.
+
 ## Local setup on Windows
+
+Requirements:
+
+- Windows PowerShell;
+- Python 3.10 or newer available through `py.exe`;
+- Internet access during first dependency installation.
 
 ```powershell
 cd experiments\host-probe\scripts
@@ -28,6 +38,8 @@ In a second PowerShell window:
 cd experiments\host-probe\scripts
 .\Test-HostProbe.ps1
 ```
+
+The setup creates an isolated `.venv` and installs only the dependency set declared by `requirements.txt`; it does not upgrade the user's Python or global `pip` installation.
 
 ## Temporary Cloudflare Quick Tunnel
 
@@ -44,6 +56,8 @@ Then in another window:
 ```
 
 Append `/mcp` to the printed `https://...trycloudflare.com` URL. The DNS-rebinding protection relaxation is deliberately explicit and is acceptable only for this authority-free temporary probe; it is **not** a production Optic default.
+
+Keep the Quick Tunnel open only for the test window and stop it afterwards. H-01 intentionally has no production authentication because one of its goals is to determine which authentication/header mechanisms the host can actually carry before H-02 is designed.
 
 ## FranceStudent manual protocol
 
