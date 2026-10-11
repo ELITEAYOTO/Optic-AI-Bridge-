@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
+import threading
 import time
 from typing import Any
 
@@ -30,6 +32,48 @@ mcp = MCPServer(
         "start processes, access Optic runtime state, or modify the machine."
     ),
 )
+
+_invocation_lock = threading.Lock()
+_invocation_sequence = 0
+_parallel_lock = threading.Lock()
+_parallel_active: set[str] = set()
+_parallel_overlapped: set[str] = set()
+
+
+def _new_invocation(tool_name: str) -> dict[str, Any]:
+    """Mint a non-authoritative marker that proves this server really ran a tool."""
+    global _invocation_sequence
+    marker = secrets.token_hex(8)
+    with _invocation_lock:
+        _invocation_sequence += 1
+        sequence = _invocation_sequence
+    audit = {"tool": tool_name, "sequence": sequence, "marker": marker}
+    print(f"[H01] TOOL_CALL tool={tool_name} seq={sequence} marker={marker}", flush=True)
+    return audit
+
+
+def _with_invocation(payload: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload)
+    result["probe_invocation"] = audit
+    return result
+
+
+def _parallel_enter(marker: str) -> int:
+    """Track overlap without exposing request/user identifiers."""
+    with _parallel_lock:
+        if _parallel_active:
+            _parallel_overlapped.update(_parallel_active)
+            _parallel_overlapped.add(marker)
+        _parallel_active.add(marker)
+        return len(_parallel_active)
+
+
+def _parallel_exit(marker: str) -> bool:
+    with _parallel_lock:
+        overlapped = marker in _parallel_overlapped
+        _parallel_active.discard(marker)
+        _parallel_overlapped.discard(marker)
+        return overlapped
 
 
 def _observation(ctx: Context) -> dict[str, Any]:
@@ -60,51 +104,78 @@ def _observation(ctx: Context) -> dict[str, Any]:
 @mcp.tool()
 def probe_ping(ctx: Context) -> dict[str, Any]:
     """Return a harmless liveness result plus protocol context fingerprints."""
-    return {"ok": True, "probe_version": PROBE_VERSION, "observation": _observation(ctx)}
+    audit = _new_invocation("probe_ping")
+    return _with_invocation(
+        {"ok": True, "probe_version": PROBE_VERSION, "observation": _observation(ctx)}, audit
+    )
 
 
 @mcp.tool()
 def probe_host_context(ctx: Context) -> dict[str, Any]:
     """Report redacted request metadata for host/session compatibility research."""
-    return _observation(ctx)
+    audit = _new_invocation("probe_host_context")
+    return _with_invocation(_observation(ctx), audit)
 
 
 @mcp.tool()
 def probe_session_correlation(run_id: str, ctx: Context) -> dict[str, Any]:
     """Compare this call with the first call for a caller-chosen test run id."""
     validate_run_id(run_id)
+    audit = _new_invocation("probe_session_correlation")
     observation = _observation(ctx)
     result = store.record(run_id, observation)
-    return {
-        "probe_version": PROBE_VERSION,
-        "run_id": run_id,
-        "call_index": result.call_index,
-        "same_transport_session_as_first": result.same_transport_session_as_first,
-        "matching_header_fingerprints": result.matching_header_fingerprints,
-        "matching_meta_fingerprints": result.matching_meta_fingerprints,
-        "observation": observation,
-    }
+    return _with_invocation(
+        {
+            "probe_version": PROBE_VERSION,
+            "run_id": run_id,
+            "call_index": result.call_index,
+            "same_transport_session_as_first": result.same_transport_session_as_first,
+            "matching_header_fingerprints": result.matching_header_fingerprints,
+            "matching_meta_fingerprints": result.matching_meta_fingerprints,
+            "observation": observation,
+        },
+        audit,
+    )
 
 
 @mcp.tool()
 def probe_reset(run_id: str) -> dict[str, Any]:
     """Forget correlation state for one caller-chosen test run id."""
-    return {"run_id": validate_run_id(run_id), "removed": store.reset(run_id)}
+    validate_run_id(run_id)
+    audit = _new_invocation("probe_reset")
+    return _with_invocation({"run_id": run_id, "removed": store.reset(run_id)}, audit)
 
 
 @mcp.tool()
 async def probe_parallel(ctx: Context, delay_ms: int = 250) -> dict[str, Any]:
     """Sleep briefly so two harmless calls can characterize host concurrency."""
     delay_ms = max(0, min(int(delay_ms), 1500))
+    audit = _new_invocation("probe_parallel")
+    marker = str(audit["marker"])
+    active_on_entry = _parallel_enter(marker)
     start = time.monotonic_ns()
-    await asyncio.sleep(delay_ms / 1000.0)
-    end = time.monotonic_ns()
-    return {
-        "probe_version": PROBE_VERSION,
-        "delay_ms": delay_ms,
-        "elapsed_ms": round((end - start) / 1_000_000, 3),
-        "observation": _observation(ctx),
-    }
+    try:
+        await asyncio.sleep(delay_ms / 1000.0)
+    finally:
+        end = time.monotonic_ns()
+        overlap_observed = _parallel_exit(marker)
+    elapsed_ms = round((end - start) / 1_000_000, 3)
+    print(
+        f"[H01] TOOL_DONE tool=probe_parallel seq={audit['sequence']} marker={marker} "
+        f"overlap={str(overlap_observed).lower()} elapsed_ms={elapsed_ms}",
+        flush=True,
+    )
+    return _with_invocation(
+        {
+            "probe_version": PROBE_VERSION,
+            "delay_ms": delay_ms,
+            "elapsed_ms": elapsed_ms,
+            "active_on_entry": active_on_entry,
+            "overlap_observed": overlap_observed,
+            "observation": _observation(ctx),
+        },
+        audit,
+    )
 
 
 if __name__ == "__main__":
@@ -134,6 +205,7 @@ if __name__ == "__main__":
     print("Authority      : NONE (no files, Git, processes, Optic runtime, or mutation)")
     print(f"Transport guard: {security_mode}")
     print(f"Probe version  : {PROBE_VERSION}")
+    print("Tool proof     : response probe_invocation.marker matches [H01] TOOL_CALL in console")
     print()
 
     mcp.run(
