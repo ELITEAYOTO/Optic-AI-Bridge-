@@ -10,7 +10,7 @@ import secrets
 import threading
 from typing import Any, Mapping
 
-PROBE_VERSION = "h01-v1"
+PROBE_VERSION = "h01-v2"
 MAX_META_DEPTH = 4
 MAX_META_ITEMS = 64
 MAX_RUNS = 32
@@ -157,9 +157,16 @@ def build_observation(
 ) -> dict[str, Any]:
     header_summary = sanitize_headers(headers)
     meta_summary = sanitize_meta(meta)
+    request_id_present = request_id is not None
     return {
         "probe_version": PROBE_VERSION,
-        "request_id_fingerprint": stable_fingerprint(str(request_id)),
+        # MCP v2 request ids are optional. H-01 v1 fingerprinted str(None), which could
+        # make an absent request id look like a stable correlation signal. Keep absence
+        # explicit so a constant fingerprint is never mistaken for conversation identity.
+        "request_id_present": request_id_present,
+        "request_id_fingerprint": (
+            stable_fingerprint(request_id) if request_id_present else None
+        ),
         "transport_session": {
             "present": session_id is not None,
             "fingerprint": stable_fingerprint(session_id) if session_id is not None else None,
