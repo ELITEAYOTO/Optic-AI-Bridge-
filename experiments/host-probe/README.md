@@ -4,6 +4,8 @@ This experiment characterizes what an AI host actually sends to an MCP Streamabl
 
 It is intentionally incapable of accessing project files, Git, processes, the Optic runtime, Windows settings, secrets, or mutation APIs.
 
+Current probe schema: `h01-v2`.
+
 ## Tools
 
 - `probe_ping` — liveness plus a redacted request observation;
@@ -17,6 +19,48 @@ Header names containing credential-like terms are omitted completely. Other unkn
 Fingerprints are intentionally keyed with a fresh random secret each time the probe starts. They are stable only while that one probe process remains alive and cannot be compared across restarts. Keep the same server process running for same-conversation, new-conversation and reconnect comparisons.
 
 Each test run is bounded to 16 observations and the process retains at most 32 run ids. Reaching the event limit fails explicitly so the original correlation baseline is never silently replaced.
+
+## Verifying that a model really called the tool
+
+A model can sometimes answer with JSON that looks plausible without actually invoking an MCP tool. H-01 v2 therefore adds a server-minted proof marker to every successful probe call.
+
+Each real tool result contains:
+
+```json
+"probe_invocation": {
+  "tool": "probe_session_correlation",
+  "sequence": 7,
+  "marker": "<16 hex chars>"
+}
+```
+
+At the same moment, the local server prints a line like:
+
+```text
+[H01] TOOL_CALL tool=probe_session_correlation seq=7 marker=<same marker>
+```
+
+Treat a manual host result as **verified** only when the tool name, sequence and random marker match the local console. Ordinary Uvicorn `POST /mcp` lines prove transport activity, but they do not prove which tool produced a model-visible result.
+
+The marker is random per invocation, has no project authority and is not derived from host/user metadata.
+
+## Request-id interpretation
+
+MCP v2 request ids are optional. H-01 v1 always fingerprinted `str(request_id)`, so an absent request id (`None`) could look like a stable fingerprint across calls. H-01 v2 fixes that ambiguity with:
+
+- `request_id_present: true|false`;
+- `request_id_fingerprint: <fingerprint>|null`.
+
+Do not interpret a v1 constant request-id fingerprint as a conversation identifier unless independent evidence proves the underlying id was actually present.
+
+## Parallel-call proof
+
+`probe_parallel` now records:
+
+- `active_on_entry` — how many parallel probes were active after this call entered;
+- `overlap_observed` — `true` when this invocation genuinely overlapped another `probe_parallel` call in the same server process.
+
+The server tracks only its own random invocation markers; no host/user identifier is used for this proof.
 
 ## Local setup on Windows
 
@@ -80,7 +124,9 @@ Ask the host to call:
 3. `probe_session_correlation` twice with the same run id;
 4. two `probe_parallel(delay_ms=500)` calls at the same time if the host can dispatch parallel tools.
 
-Then open a **genuinely new conversation** while leaving the probe server running and call `probe_session_correlation` again with the **same run id**. That third call directly compares the new conversation with the first conversation recorded by the probe.
+For each returned JSON object, compare `probe_invocation` with the matching `[H01] TOOL_CALL` console line before treating it as evidence.
+
+Then open a **genuinely new conversation** while leaving the probe server running and call `probe_session_correlation` again with the **same run id**. That third verified call directly compares the new conversation with the first verified conversation recorded by the probe.
 
 If possible, also test a disconnect/reconnect while keeping the same user-visible conversation and call `probe_session_correlation` again with the same run id.
 
