@@ -8,10 +8,13 @@ import subprocess
 import sys
 import time
 from typing import Any
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from mcp import Client
 
 ROOT = Path(__file__).resolve().parent
+MAX_REQUEST_BODY_BYTES = 64 * 1024
 
 
 def _free_port() -> int:
@@ -32,6 +35,30 @@ def _wait_for_port(port: int, process: subprocess.Popen[str], timeout: float = 2
         except OSError:
             time.sleep(0.1)
     raise TimeoutError(f"probe server did not listen on port {port} within {timeout}s")
+
+
+def _assert_oversized_request_rejected(url: str) -> None:
+    request = Request(
+        url,
+        data=b"x" * (MAX_REQUEST_BODY_BYTES + 1),
+        method="POST",
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2026-07-28",
+        },
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            raise AssertionError(
+                f"oversized request unexpectedly returned HTTP {response.status}"
+            )
+    except HTTPError as error:
+        if error.code != 413:
+            raise AssertionError(
+                f"oversized request returned HTTP {error.code}, expected 413"
+            ) from error
+    print(f"Verified request-body limit: {MAX_REQUEST_BODY_BYTES} bytes -> HTTP 413")
 
 
 def _structured(result: Any) -> Any:
@@ -170,7 +197,9 @@ def main() -> int:
     )
     try:
         _wait_for_port(port, process)
-        asyncio.run(_exercise(f"http://127.0.0.1:{port}/mcp"))
+        url = f"http://127.0.0.1:{port}/mcp"
+        _assert_oversized_request_rejected(url)
+        asyncio.run(_exercise(url))
     finally:
         process.terminate()
         try:
