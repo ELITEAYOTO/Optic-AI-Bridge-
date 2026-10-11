@@ -19,6 +19,8 @@ class HeaderSanitizationTests(unittest.TestCase):
                 "Authorization": "Bearer top-secret",
                 "Cookie": "session=secret",
                 "X-Api-Key": "secret-key",
+                "X-Auth-Mode": "private-auth-value",
+                "X-Password": "private-password",
                 "Mcp-Protocol-Version": "2026-07-28",
                 "X-Request-Id": "abc-123",
             }
@@ -27,9 +29,13 @@ class HeaderSanitizationTests(unittest.TestCase):
         self.assertNotIn("top-secret", rendered)
         self.assertNotIn("session=secret", rendered)
         self.assertNotIn("secret-key", rendered)
+        self.assertNotIn("private-auth-value", rendered)
+        self.assertNotIn("private-password", rendered)
         self.assertNotIn("authorization", result["names"])
         self.assertNotIn("cookie", result["names"])
         self.assertNotIn("x-api-key", result["names"])
+        self.assertNotIn("x-auth-mode", result["names"])
+        self.assertNotIn("x-password", result["names"])
         self.assertEqual(result["safe_values"]["mcp-protocol-version"], "2026-07-28")
         self.assertIn("x-request-id", result["fingerprints"])
 
@@ -116,6 +122,29 @@ class CorrelationStoreTests(unittest.TestCase):
         self.assertTrue(two.matching_meta_fingerprints["openai/session"])
         self.assertFalse(two.matching_header_fingerprints["x-request-id"])
         self.assertIsNone(two.same_transport_session_as_first)
+
+    def test_appeared_or_disappeared_fingerprint_is_reported_as_changed(self) -> None:
+        store = CorrelationStore()
+        first = build_observation(
+            request_id=1,
+            session_id=None,
+            headers={"X-Stable": "same", "X-Gone": "gone"},
+            meta={"stable": "same", "gone": "gone"},
+        )
+        second = build_observation(
+            request_id=2,
+            session_id=None,
+            headers={"X-Stable": "same", "X-New": "new"},
+            meta={"stable": "same", "new": "new"},
+        )
+        store.record("run-union-001", first)
+        result = store.record("run-union-001", second)
+        self.assertTrue(result.matching_header_fingerprints["x-stable"])
+        self.assertFalse(result.matching_header_fingerprints["x-gone"])
+        self.assertFalse(result.matching_header_fingerprints["x-new"])
+        self.assertTrue(result.matching_meta_fingerprints["stable"])
+        self.assertFalse(result.matching_meta_fingerprints["gone"])
+        self.assertFalse(result.matching_meta_fingerprints["new"])
 
     def test_store_is_bounded_by_run_count(self) -> None:
         store = CorrelationStore(max_runs=2, max_events_per_run=2)
