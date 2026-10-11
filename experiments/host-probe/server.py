@@ -37,7 +37,7 @@ _SERVER_INSTANCE = secrets.token_hex(6)
 _invocation_lock = threading.Lock()
 _invocation_sequence = 0
 _parallel_lock = threading.Lock()
-_parallel_active: set[str] = set()
+_parallel_active: dict[str, set[str]] = {}
 _parallel_overlapped: set[str] = set()
 
 
@@ -68,20 +68,25 @@ def _with_invocation(payload: dict[str, Any], audit: dict[str, Any]) -> dict[str
     return result
 
 
-def _parallel_enter(marker: str) -> int:
-    """Track overlap without exposing request/user identifiers."""
+def _parallel_enter(run_id: str, marker: str) -> int:
+    """Track overlap only within one caller-selected test group."""
     with _parallel_lock:
-        if _parallel_active:
-            _parallel_overlapped.update(_parallel_active)
+        active = _parallel_active.setdefault(run_id, set())
+        if active:
+            _parallel_overlapped.update(active)
             _parallel_overlapped.add(marker)
-        _parallel_active.add(marker)
-        return len(_parallel_active)
+        active.add(marker)
+        return len(active)
 
 
-def _parallel_exit(marker: str) -> bool:
+def _parallel_exit(run_id: str, marker: str) -> bool:
     with _parallel_lock:
         overlapped = marker in _parallel_overlapped
-        _parallel_active.discard(marker)
+        active = _parallel_active.get(run_id)
+        if active is not None:
+            active.discard(marker)
+            if not active:
+                _parallel_active.pop(run_id, None)
         _parallel_overlapped.discard(marker)
         return overlapped
 
@@ -157,28 +162,30 @@ def probe_reset(run_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def probe_parallel(ctx: Context, delay_ms: int = 250) -> dict[str, Any]:
-    """Sleep briefly so two harmless calls can characterize host concurrency."""
+async def probe_parallel(run_id: str, ctx: Context, delay_ms: int = 250) -> dict[str, Any]:
+    """Sleep briefly so two calls in one explicit test group can prove concurrency."""
+    validate_run_id(run_id)
     delay_ms = max(0, min(int(delay_ms), 1500))
     audit = _new_invocation("probe_parallel")
     marker = str(audit["marker"])
-    active_on_entry = _parallel_enter(marker)
+    active_on_entry = _parallel_enter(run_id, marker)
     start = time.monotonic_ns()
     try:
         await asyncio.sleep(delay_ms / 1000.0)
     finally:
         end = time.monotonic_ns()
-        overlap_observed = _parallel_exit(marker)
+        overlap_observed = _parallel_exit(run_id, marker)
     elapsed_ms = round((end - start) / 1_000_000, 3)
     print(
         f"[H01] TOOL_DONE instance={_SERVER_INSTANCE} tool=probe_parallel "
-        f"seq={audit['sequence']} marker={marker} overlap={str(overlap_observed).lower()} "
-        f"elapsed_ms={elapsed_ms}",
+        f"seq={audit['sequence']} marker={marker} run_id={run_id} "
+        f"overlap={str(overlap_observed).lower()} elapsed_ms={elapsed_ms}",
         flush=True,
     )
     return _with_invocation(
         {
             "probe_version": PROBE_VERSION,
+            "run_id": run_id,
             "delay_ms": delay_ms,
             "elapsed_ms": elapsed_ms,
             "active_on_entry": active_on_entry,
