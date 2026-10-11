@@ -29,6 +29,19 @@ def _content_to_json(result: Any) -> Any:
     return repr(result)
 
 
+def _require_invocation(payload: Any, tool_name: str) -> None:
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{tool_name} returned a non-object result: {payload!r}")
+    audit = payload.get("probe_invocation")
+    if not isinstance(audit, dict):
+        raise RuntimeError(f"{tool_name} result lacks probe_invocation: {payload!r}")
+    if audit.get("tool") != tool_name:
+        raise RuntimeError(f"{tool_name} invocation proof mismatch: {audit!r}")
+    marker = audit.get("marker")
+    if not isinstance(marker, str) or len(marker) != 16:
+        raise RuntimeError(f"{tool_name} invocation marker is invalid: {audit!r}")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description="Optic H-01 host-probe local self-test")
     parser.add_argument("url", nargs="?", default=DEFAULT_URL)
@@ -54,22 +67,40 @@ async def main() -> int:
         if missing:
             raise RuntimeError(f"missing probe tools: {missing}")
 
-        report["ping"] = _content_to_json(await client.call_tool("probe_ping", {}))
-        report["correlation_1"] = _content_to_json(
-            await client.call_tool("probe_session_correlation", {"run_id": run_id})
-        )
-        report["correlation_2"] = _content_to_json(
-            await client.call_tool("probe_session_correlation", {"run_id": run_id})
-        )
+        ping = _content_to_json(await client.call_tool("probe_ping", {}))
+        _require_invocation(ping, "probe_ping")
+        report["ping"] = ping
 
-        left, right = await asyncio.gather(
+        correlation_1 = _content_to_json(
+            await client.call_tool("probe_session_correlation", {"run_id": run_id})
+        )
+        correlation_2 = _content_to_json(
+            await client.call_tool("probe_session_correlation", {"run_id": run_id})
+        )
+        _require_invocation(correlation_1, "probe_session_correlation")
+        _require_invocation(correlation_2, "probe_session_correlation")
+        if correlation_1.get("call_index") != 1 or correlation_2.get("call_index") != 2:
+            raise RuntimeError("correlation store did not produce call_index 1 -> 2")
+        report["correlation_1"] = correlation_1
+        report["correlation_2"] = correlation_2
+
+        left_raw, right_raw = await asyncio.gather(
             client.call_tool("probe_parallel", {"delay_ms": 200}),
             client.call_tool("probe_parallel", {"delay_ms": 200}),
         )
-        report["parallel"] = [_content_to_json(left), _content_to_json(right)]
-        report["reset"] = _content_to_json(
-            await client.call_tool("probe_reset", {"run_id": run_id})
-        )
+        left = _content_to_json(left_raw)
+        right = _content_to_json(right_raw)
+        _require_invocation(left, "probe_parallel")
+        _require_invocation(right, "probe_parallel")
+        if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
+            raise RuntimeError(f"parallel overlap was not observed: left={left!r}, right={right!r}")
+        report["parallel"] = [left, right]
+
+        reset = _content_to_json(await client.call_tool("probe_reset", {"run_id": run_id}))
+        _require_invocation(reset, "probe_reset")
+        if reset.get("removed") is not True:
+            raise RuntimeError(f"reset did not remove run: {reset!r}")
+        report["reset"] = reset
 
     print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
