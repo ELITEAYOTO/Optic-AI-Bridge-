@@ -30,7 +30,7 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          rustup toolchain install 1.99.0 --profile minimal
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
           rustup default 1.99.0
 
       - name: Prepare isolated Python MCP environment
