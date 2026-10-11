@@ -26,14 +26,15 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Prepare isolated Python environment
+      - name: Prepare isolated frozen Python environment
         shell: bash
         run: |
           python3 --version
           python3 -m venv .venv-host-probe
           . .venv-host-probe/bin/activate
-          python -m pip install -r experiments/host-probe/requirements.txt
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
           python -m pip check
+          python -m pip freeze --all
       - name: Run redaction and correlation unit tests
         shell: bash
         run: |
