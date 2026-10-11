@@ -51,8 +51,13 @@ async def main() -> int:
     parser.add_argument("url", nargs="?", default=DEFAULT_URL)
     args = parser.parse_args()
     run_id = "local-" + secrets.token_hex(8)
+    parallel_run_id = "parallel-" + secrets.token_hex(8)
 
-    report: dict[str, Any] = {"url": args.url, "run_id": run_id}
+    report: dict[str, Any] = {
+        "url": args.url,
+        "run_id": run_id,
+        "parallel_run_id": parallel_run_id,
+    }
     async with Client(args.url) as client:
         report["protocol_version"] = str(client.protocol_version)
         report["server"] = client.server_info.name if client.server_info is not None else None
@@ -91,8 +96,12 @@ async def main() -> int:
         report["correlation_2"] = correlation_2
 
         left_raw, right_raw = await asyncio.gather(
-            client.call_tool("probe_parallel", {"delay_ms": 200}),
-            client.call_tool("probe_parallel", {"delay_ms": 200}),
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
         )
         left = _content_to_json(left_raw)
         right = _content_to_json(right_raw)
@@ -100,6 +109,8 @@ async def main() -> int:
             raise RuntimeError("left parallel call crossed server instances")
         if _require_invocation(right, "probe_parallel") != server_instance:
             raise RuntimeError("right parallel call crossed server instances")
+        if left.get("run_id") != parallel_run_id or right.get("run_id") != parallel_run_id:
+            raise RuntimeError(f"parallel run id mismatch: left={left!r}, right={right!r}")
         if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
             raise RuntimeError(f"parallel overlap was not observed: left={left!r}, right={right!r}")
         report["parallel"] = [left, right]
