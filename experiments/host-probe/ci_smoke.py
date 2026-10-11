@@ -42,7 +42,17 @@ def _structured(result: Any) -> Any:
     return None
 
 
-def _assert_invocation(payload: Any, tool_name: str) -> str:
+def _assert_hex(value: Any, length: int, label: str) -> str:
+    if not isinstance(value, str) or len(value) != length:
+        raise AssertionError(f"{label} has invalid shape: {value!r}")
+    try:
+        int(value, 16)
+    except ValueError as exc:
+        raise AssertionError(f"{label} is not hex: {value!r}") from exc
+    return value
+
+
+def _assert_invocation(payload: Any, tool_name: str) -> tuple[str, str]:
     if not isinstance(payload, dict):
         raise AssertionError(f"{tool_name} did not return an object: {payload!r}")
     audit = payload.get("probe_invocation")
@@ -51,16 +61,13 @@ def _assert_invocation(payload: Any, tool_name: str) -> str:
     if audit.get("tool") != tool_name:
         raise AssertionError(f"{tool_name} invocation tool mismatch: {audit!r}")
     sequence = audit.get("sequence")
-    marker = audit.get("marker")
     if not isinstance(sequence, int) or sequence <= 0:
         raise AssertionError(f"{tool_name} invocation sequence is invalid: {audit!r}")
-    if not isinstance(marker, str) or len(marker) != 16:
-        raise AssertionError(f"{tool_name} invocation marker is invalid: {audit!r}")
-    try:
-        int(marker, 16)
-    except ValueError as exc:
-        raise AssertionError(f"{tool_name} invocation marker is not hex: {audit!r}") from exc
-    return marker
+    marker = _assert_hex(audit.get("marker"), 16, f"{tool_name} invocation marker")
+    server_instance = _assert_hex(
+        audit.get("server_instance"), 12, f"{tool_name} server instance"
+    )
+    return marker, server_instance
 
 
 async def _exercise(url: str) -> None:
@@ -85,7 +92,7 @@ async def _exercise(url: str) -> None:
         ping = _structured(await client.call_tool("probe_ping", {}))
         if not isinstance(ping, dict) or ping.get("ok") is not True:
             raise AssertionError(f"unexpected ping result: {ping!r}")
-        ping_marker = _assert_invocation(ping, "probe_ping")
+        ping_marker, server_instance = _assert_invocation(ping, "probe_ping")
         observation = ping.get("observation")
         if not isinstance(observation, dict):
             raise AssertionError(f"ping did not include an observation: {ping!r}")
@@ -97,6 +104,7 @@ async def _exercise(url: str) -> None:
                 f"protocol mismatch: client={client_protocol!r}, server={server_protocol!r}"
             )
         print(f"Negotiated MCP protocol version: {client_protocol}")
+        print(f"Verified server instance: {server_instance}")
         print(f"Verified ping invocation marker: {ping_marker}")
 
         run_id = "ci-host-probe-0001"
@@ -110,10 +118,12 @@ async def _exercise(url: str) -> None:
             raise AssertionError(f"unexpected first correlation result: {first!r}")
         if not isinstance(second, dict) or second.get("call_index") != 2:
             raise AssertionError(f"unexpected second correlation result: {second!r}")
-        first_marker = _assert_invocation(first, "probe_session_correlation")
-        second_marker = _assert_invocation(second, "probe_session_correlation")
+        first_marker, first_instance = _assert_invocation(first, "probe_session_correlation")
+        second_marker, second_instance = _assert_invocation(second, "probe_session_correlation")
         if first_marker == second_marker:
             raise AssertionError("two real correlation calls reused the same invocation marker")
+        if first_instance != server_instance or second_instance != server_instance:
+            raise AssertionError("correlation calls unexpectedly crossed server instances")
 
         left_raw, right_raw = await asyncio.gather(
             client.call_tool("probe_parallel", {"delay_ms": 200}),
@@ -121,17 +131,21 @@ async def _exercise(url: str) -> None:
         )
         left = _structured(left_raw)
         right = _structured(right_raw)
-        left_marker = _assert_invocation(left, "probe_parallel")
-        right_marker = _assert_invocation(right, "probe_parallel")
+        left_marker, left_instance = _assert_invocation(left, "probe_parallel")
+        right_marker, right_instance = _assert_invocation(right, "probe_parallel")
         if left_marker == right_marker:
             raise AssertionError("parallel calls reused the same invocation marker")
+        if left_instance != server_instance or right_instance != server_instance:
+            raise AssertionError("parallel calls unexpectedly crossed server instances")
         if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
             raise AssertionError(f"parallel overlap was not proven: left={left!r}, right={right!r}")
 
         reset = _structured(await client.call_tool("probe_reset", {"run_id": run_id}))
         if not isinstance(reset, dict) or reset.get("removed") is not True:
             raise AssertionError(f"unexpected reset result: {reset!r}")
-        _assert_invocation(reset, "probe_reset")
+        _, reset_instance = _assert_invocation(reset, "probe_reset")
+        if reset_instance != server_instance:
+            raise AssertionError("reset unexpectedly crossed server instances")
 
 
 def main() -> int:
