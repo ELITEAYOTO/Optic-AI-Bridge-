@@ -33,14 +33,15 @@ jobs:
           rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
           rustup default 1.99.0
 
-      - name: Prepare isolated Python MCP environment
+      - name: Prepare isolated frozen Python MCP environment
         shell: bash
         run: |
           python3 --version
           python3 -m venv .venv-real-link
           . .venv-real-link/bin/activate
-          python -m pip install -r experiments/host-probe/requirements.txt
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
           python -m pip check
+          python -m pip freeze --all
 
       - name: Build the real Optic stdio server
         shell: bash
@@ -107,17 +108,19 @@ jobs:
             [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
           }
 
-      - name: Prepare isolated Python MCP environment
+      - name: Prepare isolated frozen Python MCP environment
         shell: pwsh
         run: |
           py -3 --version
           if ($LASTEXITCODE -ne 0) { throw 'Python 3 launcher unavailable.' }
           py -3 -m venv .venv-real-link
           if ($LASTEXITCODE -ne 0) { throw 'Python venv creation failed.' }
-          .\.venv-real-link\Scripts\python.exe -m pip install -r experiments\host-probe\requirements.txt
+          .\.venv-real-link\Scripts\python.exe -m pip install -r experiments\host-probe\requirements.txt -c experiments\host-probe\constraints.txt
           if ($LASTEXITCODE -ne 0) { throw 'Python dependency install failed.' }
           .\.venv-real-link\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { throw 'Python dependency check failed.' }
+          .\.venv-real-link\Scripts\python.exe -m pip freeze --all
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency inventory failed.' }
 
       - name: Build the real Optic stdio server
         shell: pwsh
