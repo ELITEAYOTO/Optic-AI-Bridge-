@@ -27,6 +27,9 @@ ALLOW_RANDOM_TUNNEL_HOST = (
     os.environ.get("OPTIC_REAL_LINK_ALLOW_RANDOM_TUNNEL_HOST", "0") == "1"
 )
 MAX_REQUEST_BODY_BYTES = 64 * 1024
+MAX_CONCURRENT_FORWARDS = 8
+MAX_HTTP_CONCURRENCY = 32
+FORWARD_ADMISSION_TIMEOUT_SECONDS = 0.25
 UPSTREAM_CALL_TIMEOUT_SECONDS = 15.0
 
 mcp = MCPServer(
@@ -39,6 +42,7 @@ mcp = MCPServer(
 
 _upstream: ClientSession | None = None
 _upstream_tools: tuple[str, ...] = ()
+_forward_gate: asyncio.Semaphore | None = None
 _fixture_marker = ""
 _adapter_instance = secrets.token_hex(6)
 _invocation_lock = threading.Lock()
@@ -71,6 +75,12 @@ def _require_upstream() -> ClientSession:
     return _upstream
 
 
+def _require_forward_gate() -> asyncio.Semaphore:
+    if _forward_gate is None:
+        raise RuntimeError("optic adapter admission gate is not initialized")
+    return _forward_gate
+
+
 def _structured(result: Any) -> dict[str, Any]:
     for attr in ("structured_content", "structuredContent"):
         value = getattr(result, attr, None)
@@ -92,10 +102,21 @@ def _structured(result: Any) -> dict[str, Any]:
 
 async def _forward(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     session = _require_upstream()
-    result = await asyncio.wait_for(
-        session.call_tool(tool_name, arguments=arguments),
-        timeout=UPSTREAM_CALL_TIMEOUT_SECONDS,
-    )
+    gate = _require_forward_gate()
+    try:
+        await asyncio.wait_for(
+            gate.acquire(), timeout=FORWARD_ADMISSION_TIMEOUT_SECONDS
+        )
+    except TimeoutError as exc:
+        raise RuntimeError("optic synthetic adapter is busy") from exc
+
+    try:
+        result = await asyncio.wait_for(
+            session.call_tool(tool_name, arguments=arguments),
+            timeout=UPSTREAM_CALL_TIMEOUT_SECONDS,
+        )
+    finally:
+        gate.release()
     return _structured(result)
 
 
@@ -213,7 +234,7 @@ streamable_app = mcp.streamable_http_app(
 
 @asynccontextmanager
 async def lifespan(_: Starlette) -> AsyncIterator[None]:
-    global _upstream, _upstream_tools, _fixture_marker
+    global _upstream, _upstream_tools, _forward_gate, _fixture_marker
 
     optic_app = _validate_optic_app()
     with tempfile.TemporaryDirectory(prefix="optic-real-mcp-link-") as temp_root:
@@ -235,12 +256,15 @@ async def lifespan(_: Starlette) -> AsyncIterator[None]:
 
                 _upstream = session
                 _upstream_tools = names
+                _forward_gate = asyncio.Semaphore(MAX_CONCURRENT_FORWARDS)
                 print("=== Optic real MCP link experiment ===", flush=True)
                 print(f"Local endpoint : http://{HOST}:{PORT}{PATH}", flush=True)
                 print("Remote surface : session_info, fs_list, fs_read only", flush=True)
                 print("Workspace      : disposable synthetic fixture only", flush=True)
                 print(f"Transport guard: {security_mode}", flush=True)
                 print(f"Request limit  : {MAX_REQUEST_BODY_BYTES} bytes", flush=True)
+                print(f"Forward limit  : {MAX_CONCURRENT_FORWARDS} calls", flush=True)
+                print(f"HTTP limit     : {MAX_HTTP_CONCURRENCY} concurrent tasks", flush=True)
                 print(f"Adapter instance: {_adapter_instance}", flush=True)
                 print(f"Fixture marker : {_fixture_marker}", flush=True)
                 print(f"Upstream server: {init.server_info.name}", flush=True)
@@ -257,6 +281,7 @@ async def lifespan(_: Starlette) -> AsyncIterator[None]:
                     finally:
                         _upstream = None
                         _upstream_tools = ()
+                        _forward_gate = None
                         _fixture_marker = ""
 
 
@@ -264,4 +289,11 @@ app = Starlette(routes=[Mount("/", app=streamable_app)], lifespan=lifespan)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+    uvicorn.run(
+        app,
+        host=HOST,
+        port=PORT,
+        log_level="info",
+        limit_concurrency=MAX_HTTP_CONCURRENCY,
+        timeout_keep_alive=5,
+    )
