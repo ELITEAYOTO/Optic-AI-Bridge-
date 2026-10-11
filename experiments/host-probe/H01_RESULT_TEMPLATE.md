@@ -12,16 +12,18 @@ Copy this file for each real host/surface test. Record only probe output/fingerp
 - Probe version: `h01-v2`
 - Connectivity provider: `Cloudflare Quick Tunnel | Tailscale | direct/custom`
 - MCP endpoint path: `/mcp`
+- Server instance id shown at startup:
 
 ## Evidence integrity
 
 For every model-visible probe result used as evidence, verify that its `probe_invocation` object matches the local server console line:
 
 ```text
-[H01] TOOL_CALL tool=<tool> seq=<sequence> marker=<marker>
+[H01] TOOL_CALL instance=<server_instance> tool=<tool> seq=<sequence> marker=<marker>
 ```
 
 - Tool result marker matched console: `yes/no`
+- Tool result server instance matched current process: `yes/no`
 - Server-side invocation line preserved: `yes/no`
 - If not matched, exclude that model-visible result from H-01 conclusions.
 
@@ -48,7 +50,7 @@ This proves only that the host can carry a custom header. It does not prove prod
 
 ## Same-conversation correlation
 
-Choose one random test run id and reuse that **same run id** for the same-conversation, new-conversation and reconnect comparisons until the final reset.
+Choose one random correlation run id and reuse that **same run id** for the same-conversation, new-conversation and reconnect comparisons until the final reset.
 
 Run `probe_session_correlation` twice in the first conversation.
 
@@ -79,7 +81,7 @@ Run `probe_session_correlation` twice in the first conversation.
 
 ## New-conversation separation
 
-Start a genuinely new conversation while the probe server remains running, then call `probe_session_correlation` with the **same run id** used above.
+Start a genuinely new conversation while the probe server remains running, then call `probe_session_correlation` with the **same correlation run id** used above.
 
 ```json
 <paste sanitized probe result>
@@ -93,7 +95,7 @@ Start a genuinely new conversation while the probe server remains running, then 
 
 ## Reconnect behavior
 
-Without intentionally creating another conversation, disconnect/reconnect the client or MCP connection if the host permits it, then call the correlation tool again with the **same run id**.
+Without intentionally creating another conversation, disconnect/reconnect the client or MCP connection if the host permits it, then call the correlation tool again with the **same correlation run id**.
 
 - Reconnect procedure:
 - Invocation marker verified against console: `yes/no`
@@ -106,9 +108,11 @@ Without intentionally creating another conversation, disconnect/reconnect the cl
 
 ## Parallel calls
 
-Request two `probe_parallel(delay_ms=500)` calls concurrently if the host supports parallel tool dispatch.
+Choose a separate random **parallel run id**. Request two `probe_parallel(run_id=<same parallel run id>, delay_ms=500)` calls concurrently if the host supports parallel tool dispatch.
 
-- Both invocation markers verified against console: `yes/no`
+- Parallel run id:
+- Both returned `run_id` values match the chosen parallel run id: `yes/no`
+- Both invocation markers/server instances verified against console: `yes/no`
 - `overlap_observed` values:
 - `active_on_entry` values:
 - Both dispatched concurrently: `yes/no/uncertain`
@@ -117,7 +121,7 @@ Request two `probe_parallel(delay_ms=500)` calls concurrently if the host suppor
 - Same candidate context on both calls: `yes/no/uncertain`
 - Notes:
 
-`overlap_observed=true` is server-side proof that at least one other `probe_parallel` invocation was active during that call; it is stronger evidence than timing alone.
+`overlap_observed=true` is server-side proof that another `probe_parallel` invocation with the **same explicit parallel run id** was active during that call. Unrelated probe traffic in another run id cannot create this result.
 
 ## Cancellation / timeout
 
@@ -146,10 +150,10 @@ Only if the host exposes a safe way to cancel a pending harmless probe call.
 - Parallel semantics understood: `yes/no`
 - Safe to design an H-03 adapter mapping from this evidence: `yes/no`
 
-After collecting all comparisons, call `probe_reset` for the run id.
+After collecting all correlation comparisons, call `probe_reset` for the correlation run id.
 
 ### Important
 
 MCP v2 request ids are optional. H-01 v2 exposes absence explicitly; do not treat a v1 constant request-id fingerprint as conversation identity without independent evidence that a real request id was present.
 
-No observed header, `_meta` field, tunnel identity, request id or transport session id becomes Optic authorization authority. H-03 may use proven signals only as correlation inputs before minting an independent Optic-owned `SessionHandle`.
+No observed header, `_meta` field, tunnel identity, request id, test run id, invocation marker, server-instance id or transport session id becomes Optic authorization authority. H-03 may use proven host signals only as correlation inputs before minting an independent Optic-owned `SessionHandle`.
