@@ -1,0 +1,85 @@
+name: Real Optic MCP Link Experiment
+
+on:
+  pull_request:
+    paths:
+      - "experiments/optic-mcp-link/**"
+      - ".github/workflows/real-optic-mcp-link.yml"
+  push:
+    branches: [main]
+    paths:
+      - "experiments/optic-mcp-link/**"
+      - ".github/workflows/real-optic-mcp-link.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-optic-mcp-link-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  end-to-end:
+    name: Streamable HTTP -> real Optic stdio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+
+      - name: Prepare isolated Python MCP environment
+        shell: bash
+        run: |
+          python3 --version
+          python3 -m venv .venv-real-link
+          . .venv-real-link/bin/activate
+          python -m pip install -r experiments/host-probe/requirements.txt
+          python -m pip check
+
+      - name: Build the real Optic stdio server
+        shell: bash
+        run: cargo build --locked -p optic-bridge-app --bin optic-bridge
+
+      - name: Run end-to-end link smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/real-optic-link-smoke
+          export OPTIC_REAL_LINK_HOST=127.0.0.1
+          export OPTIC_REAL_LINK_PORT=8011
+          export OPTIC_REAL_LINK_OPTIC_APP="$GITHUB_WORKSPACE/target/debug/optic-bridge"
+          export OPTIC_REAL_LINK_ALLOW_RANDOM_TUNNEL_HOST=0
+
+          .venv-real-link/bin/python experiments/optic-mcp-link/server.py \
+            > target/real-optic-link-smoke/server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            cat target/real-optic-link-smoke/server.log || true
+          }
+          trap cleanup EXIT
+
+          .venv-real-link/bin/python - <<'PY'
+          import socket
+          import time
+
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with socket.create_connection(("127.0.0.1", 8011), timeout=0.25):
+                      break
+              except OSError:
+                  time.sleep(0.1)
+          else:
+              raise SystemExit("real Optic link server did not become ready")
+          PY
+
+          .venv-real-link/bin/python experiments/optic-mcp-link/client_smoke.py \
+            http://127.0.0.1:8011/mcp
