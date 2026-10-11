@@ -42,6 +42,27 @@ def _structured(result: Any) -> Any:
     return None
 
 
+def _assert_invocation(payload: Any, tool_name: str) -> str:
+    if not isinstance(payload, dict):
+        raise AssertionError(f"{tool_name} did not return an object: {payload!r}")
+    audit = payload.get("probe_invocation")
+    if not isinstance(audit, dict):
+        raise AssertionError(f"{tool_name} did not include probe_invocation: {payload!r}")
+    if audit.get("tool") != tool_name:
+        raise AssertionError(f"{tool_name} invocation tool mismatch: {audit!r}")
+    sequence = audit.get("sequence")
+    marker = audit.get("marker")
+    if not isinstance(sequence, int) or sequence <= 0:
+        raise AssertionError(f"{tool_name} invocation sequence is invalid: {audit!r}")
+    if not isinstance(marker, str) or len(marker) != 16:
+        raise AssertionError(f"{tool_name} invocation marker is invalid: {audit!r}")
+    try:
+        int(marker, 16)
+    except ValueError as exc:
+        raise AssertionError(f"{tool_name} invocation marker is not hex: {audit!r}") from exc
+    return marker
+
+
 async def _exercise(url: str) -> None:
     async with Client(url) as client:
         client_protocol = str(client.protocol_version)
@@ -64,15 +85,19 @@ async def _exercise(url: str) -> None:
         ping = _structured(await client.call_tool("probe_ping", {}))
         if not isinstance(ping, dict) or ping.get("ok") is not True:
             raise AssertionError(f"unexpected ping result: {ping!r}")
+        ping_marker = _assert_invocation(ping, "probe_ping")
         observation = ping.get("observation")
         if not isinstance(observation, dict):
             raise AssertionError(f"ping did not include an observation: {ping!r}")
+        if "request_id_present" not in observation:
+            raise AssertionError(f"ping observation lacks request-id presence bit: {observation!r}")
         server_protocol = str(observation.get("protocol_version") or "")
         if server_protocol != client_protocol:
             raise AssertionError(
                 f"protocol mismatch: client={client_protocol!r}, server={server_protocol!r}"
             )
         print(f"Negotiated MCP protocol version: {client_protocol}")
+        print(f"Verified ping invocation marker: {ping_marker}")
 
         run_id = "ci-host-probe-0001"
         first = _structured(
@@ -85,17 +110,28 @@ async def _exercise(url: str) -> None:
             raise AssertionError(f"unexpected first correlation result: {first!r}")
         if not isinstance(second, dict) or second.get("call_index") != 2:
             raise AssertionError(f"unexpected second correlation result: {second!r}")
+        first_marker = _assert_invocation(first, "probe_session_correlation")
+        second_marker = _assert_invocation(second, "probe_session_correlation")
+        if first_marker == second_marker:
+            raise AssertionError("two real correlation calls reused the same invocation marker")
 
-        left, right = await asyncio.gather(
-            client.call_tool("probe_parallel", {"delay_ms": 100}),
-            client.call_tool("probe_parallel", {"delay_ms": 100}),
+        left_raw, right_raw = await asyncio.gather(
+            client.call_tool("probe_parallel", {"delay_ms": 200}),
+            client.call_tool("probe_parallel", {"delay_ms": 200}),
         )
-        if _structured(left) is None or _structured(right) is None:
-            raise AssertionError("parallel probe calls did not return structured data")
+        left = _structured(left_raw)
+        right = _structured(right_raw)
+        left_marker = _assert_invocation(left, "probe_parallel")
+        right_marker = _assert_invocation(right, "probe_parallel")
+        if left_marker == right_marker:
+            raise AssertionError("parallel calls reused the same invocation marker")
+        if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
+            raise AssertionError(f"parallel overlap was not proven: left={left!r}, right={right!r}")
 
         reset = _structured(await client.call_tool("probe_reset", {"run_id": run_id}))
         if not isinstance(reset, dict) or reset.get("removed") is not True:
             raise AssertionError(f"unexpected reset result: {reset!r}")
+        _assert_invocation(reset, "probe_reset")
 
 
 def main() -> int:
