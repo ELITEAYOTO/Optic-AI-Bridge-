@@ -25,12 +25,17 @@ _FINGERPRINT_KEY = secrets.token_bytes(32)
 
 _SENSITIVE_HEADER_FRAGMENTS = (
     "authorization",
+    "auth",
     "cookie",
     "token",
     "secret",
     "api-key",
     "apikey",
+    "access-key",
+    "accesskey",
     "credential",
+    "password",
+    "passwd",
 )
 _SAFE_HEADER_VALUES = {
     "mcp-protocol-version",
@@ -177,8 +182,13 @@ def build_observation(
 
 
 def _compare_maps(first: Mapping[str, str], current: Mapping[str, str]) -> dict[str, bool]:
-    shared = sorted(set(first).intersection(current))
-    return {key: first[key] == current[key] for key in shared}
+    # Compare the union, not only shared keys. A field that disappears or appears is a
+    # meaningful correlation change and must not be silently omitted from the result.
+    keys = sorted(set(first).union(current))
+    return {
+        key: key in first and key in current and first[key] == current[key]
+        for key in keys
+    }
 
 
 @dataclass(frozen=True)
