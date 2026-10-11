@@ -125,9 +125,14 @@ async def _exercise(url: str) -> None:
         if first_instance != server_instance or second_instance != server_instance:
             raise AssertionError("correlation calls unexpectedly crossed server instances")
 
+        parallel_run_id = "ci-parallel-0001"
         left_raw, right_raw = await asyncio.gather(
-            client.call_tool("probe_parallel", {"delay_ms": 200}),
-            client.call_tool("probe_parallel", {"delay_ms": 200}),
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
         )
         left = _structured(left_raw)
         right = _structured(right_raw)
@@ -137,6 +142,8 @@ async def _exercise(url: str) -> None:
             raise AssertionError("parallel calls reused the same invocation marker")
         if left_instance != server_instance or right_instance != server_instance:
             raise AssertionError("parallel calls unexpectedly crossed server instances")
+        if left.get("run_id") != parallel_run_id or right.get("run_id") != parallel_run_id:
+            raise AssertionError(f"parallel run id mismatch: left={left!r}, right={right!r}")
         if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
             raise AssertionError(f"parallel overlap was not proven: left={left!r}, right={right!r}")
 
