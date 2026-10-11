@@ -33,6 +33,7 @@ mcp = MCPServer(
     ),
 )
 
+_SERVER_INSTANCE = secrets.token_hex(6)
 _invocation_lock = threading.Lock()
 _invocation_sequence = 0
 _parallel_lock = threading.Lock()
@@ -47,8 +48,17 @@ def _new_invocation(tool_name: str) -> dict[str, Any]:
     with _invocation_lock:
         _invocation_sequence += 1
         sequence = _invocation_sequence
-    audit = {"tool": tool_name, "sequence": sequence, "marker": marker}
-    print(f"[H01] TOOL_CALL tool={tool_name} seq={sequence} marker={marker}", flush=True)
+    audit = {
+        "tool": tool_name,
+        "sequence": sequence,
+        "marker": marker,
+        "server_instance": _SERVER_INSTANCE,
+    }
+    print(
+        f"[H01] TOOL_CALL instance={_SERVER_INSTANCE} tool={tool_name} "
+        f"seq={sequence} marker={marker}",
+        flush=True,
+    )
     return audit
 
 
@@ -161,8 +171,9 @@ async def probe_parallel(ctx: Context, delay_ms: int = 250) -> dict[str, Any]:
         overlap_observed = _parallel_exit(marker)
     elapsed_ms = round((end - start) / 1_000_000, 3)
     print(
-        f"[H01] TOOL_DONE tool=probe_parallel seq={audit['sequence']} marker={marker} "
-        f"overlap={str(overlap_observed).lower()} elapsed_ms={elapsed_ms}",
+        f"[H01] TOOL_DONE instance={_SERVER_INSTANCE} tool=probe_parallel "
+        f"seq={audit['sequence']} marker={marker} overlap={str(overlap_observed).lower()} "
+        f"elapsed_ms={elapsed_ms}",
         flush=True,
     )
     return _with_invocation(
@@ -205,7 +216,8 @@ if __name__ == "__main__":
     print("Authority      : NONE (no files, Git, processes, Optic runtime, or mutation)")
     print(f"Transport guard: {security_mode}")
     print(f"Probe version  : {PROBE_VERSION}")
-    print("Tool proof     : response probe_invocation.marker matches [H01] TOOL_CALL in console")
+    print(f"Server instance: {_SERVER_INSTANCE}")
+    print("Tool proof     : response probe_invocation matches [H01] TOOL_CALL in console")
     print()
 
     mcp.run(
