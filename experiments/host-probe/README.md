@@ -11,14 +11,14 @@ Current probe schema: `h01-v2`.
 - `probe_ping` — liveness plus a redacted request observation;
 - `probe_host_context` — redacted HTTP/MCP context;
 - `probe_session_correlation(run_id)` — compares this request with the first request for the same caller-selected test id;
-- `probe_parallel(delay_ms)` — harmless bounded delay for concurrency tests;
+- `probe_parallel(run_id, delay_ms)` — harmless bounded delay for concurrency tests, scoped to one explicit test group;
 - `probe_reset(run_id)` — forgets one in-memory correlation run.
 
 Header names containing credential-like terms are omitted completely. Other unknown header/meta values are represented only by short one-way fingerprints so repeated values can be compared without exposing raw identifiers.
 
 Fingerprints are intentionally keyed with a fresh random secret each time the probe starts. They are stable only while that one probe process remains alive and cannot be compared across restarts. Keep the same server process running for same-conversation, new-conversation and reconnect comparisons.
 
-Each test run is bounded to 16 observations and the process retains at most 32 run ids. Reaching the event limit fails explicitly so the original correlation baseline is never silently replaced.
+Each correlation test run is bounded to 16 observations and the process retains at most 32 correlation run ids. Reaching the event limit fails explicitly so the original correlation baseline is never silently replaced.
 
 ## Verifying that a model really called the tool
 
@@ -30,19 +30,20 @@ Each real tool result contains:
 "probe_invocation": {
   "tool": "probe_session_correlation",
   "sequence": 7,
-  "marker": "<16 hex chars>"
+  "marker": "<16 hex chars>",
+  "server_instance": "<12 hex chars>"
 }
 ```
 
 At the same moment, the local server prints a line like:
 
 ```text
-[H01] TOOL_CALL tool=probe_session_correlation seq=7 marker=<same marker>
+[H01] TOOL_CALL instance=<same instance> tool=probe_session_correlation seq=7 marker=<same marker>
 ```
 
-Treat a manual host result as **verified** only when the tool name, sequence and random marker match the local console. Ordinary Uvicorn `POST /mcp` lines prove transport activity, but they do not prove which tool produced a model-visible result.
+Treat a manual host result as **verified** only when the tool name, sequence, random marker and server instance match the local console. Ordinary Uvicorn `POST /mcp` lines prove transport activity, but they do not prove which tool produced a model-visible result.
 
-The marker is random per invocation, has no project authority and is not derived from host/user metadata.
+The marker and server-instance id are random, have no project authority and are not derived from host/user metadata.
 
 ## Request-id interpretation
 
@@ -55,12 +56,15 @@ Do not interpret a v1 constant request-id fingerprint as a conversation identifi
 
 ## Parallel-call proof
 
-`probe_parallel` now records:
+`probe_parallel` requires a caller-selected test `run_id`. Use the **same unique parallel run id** for the two calls that are supposed to run together. Overlap is counted only between active calls in that explicit group, so unrelated probe traffic cannot create a false concurrency result.
 
-- `active_on_entry` — how many parallel probes were active after this call entered;
-- `overlap_observed` — `true` when this invocation genuinely overlapped another `probe_parallel` call in the same server process.
+The tool records:
 
-The server tracks only its own random invocation markers; no host/user identifier is used for this proof.
+- `run_id` — the explicit concurrency-test group;
+- `active_on_entry` — how many probes in that same group were active after this call entered;
+- `overlap_observed` — `true` when this invocation genuinely overlapped another `probe_parallel` call with the same run id in the same server process.
+
+The server tracks only caller-selected test-group names and its own random invocation markers; neither is authorization authority.
 
 ## Local setup on Windows
 
@@ -115,22 +119,22 @@ X-Optic-Probe: h01-francestudent
 
 This value is not a credential. Seeing the header name in `probe_host_context` is useful H-02 evidence that the host can transmit custom HTTP headers. Do not use a real token during H-01.
 
-Choose one random run id, for example `fs-20261010-a1b2c3d4`, and keep that **same run id** until the conversation-separation/reconnect comparisons are finished.
+Choose one random correlation run id, for example `fs-20261010-a1b2c3d4`, and keep that **same correlation run id** until the conversation-separation/reconnect comparisons are finished.
 
 Ask the host to call:
 
 1. `probe_ping` once;
 2. `probe_host_context` twice;
-3. `probe_session_correlation` twice with the same run id;
-4. two `probe_parallel(delay_ms=500)` calls at the same time if the host can dispatch parallel tools.
+3. `probe_session_correlation` twice with the same correlation run id;
+4. two `probe_parallel` calls at the same time with the same separate parallel run id and `delay_ms=500`, for example `fs-parallel-20261010`, if the host can dispatch parallel tools.
 
 For each returned JSON object, compare `probe_invocation` with the matching `[H01] TOOL_CALL` console line before treating it as evidence.
 
-Then open a **genuinely new conversation** while leaving the probe server running and call `probe_session_correlation` again with the **same run id**. That third verified call directly compares the new conversation with the first verified conversation recorded by the probe.
+Then open a **genuinely new conversation** while leaving the probe server running and call `probe_session_correlation` again with the **same correlation run id**. That third verified call directly compares the new conversation with the first verified conversation recorded by the probe.
 
-If possible, also test a disconnect/reconnect while keeping the same user-visible conversation and call `probe_session_correlation` again with the same run id.
+If possible, also test a disconnect/reconnect while keeping the same user-visible conversation and call `probe_session_correlation` again with the same correlation run id.
 
-Only after those comparisons, call `probe_reset` for the run id. Save the sanitized tool results. We care about whether fingerprints/metadata are stable, not their raw values.
+Only after those comparisons, call `probe_reset` for the correlation run id. Save the sanitized tool results. We care about whether fingerprints/metadata are stable, not their raw values.
 
 ## ChatGPT manual protocol
 
