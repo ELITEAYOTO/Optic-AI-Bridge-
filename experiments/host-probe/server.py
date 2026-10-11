@@ -23,6 +23,10 @@ HOST = os.environ.get("OPTIC_HOST_PROBE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OPTIC_HOST_PROBE_PORT", "8000"))
 PATH = os.environ.get("OPTIC_HOST_PROBE_PATH", "/mcp")
 ALLOW_RANDOM_TUNNEL_HOST = os.environ.get("OPTIC_HOST_PROBE_ALLOW_RANDOM_TUNNEL_HOST", "0") == "1"
+# H-01 requests contain only tiny tool names/arguments and redacted results. Keep a
+# deliberately small ingress bound while the authority-free probe is exposed through
+# a temporary public tunnel instead of inheriting the SDK's much larger default.
+MAX_REQUEST_BODY_BYTES = 64 * 1024
 
 store = CorrelationStore()
 mcp = MCPServer(
@@ -222,6 +226,7 @@ if __name__ == "__main__":
     print("Mode           : stateless + JSON responses")
     print("Authority      : NONE (no files, Git, processes, Optic runtime, or mutation)")
     print(f"Transport guard: {security_mode}")
+    print(f"Request limit  : {MAX_REQUEST_BODY_BYTES} bytes")
     print(f"Probe version  : {PROBE_VERSION}")
     print(f"Server instance: {_SERVER_INSTANCE}")
     print("Tool proof     : response probe_invocation matches [H01] TOOL_CALL in console")
@@ -234,5 +239,6 @@ if __name__ == "__main__":
         streamable_http_path=PATH,
         stateless_http=True,
         json_response=True,
+        max_request_body_size=MAX_REQUEST_BODY_BYTES,
         transport_security=security,
     )
