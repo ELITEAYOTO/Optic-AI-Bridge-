@@ -1,0 +1,185 @@
+name: Real Optic MCP Link Experiment
+
+on:
+  pull_request:
+    paths:
+      - "experiments/optic-mcp-link/**"
+      - ".github/workflows/real-optic-mcp-link.yml"
+  push:
+    branches: [main]
+    paths:
+      - "experiments/optic-mcp-link/**"
+      - ".github/workflows/real-optic-mcp-link.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-optic-mcp-link-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-end-to-end:
+    name: Linux Streamable HTTP -> real Optic stdio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+
+      - name: Prepare isolated frozen Python MCP environment
+        shell: bash
+        run: |
+          python3 --version
+          python3 -m venv .venv-real-link
+          . .venv-real-link/bin/activate
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
+          python -m pip check
+          python -m pip freeze --all
+
+      - name: Build the real Optic stdio server
+        shell: bash
+        run: cargo build --locked -p optic-bridge-app --bin optic-bridge
+
+      - name: Run end-to-end link smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/real-optic-link-smoke
+          export OPTIC_REAL_LINK_HOST=127.0.0.1
+          export OPTIC_REAL_LINK_PORT=8011
+          export OPTIC_REAL_LINK_OPTIC_APP="$GITHUB_WORKSPACE/target/debug/optic-bridge"
+          export OPTIC_REAL_LINK_ALLOW_RANDOM_TUNNEL_HOST=0
+
+          .venv-real-link/bin/python experiments/optic-mcp-link/server.py \
+            > target/real-optic-link-smoke/server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            cat target/real-optic-link-smoke/server.log || true
+          }
+          trap cleanup EXIT
+
+          .venv-real-link/bin/python - <<'PY'
+          import socket
+          import time
+
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with socket.create_connection(("127.0.0.1", 8011), timeout=0.25):
+                      break
+              except OSError:
+                  time.sleep(0.1)
+          else:
+              raise SystemExit("real Optic link server did not become ready")
+          PY
+
+          .venv-real-link/bin/python experiments/optic-mcp-link/client_smoke.py \
+            http://127.0.0.1:8011/mcp
+
+  windows-end-to-end:
+    name: Windows Streamable HTTP -> real Optic stdio
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain install failed.' }
+          rustup default 1.99.0
+          if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain selection failed.' }
+
+      - name: Validate experiment PowerShell helpers
+        shell: pwsh
+        run: |
+          Get-ChildItem experiments/optic-mcp-link/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
+
+      - name: Prepare isolated frozen Python MCP environment
+        shell: pwsh
+        run: |
+          py -3 --version
+          if ($LASTEXITCODE -ne 0) { throw 'Python 3 launcher unavailable.' }
+          py -3 -m venv .venv-real-link
+          if ($LASTEXITCODE -ne 0) { throw 'Python venv creation failed.' }
+          .\.venv-real-link\Scripts\python.exe -m pip install -r experiments\host-probe\requirements.txt -c experiments\host-probe\constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency install failed.' }
+          .\.venv-real-link\Scripts\python.exe -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency check failed.' }
+          .\.venv-real-link\Scripts\python.exe -m pip freeze --all
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency inventory failed.' }
+
+      - name: Build the real Optic stdio server
+        shell: pwsh
+        run: |
+          cargo build --locked -p optic-bridge-app --bin optic-bridge
+          if ($LASTEXITCODE -ne 0) { throw 'Real optic-bridge build failed.' }
+
+      - name: Run end-to-end link smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = (Resolve-Path '.\.venv-real-link\Scripts\python.exe').Path
+          $bridge = (Resolve-Path '.\target\debug\optic-bridge.exe').Path
+          $serverScript = (Resolve-Path '.\experiments\optic-mcp-link\server.py').Path
+          $clientScript = (Resolve-Path '.\experiments\optic-mcp-link\client_smoke.py').Path
+          $logDir = Join-Path $env:GITHUB_WORKSPACE 'target\real-optic-link-smoke-windows'
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+          $stdout = Join-Path $logDir 'server.out.log'
+          $stderr = Join-Path $logDir 'server.err.log'
+
+          $env:OPTIC_REAL_LINK_HOST = '127.0.0.1'
+          $env:OPTIC_REAL_LINK_PORT = '8011'
+          $env:OPTIC_REAL_LINK_OPTIC_APP = $bridge
+          $env:OPTIC_REAL_LINK_ALLOW_RANDOM_TUNNEL_HOST = '0'
+
+          $server = Start-Process -FilePath $python -ArgumentList @($serverScript) -PassThru `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            $ready = $false
+            while ([DateTime]::UtcNow -lt $deadline) {
+              if ($server.HasExited) {
+                throw "real Optic link server exited early with code $($server.ExitCode)"
+              }
+              $client = [System.Net.Sockets.TcpClient]::new()
+              try {
+                $task = $client.ConnectAsync('127.0.0.1', 8011)
+                if ($task.Wait(250) -and $client.Connected) {
+                  $ready = $true
+                  break
+                }
+              }
+              catch {
+              }
+              finally {
+                $client.Dispose()
+              }
+              Start-Sleep -Milliseconds 100
+            }
+            if (-not $ready) { throw 'real Optic link server did not become ready' }
+
+            & $python $clientScript 'http://127.0.0.1:8011/mcp'
+            if ($LASTEXITCODE -ne 0) { throw 'Real Optic link client smoke failed.' }
+          }
+          finally {
+            if (-not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+              $server.WaitForExit()
+            }
+            if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout }
+            if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr }
+          }
