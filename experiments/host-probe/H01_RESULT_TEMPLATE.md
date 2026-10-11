@@ -9,15 +9,30 @@ Copy this file for each real host/surface test. Record only probe output/fingerp
 - Surface: `web | desktop | Work | normal Chat | other`
 - Account/plan (only if relevant to feature availability):
 - Probe commit SHA:
-- Probe version: `h01-v1`
+- Probe version: `h01-v2`
 - Connectivity provider: `Cloudflare Quick Tunnel | Tailscale | direct/custom`
 - MCP endpoint path: `/mcp`
+
+## Evidence integrity
+
+For every model-visible probe result used as evidence, verify that its `probe_invocation` object matches the local server console line:
+
+```text
+[H01] TOOL_CALL tool=<tool> seq=<sequence> marker=<marker>
+```
+
+- Tool result marker matched console: `yes/no`
+- Server-side invocation line preserved: `yes/no`
+- If not matched, exclude that model-visible result from H-01 conclusions.
+
+Ordinary `POST /mcp` access logs prove transport activity only; they do not identify the tool that produced a displayed JSON result.
 
 ## Discovery and basic call
 
 - MCP server accepted by host: `yes/no`
 - Tools discovered: `yes/no`
 - `probe_ping` callable: `yes/no`
+- `probe_ping` invocation marker verified: `yes/no`
 - Host showed its own confirmation before call: `yes/no/not observed`
 - Notes/error text:
 
@@ -43,14 +58,19 @@ Run `probe_session_correlation` twice in the first conversation.
 <paste sanitized probe result>
 ```
 
+- Invocation marker verified against console: `yes/no`
+
 ### Call 2
 
 ```json
 <paste sanitized probe result>
 ```
 
+- Invocation marker verified against console: `yes/no`
 - `call_index` observed: `1 -> 2` expected
 - `same_transport_session_as_first`:
+- `request_id_present` call 1 / call 2:
+- Request-id fingerprint stable only when actually present: `yes/no/not applicable`
 - Stable header fingerprint names:
 - Stable `_meta` fingerprint names:
 - Stable client-capability observations:
@@ -65,7 +85,8 @@ Start a genuinely new conversation while the probe server remains running, then 
 <paste sanitized probe result>
 ```
 
-- Expected `call_index`: `3` unless another comparison was made first
+- Invocation marker verified against console: `yes/no`
+- Expected `call_index`: `3` unless another verified comparison was made first
 - Which candidate correlation signals changed compared with call 1?
 - Which remained identical?
 - Is there enough evidence to distinguish conversations? `yes/no/uncertain`
@@ -75,6 +96,7 @@ Start a genuinely new conversation while the probe server remains running, then 
 Without intentionally creating another conversation, disconnect/reconnect the client or MCP connection if the host permits it, then call the correlation tool again with the **same run id**.
 
 - Reconnect procedure:
+- Invocation marker verified against console: `yes/no`
 - Transport/session signal before:
 - Transport/session signal after:
 - Candidate conversation metadata before:
@@ -86,11 +108,16 @@ Without intentionally creating another conversation, disconnect/reconnect the cl
 
 Request two `probe_parallel(delay_ms=500)` calls concurrently if the host supports parallel tool dispatch.
 
+- Both invocation markers verified against console: `yes/no`
+- `overlap_observed` values:
+- `active_on_entry` values:
 - Both dispatched concurrently: `yes/no/uncertain`
 - Approximate wall-clock behavior:
 - Per-call elapsed values:
 - Same candidate context on both calls: `yes/no/uncertain`
 - Notes:
+
+`overlap_observed=true` is server-side proof that at least one other `probe_parallel` invocation was active during that call; it is stronger evidence than timing alone.
 
 ## Cancellation / timeout
 
@@ -123,4 +150,6 @@ After collecting all comparisons, call `probe_reset` for the run id.
 
 ### Important
 
-No observed header, `_meta` field, tunnel identity or transport session id becomes Optic authorization authority. H-03 may use proven signals only as correlation inputs before minting an independent Optic-owned `SessionHandle`.
+MCP v2 request ids are optional. H-01 v2 exposes absence explicitly; do not treat a v1 constant request-id fingerprint as conversation identity without independent evidence that a real request id was present.
+
+No observed header, `_meta` field, tunnel identity, request id or transport session id becomes Optic authorization authority. H-03 may use proven signals only as correlation inputs before minting an independent Optic-owned `SessionHandle`.
