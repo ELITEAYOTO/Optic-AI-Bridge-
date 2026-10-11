@@ -243,7 +243,7 @@ async def lifespan(_: Starlette) -> AsyncIterator[None]:
                 print(f"Request limit  : {MAX_REQUEST_BODY_BYTES} bytes", flush=True)
                 print(f"Adapter instance: {_adapter_instance}", flush=True)
                 print(f"Fixture marker : {_fixture_marker}", flush=True)
-                print(f"Upstream server: {init.serverInfo.name}", flush=True)
+                print(f"Upstream server: {init.server_info.name}", flush=True)
                 print(f"Upstream tools : {', '.join(names)}", flush=True)
                 print(
                     "DO NOT point this experiment at a real project workspace.",
