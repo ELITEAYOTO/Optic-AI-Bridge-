@@ -78,6 +78,22 @@ class MetaSanitizationTests(unittest.TestCase):
         self.assertNotEqual(stable_fingerprint("same"), stable_fingerprint("different"))
 
 
+class ObservationTests(unittest.TestCase):
+    def test_missing_request_id_is_explicit_and_not_fingerprinted(self) -> None:
+        result = build_observation(request_id=None, session_id=None, headers={}, meta={})
+        self.assertFalse(result["request_id_present"])
+        self.assertIsNone(result["request_id_fingerprint"])
+
+    def test_present_request_id_is_fingerprinted(self) -> None:
+        first = build_observation(request_id=42, session_id=None, headers={}, meta={})
+        second = build_observation(request_id=42, session_id=None, headers={}, meta={})
+        different = build_observation(request_id=43, session_id=None, headers={}, meta={})
+        self.assertTrue(first["request_id_present"])
+        self.assertIsNotNone(first["request_id_fingerprint"])
+        self.assertEqual(first["request_id_fingerprint"], second["request_id_fingerprint"])
+        self.assertNotEqual(first["request_id_fingerprint"], different["request_id_fingerprint"])
+
+
 class CorrelationStoreTests(unittest.TestCase):
     def test_same_meta_value_correlates_without_exposing_it(self) -> None:
         store = CorrelationStore()
