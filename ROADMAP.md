@@ -1,6 +1,6 @@
 # Roadmap
 
-The canonical long-form roadmap remains in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md). The active project state is summarized in [docs/product/CURRENT_STATE_2026-10-12.md](docs/product/CURRENT_STATE_2026-10-12.md). The reusable-approval subtrack is in [docs/product/A08_REUSABLE_APPROVAL_TRACK.md](docs/product/A08_REUSABLE_APPROVAL_TRACK.md), and the active multi-host / zero-cost / session-autonomy direction is in [docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md](docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md).
+The canonical long-form roadmap remains in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md). The active project state is summarized in [docs/product/CURRENT_STATE_2026-10-12.md](docs/product/CURRENT_STATE_2026-10-12.md), and the detailed engineering checkpoint is [docs/product/PROJECT_HEALTH_2026-10-12.md](docs/product/PROJECT_HEALTH_2026-10-12.md).
 
 **Last reviewed:** 2026-10-12  
 **Current phase:** Phase 4 same-repository work continues, with the H-track running in parallel  
@@ -9,9 +9,11 @@ The canonical long-form roadmap remains in [docs/product/SCOPE_AND_ROADMAP.md](d
 
 ## Current headline
 
-Optic's local Rust security/runtime core remains the source of truth. The current remote-host work is deliberately evidence-gated: prove what FranceStudent/other hosts actually expose, keep transport/authentication separate from project authority, and only then introduce production multi-host session resolution/autonomy.
+Optic's local Rust security/runtime core remains the source of truth. The remote-host work is evidence-gated: measure FranceStudent/other hosts, keep transport/authentication separate from project authority, and only then introduce production multi-host session resolution/autonomy.
 
-The most important new proof is draft PR #178: a bounded Streamable HTTP MCP compatibility adapter can forward into the **real Rust `optic-bridge` stdio application server** against a disposable synthetic workspace. This works on Linux and Windows and does not require a speculative rewrite of the production core merely to continue host testing.
+The strongest current remote proof is draft PR #178: FranceStudent can reach a bounded Streamable HTTP compatibility adapter which forwards into the **real Rust `optic-bridge` stdio application server** against a disposable synthetic workspace. Live host calls are now server-correlated with adapter markers.
+
+Real project exposure is still deliberately blocked.
 
 ## Existing A-08 reusable approval state
 
@@ -22,24 +24,22 @@ The most important new proof is draft PR #178: a bounded Streamable HTTP MCP com
 - **A-08E blocked by host interaction** — direct/server-side reusable approval works, but tested host surfaces do not consistently expose the nested interaction needed for the real-host UX proof.
 - **A-08F moved behind H-03** — wording such as “this conversation” is allowed only after a real adapter proves a trustworthy mapping. Until then use “current Optic session”.
 
-A reusable approval never mints new capability, filesystem/network authority, process eligibility or larger resource ceilings.
-
 ## Provider-neutral product invariants
 
-- Optic itself must remain free to use and must not require a paid Optic backend, relay or API-credit path for normal student operation.
+- Optic itself remains free to use without a mandatory paid Optic backend, relay or API-credit path for normal student operation.
 - Tailscale, Cloudflare, custom HTTPS and future providers are replaceable connectivity adapters, never authorization authorities.
 - MCP is a host adapter, not the Optic core.
-- FranceStudent is the priority V1 remote host target; ChatGPT is supported only on surfaces/plans that expose a compatible path.
+- FranceStudent is the priority V1 remote host target; ChatGPT is supported only on compatible surfaces/plans.
 - Remote transport and authentication do not mint project capability, leases, session handles or autonomy grants.
 - V1 trust/autonomy is scoped to an Optic-owned session mapping and remains locally revocable.
-- Trusted development should support realistic `read -> edit -> build -> test -> inspect -> fix -> repeat` loops without per-action approval spam, while every action still passes deterministic policy/resource/isolation checks.
+- Trusted development should support realistic `read -> edit -> build -> test -> inspect -> fix -> repeat` loops without per-action approval spam while every action still passes deterministic policy/resource/isolation checks.
 - Human authority must have a local Optic path; host elicitation/confirmation UI is optional compatibility behavior, not the only consent boundary.
 
 ## H-track
 
 ### H-00 — architecture/evidence freeze — COMPLETE
 
-Frozen:
+Frozen direction:
 
 ```text
 AI host
@@ -52,62 +52,73 @@ AI host
   -> runtime / Windows containment
 ```
 
-Provider connectivity is outside PolicyEngine.
-
-### H-01 — harmless host characterization — ACTIVE / HOST-BLOCKED
+### H-01 — harmless host characterization — ACTIVE / EVIDENCE-PENDING
 
 Draft PR #170 contains the authority-free `h01-v2` probe.
 
-Current verified FranceStudent facts:
+Earlier verified FranceStudent facts:
 
 - public Streamable HTTP `/mcp` through a temporary Cloudflare Quick Tunnel works;
 - real remote requests reached the local Windows probe;
 - `probe_ping` succeeded;
-- negotiated MCP revision is `2026-07-28`;
+- MCP `2026-07-28` negotiated;
 - no modern transport session id was observed;
 - two same-conversation correlation calls were verified with server activity;
-- no host-owned per-call confirmation UI was observed for those harmless calls;
-- the shown FranceStudent MCP configuration did not visibly expose a custom-header field.
+- no host-owned per-call confirmation UI was observed for those harmless calls.
 
-Evidence-integrity correction:
+Evidence-integrity hardening:
 
-- one host/model JSON sample was later admitted to have been invented without a real tool call and is excluded;
-- the v1 constant request-id fingerprint is ambiguous because request ids are optional and absent `None` was fingerprinted;
-- `h01-v2` now emits request-id presence explicitly and adds random `probe_invocation` + `server_instance` values mirrored in local `[H01] TOOL_CALL` logs;
-- grouped parallel proof is server-side and keyed by an explicit parallel `run_id`.
+- one host/model JSON sample admitted to being invented is excluded;
+- v1 request-id evidence is ambiguous and excluded;
+- `h01-v2` adds explicit request-id presence, `probe_invocation`, `server_instance` and grouped server-side overlap proof.
 
-Remaining real-host checks are currently blocked by a FranceStudent service incident, not failed. When service returns, use a fresh v2 server instance + fresh run ids and rerun new-chat separation, reconnect, grouped parallel dispatch and optional safe cancellation with matching local invocation proof.
+FranceStudent is stable again as of 2026-10-12. Remaining H-01 work requires intentionally reconnecting the host to the **H-01 v2 endpoint**, not the PR #178 real-link endpoint:
 
-No observed H-01 signal is authority. Conversation identity remains unproven.
+- verified new-chat correlation comparison;
+- verified reconnect comparison;
+- true grouped parallel dispatch / overlap;
+- optional safe cancellation;
+- harmless secure-header delivery;
+- exact bearer/secret field behavior.
+
+Conversation identity remains unproven.
 
 ### H-02 — zero-cost remote authentication — PENDING
 
 Issue #172 owns this gate.
 
-Requirements include:
+New useful host evidence: FranceStudent now visibly exposes:
 
-- endpoint authentication independent from tunnel/provider identity;
-- missing/wrong credentials rejected;
-- valid credential produces only a connection principal;
-- immediate local revoke and rotation;
-- no credentials in URI query strings, ordinary logs or tool output;
-- rate/size/concurrency/reconnect negative tests;
-- standards-native OAuth/Authorization path where the host supports it, otherwise an explicitly documented compatibility mechanism measured from the real host UI.
+- an authorization input labelled **`Bearer token ou secret`**;
+- **`Headers sécurisés (JSON)`**.
 
-Do not invent FranceStudent header/token semantics before measurement.
+This makes a static bearer/key compatibility proof plausible, but the exact wire behavior is not yet measured. Do not call it OAuth unless the host performs an OAuth flow.
 
-### H-03 — SessionResolver — PENDING
+H-02 still requires:
+
+- missing/wrong/valid credential behavior;
+- local revoke + rotation;
+- reconnect after revoke;
+- secret redaction;
+- bounded body/header/concurrency/rate behavior;
+- authentication result separated from H-03 project/session authority.
+
+### H-03 — SessionResolver — PENDING / NOW EMPIRICALLY JUSTIFIED
 
 Issue #173 owns the contract.
 
-`HostContext` remains bounded/non-authoritative. `SessionResolver` creates or resolves the opaque application-owned `SessionHandle`.
+PR #178 intentionally owns one long-lived upstream stdio Optic application session. In a live test, one FranceStudent conversation produced verified `optic_session_info` `seq=25`; a genuinely new FranceStudent conversation produced `seq=26` without restarting the adapter, both on `adapter_instance=20baecc2eeaf` and the same upstream-visible experimental context.
 
-Because MCP `2026-07-28` is stateless, H-03 must either:
+Safe conclusion: the current experiment does **not** isolate different FranceStudent conversations into separate Optic application sessions. A production multi-conversation adapter therefore needs explicit H-03 session resolution.
 
-1. use a proven host conversation-correlation signal only as a mapping input; or
+This does not discover a FranceStudent conversation identifier. H-03 still must either:
+
+1. use a proven host conversation-correlation signal only as a bounded mapping input; or
 2. use an Optic-minted explicit application handle threaded across calls.
 
-The second path is the required fallback until the first is proven.
+The explicit-handle path remains the mandatory fallback.
+
+H-03 also owns final session lifetime semantics (idle vs absolute lifetime and bounded renewal) rather than inheriting the current ~30-minute behavior accidentally.
 
 ### H-04 — bounded session autonomy — PENDING
 
@@ -121,11 +132,12 @@ Issue #175 owns a host-independent local authority path suitable for the later d
 
 ### H-06 — production Streamable HTTP adapter — GATED
 
-Only after H-01 through H-05 supply enough evidence:
+Only after enough H-01/H-02/H-03/H-04/H-05 evidence/contracts exist:
 
 - production-bounded Streamable HTTP lives beside stdio, not instead of it;
-- per-request activity resolves through `SessionResolver`, not a single startup session embedded in the server instance;
+- per-request activity resolves through `SessionResolver`, not one startup session embedded in the server instance;
 - equivalent body/response/concurrency/admission bounds remain enforced;
+- tool errors use a host-compatible transport/MCP mapping;
 - no host/provider-specific policy logic is pushed into filesystem/Git/process services.
 
 ### H-07 — FranceStudent V1
@@ -146,10 +158,10 @@ Implement the full visual application after host/session/auth/autonomy/local-app
 
 ## Real Optic MCP link experiment — PR #178
 
-The current experiment proves:
+Current experiment:
 
 ```text
-Streamable HTTP client
+FranceStudent / Streamable HTTP client
   -> bounded Python compatibility adapter
   -> real Rust `optic-bridge` stdio server
   -> disposable synthetic workspace
@@ -163,19 +175,21 @@ Remote tools are exactly:
 
 No process, mutation, Git, `session_cancel` or arbitrary upstream forwarding is exposed.
 
-On experiment head `ef5bc84144670135d13f55a59a782611aeae762f`:
+Automated state on head `ef5bc84144670135d13f55a59a782611aeae762f`:
 
-- dedicated Real Optic MCP Link workflow #11 is green on Linux + Windows;
-- normal repository CI #653 is green on dependency policy + Ubuntu + Windows;
-- real session/list/read paths are reached;
-- traversal rejection comes from real Optic;
-- concurrent forwarding is proven;
-- per-call adapter invocation proof is present;
-- a new HTTP/MCP client can reconnect to the same long-lived upstream Optic application session.
+- Real Optic Link workflow #11 green Linux + Windows;
+- normal CI #653 green dependency policy + Ubuntu + Windows;
+- real session/list/read paths, traversal rejection, bounded concurrent forwarding, per-call proof and transport-client reconnect continuity proven.
 
-Reconnect continuity is transport evidence only, not conversation identity.
+Live FranceStudent evidence on 2026-10-12:
 
-The shared Python experiment dependency graph is version-frozen and validated with `pip check` + `pip freeze --all`.
+- exact three-tool discovery;
+- server-correlated real read at `seq=22`, marker `126b81f5327c1b59`;
+- real traversal denial for `../outside.txt`;
+- two real read calls in one assistant turn (`seq=23`, `seq=24`), without claiming temporal overlap;
+- a new FranceStudent conversation continued to the same live adapter/upstream experimental context (`seq=25 -> 26`, same adapter instance).
+
+See `docs/research/REAL_OPTIC_MCP_LINK_EXPERIMENT.md` for accepted interpretation and non-claims.
 
 ## Security gates before real-project remote exposure
 
@@ -183,19 +197,30 @@ See [docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md](docs/security/REMOTE_AUTONOMY
 
 Open blockers include:
 
-- **#176:** explicit sensitive-content + metadata/listing classifier/policy and canonical listing boundary;
+- **#176:** sensitive-content + metadata/listing classifier/policy, canonical listing authorization and pagination progress;
 - **#180:** generic `FileWrite`/`FileDelete` must not modify protected `.git` control state and bypass `GitIntegrate`;
 - **#181:** Unix native path segments must round-trip exactly into authority-bearing `WorkspacePath`;
 - **#182:** `GitRead` must not bypass sensitive-content policy through diff/status;
 - **#183:** `fs_read`, `fs_list` and Git read must hold session admission through the effect so revoke/quiescence semantics are truthful.
 
-The synthetic PR #178 experiment is intentionally safe relative to these gates because it uses adapter-created disposable data, zero mutation/process/Git authority and no remote session-cancel path.
+## Coding candidates that are not host-blocked
+
+Highest-value narrow work that can proceed without guessing FranceStudent semantics:
+
+1. #176 canonical/prepared `fs_list` authorization + guaranteed cursor progress.
+2. #183 admission permit across read/list/Git effects with deterministic revoke-race tests.
+3. #180 protected Git control namespace for generic mutation, after focused fixture tests.
+4. #181 Unix native-path round-trip fix/regressions.
+5. Optional synthetic mutation extension of PR #178 only after auditing the real mutation service; keep it disposable/no-Git/no-process/no real workspace and route effects through real Optic transactional mutation.
+
+Production H-02 host-specific auth and H-03 host-specific correlation should wait for the missing H-01 measurements.
 
 ## Documentation and evidence rules
 
-- [docs/product/CURRENT_STATE_2026-10-12.md](docs/product/CURRENT_STATE_2026-10-12.md) is the compact active-state snapshot.
+- `docs/product/CURRENT_STATE_2026-10-12.md` is the compact active-state snapshot.
+- `docs/product/PROJECT_HEALTH_2026-10-12.md` is the detailed engineering health checkpoint.
 - Historical `STATUS.md` remains the implementation ledger and should be synchronized surgically, not replaced wholesale.
-- [PROJECT_CONTINUITY_PROMPT.md](PROJECT_CONTINUITY_PROMPT.md) is the generic context-recovery prompt for a fresh AI conversation.
+- `PROJECT_CONTINUITY_PROMPT.md` is the context-recovery prompt for a fresh AI conversation.
 - Every milestone/security decision should update the owning doc/ADR/issue/PR body and exact-head CI evidence.
 - Host/model prose alone is not accepted as tool-execution proof when local invocation evidence is available.
 
