@@ -64,9 +64,15 @@ class Guard:
     No URLs, arbitrary names, values, exception strings or bodies are logged.
     Fixed lifetime/request budgets bound even refused-traffic diagnostic output.
     """
-    def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20):
+    def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20,
+                 header_observer=observe_headers,
+                 zero_arg_tools=("probe_headers", "probe_create_handle"),
+                 handle_tool="probe_consume_handle"):
         self.app, self.clock, self.emit = app, clock, emit
         self.request_timeout = request_timeout
+        self.header_observer = header_observer
+        self.zero_arg_tools = zero_arg_tools
+        self.handle_tool = handle_tool
         self.instance = secrets.token_hex(6)
         self.started = clock()
         self.sequence = self.active = 0
@@ -77,7 +83,7 @@ class Guard:
         if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= MAX_LIFETIME:
             return await self.reject(send, 429)
         self.sequence += 1
-        owner, observation = observe_headers(scope.get("headers", []))
+        owner, observation = self.header_observer(scope.get("headers", []))
         raw_method = scope.get("method")
         # Only predefined labels leave the process: never echo arbitrary verbs,
         # URLs, paths, query strings, user-agent values, proxy headers or IPs.
@@ -144,9 +150,9 @@ class Guard:
                             params = request.get("params", {})
                             name = params.get("name")
                             args = params.get("arguments", {})
-                            if name in ("probe_headers", "probe_create_handle"):
+                            if name in self.zero_arg_tools:
                                 valid = args == {}
-                            elif name == "probe_consume_handle":
+                            elif self.handle_tool is not None and name == self.handle_tool:
                                 valid = (isinstance(args, dict) and set(args) == {"application_handle"}
                                     and isinstance(args["application_handle"], str)
                                     and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
