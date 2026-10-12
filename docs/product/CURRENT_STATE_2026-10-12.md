@@ -34,16 +34,16 @@ A-08 reusable profile approval remains valid. A-08E is blocked by host interacti
 ## Multi-host H-track
 
 1. **H-00 — complete:** provider-neutral architecture, zero-cost requirement, Optic-owned sessions, local-first authority and no host/tunnel identity as authorization.
-2. **H-01 — active / evidence-pending:** authority-free host characterization. The hardened `h01-v2` probe is implemented in draft PR #170. FranceStudent service is stable again; the remaining H-01 measurements now need a deliberate reconnect to the H-01 v2 endpoint/process.
-3. **H-02 — pending:** zero-cost remote endpoint authentication and credential lifecycle.
-4. **H-03 — pending:** bounded `HostContext -> SessionResolver -> SessionHandle` contract.
+2. **H-01 — active / compatibility evidence remaining:** authority-free host characterization. The hardened `h01-v2` probe is implemented in draft PR #170. FranceStudent admin answers now close the chat-id and bearer-carrier discovery questions; reconnect/overlap/header-regression/timeout characterization remains useful.
+3. **H-02 — ready for proof implementation:** FranceStudent V1 bearer carrier is known (`Authorization: Bearer <value>`). The authentication/revoke/rotate/redaction/bounds harness is still not implemented.
+4. **H-03 — ready for contract implementation:** FranceStudent admin confirms no per-chat id is delivered to MCP. The V1 baseline should therefore be an Optic-minted explicit opaque application handle resolved to an internal Optic-owned `SessionHandle`.
 5. **H-04 — pending:** `Review`, `Project Autonomy` and advanced high-authority session modes without approval spam, while every effect remains independently revalidated.
-6. **H-05 — pending:** host-independent local approval broker suitable for the later Windows app/widget.
+6. **H-05 — pending:** host-independent local approval broker suitable for the later Windows app/widget. FranceStudent has no native per-call confirmation and no MCP cancellation today, reinforcing this requirement.
 7. **H-06+ — gated:** production Streamable HTTP adapter, FranceStudent closure, compatible ChatGPT adapter, provider automation and desktop app.
 
 ## Verified FranceStudent evidence
 
-Accepted evidence must be corroborated by the local probe/adapter where proof instrumentation exists, not merely by model prose.
+Accepted tool-execution evidence must be corroborated by the local probe/adapter where proof instrumentation exists, not merely by model prose. Direct admin answers are recorded separately as host product-contract input and may still receive harmless wire-regression tests.
 
 ### Earlier H-01 evidence
 
@@ -63,16 +63,26 @@ Evidence integrity corrections remain important:
 - the old v1 request-id fingerprint is excluded as a conversation signal because request ids are optional and the v1 probe fingerprinted absent `None` values ambiguously;
 - `h01-v2` now emits explicit request-id presence plus server-minted per-call proof mirrored in local logs.
 
-Conversation identity remains **unproven**. H-03 must preserve an Optic-minted explicit application-handle fallback unless a reliable host-specific correlation signal is demonstrated.
+### FranceStudent admin-confirmed contract — 2026-10-12
 
-### New FranceStudent UI evidence (2026-10-12)
+Direct answers from a FranceStudent admin establish the following current behavior:
 
-The current FranceStudent MCP editor now visibly exposes:
+- **FranceStudent does not send a per-conversation/chat identifier to MCP servers today.** The admin noted this could be a future addition.
+- MCP configuration is **global to the user's account**, so each conversation can access the configured MCP server.
+- Secure custom JSON headers are supported, sent on **every request**, and are **hidden from the model**.
+- The authorization field sends exactly:
 
-- an authorization field labelled **`Bearer token ou secret`**;
-- **`Headers sécurisés (JSON)`**.
+```http
+Authorization: Bearer <value>
+```
 
-This materially advances H-02 research, but the exact on-wire behavior is still unmeasured. Do not assume `Authorization: Bearer ...`, OAuth semantics, duplicate-header behavior or custom-header delivery until proven with the H-01/H-02 harness.
+- FranceStudent has **no native per-tool-call confirmation**.
+- FranceStudent permits parallel tool calls; OpenAI/Claude decides whether to issue them. Admin reported a current host cap of roughly **8 calls**, with intent to remove it later. Optic must keep independent concurrency/admission bounds.
+- MCP **cancellation is not currently supported** by FranceStudent.
+- reconnect/context behavior is not specified by the admin and should be measured;
+- the host-side maximum tool-call timeout remains unanswered/unmeasured.
+
+These answers remove two major architectural uncertainties: FranceStudent V1 need not wait for a chat id, and the compatibility bearer carrier is known.
 
 ## Real Optic MCP link experiment — live FranceStudent proof
 
@@ -112,13 +122,67 @@ Verified with matching host JSON + local `[REAL-LINK] TOOL_CALL` evidence on ada
 - two distinct reads were issued in one FranceStudent assistant turn (`seq=23` and `seq=24`, both matching local markers). This proves two real calls in one turn, **not** temporal overlap;
 - one conversation produced verified `optic_session_info` `seq=25`, and a genuinely new FranceStudent conversation produced `seq=26` without restarting the live adapter; both reached the same `adapter_instance=20baecc2eeaf` and the same upstream-visible experimental session-info context.
 
-Safe interpretation of the new-chat test:
+Safe interpretation of the new-chat test + admin contract:
 
-> The current PR #178 experimental bridge does not isolate different FranceStudent conversations into distinct Optic application sessions. H-03 is required before multi-conversation real-project authority can be correct.
+> The current PR #178 experimental bridge does not isolate different FranceStudent conversations into distinct Optic application sessions, and FranceStudent currently provides no chat id to the MCP server from which such isolation could be derived automatically.
 
-This does **not** discover a FranceStudent conversation identifier, because PR #178 does not record H-01 correlation inputs.
+Therefore H-03 FranceStudent V1 should use a **principal-bound Optic-minted explicit application handle** as the baseline application-continuity mechanism. That handle remains non-authoritative by itself; the real authority is the internal Optic-owned `SessionHandle` and application-owned grants/leases/policy state.
 
 The manual Real Optic Link process intentionally stops after about 25 minutes, before the current ~30-minute Optic session lifetime.
+
+## H-02 FranceStudent V1 direction
+
+The carrier question is now closed at the host-contract level:
+
+```http
+Authorization: Bearer <connection credential>
+```
+
+plus optional secure custom headers sent on every request and hidden from the model.
+
+This should be implemented/proven as a **static bearer compatibility mode**, not called OAuth.
+
+H-02 still needs to prove:
+
+- missing/malformed/wrong credential rejection;
+- valid credential allows only the harmless authenticated connection path;
+- immediate local revoke;
+- rotation invalidates the old credential and accepts the new one;
+- reconnect cannot resurrect revoked auth;
+- no secret leakage in logs/diagnostics/tool output;
+- constant-time validation where applicable;
+- independent Optic request/header/concurrency/rate bounds;
+- authentication remains separate from H-03 project/session authority.
+
+A harmless wire-level dummy-bearer/custom-header regression is still worthwhile, but there is no longer an admin-answer blocker before designing the H-02 harness.
+
+## H-03 FranceStudent V1 direction
+
+Because FranceStudent does not provide a chat id to MCP servers, the baseline becomes:
+
+```text
+request
+  -> validate Authorization bearer
+  -> authenticated connection principal
+  -> resolve caller-supplied opaque Optic application handle
+     or create one through an explicit bounded bootstrap contract
+  -> SessionResolver
+  -> internal Optic-owned SessionHandle
+  -> session-owned capabilities / leases / policy
+```
+
+Still required before H-03 closes:
+
+- opaque/unguessable/bounded handle format and storage;
+- principal binding and cross-principal rejection;
+- transactional provisioning of all subordinate session-owned authority;
+- simultaneous-first-call / duplicate-bootstrap behavior;
+- revoke/replay/no-resurrection semantics;
+- exact attach/create rules after reconnect;
+- idle-vs-absolute session lifetime and bounded renewal;
+- deterministic cleanup/reaping/capacity exhaustion.
+
+Reconnect measurements remain useful for UX/adapter behavior, but H-03 correctness must not depend on transport continuity.
 
 ## Security audit gates before real-project remote exposure
 
@@ -132,24 +196,30 @@ Real project workspaces remain intentionally blocked from the remote experiment 
 
 These are deliberate security gates, not reasons to weaken the existing authority model.
 
+Draft PR #184 is a separate current hardening candidate for #183/#181/#176-partial; it is unmerged and does not change the real-project remote gate by itself.
+
 ## What is known vs what is still missing
 
 ### Known
 
 - FranceStudent can reach Streamable HTTP MCP and the real Optic synthetic adapter.
-- Current FranceStudent UI exposes bearer/secret and secure-header configuration fields.
+- FranceStudent admin confirms no per-chat id is sent to MCP servers today.
+- MCP configuration is account-global.
+- The bearer field maps to `Authorization: Bearer <value>`.
+- Secure custom headers are sent on every request and hidden from the model.
+- FranceStudent has no native per-call confirmation and no MCP cancellation today.
+- FranceStudent permits model-driven parallel tool calls; Optic must impose its own independent limits.
 - Real FranceStudent -> real Optic read and traversal rejection are proven with local markers.
 - Different FranceStudent conversations can currently reach the same long-lived PR #178 adapter/upstream experimental context.
 - FranceStudent can issue two distinct Optic tool calls from one assistant turn.
 
-### Still missing
+### Still missing / useful to measure
 
-- exact bearer-field wire behavior;
-- custom secure-header delivery proof;
-- H-01 v2 new-chat correlation signal (if any);
-- H-01 v2 reconnect signal behavior;
-- true FranceStudent parallel overlap proof;
-- cancellation behavior;
+- harmless on-wire regression proof for custom secure header delivery and bearer scheme/presence;
+- H-01 v2 true parallel overlap proof;
+- reconnect/context behavior;
+- host-side maximum tool-call timeout;
+- duplicate/conflicting `Authorization` precedence if both UI surfaces can set it;
 - final H-02 revoke/rotate/auth negative tests;
 - H-03 session-lifetime/renewal contract;
 - sensitive content/metadata classifier policy;
@@ -157,11 +227,11 @@ These are deliberate security gates, not reasons to weaken the existing authorit
 
 ## Current safe next steps
 
-1. Keep PR #169/#170/#178 Draft.
-2. Reconnect FranceStudent intentionally to H-01 v2 and finish new-chat/reconnect/grouped-parallel/header/auth measurements with server proof.
-3. In parallel, implement host-independent narrow security fixes that do not depend on host semantics: #176 canonical listing + cursor progress and #183 admission barrier, with deterministic regression tests.
-4. Use measured FranceStudent auth/header behavior to build the H-02 proof harness.
-5. Freeze H-03 SessionResolver + explicit-handle fallback + session lifetime semantics before real multi-conversation authority.
+1. Keep PR #169/#170/#178 Draft; treat PR #184 separately as an unmerged hardening candidate.
+2. Run the small remaining H-01 compatibility tests that have value: harmless secure header, dummy bearer presence, grouped parallel overlap, reconnect and timeout characterization if possible.
+3. Start the H-02 bearer proof harness now; no further FranceStudent admin answer is required to choose the carrier.
+4. Start freezing H-03 around the explicit Optic application-handle baseline; no host chat-id discovery is required for FranceStudent V1.
+5. Continue host-independent security hardening (#176/#180/#181/#182/#183) and exact regression tests.
 6. Do not expose a real project remotely yet.
 
 ## Important branches / PRs / issues
@@ -169,6 +239,7 @@ These are deliberate security gates, not reasons to weaken the existing authorit
 - PR #169 — docs/provider-neutral host/autonomy architecture;
 - PR #170 — H-01 harmless host capability probe;
 - PR #178 — experiment-only real Optic stdio <-> Streamable HTTP link;
+- PR #184 — unmerged read/path/lifecycle hardening candidate (#183/#181/#176 partial);
 - issue #171 — real FranceStudent H-01 evidence;
 - issue #172 — H-02 remote authentication;
 - issue #173 — H-03 SessionResolver;
@@ -181,21 +252,16 @@ These are deliberate security gates, not reasons to weaken the existing authorit
 
 Historical `STATUS.md` remains the long implementation ledger. Use this snapshot, `PROJECT_HEALTH_2026-10-12.md`, `ROADMAP.md` and the owning ADR/research/security docs for current direction. Update historical ledgers surgically when production milestones merge rather than overwriting their history.
 
-
 ## Audit supplement — exact provenance and remaining gaps
 
-The [repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) records exact main/draft refs and CI, all issues #171–#183, source cross-checks, documentation drift and coding candidates. The [evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) separates paired read proofs, host-reported negative evidence and implementation-backed session inference.
+The [repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) records exact main/draft refs and CI, all issues #171–#183, source cross-checks, documentation drift and coding candidates. The [evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) now separates server-correlated host proofs, admin product-contract statements and implementation-backed inference.
 
-Audited main is `156653a406f01383e2fc14cada513963453b04f3`, [CI #602 green](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/37994556854). The initial #169 audit head `8eeecd9ba0a16fa49980fba06be215a2c61a1b97` had [green CI](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/38229751467); #169 then advanced to `1e8b3cc1f7b03f635de38eff95761a2a1724a1ee` during this pass. Existing concurrent documentation additions are preserved. These greens do not validate later heads.
-
-Important proof limits: successful Real Link sequences are minted **after upstream return**, not at admission; no temporal overlap is measured. Session-info does not expose the opaque SessionHandle. The cached seq-26 console excerpt is truncated, so complete local proof must still be retained; manual checkout/binary hash is also missing. Same adapter + unchanged upstream source is strong evidence of shared experimental context, not host conversation identity.
+Important proof limits remain: successful Real Link sequences are minted **after upstream return**, not at admission; no temporal overlap is measured. Session-info does not expose the opaque SessionHandle. Manual checkout/binary hash for the Real Link run is still missing.
 
 Initial app TTL is 30 minutes with a 5-second reap loop and no production renewal call. Monotonic expiry uses a private server-local origin, not a wall-clock epoch. H-03/H-04 must decide idle/absolute/renewal behavior and transactional per-session subordinate lease provisioning.
 
-#179 is closed for version constraints/pip check/freeze, not hash-verified dependency integrity. Historical STATUS.md and SCOPE_AND_ROADMAP.md remain byte-for-byte unchanged by this pass; older live-summary claims and MULTI_SESSION_CONCURRENCY.md still need dated reconciliation. No local Rust tests or new host tests were run by this documentation audit.
+#179 is closed for version constraints/pip check/freeze, not hash-verified dependency integrity. Historical STATUS.md and SCOPE_AND_ROADMAP.md remain historical sources; older live-summary claims and MULTI_SESSION_CONCURRENCY.md still need dated reconciliation. No new production release is implied by these documentation updates.
 
 ## Follow-up implementation candidate — PR #184 (2026-10-12)
 
-[Draft #184](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/184), head `1e7695f12d214c504f84870dfe1f861f5d7d6792`, is based on unchanged main `156653a406f01383e2fc14cada513963453b04f3`. It proposes effect-spanning blocking-worker admission/transport retention for file read/list/Git read (#183), lossless observed native path conversion (#181), and pagination progress/final-cursor fitting (#176 partial). Full native Windows workspace tests, all-targets/all-features Clippy and rustfmt pass. [Exact-head CI](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/38256421685) is running; Linux-specific regressions require its Ubuntu result. This is an unmerged candidate, not a shipped milestone.
-
-The [deferred register](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/1e7695f12d214c504f84870dfe1f861f5d7d6792/docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md) retains missing contracts: canonical prepared-directory authorization across aliases/reparse/replacement races, sensitivity/Git visibility policy, protected Git-control mutation namespace, host auth/correlation and session/lifetime/autonomy/local-approval semantics. #176 remains open for classifier/canonical listing; #180/#182 and H-02–H-05 are not implemented. No draft merge or real-project remote exposure occurs.
+[Draft #184](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/184), head `1e7695f12d214c504f84870dfe1f861f5d7d6792`, is based on unchanged main `156653a406f01383e2fc14cada513963453b04f3`. It proposes effect-spanning blocking-worker admission/transport retention for file read/list/Git read (#183), lossless observed native path conversion (#181), and pagination progress/final-cursor fitting (#176 partial). It is an unmerged candidate, not a shipped milestone; exact-head CI should be checked before promotion.
