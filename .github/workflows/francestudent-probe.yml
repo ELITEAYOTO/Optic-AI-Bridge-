@@ -1,0 +1,42 @@
+name: FranceStudent Dummy Header Handle Probe
+on:
+  pull_request:
+    paths:
+      - 'experiments/francestudent-probe/**'
+      - 'experiments/host-probe/requirements.txt'
+      - 'experiments/host-probe/constraints.txt'
+      - '.github/workflows/francestudent-probe.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install frozen SDK
+        shell: pwsh
+        run: |
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'install failed' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'pip check failed' }
+      - name: Deterministic and real MCP proof
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = 'experiments/francestudent-probe'
+          python -m unittest discover -s experiments/francestudent-probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'unit tests failed' }
+          python experiments/francestudent-probe/smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'MCP smoke failed' }
+      - name: Parse Windows scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem experiments/francestudent-probe/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
