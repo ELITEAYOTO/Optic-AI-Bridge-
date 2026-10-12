@@ -71,6 +71,24 @@ tunnel switch relaxes only this authority-free experiment. Do not copy it to cor
 
 ## Windows — one step at a time
 
+The current server labels its proof rows `fs-probe-v2`. Before MCP/body parsing,
+HTTP rows contain an allowlisted HTTP method (or `other`), endpoint-match and
+query-presence booleans, plus elapsed monotonic milliseconds since process start.
+STATUS rows label the response stage: header bounds, endpoint, dummy Bearer,
+dummy custom headers, admission, body bounds, request shape, MCP, timeout or
+internal error. No arbitrary method/path/query/IP/user-agent/exception is echoed.
+The rejection body stays generic and checks stay strict. These fields distinguish
+an absent-header GET from an authenticated SDK DELETE rejection in local tests;
+they do not identify a caller or retroactively explain the older live 401/405 rows.
+Source attribution remains unknown until a controlled new host run.
+
+The 64 KiB cumulative body bound is checked before appending each new chunk.
+Regression proof includes split/chunked overflow, timeout/cancellation capacity
+cleanup, exception redaction and concurrent owner-context isolation. All three
+tool names, owner/TTL/single-use semantics, credentials and resource ceilings
+are unchanged. The user reports the first manual server/tunnel stopped and the
+connector disabled; do not silently resume or reuse that old endpoint/instance.
+
 Use a fresh checkout of `experiment/francestudent-header-handle` (prefer the exact
 PR head). No Rust installation/build is required. Python 3.11+ is required. If
 needed install it from https://www.python.org/downloads/windows/ and reopen

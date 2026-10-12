@@ -10,4 +10,4 @@ try {
     & $Python (Join-Path $Root 'smoke.py')
     if ($LASTEXITCODE -ne 0) { throw 'Real local MCP smoke failed.' }
 } finally { $env:PYTHONPATH = $PreviousPath }
-Write-Host 'TEST PASS - local proof only; FranceStudent still needs manual evidence.'
+Write-Host 'TEST PASS - local proof only; new host diagnostics still need manual evidence.'

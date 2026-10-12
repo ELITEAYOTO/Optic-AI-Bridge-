@@ -112,6 +112,16 @@ def main():
             except HTTPError as error:
                 assert error.code == status
                 assert canary.encode() not in error.read()
+        # Distinguish missing headers at ingress from unsupported SDK methods,
+        # without guessing that these caused the historical FranceStudent rows.
+        for method, h, status in (("GET", {"Authorization": header_map()["Authorization"]}, 401),
+                                  ("DELETE", header_map(), 405)):
+            request = Request(url, headers={**h, "MCP-Protocol-Version": "2026-07-28"}, method=method)
+            try:
+                urlopen(request, timeout=5)
+                raise AssertionError("method probe unexpectedly accepted")
+            except HTTPError as error:
+                assert error.code == status
         proofs, handle = asyncio.run(exercise(url))
     finally:
         process.terminate()
@@ -131,6 +141,12 @@ def main():
     assert len(http_proofs) > len(proofs), "transport discovery requests missing from proof"
     assert len({p["sequence"] for p in http_proofs}) == len(http_proofs)
     by_sequence = {p["sequence"]: p for p in http_proofs}
+    statuses = [json.loads(line.split(" STATUS ", 1)[1]) for line in logs if " STATUS " in line]
+    assert all(p["proof_version"] == "fs-probe-v2" for p in http_proofs)
+    assert any(by_sequence[s["sequence"]]["http_method"] == "GET" and s["stage"] == "dummy_custom_headers"
+               and s["status"] == 401 for s in statuses)
+    assert any(by_sequence[s["sequence"]]["http_method"] == "DELETE" and s["stage"] == "mcp"
+               and s["status"] == 405 for s in statuses)
     dispatch = [json.loads(line.split(" DISPATCH ", 1)[1]) for line in logs if " DISPATCH " in line]
     assert {"initialize", "tools/list", "tools/call"}.issubset({p["method"] for p in dispatch})
     for item in dispatch:
@@ -139,7 +155,8 @@ def main():
         assert all(v["matches_dummy"] for v in observation["custom"].values())
     print("PASS: dummy headers on discovery/tool/reconnect requests; owner denial; exact handoff;")
     print("single use; atomic race; bounded ingress; raw credential/handle absence from server logs.")
-    print("Local SDK proof only. FranceStudent model handoff and every-request delivery remain unmeasured.")
+    print("PASS: safe HTTP-method and rejection-stage diagnostics (fs-probe-v2).")
+    print("Local SDK proof only; this run adds no FranceStudent live measurement.")
     return 0
 
 

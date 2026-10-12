@@ -57,3 +57,13 @@ Still unmeasured live: explicit reconnect, expiry and other-owner denial, header
 conflict precedence, timeout and H-01 grouped temporal overlap. Secure-header
 invisibility remains an admin statement. #178 is a separate real Rust synthetic
 link and provides none of these H-01 proofs. Keep #186 Draft and H-02/H-03 open.
+
+## Follow-up disposition
+
+The user confirmed stopping both local server/tunnel and disabling the connector.
+No further live calls are claimed. The next development tranche adds `fs-probe-v2`
+safe HTTP-method/endpoint/query-presence/elapsed-time and response-stage fields,
+without changing auth acceptance or handle authority. Local GET missing-header
+and DELETE SDK-rejection tests distinguish their phases. Future live results must
+use a new instance and version; do not backfill these fields into this ledger's
+historical sequence or treat local diagnostic tests as host-source attribution.

@@ -71,7 +71,7 @@ class HeaderTests(unittest.TestCase):
 class GuardTests(unittest.IsolatedAsyncioTestCase):
     async def request(self, guard, h=None, body=b"", **changes):
         output = []
-        scope = {"type": "http", "path": "/mcp", "query_string": b"", "headers": headers() if h is None else h}
+        scope = {"type": "http", "method": "POST", "path": "/mcp", "query_string": b"", "headers": headers() if h is None else h}
         scope.update(changes)
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
@@ -121,7 +121,7 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         now[0] = MAX_LIFETIME
         self.assertEqual((await self.request(guard))[0]["status"], 429)
 
-    async def test_context_isolation_and_cancellation(self):
+    async def test_context_isolation(self):
         both = asyncio.Event()
         seen = []
         async def app(scope, receive, send):
@@ -136,6 +136,70 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(self.request(guard, headers()), self.request(guard, headers("B")))
         self.assertCountEqual(seen, ["A", "B"])
         self.assertEqual(guard.active, 0)
+
+    async def test_safe_method_stage_and_no_source_attribution(self):
+        logs = []
+        async def app(scope, receive, send):
+            await Guard.reject(send, 405)
+        guard = Guard(app, clock=lambda: 42, emit=logs.append)
+        for method, h, expected_stage, status in (
+                ("GET", headers()[:1], "dummy_custom_headers", 401),
+                ("DELETE", headers(), "mcp", 405),
+                ("POST", [], "dummy_bearer", 401)):
+            output = await self.request(guard, h, method=method)
+            self.assertEqual(output[0]["status"], status)
+            http = json.loads(next(line.split(" HTTP ")[1] for line in reversed(logs) if " HTTP " in line))
+            result = json.loads(logs[-1].split(" STATUS ")[1])
+            self.assertEqual(http["http_method"], method)
+            self.assertEqual(result["stage"], expected_stage)
+            self.assertEqual(http["proof_version"], "fs-probe-v2")
+            self.assertEqual(http["elapsed_ms"], 0)
+        canary = "PRIVATE-REQUEST-CANARY"
+        await self.request(guard, method=canary, path="/" + canary,
+            query_string=canary.encode(), client=(canary, 1234),
+            h=headers() + [(b"user-agent", canary.encode()), (b"x-forwarded-for", canary.encode())])
+        self.assertNotIn(canary, repr(logs))
+        http = json.loads(logs[-2].split(" HTTP ")[1])
+        self.assertEqual(http["http_method"], "other")
+        self.assertFalse(http["path_is_mcp"])
+        self.assertTrue(http["query_present"])
+
+    async def test_streamed_body_bound_before_dispatch(self):
+        dispatched = []
+        async def app(*args):
+            dispatched.append(True)
+        logs, output = [], []
+        guard = Guard(app, emit=logs.append)
+        chunks = iter([{ "type": "http.request", "body": b"x" * MAX_BODY, "more_body": True},
+                       {"type": "http.request", "body": b"x", "more_body": False}])
+        async def receive():
+            return next(chunks)
+        async def send(message):
+            output.append(message)
+        await guard({"type": "http", "method": "POST", "path": "/mcp", "headers": headers()}, receive, send)
+        self.assertEqual(output[0]["status"], 413)
+        self.assertEqual(dispatched, [])
+        self.assertEqual(guard.active, 0)
+        self.assertEqual(json.loads(logs[-1].split(" STATUS ")[1])["stage"], "body_bounds")
+
+    async def test_timeout_cleans_admission_and_hides_exception(self):
+        logs = []
+        async def blocked(*args):
+            await asyncio.Future()
+        guard = Guard(blocked, emit=logs.append, request_timeout=0)
+        output = await self.request(guard)
+        self.assertEqual(output[0]["status"], 408)
+        self.assertEqual(guard.active, 0)
+        self.assertEqual(json.loads(logs[-1].split(" STATUS ")[1])["stage"], "timeout")
+        async def broken(*args):
+            raise ValueError("PRIVATE-EXCEPTION-CANARY")
+        guard = Guard(broken, emit=logs.append)
+        output = await self.request(guard)
+        self.assertEqual(output[0]["status"], 500)
+        self.assertNotIn("PRIVATE-EXCEPTION-CANARY", repr(logs) + repr(output))
+        self.assertEqual(guard.active, 0)
+
+    async def test_cancellation_cleans_admission(self):
         started = asyncio.Event()
         async def blocked(*args):
             started.set()

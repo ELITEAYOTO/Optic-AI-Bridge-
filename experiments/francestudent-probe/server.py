@@ -19,6 +19,7 @@ MAX_HEADERS = 16 * 1024
 MAX_ACTIVE = 8
 MAX_REQUESTS = 512
 MAX_LIFETIME = 25 * 60
+PROOF_VERSION = "fs-probe-v2"
 request_proof = ContextVar("request_proof", default=None)
 handles = Handles()
 mcp = MCPServer("Optic-FranceStudent-Dummy-Probe", instructions=(
@@ -63,8 +64,9 @@ class Guard:
     No URLs, arbitrary names, values, exception strings or bodies are logged.
     Fixed lifetime/request budgets bound even refused-traffic diagnostic output.
     """
-    def __init__(self, app, clock=time.monotonic, emit=print):
+    def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20):
         self.app, self.clock, self.emit = app, clock, emit
+        self.request_timeout = request_timeout
         self.instance = secrets.token_hex(6)
         self.started = clock()
         self.sequence = self.active = 0
@@ -76,45 +78,64 @@ class Guard:
             return await self.reject(send, 429)
         self.sequence += 1
         owner, observation = observe_headers(scope.get("headers", []))
+        raw_method = scope.get("method")
+        # Only predefined labels leave the process: never echo arbitrary verbs,
+        # URLs, paths, query strings, user-agent values, proxy headers or IPs.
+        http_method = raw_method if raw_method in ("GET", "POST", "DELETE", "HEAD", "OPTIONS", "PUT", "PATCH") else "other"
         proof = {"server_instance": self.instance, "sequence": self.sequence,
+                 "proof_version": PROOF_VERSION, "http_method": http_method,
+                 "path_is_mcp": scope.get("path") == "/mcp",
+                 "query_present": bool(scope.get("query_string")),
+                 "elapsed_ms": round(max(0, self.clock() - self.started) * 1000, 3),
                  "observation": observation}
         self.emit("[FS-PROBE] HTTP " + json.dumps(proof, sort_keys=True))
         original_send = send
         response_started = False
+        stage = "header_bounds"
         async def safe_send(message):
             nonlocal response_started
             if message["type"] == "http.response.start":
                 response_started = True
                 self.emit("[FS-PROBE] STATUS " + json.dumps({
                     "server_instance": self.instance, "sequence": proof["sequence"],
-                    "status": message["status"]}, sort_keys=True))
+                    "status": message["status"], "stage": stage,
+                    "proof_version": PROOF_VERSION}, sort_keys=True))
             await original_send(message)
         send = safe_send
         headers = scope.get("headers", [])
         if len(headers) > 64 or sum(len(k) + len(v) for k, v in headers) > MAX_HEADERS:
             return await self.reject(send, 431)
+        stage = "endpoint"
         if scope.get("query_string") or scope.get("path") != "/mcp":
             return await self.reject(send, 400)
-        if not owner or not all(v["matches_dummy"] for v in observation["custom"].values()):
+        stage = "dummy_bearer"
+        if not owner:
             return await self.reject(send, 401)
+        stage = "dummy_custom_headers"
+        if not all(v["matches_dummy"] for v in observation["custom"].values()):
+            return await self.reject(send, 401)
+        stage = "admission"
         if self.active >= MAX_ACTIVE:
             return await self.reject(send, 503)
         self.active += 1
         token = request_proof.set({**proof, "owner": owner})
         try:
-            async with asyncio.timeout(20):
+            async with asyncio.timeout(self.request_timeout):
+                stage = "body_bounds"
                 body = bytearray()
                 while True:
                     message = await receive()
                     if message["type"] == "http.disconnect":
                         return
-                    body.extend(message.get("body", b""))
-                    if len(body) > MAX_BODY:
+                    chunk = message.get("body", b"")
+                    if len(body) + len(chunk) > MAX_BODY:
                         return await self.reject(send, 413)
+                    body.extend(chunk)
                     if not message.get("more_body", False):
                         break
                 delivered = False
                 if body:
+                    stage = "request_shape"
                     try:
                         request = json.loads(body)
                         if not isinstance(request, dict):
@@ -146,12 +167,15 @@ class Guard:
                         delivered = True
                         return {"type": "http.request", "body": bytes(body), "more_body": False}
                     return await receive()
+                stage = "mcp"
                 await self.app(scope, replay, send)
         except TimeoutError:
+            stage = "timeout"
             if not response_started:
                 await self.reject(send, 408)
         except Exception:
             # Do not format exceptions: parsers/SDKs can embed caller-controlled values.
+            stage = "internal_error"
             if not response_started:
                 await self.reject(send, 500)
         finally:
@@ -179,7 +203,7 @@ async def main():
     logging.disable(logging.CRITICAL)
     port = int(os.environ.get("OPTIC_FS_PROBE_PORT", "8001"))
     allow = os.environ.get("OPTIC_FS_PROBE_RANDOM_TUNNEL", "0") == "1"
-    print(f"Authority NONE | dummy-only | http://127.0.0.1:{port}/mcp | lifetime 25 min", flush=True)
+    print(f"Authority NONE | dummy-only | http://127.0.0.1:{port}/mcp | lifetime 25 min | {PROOF_VERSION}", flush=True)
     print(f"Random tunnel host experiment switch: {allow}", flush=True)
     server = uvicorn.Server(uvicorn.Config(make_app(allow), host="127.0.0.1", port=port,
         access_log=False, log_config=None, limit_concurrency=32, timeout_keep_alive=5,
