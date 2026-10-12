@@ -84,3 +84,43 @@ Implementation head5c13e9d has green epoch#1, lifecycle#3 and general CI#692.
 Later docs heads require their own CI. Live stale-epoch-before-expiry, live
 cross-owner handle denial and production SessionResolver/credential persistence
 remain unproven. Keep #188 Draft, #172/#173 open and real-project gates intact.
+
+## Clean fresh retry — accepted finite integration proof
+
+New instance `b4f20cc47845`, same unchanged implementation archive5c13e9d; new
+tunnel and initial A dummy configuration. Seq1–3 initialization/discovery all
+accepted, exact headers, elapsed140765–140937ms. Earlier failures remain above.
+
+| Step | Admission ms / markers | Result |
+| --- | --- | --- |
+| A epoch1 create7 | 284969 / `10eb6737c80f65b3` | ok, principal `c541ee52597030b3`, epoch1, TTL120, unconsumed by user/model account. |
+| Local rotate-a | LOCAL active=true/epoch2 | After successful create, before saved A-v2 setup. |
+| Old handle consume15 under reported A-v2 | 334422 / `a14eda59074e43d2` | Authenticated delivery200, tool invalid_handle; gap49.453s comfortably within TTL. |
+| New epoch2 create19 | 474515 / `873335e0ede7f282` | Same principal, epoch2, new token. |
+| New epoch2 consume20 | 479078 / `f7c5d8c93b21c323` | ok/passed_unchanged/consumed=true; gap4.563s, positive control. |
+| Mistaken ownership trial create24 | A epoch2 / `64c7215cd08cb08a` | A token minted; not an ownership denial. |
+| Mistaken trial create32 | 664703 / `cfa92c5bf7c4c37b` | B principal `94ceca80716433b3`, epoch1 token minted; no consume in supplied trial. Assistant omitted exact copyable consume prompt. |
+| Corrected ownership trial A create39 | 870812 / `5b2b62d611c2bf55` | A principal/epoch2, fresh token. |
+| Reported B consume46 | 901687 / `d549cf3feefdcfa6` | invalid_handle at+30.875s. |
+| Restored A-v2 consume53, same requested token | 933984 / `49681e046bfba4d4` | ok/passed_unchanged/consumed=true, same A principal/epoch2; +63.172s withinTTL. |
+
+Every listed TOOL marker/instance/sequence exactly matches the user-supplied model
+result. Principal/epoch and booleans are result fields under inspected code, not
+independent local TOOL fields. Raw token/credential bytes are not logged; exact
+token identity and UI owner switches rely on the user/model account. HTTP200 on
+a denied consume is successful MCP delivery, not successful consumption.
+
+Under that recorded configuration, old-epoch refusal now meets the before-expiry
+timing gate, with a succeeding new-epoch control. Corrected ownership trial has
+both denied-other-owner and successful-original-owner control, demonstrating
+the live active A binding remained consumable after the refused attempt. The
+mistaken two-create trial is retained, not counted as a pass. Observed DELETE405
+rows remain downstream MCP refusals, not credential failures.
+
+User confirmed stopping the fresh server/tunnel and disabling the connector.
+No endpoint is claimed active. These finite synthetic proofs do not establish
+per-chat isolation, transactional production authority, durable credentials,
+live effect-spanning revoke, universal host behavior or H-03 completion. The
+first checkpoint's unproven live epoch/ownership items are superseded only by
+this fresh trial; all other limits remain. #188 stays Draft; no real project
+exposed and no draft merged.
