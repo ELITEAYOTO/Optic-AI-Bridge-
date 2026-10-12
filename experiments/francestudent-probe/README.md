@@ -52,11 +52,19 @@ tunnel switch relaxes only this authority-free experiment. Do not copy it to cor
 - Local automated proof: exact dummy-match comparisons on admitted MCP discovery,
   initialization, tool and reconnect requests; same-owner handoff over a fresh
   connection; other-owner denial; one atomic consume; log canary absence.
-- Still **unmeasured in FranceStudent**: exact per-request wire behavior in this
-  harness, unchanged model-mediated handle handoff, reconnect/timeout behavior,
-  header conflict precedence and grouped temporal overlap. No local SDK test proves
-  those host behaviors. Secure-field invisibility is an admin statement, not
-  something the server can establish.
+- User-supplied live server/model evidence now corroborates one `probe_headers`
+  call, model-mediated unchanged create-to-consume handoff and subsequent refusal
+  when asked to reuse the consumed handle. See `LIVE_EVIDENCE_2026-10-12.md` for
+  exact markers, source qualifications, rejected requests and proof limits.
+- In the tested UI configuration the dedicated authorization field required the
+  full `Bearer <dummy>` entry. The initial no-prefix guide failed; this is measured
+  UI-entry behavior, not proof of the raw value of earlier rejected headers.
+- Universal secure-header delivery remains **unproven**: two observed requests
+  had matching Bearer but both custom headers absent. Their method/source was not
+  captured. Explicit connector reconnect, live expiry/owner-denial, timeout,
+  header conflict precedence and grouped temporal overlap remain unmeasured.
+  Secure-field invisibility is an admin statement, not something the server can
+  establish. Local lifecycle tests remain distinct from live host proof.
 - H-02 credential generation/storage/revoke/rotation/OAuth and H-03 production
   authority provisioning remain open. This deliberately small probe cannot close
   those issues. It adds no production architecture invariant, so no new ADR.
@@ -98,7 +106,8 @@ should show only the dummy probe, never other connectors' secrets.
    both with Ctrl+C after testing. Never point this tunnel at a real Optic server.
 5. Create a separate FranceStudent connector named `Optic-Dummy-Probe` using
    `https://<printed-host>/mcp`. Dedicated **Bearer token ou secret** field:
-   `optic-probe-dummy-owner-a` (no `Bearer ` prefix). **Headers sécurisés (JSON)**:
+   `Bearer optic-probe-dummy-owner-a` (include the prefix, as measured in this
+   FranceStudent UI configuration). **Headers sécurisés (JSON)**:
    ```json
    {"X-Optic-Probe":"optic-probe-dummy-header","X-Optic-Probe-Secret":"optic-probe-dummy-secret"}
    ```
@@ -119,7 +128,8 @@ should show only the dummy probe, never other connectors' secrets.
 9. Optional guided reconnect: create a fresh handle; disable/re-enable the same
    dummy connector (do not restart the server); consume within 120 seconds.
    Optional owner test: create fresh A handle, change dedicated dummy token to
-   `optic-probe-dummy-owner-b`, try consume (denied), restore A and consume (allowed).
+   `Bearer optic-probe-dummy-owner-b`, try consume (denied), restore full Bearer A
+   and consume (allowed).
    Optional expiry: wait at least 120 seconds before consume (denied). Each is a
    separate step with output review. Restart always invalidates prior handles.
 
