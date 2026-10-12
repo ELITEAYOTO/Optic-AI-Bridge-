@@ -14,3 +14,4 @@ experiments/host-probe/.venv/
 .venv-host-probe/
 experiments/francestudent-probe/.venv/
 work-probe-env/
+experiments/persistent-auth/.fixture-state/
