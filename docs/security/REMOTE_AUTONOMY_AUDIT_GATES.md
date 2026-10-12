@@ -225,3 +225,9 @@ A future **synthetic-only mutation** extension can be evaluated without lifting 
 This audit gate is considered satisfied for remote real-project use only when the owning issues are either fixed with regression tests or closed by an explicit documented architecture decision that preserves equivalent containment.
 
 A green transport/tunnel demo is never sufficient by itself.
+## 2026-10-12 evidence interpretation
+
+The [Real Link evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) records two user-reported FranceStudent conversations reaching the same experimental adapter/upstream context. This reinforces Gate G: no per-conversation production isolation exists merely because the host starts a new chat. H-03 must scope resolver mappings and all subordinate authority to the authenticated principal and Optic-owned session.
+
+The host has resumed synthetic testing; the former outage is historical. Gates #176/#180–#183 remain open regardless of green CI and successful synthetic reads. Applicable gates depend on effect/platform: #181 is Unix path representation; #180 governs mutation/Git authority composition. No real-workspace exposure is authorized by the fixture proof.
+

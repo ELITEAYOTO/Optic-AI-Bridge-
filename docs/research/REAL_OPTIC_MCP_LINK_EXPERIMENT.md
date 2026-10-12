@@ -95,7 +95,7 @@ The smoke proves:
 - upstream `session_info` reports read/search-only synthetic authority;
 - upstream `fs_list` returns the generated fixture;
 - upstream `fs_read` returns the generated random fixture marker;
-- two remote reads can be forwarded concurrently through the same long-lived upstream stdio application session;
+- two simultaneous client tasks return reads through one long-lived upstream; actual upstream effect overlap is not instrumented;
 - `../outside.txt` is rejected by the real Optic workspace boundary;
 - every successful adapter tool result includes a fresh invocation proof;
 - a completely new HTTP/MCP client connection can reconnect to the same adapter process and reach the same upstream Optic application-session fingerprint;
@@ -156,7 +156,7 @@ Both matched local logs.
 
 This proves that FranceStudent can cause two distinct Optic MCP invocations from one model turn. It does **not** prove temporal overlap / concurrent host dispatch because the current live Real Optic Link log does not expose a server-side overlap metric or start/end timestamps.
 
-Automated CI already proves the adapter itself can forward concurrent HTTP reads. Host-level FranceStudent overlap remains an H-01 v2 measurement.
+Automated CI proves that simultaneous HTTP client tasks return successfully; actual upstream effect overlap is not instrumented. Host-level FranceStudent overlap remains an H-01 v2 measurement.
 
 ### Different FranceStudent conversations on the same live adapter
 
@@ -317,3 +317,10 @@ This experiment does not claim:
 - a production release.
 
 It is a controlled bridge for gathering the next layer of evidence.
+
+## 2026-10-12 real-host evidence refresh
+
+FranceStudent testing has resumed using the **#178 Real Optic Link**, a different endpoint from the #170 H-01 probe. Real fixture read and traversal denial are recorded; seq 23/24 prove two calls in one turn, and seq 25/26 from two user-reported conversations reach adapter `20baecc2eeaf`. Its one-upstream implementation strongly indicates shared experimental context, not per-chat isolation or a trustworthy host conversation id. No temporal overlap is measured. Successful-call sequences are minted after upstream return. The cached seq-26 log is truncated; complete console/binary provenance remains to retain.
+
+The updated host UI shows bearer/secret and secure JSON header inputs, but exact wire semantics remain unmeasured. H-01 v2 correlation/reconnect/grouped-overlap tests stay pending on their own endpoint. See [the evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) for proof levels and [the repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) for CI, blockers and coding candidates.
+

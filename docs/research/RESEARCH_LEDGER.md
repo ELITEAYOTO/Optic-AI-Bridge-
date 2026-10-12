@@ -115,7 +115,7 @@ Streamable HTTP MCP client
   -> disposable synthetic workspace
 ```
 
-The experiment exposes only session-info/list/read wrappers, uses real upstream Optic session/policy/lease/filesystem code, proves real traversal rejection, concurrent forwarding, per-call invocation proof and transport-client reconnect continuity to the same long-lived upstream Optic session.
+The experiment exposes only session-info/list/read wrappers, uses real upstream Optic session/policy/lease/filesystem code, proves real traversal rejection, successful simultaneous client tasks (actual upstream effect overlap unmeasured), per-call invocation proof and transport-client reconnect continuity to the same long-lived upstream Optic session.
 
 Dedicated workflow #11 is green on Linux + Windows at experiment head `ef5bc84144670135d13f55a59a782611aeae762f`; normal CI #653 is green on dependency policy + Ubuntu + Windows.
 
@@ -189,3 +189,10 @@ When external model output can be fabricated or summarized, pair it with local/s
 When a security finding crosses capabilities, record it at the shared authority boundary rather than fixing only one adapter surface.
 
 When an experiment deliberately owns one long-lived upstream session, do not infer production conversation/session semantics from that design.
+
+## 2026-10-12 real-host evidence refresh
+
+FranceStudent testing has resumed using the **#178 Real Optic Link**, a different endpoint from the #170 H-01 probe. Real fixture read and traversal denial are recorded; seq 23/24 prove two calls in one turn, and seq 25/26 from two user-reported conversations reach adapter `20baecc2eeaf`. Its one-upstream implementation strongly indicates shared experimental context, not per-chat isolation or a trustworthy host conversation id. No temporal overlap is measured. Successful-call sequences are minted after upstream return. The cached seq-26 log is truncated; complete console/binary provenance remains to retain.
+
+The updated host UI shows bearer/secret and secure JSON header inputs, but exact wire semantics remain unmeasured. H-01 v2 correlation/reconnect/grouped-overlap tests stay pending on their own endpoint. See [the evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) for proof levels and [the repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) for CI, blockers and coding candidates.
+

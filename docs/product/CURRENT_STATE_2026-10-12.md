@@ -180,3 +180,16 @@ These are deliberate security gates, not reasons to weaken the existing authorit
 ## Documentation rule
 
 Historical `STATUS.md` remains the long implementation ledger. Use this snapshot, `PROJECT_HEALTH_2026-10-12.md`, `ROADMAP.md` and the owning ADR/research/security docs for current direction. Update historical ledgers surgically when production milestones merge rather than overwriting their history.
+
+
+## Audit supplement — exact provenance and remaining gaps
+
+The [repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) records exact main/draft refs and CI, all issues #171–#183, source cross-checks, documentation drift and coding candidates. The [evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) separates paired read proofs, host-reported negative evidence and implementation-backed session inference.
+
+Audited main is `156653a406f01383e2fc14cada513963453b04f3`, [CI #602 green](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/37994556854). The initial #169 audit head `8eeecd9ba0a16fa49980fba06be215a2c61a1b97` had [green CI](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/38229751467); #169 then advanced to `1e8b3cc1f7b03f635de38eff95761a2a1724a1ee` during this pass. Existing concurrent documentation additions are preserved. These greens do not validate later heads.
+
+Important proof limits: successful Real Link sequences are minted **after upstream return**, not at admission; no temporal overlap is measured. Session-info does not expose the opaque SessionHandle. The cached seq-26 console excerpt is truncated, so complete local proof must still be retained; manual checkout/binary hash is also missing. Same adapter + unchanged upstream source is strong evidence of shared experimental context, not host conversation identity.
+
+Initial app TTL is 30 minutes with a 5-second reap loop and no production renewal call. Monotonic expiry uses a private server-local origin, not a wall-clock epoch. H-03/H-04 must decide idle/absolute/renewal behavior and transactional per-session subordinate lease provisioning.
+
+#179 is closed for version constraints/pip check/freeze, not hash-verified dependency integrity. Historical STATUS.md and SCOPE_AND_ROADMAP.md remain byte-for-byte unchanged by this pass; older live-summary claims and MULTI_SESSION_CONCURRENCY.md still need dated reconciliation. No local Rust tests or new host tests were run by this documentation audit.

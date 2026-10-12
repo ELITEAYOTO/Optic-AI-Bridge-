@@ -75,3 +75,8 @@ Status vocabulary:
 - `research/` — evidence, experiments and open questions.
 
 When a host/transport/security milestone changes, update the current-state snapshot, project-health checkpoint, the owning track/ADR, relevant issue/PR and `ROADMAP.md`. Historical status material should be synchronized surgically rather than replaced wholesale.
+
+## Audit evidence supplements
+
+- [Repository audit](engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) — exact refs/CI, issue disposition and remaining documentation drift.
+- [FranceStudent evidence ledger](research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) — source-specific proof and missing raw provenance.

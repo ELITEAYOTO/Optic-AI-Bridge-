@@ -202,9 +202,9 @@ The v1 probe also fingerprinted `str(request_id)` even when the MCP SDK request 
 
 No host-owned per-call approval/confirmation UI was observed for the harmless tool calls tested. The shown FranceStudent MCP configuration used `Authentication: None` and did not visibly expose a custom-header field. This is an observation of the shown UI, not proof that the product can never support headers elsewhere.
 
-### Current external block
+### Remaining evidence after host recovery
 
-FranceStudent then reported a host-side service incident. Remaining checks are **blocked by host**, not failed:
+The earlier host-side incident was followed by resumed #178 testing on 12 October. The following #170 v2 checks remain **pending evidence**:
 
 - clean new-conversation separation under v2 proof;
 - reconnect comparison under the same proof standard;
@@ -212,7 +212,7 @@ FranceStudent then reported a host-side service incident. Remaining checks are *
 - optional safe cancellation/timeout;
 - exact authentication/header behavior.
 
-When service returns, use a fresh v2 server process and fresh correlation/parallel run ids. Old process-local fingerprints are not comparable across restarts.
+For the next H-01 run, use its own fresh v2 server process and fresh correlation/parallel run ids. Old process-local fingerprints are not comparable across restarts.
 
 ## Evidence — real Optic MCP link experiment
 
@@ -239,7 +239,7 @@ On experiment head `ef5bc84144670135d13f55a59a782611aeae762f`:
 - normal CI #653 is green on dependency policy + Ubuntu + Windows;
 - real Optic session/list/read behavior is reached;
 - real Optic rejects traversal;
-- two HTTP reads can be forwarded concurrently through the same long-lived upstream stdio session;
+- two simultaneous HTTP client tasks return reads through the same long-lived upstream; actual effect overlap is unmeasured;
 - each successful adapter call has a server-minted invocation proof;
 - a new HTTP/MCP client connection can reconnect to the same adapter and observe the same long-lived upstream Optic application-session fingerprint.
 
@@ -279,9 +279,9 @@ Prefer standards-compatible `Authorization`/OAuth behavior where the host actual
 
 Architecture/product freeze recorded by PR #169 / ADR-0012.
 
-### H-01 — ACTIVE / HOST-BLOCKED
+### H-01 — ACTIVE / EVIDENCE PENDING
 
-The hardened authority-free v2 probe is implemented in PR #170. Automated validation is green; remaining primary-host comparisons depend on FranceStudent service recovery.
+The hardened authority-free v2 probe is implemented in PR #170. Automated validation is green; remaining primary-host comparisons require fresh paired v2 evidence; the earlier outage is historical.
 
 H-01 is not complete until enough real-host evidence exists to inform H-02/H-03 honestly.
 
@@ -346,3 +346,10 @@ Do not yet:
 ## Definition of done for this track
 
 This track is complete only when at least one supported remote student host can connect through a zero-cost setup, authenticate, map into an Optic-owned session, receive a bounded human-selected autonomy profile, perform a realistic development loop without repeated approval spam, and be locally revoked without weakening existing policy/isolation/security boundaries.
+
+## 2026-10-12 real-host evidence refresh
+
+FranceStudent testing has resumed using the **#178 Real Optic Link**, a different endpoint from the #170 H-01 probe. Real fixture read and traversal denial are recorded; seq 23/24 prove two calls in one turn, and seq 25/26 from two user-reported conversations reach adapter `20baecc2eeaf`. Its one-upstream implementation strongly indicates shared experimental context, not per-chat isolation or a trustworthy host conversation id. No temporal overlap is measured. Successful-call sequences are minted after upstream return. The cached seq-26 log is truncated; complete console/binary provenance remains to retain.
+
+The updated host UI shows bearer/secret and secure JSON header inputs, but exact wire semantics remain unmeasured. H-01 v2 correlation/reconnect/grouped-overlap tests stay pending on their own endpoint. See [the evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) for proof levels and [the repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) for CI, blockers and coding candidates.
+

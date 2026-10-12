@@ -179,7 +179,7 @@ Automated state on head `ef5bc84144670135d13f55a59a782611aeae762f`:
 
 - Real Optic Link workflow #11 green Linux + Windows;
 - normal CI #653 green dependency policy + Ubuntu + Windows;
-- real session/list/read paths, traversal rejection, bounded concurrent forwarding, per-call proof and transport-client reconnect continuity proven.
+- real session/list/read paths, traversal rejection, bounded successful simultaneous client tasks (actual upstream effect overlap unmeasured), per-call proof and transport-client reconnect continuity proven.
 
 Live FranceStudent evidence on 2026-10-12:
 
@@ -225,3 +225,10 @@ Production H-02 host-specific auth and H-03 host-specific correlation should wai
 - Host/model prose alone is not accepted as tool-execution proof when local invocation evidence is available.
 
 A phase is complete only when its acceptance/security gates pass. Calendar dates are planning aids, not completion criteria.
+
+## 2026-10-12 real-host evidence refresh
+
+FranceStudent testing has resumed using the **#178 Real Optic Link**, a different endpoint from the #170 H-01 probe. Real fixture read and traversal denial are recorded; seq 23/24 prove two calls in one turn, and seq 25/26 from two user-reported conversations reach adapter `20baecc2eeaf`. Its one-upstream implementation strongly indicates shared experimental context, not per-chat isolation or a trustworthy host conversation id. No temporal overlap is measured. Successful-call sequences are minted after upstream return. The cached seq-26 log is truncated; complete console/binary provenance remains to retain.
+
+The updated host UI shows bearer/secret and secure JSON header inputs, but exact wire semantics remain unmeasured. H-01 v2 correlation/reconnect/grouped-overlap tests stay pending on their own endpoint. See [the evidence ledger](docs/research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) for proof levels and [the repository audit](docs/engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) for CI, blockers and coding candidates.
+

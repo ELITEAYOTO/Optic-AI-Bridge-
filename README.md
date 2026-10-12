@@ -20,7 +20,7 @@ For the fastest accurate handoff, read:
 - [`docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`](docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md) — security blockers before real-project remote exposure;
 - [`PROJECT_CONTINUITY_PROMPT.md`](PROJECT_CONTINUITY_PROMPT.md) — generic prompt to resume the project in a fresh AI conversation.
 
-Historical implementation detail remains in [`STATUS.md`](STATUS.md).
+Historical implementation detail remains in [`STATUS.md`](STATUS.md). The [repository audit](docs/engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) distinguishes main from drafts and records documentation drift; the [FranceStudent evidence ledger](docs/research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) records today's verified synthetic reads, traversal denial, multiple calls and same experimental adapter across conversations.
 
 ## Current remote-host work
 
@@ -41,7 +41,7 @@ Connectivity providers such as Cloudflare, Tailscale or custom HTTPS remain repl
 
 ### FranceStudent H-01
 
-Draft PR #170 contains the authority-free `h01-v2` probe. Real Windows testing has already proven that FranceStudent can reach a Streamable HTTP `/mcp` endpoint through a temporary Cloudflare Quick Tunnel and execute harmless tools. Two same-conversation calls were corroborated by local server traffic. No trustworthy conversation-specific signal has yet been proven, and remaining checks are currently blocked by a FranceStudent service incident rather than failed.
+Draft PR #170 contains the authority-free `h01-v2` probe. Real Windows testing has already proven that FranceStudent can reach a Streamable HTTP `/mcp` endpoint through a temporary Cloudflare Quick Tunnel and execute harmless tools. Two same-conversation calls were corroborated by local server traffic. No trustworthy conversation-specific signal has yet been proven. Testing resumed on 12 October using the separate #178 Real Optic Link; fresh h01-v2 correlation/reconnect/grouped-overlap and auth/header checks remain pending.
 
 The v2 probe also corrects an important evidence problem: one earlier host/model JSON response was later admitted to have been invented without a real tool call, and v1 request-id fingerprints were ambiguous when the SDK request id was absent. Every v2 call now carries a server-minted invocation proof mirrored in local logs.
 
@@ -58,7 +58,7 @@ Streamable HTTP MCP client
 
 The remote allowlist is exactly session info, bounded list and bounded read. It exposes no process execution, mutation, Git, `session_cancel` or arbitrary upstream tool forwarding.
 
-At experiment head `ef5bc84144670135d13f55a59a782611aeae762f`, dedicated workflow #11 is green on Linux + Windows and normal repository CI #653 is green on dependency policy + Ubuntu + Windows. The experiment proves real Optic session/list/read behavior, real traversal rejection, concurrent forwarding, per-call invocation proof and HTTP-client reconnect continuity to the same long-lived upstream Optic session.
+At experiment head `ef5bc84144670135d13f55a59a782611aeae762f`, dedicated workflow #11 is green on Linux + Windows and normal repository CI #653 is green on dependency policy + Ubuntu + Windows. The automated experiment proves real Optic session/list/read behavior, traversal rejection, successful paired client tasks, per-call invocation proof and HTTP-client reconnect continuity to the same long-lived upstream Optic context. It does not measure actual upstream effect overlap.
 
 This is transport evidence only; it does not prove host-conversation identity or production remote authorization.
 

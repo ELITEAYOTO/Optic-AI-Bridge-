@@ -357,3 +357,12 @@ Highest-value candidates that do not require inventing host semantics:
 - Do not rewrite historical `STATUS.md` or `SCOPE_AND_ROADMAP.md` wholesale; synchronize them surgically when a production milestone merges.
 - Every accepted host/security fact should live in an owning doc **and** the relevant issue/PR evidence trail.
 - Exact-head CI must be green before a branch is treated as validated.
+
+
+## Audit supplement: exact refs, proof limits and documentation drift
+
+See [repository audit](../engineering/REPOSITORY_HEALTH_AUDIT_2026-10-12.md) for exact main/draft CI provenance and issue-by-issue disposition, and [evidence ledger](../research/FRANCESTUDENT_REAL_LINK_EVIDENCE_2026-10-12.md) for accepted proof levels.
+
+The new-chat seq-26 result is accepted as user-reported evidence; the cached console excerpt is truncated before its matching line, which still needs full retention. Successful markers are emitted after upstream return, so sequences are not admission order. Simultaneous CI client tasks do not measure actual upstream effect overlap; the traversal smoke currently catches any exception, while the manual denial supplies a concrete code.
+
+No broader remote exposure follows from these facts. Applicable security gates vary by platform/effect, and H-02/H-03/local revoke remain prerequisites. The local runtime can receive narrow security fixes while host-specific auth/correlation evidence is pending. Historical docs are preserved; their older baseline/current-next wording remains an explicit reconciliation task.
