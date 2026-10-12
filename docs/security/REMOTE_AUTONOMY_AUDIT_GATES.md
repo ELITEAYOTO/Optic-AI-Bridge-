@@ -31,7 +31,7 @@ A policy such as “all workspace reads are non-sensitive unless explicitly mark
 
 `fs_list` must be treated as a metadata disclosure surface, not only a convenience API.
 
-## Gate B — canonical list authorization and pagination
+## Gate B — canonical list authorization and pagination — issue #176
 
 Current read path authorization benefits from canonical target observation before policy evaluation. Directory listing needs the same discipline when scoped authority matters.
 
@@ -44,6 +44,8 @@ Before prefix-scoped remote search/list is relied upon:
 - preserve deterministic bounded scan/page limits.
 
 A caller must not be able to exploit a lexical alias or response truncation artifact to escape scope or create an infinite page loop.
+
+This is one of the highest-value host-independent fixes that can be implemented now with deterministic regression tests.
 
 ## Gate C — repository-control metadata is not generic project content — issue #180
 
@@ -114,6 +116,8 @@ For local revoke to truthfully mean “this remote session is stopped”, projec
 
 This is especially important for H-03/H-05 because the user must be able to revoke a remote session locally even while the host remains connected.
 
+This is another high-value host-independent implementation candidate that can proceed with deterministic race tests before production remote transport exists.
+
 ## Gate G — session identity is never derived directly from transport
 
 MCP `2026-07-28` is stateless at protocol level. No current FranceStudent signal has been proven to be a trustworthy conversation identifier.
@@ -124,6 +128,16 @@ Therefore:
 - host metadata may only be bounded correlation input;
 - H-03 must support an Optic-minted explicit application handle when no reliable host conversation signal exists;
 - the real authority remains the independent Optic-owned `SessionHandle` and its application-owned leases/grants.
+
+### Live evidence reinforcing this gate
+
+The PR #178 Real Optic Link intentionally owns one long-lived upstream stdio application session. During a live 2026-10-12 test:
+
+- one FranceStudent conversation produced verified `optic_session_info` `seq=25`;
+- a genuinely new FranceStudent conversation produced `seq=26` without restarting the adapter/tunnel;
+- both reached the same `adapter_instance=20baecc2eeaf` and the same upstream-visible experimental session-info context.
+
+This does **not** prove anything about whether FranceStudent sends a usable conversation id, because PR #178 does not record H-01 correlation inputs. It does prove that a production adapter cannot simply keep one startup session and assume multiple host conversations are isolated. H-03 `SessionResolver` semantics are required.
 
 ## Gate H — remote cancellation and `session_cancel` are control-plane operations
 
@@ -149,6 +163,15 @@ H-02 authentication must prove:
 
 Authentication does not mint capabilities, leases, project selection or autonomy grants.
 
+### Current FranceStudent UI evidence
+
+The host now visibly exposes:
+
+- `Bearer token ou secret`;
+- `Headers sécurisés (JSON)`.
+
+This is useful H-02 input but not a complete contract. Exact `Authorization` mapping, OAuth behavior, custom-header delivery, duplicate/conflict semantics and revoke behavior remain unproven.
+
 ## Gate J — autonomy never disables per-effect safety
 
 Future `Review`, `Project Autonomy` or advanced high-authority modes may suppress repeated human prompts, but they do not bypass:
@@ -166,6 +189,20 @@ Future `Review`, `Project Autonomy` or advanced high-authority modes may suppres
 
 The AI cannot mint, widen or extend its own autonomy grant.
 
+## Gate K — transport/MCP error mapping must remain interoperable without hiding policy denials
+
+Live FranceStudent testing surfaced a correct Optic workspace-containment denial (`optic.invalid_workspace_path`, JSON-RPC `-32602`) as **HTTP 400** at the host surface.
+
+The denial itself is correct. Before H-06 production transport is frozen, define/test the transport error contract so that:
+
+- policy/validation/tool errors remain machine-readable and stable;
+- the HTTP status shape is compatible with important hosts;
+- clients do not mistake an expected tool-level rejection for a dead MCP server;
+- security denials are not softened merely to improve UX;
+- no sensitive diagnostics are leaked through HTTP error bodies.
+
+This is a compatibility/security-contract question, not a reason to weaken `optic.invalid_workspace_path` behavior.
+
 ## Relationship to current experiments
 
 The real Optic MCP link in PR #178 is intentionally safe relative to these open gates because it:
@@ -180,6 +217,8 @@ The real Optic MCP link in PR #178 is intentionally safe relative to these open 
 - uses a random per-call adapter invocation proof.
 
 Real project exposure remains blocked until the relevant gates above are resolved and tested.
+
+A future **synthetic-only mutation** extension can be evaluated without lifting the real-project block only if it remains adapter-created/disposable, no-Git/no-process, no caller-selected workspace root, and all create/update/delete operations pass through the real Optic transactional mutation service rather than direct adapter file I/O.
 
 ## Definition of done
 
