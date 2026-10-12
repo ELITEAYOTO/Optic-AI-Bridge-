@@ -64,7 +64,11 @@ denial while B's own handle succeeds, later reconnect still denies revoked A,
 all returned tool markers matched to local logs, raw token/credential absence.
 Inherited #186/#187 tests and both MCP smokes are also run by matrix CI.
 
-Live FranceStudent integration in THIS endpoint is still unmeasured. Prior live
+Live FranceStudent baseline handoff in THIS endpoint is now corroborated. An A
+rotation attempt produced no new token; a B attempt produced a real refusal but
+789 seconds after creation, so it cannot isolate epoch invalidation from expiry.
+See `LIVE_EVIDENCE_2026-10-12.md`. Live epoch-before-expiry attribution remains
+unmeasured; no pass is inferred from these attempts. Prior live
 header/handle and credential lifecycle sessions remain separate evidence; do not
 reuse their markers for this new experiment. No proof of per-chat isolation,
 future host behavior, production credentials/storage/OAuth or transactional
@@ -97,15 +101,30 @@ tunnels. Stop after each step and send output to the accompanying assistant.
    to avoid endpoint confusion. Review initial HTTP rows and exact two tools.
 5. Baseline model test: actual create then immediate consume with the returned
    application_handle unchanged. Match both server/tool proofs before continuing.
-6. For rotation, create one NEW pending token and leave it unconsumed. Review
-   proof promptly; then locally enter rotate-a, update connector to full
-   `Bearer optic-probe-dummy-owner-a-v2`, and consume the OLD pending handle.
+6. Prepare the entire rotation trial BEFORE creating a pending token: server
+   console, connector edit screen and the two exact model prompts must be ready.
+   Take any breaks now. Ask the model to create one NEW pending token only and
+   leave it unconsumed. WAIT for the complete actual response containing
+   `ok=true` and `application_handle`; if it fails or no token appears, STOP the
+   trial without issuing rotate, saving a new credential or requesting consume.
+   After successful create, run this short trial without pauses or intermediate
+   output exchanges with the accompanying assistant: locally enter rotate-a,
+   verify the LOCAL ok/epoch2 acknowledgement, update the connector to full
+   `Bearer optic-probe-dummy-owner-a-v2`, wait for successful save, then ask the
+   model to consume exactly that NEW pending token without minting another.
+   Stop on any failed acknowledgement/save. Send all results together afterward.
    Expected authenticated HTTP200 with tool ok=false/probe.invalid_handle.
    To attribute this to epoch change rather than expiry, admission timestamps
    must demonstrate the attempted consume occurs comfortably within TTL120 after
    creation, with no intervening consume. If the guided exchange takes too long,
    record ambiguity instead of claiming epoch proof or increasing the timeout.
    Automated fake-clock proof remains valid even if manual timing is ambiguous.
+   If the operator has to pause, abandon this trial and record that; do not reuse
+   its token as proof of epoch invalidation. The one-rotation-per-owner limit still
+   applies: another clean trial requires an untouched owner or a fresh process.
+   Process restart is an explicit test reset, not recovery of production revocation
+   state; new server instance and initial dummy UI credential are required, and
+   no previous handle may be reused.
 7. Only after reviewing old-binding denial: new-epoch create/consume should work.
    Cross-owner control follows the same TTL discipline: original B dummy cannot
    consume a pending A handle; restore active A and consume within TTL to verify
