@@ -50,8 +50,6 @@ Never treat any of the following as project authority:
 
 ### Current architectural direction
 
-The provider-neutral remote path is:
-
 ```text
 AI host
   -> host adapter
@@ -65,21 +63,33 @@ AI host
 
 Connectivity providers such as Cloudflare, Tailscale or custom HTTPS remain replaceable adapters outside PolicyEngine.
 
+### Current repository / PR state to re-check
+
+At the time of this handoff:
+
+- `main` was `156653a406f01383e2fc14cada513963453b04f3`;
+- PR #169 was the Draft docs/architecture consolidation branch;
+- PR #170 was the Draft H-01 `h01-v2` probe, head `d8ebc0b5d7f46ce61a9aad737bc64690b7ca584b`;
+- PR #178 was the Draft synthetic Real Optic Link experiment, head `ef5bc84144670135d13f55a59a782611aeae762f`;
+- exact-head CI for those branches had been green before/through the documented evidence.
+
+Do not trust these SHAs indefinitely. Re-check GitHub first.
+
 ### Current H-track
 
 - **H-00 complete** — provider-neutral architecture and product/security invariants frozen.
-- **H-01 active** — harmless host capability/correlation probe, draft PR #170, issue #171.
+- **H-01 active / evidence-pending** — harmless host capability/correlation probe, draft PR #170, issue #171.
 - **H-02 pending** — zero-cost endpoint authentication + credential lifecycle, issue #172.
 - **H-03 pending** — bounded `HostContext -> SessionResolver -> SessionHandle`, issue #173.
 - **H-04 pending** — bounded session autonomy (`Review`, `Project Autonomy`, advanced high-authority mode), issue #174.
 - **H-05 pending** — host-independent local approval broker, issue #175.
-- H-06+ are gated behind those proofs.
+- H-06+ are gated behind those proofs/contracts.
 
 Do not jump to production H-02/H-03/H-04 code if required host facts are still unknown.
 
-### H-01 real FranceStudent evidence
+### H-01 FranceStudent evidence
 
-Verified before a FranceStudent service incident:
+Earlier real H-01 runs proved:
 
 - FranceStudent accepted MCP Streamable HTTP `/mcp` through a temporary Cloudflare Quick Tunnel;
 - real POST traffic reached the local Windows probe;
@@ -87,27 +97,42 @@ Verified before a FranceStudent service incident:
 - protocol `2026-07-28` was negotiated;
 - no modern transport session id was observed;
 - two same-conversation correlation calls were corroborated by server activity;
-- no per-call host confirmation UI was observed for those harmless calls;
-- shown FranceStudent configuration used `Authentication: None` and did not visibly expose a custom-header field.
+- no per-call host confirmation UI was observed for those harmless calls.
 
-Important evidence integrity rule:
+Evidence integrity rules:
 
-- one FranceStudent model response was later admitted to have been invented without a real tool call;
-- therefore model text/JSON alone is never accepted as proof of invocation;
-- `h01-v2` adds `probe_invocation` + `server_instance` markers mirrored in local `[H01] TOOL_CALL` logs;
-- old v1 request-id fingerprint evidence is ambiguous because MCP SDK request ids are optional and v1 fingerprinted absent `None` values.
+- one FranceStudent model response was later admitted to have been invented without a real tool call and is excluded;
+- model text/JSON alone is never accepted as proof when local proof can be collected;
+- `h01-v2` adds `probe_invocation` + `server_instance` mirrored in local `[H01] TOOL_CALL` logs;
+- old v1 request-id evidence is ambiguous because request ids are optional.
 
-Remaining FranceStudent checks must use a fresh v2 server instance + fresh run ids and must pair host output with local proof:
+FranceStudent is stable again as of 2026-10-12. Remaining H-01 tests require intentionally reconnecting FranceStudent to the **H-01 v2 endpoint**, not the PR #178 Real Optic Link endpoint:
 
 - clean new-conversation separation;
-- reconnect comparison under the stronger proof standard;
-- grouped parallel dispatch;
+- reconnect comparison;
+- grouped true parallel dispatch with server-side overlap proof;
 - optional safe cancellation;
 - exact authentication/header behavior.
 
-Conversation identity is still **unproven**. H-03 must keep an Optic-minted explicit application-handle fallback.
+Conversation identity remains **unproven**. H-03 must keep an Optic-minted explicit application-handle fallback.
 
-### Real Optic MCP link experiment
+### New FranceStudent auth/header UI fact
+
+The current FranceStudent MCP editor visibly exposes:
+
+- `Autorisation` labelled **“Bearer token ou secret”**;
+- **“Headers sécurisés (JSON)”**.
+
+This is real H-02 input, but exact wire behavior is still unknown. Do not assume:
+
+- exact `Authorization: Bearer <value>` mapping;
+- OAuth semantics;
+- custom `Authorization` merge/conflict behavior;
+- secure custom-header delivery.
+
+Measure those with harmless values and server proof before implementing production auth assumptions.
+
+### Real Optic MCP Link experiment
 
 Draft PR #178 proves:
 
@@ -126,21 +151,40 @@ Remote allowlist is exactly:
 
 No process, mutation, Git, `session_cancel` or arbitrary upstream forwarding is exposed.
 
-Current proven experiment head in this handoff: `ef5bc84144670135d13f55a59a782611aeae762f`.
+Automated proof on head `ef5bc84144670135d13f55a59a782611aeae762f`:
 
-Dedicated Real Optic MCP Link workflow #11 is green on Linux + Windows. Normal CI #653 is green on dependency policy + Ubuntu + Windows.
+- dedicated Real Optic MCP Link workflow #11 green Linux + Windows;
+- normal CI #653 green dependency policy + Ubuntu + Windows;
+- real traversal rejection, bounded concurrent forwarding, per-call proof and HTTP-client reconnect continuity to the same long-lived upstream Optic application session.
 
-The experiment proves real Optic session/list/read behavior, real traversal rejection, concurrent forwarding, per-call adapter proof, and HTTP-client reconnect continuity to the same long-lived upstream Optic application session.
+### Live FranceStudent -> real Optic proof from 2026-10-12
 
-Reconnect continuity is only transport evidence. It is not host-conversation identity and not H-03.
+The live connector used for these tests was a **new/current PR #178 endpoint**, not the old H-01 probe URL.
 
-The Python experiment dependency graph is frozen through shared constraints; runs perform `pip check` and `pip freeze --all`.
+Accepted server-correlated evidence on adapter instance `20baecc2eeaf`:
+
+- FranceStudent discovered exactly `optic_session_info`, `optic_fs_list`, `optic_fs_read`;
+- an absolute Windows path to the user's real Desktop/repository was rejected;
+- `optic_fs_read("public/hello.txt")` returned `seq=22`, marker `126b81f5327c1b59`, exactly matching local `[REAL-LINK] TOOL_CALL` output;
+- the payload contained the expected synthetic fixture marker;
+- `../outside.txt` was rejected with `optic.invalid_workspace_path`, JSON-RPC `-32602` (surfaced as HTTP 400 by FranceStudent);
+- two real reads were issued from one FranceStudent turn (`seq=23`, `seq=24`, both matching local markers). This proves two calls in one turn, **not** true temporal overlap;
+- one FranceStudent conversation produced `optic_session_info` `seq=25`, marker `16a1e00238f6c7f9`;
+- a genuinely new FranceStudent conversation, without restarting the adapter/tunnel, produced `seq=26`, marker `5198a949dec91035`, same `adapter_instance=20baecc2eeaf`, same upstream-visible experimental session-info context.
+
+Safe interpretation:
+
+> Different FranceStudent conversations currently converge on the same long-lived PR #178 adapter/upstream experimental context.
+
+This does **not** discover a FranceStudent conversation id because PR #178 does not instrument H-01 correlation inputs. It does prove that the current experimental bridge itself does not isolate conversations into separate Optic application sessions, which makes H-03 a concrete requirement.
+
+The manual real-link process intentionally stops around 25 minutes, before the current ~30-minute Optic session lifetime.
 
 ### Real-project remote access is still blocked
 
 Do **not** expose a real repository through PR #178 until the relevant security gates are resolved:
 
-- **#176** sensitive content + metadata/listing classifier/policy;
+- **#176** sensitive content + metadata/listing classifier/policy, canonical `fs_list` authorization and cursor progress;
 - **#180** generic file mutation must not reach protected `.git` control state and bypass `GitIntegrate`;
 - **#181** Unix native path segments must round-trip losslessly into authority-bearing `WorkspacePath`;
 - **#182** `GitRead` must not bypass future sensitive-content policy through `git_diff`/`git_status`;
@@ -171,40 +215,50 @@ A-08F wording such as “this conversation” is behind H-03 evidence. Until pro
 Read these before changing architecture:
 
 1. `AI_HANDOFF.md`
-2. `ROADMAP.md`
+2. `docs/product/PROJECT_HEALTH_2026-10-12.md`
 3. `docs/product/CURRENT_STATE_2026-10-12.md`
-4. `docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md`
-5. `docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`
-6. `docs/research/FRANCESTUDENT_REMOTE_MCP_CANDIDATE.md`
-7. `docs/research/REAL_OPTIC_MCP_LINK_EXPERIMENT.md`
-8. `docs/decisions/ADR-0012-PROVIDER_NEUTRAL_REMOTE_HOST_BOUNDARY.md`
-9. `docs/product/A08_REUSABLE_APPROVAL_TRACK.md`
-10. historical `STATUS.md` / `docs/product/SCOPE_AND_ROADMAP.md` when you need older implementation detail.
+4. `ROADMAP.md`
+5. `docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md`
+6. `docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`
+7. `docs/research/FRANCESTUDENT_REMOTE_MCP_CANDIDATE.md`
+8. `docs/research/REAL_OPTIC_MCP_LINK_EXPERIMENT.md`
+9. `docs/research/RESEARCH_LEDGER.md`
+10. `docs/decisions/ADR-0012-PROVIDER_NEUTRAL_REMOTE_HOST_BOUNDARY.md`
+11. `docs/product/A08_REUSABLE_APPROVAL_TRACK.md`
+12. historical `STATUS.md` / `docs/product/SCOPE_AND_ROADMAP.md` when older implementation detail is needed.
 
 ### Important GitHub objects
 
 At minimum inspect current state of:
 
-- PR #169 — provider-neutral docs/roadmap;
+- PR #169 — docs/provider-neutral host/autonomy consolidation;
 - PR #170 — H-01 probe;
 - PR #178 — real Optic MCP link experiment;
 - issues #171–#176;
-- issues #180–#183;
+- issues #177 and #180–#183;
 - current `main` head and current PR heads;
 - latest CI attached to the exact head you intend to change.
 
-Do not assume the SHAs in this prompt are still current. Re-check GitHub first.
+### Recommended engineering order
+
+1. Audit current GitHub state and exact-head CI.
+2. Finish the missing H-01 v2 host measurements, especially secure-header/bearer behavior and true parallel overlap.
+3. In parallel, implement host-independent narrow security fixes that do not depend on FranceStudent semantics: #176 canonical list/cursor progress and #183 admission barrier with deterministic tests.
+4. Build the H-02 auth proof harness from measured host behavior.
+5. Freeze H-03 SessionResolver + explicit handle fallback + session lifetime/renewal semantics.
+6. Only then decide whether to extend the synthetic mutation experiment or move toward H-06 production transport.
+7. Keep real project remote exposure blocked until the security gates close.
 
 ### Working method
 
-1. Audit before coding.
-2. Identify the exact canonical doc/security invariant/issue owning the change.
-3. Prefer a narrow experiment or regression proof to speculative production code.
-4. If required host behavior is unknown, document the missing evidence instead of inventing semantics.
-5. Keep synthetic experiments synthetic until the real-project security gates are closed.
-6. After every meaningful change, run/inspect exact-head CI and update docs/issues/PR body.
-7. Keep PRs draft while their evidence gates are incomplete.
-8. Never silently merge major architecture changes merely to “make progress”.
+- Audit before coding.
+- Identify the exact canonical doc/security invariant/issue owning the change.
+- Prefer a narrow experiment or regression proof to speculative production code.
+- If required host behavior is unknown, document the missing evidence instead of inventing semantics.
+- Keep synthetic experiments synthetic until the real-project security gates are closed.
+- After every meaningful change, run/inspect exact-head CI and update docs/issues/PR body.
+- Keep PRs draft while their evidence gates are incomplete.
+- Never silently merge major architecture changes merely to “make progress”.
 
 ### User collaboration style
 
@@ -212,14 +266,15 @@ The project owner is comfortable letting the AI manage GitHub, but PC-side testi
 
 ### First action in the new conversation
 
-Before implementing anything, reply with a short audit plan and inspect GitHub/current repository state. Confirm:
+Before implementing anything:
 
-- current main head;
-- current heads/state/CI of PR #169, #170 and #178;
-- open security gates #176 and #180–#183;
-- whether issue #171 has new FranceStudent evidence since this handoff.
-
-Then continue from the newest real evidence, not from assumptions.
+1. inspect GitHub/current repository state;
+2. confirm current `main`;
+3. confirm state/head/CI of PR #169, #170 and #178;
+4. inspect issues #171–#176, #177, #180–#183;
+5. read `PROJECT_HEALTH_2026-10-12.md` and compare it with newer issue/PR comments;
+6. report any stale/conflicting documentation before coding;
+7. continue from the newest server-correlated evidence, not assumptions.
 
 ## END CONTINUITY PROMPT
 
