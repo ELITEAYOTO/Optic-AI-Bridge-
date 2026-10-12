@@ -12,3 +12,5 @@
 **/__pycache__/
 experiments/host-probe/.venv/
 .venv-host-probe/
+experiments/francestudent-probe/.venv/
+work-probe-env/
