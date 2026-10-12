@@ -1,0 +1,54 @@
+name: Dummy Epoch Bound Handle
+on:
+  pull_request:
+    paths:
+      - 'experiments/epoch-handle/**'
+      - 'experiments/credential-lifecycle/**'
+      - 'experiments/francestudent-probe/**'
+      - 'experiments/host-probe/requirements.txt'
+      - 'experiments/host-probe/constraints.txt'
+      - '.github/workflows/epoch-handle.yml'
+permissions:
+  contents: read
+jobs:
+  integration:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Frozen dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'install failed' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'dependency check failed' }
+      - name: Bound-handle and inherited proofs
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = 'experiments/epoch-handle'
+          python -m unittest discover -s experiments/epoch-handle/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'bound tests failed' }
+          python experiments/epoch-handle/smoke_bound.py
+          if ($LASTEXITCODE -ne 0) { throw 'bound smoke failed' }
+          $env:PYTHONPATH = 'experiments/credential-lifecycle'
+          python -m unittest discover -s experiments/credential-lifecycle/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'lifecycle tests failed' }
+          python experiments/credential-lifecycle/smoke_lifecycle.py
+          if ($LASTEXITCODE -ne 0) { throw 'lifecycle smoke failed' }
+          $env:PYTHONPATH = 'experiments/francestudent-probe'
+          python -m unittest discover -s experiments/francestudent-probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'guard tests failed' }
+          python experiments/francestudent-probe/smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'guard smoke failed' }
+      - name: Parse Windows helpers
+        shell: pwsh
+        run: |
+          Get-ChildItem experiments/epoch-handle/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
