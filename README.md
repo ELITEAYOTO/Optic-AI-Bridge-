@@ -1,17 +1,82 @@
 # Optic AI Bridge
 
-**Status:** pre-alpha - Phase 2D3, Phase 3A through Phase 3B3, Phase 3C1 bounded process termination, Phase 3C2 bounded process CPU governance, Phase 3C3A pinned executable identity, Phase 3C3B explicit process execution classification, and Phase 3C3C1 fail-closed high-risk execution gating are merged and post-merge validated. Phase 3C3C1 merged in PR #63 as `148f4720` from exact green final head `3b63e05d`; exact-head CI #291 and post-merge `main` CI #292 passed Ubuntu, Windows and dependency policy. `Interpreter` and `RepositoryCode` execution are currently denied until a stronger isolation profile is implemented and proven; `FixedTool` remains available under the existing bounded process runtime. Later Phase 3C safety gates remain open: evidence-backed Windows isolation for high-risk classes, truthful OS network containment and broader sandboxing.
-**Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
+**Status:** pre-alpha. Phase 1/2 foundations and the major Phase 3 isolation/resource gates are implemented; Phase 4 same-repository work is active. In parallel, the evidence-gated H-track is adding provider-neutral remote-host connectivity, Optic-owned session resolution and bounded session autonomy without weakening the existing Rust security/runtime core.
+**Target:** Windows-first, Rust, local-first, lightweight bridge for AI-assisted development.
+**Release:** no production-supported release yet.
 
-> **Core rule:** The AI decides what it needs. The bridge executes. Deterministic policy authorizes. OS isolation contains.
+> **Core rule:** The AI decides what it needs. The bridge executes only authorized effects. Policy authorizes. OS isolation contains.
 
-Optic AI Bridge is intended to give ChatGPT (and other MCP-capable clients later) safe access to developer workflows such as project files, code search, Git, builds, tests, and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
+Optic AI Bridge is intended to give AI hosts such as ChatGPT, FranceStudent and future clients safe access to developer workflows such as project files, code search, Git, builds, tests and supervised local processes—without embedding an LLM and without requiring an Electron/Node runtime for the bridge itself.
 
-The repository started documentation-first and now contains an executable Rust implementation. Phase 1A through 1D, Phase 2A, Phase 2B, Phase 2C1, Phase 2C2, Phase 2C3A, Phase 2C3B1 and Phase 2C3B2 are merged. Phase 2C3C is now merged as well: PR #26 added the transport-agnostic authorized mutation service as `ac381002`; PR #27 bound the authorized `ActionEnvelope.action_id` to the durable journal/staging/recovery operation as `1b5a3393`; PR #29 provisioned application/operator-owned `FileWrite` / `FileDelete` capabilities and exact workspace-scoped task leases as `75477c3b`; and PR #30 exposed the thin conditional MCP mutation adapter as `624e88da` after exact final head `f70e520b` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`. Durable MCP file mutation is therefore available only when the operator explicitly provisions corresponding authority and a recovery state directory; without that authority the historical read/process tool surface remains unchanged. Phase 2D1 bounded Git read runtime is merged as `1cb3cc03` (validated head `ed3b5c43`), and Phase 2D2 operator-owned MCP `git_status` / `git_diff` / `git_log` is merged as `aee4f168` (validated head `54951225`). Phase 2D3 exact-head Git integration is complete: fast-forward-only internal-ref integration, bounded worktree recovery, separate operator-owned `GitIntegrate` authority, conditional `git_integrate`, read-only `git_integration_status` for refreshing the exact target precondition, and explicit default-off ChatGPT installer/plugin packaging all passed Ubuntu/Windows CI, dependency policy, native real-binary MCP smoke, installer-profile smoke, and the final disposable-repository ChatGPT Desktop smoke on 2026-10-05. The Desktop smoke observed the exact target head, fast-forwarded the operator-owned internal ref, observed the new head, rejected reuse of the stale precondition with `optic.precondition_failed`, and left the caller workspace/branch/worktree state unchanged.
+The product remains local-first and is being designed so normal student use does **not** require a mandatory paid Optic backend, paid relay or API-credit path. MCP is one adapter, not the product core.
+
+## Current project state
+
+For the fastest accurate handoff, read:
+
+- [`docs/product/CURRENT_STATE_2026-10-12.md`](docs/product/CURRENT_STATE_2026-10-12.md) — compact current state;
+- [`ROADMAP.md`](ROADMAP.md) — active gates;
+- [`docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md`](docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md) — H-00 through H-10;
+- [`docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`](docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md) — security blockers before real-project remote exposure;
+- [`PROJECT_CONTINUITY_PROMPT.md`](PROJECT_CONTINUITY_PROMPT.md) — generic prompt to resume the project in a fresh AI conversation.
+
+Historical implementation detail remains in [`STATUS.md`](STATUS.md).
+
+## Current remote-host work
+
+The accepted provider-neutral direction is:
+
+```text
+AI host
+  -> host adapter
+  -> connection authentication + bounded HostContext
+  -> SessionResolver
+  -> Optic-owned SessionHandle
+  -> application services
+  -> ActionEnvelope / capabilities / leases / policy
+  -> runtime / Windows containment
+```
+
+Connectivity providers such as Cloudflare, Tailscale or custom HTTPS remain replaceable adapters outside PolicyEngine. Transport, tunnel identity, request ids and host conversation ids never become project authority by themselves.
+
+### FranceStudent H-01
+
+Draft PR #170 contains the authority-free `h01-v2` probe. Real Windows testing has already proven that FranceStudent can reach a Streamable HTTP `/mcp` endpoint through a temporary Cloudflare Quick Tunnel and execute harmless tools. Two same-conversation calls were corroborated by local server traffic. No trustworthy conversation-specific signal has yet been proven, and remaining checks are currently blocked by a FranceStudent service incident rather than failed.
+
+The v2 probe also corrects an important evidence problem: one earlier host/model JSON response was later admitted to have been invented without a real tool call, and v1 request-id fingerprints were ambiguous when the SDK request id was absent. Every v2 call now carries a server-minted invocation proof mirrored in local logs.
+
+### Real Optic MCP link experiment
+
+Draft PR #178 proves an experiment-only path:
+
+```text
+Streamable HTTP MCP client
+  -> bounded Python compatibility adapter
+  -> real Rust `optic-bridge` stdio server
+  -> disposable synthetic workspace
+```
+
+The remote allowlist is exactly session info, bounded list and bounded read. It exposes no process execution, mutation, Git, `session_cancel` or arbitrary upstream tool forwarding.
+
+At experiment head `ef5bc84144670135d13f55a59a782611aeae762f`, dedicated workflow #11 is green on Linux + Windows and normal repository CI #653 is green on dependency policy + Ubuntu + Windows. The experiment proves real Optic session/list/read behavior, real traversal rejection, concurrent forwarding, per-call invocation proof and HTTP-client reconnect continuity to the same long-lived upstream Optic session.
+
+This is transport evidence only; it does not prove host-conversation identity or production remote authorization.
+
+### Real-project remote exposure remains blocked
+
+The synthetic bridge must not be pointed at a real repository until the relevant audit gates are resolved, including:
+
+- #176 sensitive content + metadata/listing classification;
+- #180 generic file mutation vs protected `.git` control state;
+- #181 Unix native-path round-trip safety into `WorkspacePath`;
+- #182 `GitRead` vs sensitive-content policy;
+- #183 session admission/quiescence across read/list/Git effects.
+
+See [`docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`](docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md).
 
 ## Quick install - ChatGPT Desktop (developer preview)
 
-The local ChatGPT Desktop path was integration-tested on Windows on 2026-10-04: normal Chat successfully started the `optic` MCP server and used `fs_read` against the configured workspace. The **default** compatibility profile still exposes the same intended eight file/Git tools while process/session routes remain outside the ChatGPT tool surface. Optional profiles are explicit: `-EnableGitIntegration` adds only `git_integration_status` plus prompt-gated `git_integrate`, while C5F `-EnableIsolatedNode` adds the four Node process lifecycle tools with prompt-gated `process_start` and no implicit workspace-read grant.
+The local ChatGPT Desktop path was integration-tested on Windows. The default compatibility profile exposes the intended bounded file/Git tools while process/session routes remain outside the normal ChatGPT tool surface. Optional profiles are explicit: Git integration and the proven isolated Node process path remain opt-in.
 
 The end-user installation target is **under 3 minutes** using a prebuilt Windows release bundle:
 
@@ -19,101 +84,56 @@ The end-user installation target is **under 3 minutes** using a prebuilt Windows
 .\Install-OpticAIBridge.ps1 -Workspace "C:\path\to\your\repository"
 ```
 
-No OpenAI API key, API credits, public tunnel, Python, Docker, Rust compiler, or Node.js is required by the **default** release-bundle path. The installer is user-scoped, detects Git, generates the local MCP configuration, registers the ChatGPT Desktop plugin, and runs an MCP self-test. Mutations are limited to `scratch/` by default and a `-ReadOnly` mode is available. Exact-head Git integration remains off by default and can be explicitly enabled with `-EnableGitIntegration` on an exact repository root. Isolated Node execution also remains off by default; users who already have Node.js can explicitly enable the proven one-process profile with `-EnableIsolatedNode`.
+No OpenAI API key, API credits, public tunnel, Python, Docker, Rust compiler or Node.js is required by the **default** local release-bundle path. The installer is user-scoped, detects Git, generates the local MCP configuration, registers the ChatGPT Desktop plugin and runs an MCP self-test. Mutations are limited by explicit authority and `-ReadOnly` mode remains available. Exact-head Git integration and isolated Node execution remain explicit opt-ins.
 
-There is not yet a production-supported release; the tag-driven Windows release workflow added in this tranche is the mechanism for publishing the first prebuilt bundle. See [`docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md`](docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md).
+There is not yet a production-supported release. See [`docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md`](docs/operations/CHATGPT_DESKTOP_QUICK_INSTALL.md).
 
-## Implemented Phase 1 surface
+## Implemented security/runtime foundations
+
+The repository started documentation-first and now contains an executable Rust implementation. Major implemented foundations include:
 
 - application-owned sessions, monotonic expiry and revocation;
 - independent hard transport/body/concurrency ceilings;
 - bounded MCP stdio framing and responses;
 - project-scoped bounded `fs_list` / `fs_read`;
+- transactional file mutation with exact expected-state preconditions and durable recovery journal;
+- bounded Git read and exact-head integration paths;
 - structured process lifecycle with opaque JobIds, bounded output and timeout/stop handling;
-- operator-created executable/environment allowlists for process authority;
-- deterministic session + exact task-lease policy before process execution;
+- operator-owned executable/environment authority;
+- pinned executable identity and explicit execution classification;
+- deterministic session + exact task-lease policy before execution;
 - dedicated Windows containment crate with a narrow Win32/unsafe boundary;
-- per-job Windows Job Objects with suspended create → configure → assign → resume ordering;
-- Windows kill-on-close, active-process and total job-memory limits derived from the authorized `ResourceBudget`;
-- native Windows gates for process count, memory, descendant-tree timeout cleanup, kill-on-close and fail-closed containment unwrap.
+- Windows Job Objects with kill-on-close, process-count, memory and CPU governance;
+- proven AppContainer isolation path for the selected high-risk toolchain case;
+- native Windows gates for process cleanup/security boundaries;
+- ToolProfile authorization and reusable current-session approval primitives;
+- same-repository worktree/integration foundations.
 
-## Implemented Phase 2 foundations
+## Mutation and Git safety model
 
-### Phase 2A — observation / preconditions
+Filesystem mutations are not blind writes. They use explicit expected state/content versions, canonical containment and durable journal/recovery semantics. Delete requires exact existing-state authority rather than a blind delete input.
 
-- streaming BLAKE3 content observation without loading whole targets into RAM;
-- hard mutation-observation byte ceiling through `HardLimits::max_fs_mutation_bytes`;
-- canonical mutation target observation for existing and absent targets;
-- exact `ExpectedState::Absent` / `ExpectedState::Content(version)` conflict checks;
-- leaf-symlink rejection and parent-canonicalization/workspace containment checks.
+Git integration remains separate from generic file mutation: the dedicated integration path is exact-head/fast-forward oriented and application-owned. Current audit #180 additionally requires generic broad file mutation to reserve protected `.git` control state so it cannot become an alternate route around dedicated Git authority.
 
-### Phase 2B — Windows commit containment
+## Process safety model
 
-- no-reparse file/directory handles and final-path containment validation;
-- exact Windows identity through `FILE_ID_INFO`;
-- expected-state + identity revalidation before staging and immediately before commit;
-- same-directory create-new staging with `sync_all`;
-- existing-target `ReplaceFileW` and absent-target create-only hard-link semantics;
-- explicit verified vs committed-but-unverified result semantics;
-- native Windows tests for same-content delete/recreate detection and parent-directory replacement.
+Process execution remains structured as executable + argv, not an opaque shell string. Application/operator-owned authority classifies executable identity and process class. Resource budgets are bounded and Windows isolation/governance is enforced at runtime.
 
-This boundary intentionally does not claim kernel compare-and-swap semantics: the final `ReplaceFileW` call remains path-based and a small external-writer window is documented.
+High-risk interpreter/repository-code execution remains subject to the proven isolation path rather than being admitted merely because an executable was configured.
 
-### Phase 2C1 — bounded recovery journal
+## Reusable approval / autonomy direction
 
-Merged in PR #15 (`85aec4c6`):
+A-08 reusable approval is scoped to one application-owned Optic session, one exact resolved ToolProfile fingerprint, policy epoch and monotonic expiry. Reuse does not skip per-invocation security checks.
 
-- operator-controlled recovery state outside the project workspace;
-- one opaque ActionId per operation;
-- `prepared → committing → verified|ambiguous` journal transitions;
-- `sync_all` on complete journal states;
-- 64 KiB default per-journal ceiling and 256-entry startup recovery ceiling;
-- deterministic reconciliation to exact intended state, exact prior state, or fail-closed unresolved conflict;
-- torn trailing transition handling without accepting a corrupt initial record.
+A-08E is blocked by host interaction behavior, not by failure of the reusable-approval core. The H-track therefore adds a host-independent local approval path and future session autonomy rather than depending exclusively on host UI.
 
-### Phase 2C2 — journal-wrapped commit / crash recovery
+Future `Project Autonomy` is intended to support realistic:
 
-Merged in PR #18 (`0297406c`), with public MCP mutation still disabled:
+```text
+read -> edit -> build -> test -> inspect -> fix -> repeat
+```
 
-- one ActionId binds the recovery journal and deterministic same-directory staging artifact;
-- `prepared` and then `committing` are durable before the Phase 2B atomic mutation service is invoked;
-- verified/ambiguous terminal semantics preserve post-commit uncertainty rather than turning it into a blind retry;
-- production recovery preserves journal evidence until surviving staging is validated and cleaned;
-- staging cleanup requires a regular file, bounded size and exact BLAKE3 match to the journaled intended content;
-- native Windows child-process tests terminate after durable prepared, after durable committing, after atomic-service return before terminal state, and after terminal state before retirement, then prove deterministic restart reconciliation;
-- tampered staging fails closed and retains journal evidence;
-- exact pre-merge head `fdfc3ace` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
-
-The crash model is deliberately narrow: the post-commit hook is after the atomic service returns (effect + its verification), not between the raw namespace syscall and verification. The project does **not** claim sudden-power-loss ACID durability.
-
-### Phase 2C3 — transactional runtime services
-
-Phase 2C3A whole-file write + deterministic byte patch is merged. Phase 2C3B1 generalized recovery intent to exact `ExpectedState::{Absent, Content}` with strict v1 journal compatibility. Phase 2C3B2 merged in PR #24 (`b346a7d9`):
-
-- `TransactionalFileService::delete` requires the exact existing `ContentVersion`; there is no blind-delete/absent-plan input;
-- Windows opens a dedicated no-reparse read+DELETE handle, captures final path and `FILE_ID_INFO`, re-hashes the exact target on that same handle and performs `FileDispositionInfo` on that handle rather than deleting by path;
-- stale content and same-content delete/recreate identity changes fail closed;
-- delete uses the existing durable journal with `intended = ExpectedState::Absent`, no write-staging artifact, and recovery-required semantics after durable `committing`;
-- native Windows child-process gates cover durable prepared, durable committing-before-delete, post-delete-service return and terminal-before-retirement, with deterministic restart reconciliation and an empty second recovery;
-- non-Windows durable delete remains fail-closed as unsupported;
-- exact final head `e74cc0cf` passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny` before squash merge.
-
-### Phase 2C3C — authorization / adapter gate
-
-Phase 2C3C is merged through PRs #26, #27, #29 and #30:
-
-- `AuthorizedFileMutationService` is a transport-agnostic runtime boundary that resolves the active application session and exact active task lease, evaluates the normalized `ActionEnvelope` through `PolicyEngine`, rejects primitive/effect mismatch, and only then reaches `TransactionalFileService`;
-- write and patch require `FileWrite`; delete requires the distinct `FileDelete` capability; workspace scope, session ownership, policy epoch, resource budget and lease state remain deterministic policy inputs;
-- negative tests cover missing lease, cross-session lease, missing capability, stale policy epoch, scope escape, effect mismatch, stale expected state, mutation byte ceiling and symlink containment;
-- the already-normalized `ActionEnvelope.action_id` is reused as the durable transaction identity: journal key, deterministic write-staging owner, commit result ID and recovery operation key;
-- an already-active journal/temp slot for the same `ActionId` fails closed instead of being reused; the general replay/idempotency ledger remains a later Phase 3 concern;
-- PR #29 (`75477c3b`) provisions mutation authority only from application/operator-owned startup configuration. Write and delete receive distinct task leases containing only explicitly configured `WorkspaceAll` / structural `WorkspacePrefix` scopes, and the session receives each capability only when corresponding authority exists;
-- PR #30 (`624e88da`) conditionally registers `fs_write` / `fs_apply_patch` only for provisioned `FileWrite` authority and `fs_delete` only for provisioned `FileDelete` authority; callers cannot supply `TaskLeaseId` or `ActionId`;
-- `--mutation-state-dir` is required when mutation authority is configured and may also be supplied alone for recovery-only startup; bounded deterministic recovery runs before MCP is served and unresolved recovery fails startup closed;
-- started blocking durable mutations are intentionally followed to a known transaction/recovery outcome while retaining their transport execution permit. The adapter does not return a timeout while a non-cancellable `spawn_blocking` filesystem effect may still commit in the background;
-- exact final heads `fcd1a6aa` (#26), `ae05d6a2` (#27) and `f70e520b` (#30) passed Ubuntu format/Clippy/tests, Windows Clippy/tests and `cargo-deny`.
-
-The implementation remains pre-alpha. Phase 2D Git read/integration is complete. Phase 3A bounds shared process/session resources; Phase 3B1 centralizes application-owned lifecycle/revoke; Phase 3B2 serializes sensitive admission against revoke and enables quiescent owner-scoped reap. Phase 3B3 in PR #53 additionally bounds task leases globally/per-session, routes initial session creation through `SessionLifecycleManager::provision()`, and automatically sweeps expired/revoked sessions through the same safe lifecycle path. No public `session_create` or renewal protocol exists yet. A developer-preview local ChatGPT Desktop installer and tag-driven Windows release bundle exist, but production release/signing, broader process isolation and public multi-session orchestration are not complete. See [`STATUS.md`](STATUS.md) for the precise implementation state.
+without per-action prompt spam, while every concrete action still passes session/lease/policy/path/resource/network/isolation checks. The AI cannot mint or widen its own grant.
 
 ## Canonical documentation
 
@@ -121,29 +141,30 @@ Start with [`docs/README.md`](docs/README.md).
 
 The canonical documents are grouped by purpose:
 
-- `docs/product/` — product charter, scope and roadmap.
+- `docs/product/` — product charter, scope, roadmap, current state and autonomy track.
 - `docs/architecture/` — system, sessions, concurrency, transport, memory and recovery.
-- `docs/security/` — threat model, policy, Windows isolation and filesystem safety.
+- `docs/security/` — threat model, policy, Windows isolation, filesystem safety and remote/autonomy audit gates.
 - `docs/specs/` — MCP tool contracts, config and errors.
 - `docs/engineering/` — implementation, tests, CI/security gates, dependencies and OpticCode reuse.
 - `docs/operations/` — install, observability and benchmarks.
 - `docs/decisions/` — Architecture Decision Records (ADRs).
-- `docs/research/` — source register, research ledger and open questions.
+- `docs/research/` — source register, experiments, evidence and open questions.
 
-`AI_HANDOFF.md` is the mandatory guardrail for AI coding agents.
+`AI_HANDOFF.md` is the mandatory guardrail for AI coding agents. `PROJECT_CONTINUITY_PROMPT.md` is the generic context-recovery prompt for a fresh conversation.
 
 ## Current V1 direction
 
-V1 stays deliberately narrow: Rust daemon/core, MCP adapter, deterministic local policy, project-scoped filesystem/search/edit primitives, Git primitives, supervised process execution, bounded output, crash cleanup, and strong session isolation.
+V1 stays deliberately narrow: Rust daemon/core, provider-neutral host adapters, deterministic local policy, project-scoped filesystem/search/edit primitives, Git primitives, supervised process execution, bounded output, crash cleanup, strong session isolation, zero-cost remote connectivity and locally revocable session autonomy.
 
-Multi-session support is a first-class architecture requirement. Two chats must be able to work on different projects safely; parallel work on the same repository must use isolated Git worktrees and explicit integration/conflict gates rather than uncontrolled shared writes.
+Multi-session support remains a first-class requirement. Two chats must be able to work on different projects safely; parallel work on the same repository must use isolated Git worktrees and explicit integration/conflict gates rather than uncontrolled shared writes.
 
 ## Status labels used in the docs
 
 - **DECIDED** — accepted architecture direction.
-- **PROPOSED** — strong candidate, still needs an ADR/PoC.
+- **PROPOSED** — strong candidate, still needs ADR/PoC.
 - **TARGET** — benchmark or resource objective; not a measured fact.
-- **RESEARCH** — externally sourced information to validate during implementation.
+- **RESEARCH** — sourced information awaiting implementation validation.
 - **OPEN** — unresolved question.
+- **BLOCKED BY HOST** — missing external host evidence, not a failed implementation.
 
-Research baseline: **2026-10-03**.
+Current host/autonomy snapshot baseline: **2026-10-12**.
