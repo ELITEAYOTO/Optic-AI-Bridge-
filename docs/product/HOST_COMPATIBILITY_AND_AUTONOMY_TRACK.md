@@ -1,39 +1,44 @@
 # Host compatibility, zero-cost connectivity and session autonomy track
 
-Status: LIVING SUBTRACK. Last reviewed: 2026-10-10.
+**Status:** LIVING SUBTRACK  
+**Last reviewed:** 2026-10-12
 
 This subtrack records the product and architecture work required to make Optic AI Bridge usable by large numbers of students across multiple AI clients without coupling the core runtime to one host, one transport provider, one paid service or one host-specific approval UI.
 
 The existing core security/runtime work remains authoritative. This track changes how hosts connect, how host activity is mapped into Optic-owned sessions, and how a human can grant bounded autonomy without being prompted for every normal development action.
 
+For the compact active-state summary see `CURRENT_STATE_2026-10-12.md`. For cross-cutting remote security blockers see `../security/REMOTE_AUTONOMY_AUDIT_GATES.md`.
+
 ## Product invariants
 
 1. **Optic itself must remain free to use.** The project must not require an Optic subscription, paid relay, paid hosted backend, OpenAI API credits or another developer-funded server for normal operation.
 2. **The student must not need a paid connectivity service.** Free third-party connectivity such as Tailscale or Cloudflare is acceptable. No single provider is mandatory.
-3. **MCP is an adapter, not the product boundary.** FranceStudent AI and ChatGPT are V1 host targets, but Optic core must remain usable through additional adapters if a host does not expose the required MCP capabilities on a given plan/surface.
+3. **MCP is an adapter, not the product boundary.** FranceStudent and ChatGPT are V1 host targets where the actual host surface supports the required path; additional adapters remain possible.
 4. **The bridge remains local-first.** Project data and execution stay on the student's machine unless an explicitly authorized action requires otherwise.
-5. **Connectivity is never authority.** A stdio connection, HTTP endpoint, tunnel URL, bearer credential, host conversation id or provider account must never mint project/process/file authority by itself.
-6. **Trust is session-scoped for V1.** A human may grant autonomy for the current Optic session/chat mapping. The internal model must remain extensible so a later release can add longer-lived grants without changing the execution-policy core.
+5. **Connectivity is never authority.** A stdio connection, HTTP endpoint, tunnel URL, bearer credential, host conversation id, request id or provider account never mints project/process/file authority by itself.
+6. **Trust is session-scoped for V1.** A human may grant autonomy for the current Optic session mapping. Longer-lived grants are later work.
 7. **Normal trusted development must not become a prompt loop.** Once a bounded autonomy grant is active, repeated reads, edits, builds, tests and approved toolchain use inside its scope should not require repeated human confirmation.
-8. **Revocation must remain immediate and local.** The user must be able to stop/revoke a session from Optic even if the remote host remains connected.
+8. **Every effect remains independently checked.** Session, lease, policy epoch, profile, path, resource, network and isolation validation still run for each action.
+9. **Revocation must remain local and truthful.** The user must be able to stop/revoke a session from Optic even if the remote host remains connected, and revoke semantics must account for already-admitted work.
+10. **Host evidence must be real evidence.** A model's prose/JSON is not accepted as proof that a tool executed when server-side proof can be collected.
 
-## UX direction from the existing Figma product concept
+## UX direction from the Figma product concept
 
 The current Figma concept already contains the product structure needed by this track:
 
 - onboarding with project/client/connection selection;
-- a provider-independent connection concept and advanced custom HTTPS path;
+- provider-independent connection concept and advanced custom HTTPS path;
 - FranceStudent connection management;
-- project permissions and security profile screens;
+- project permissions and security profiles;
 - session/activity views and explicit session revocation;
 - diagnostics and provider recovery;
 - a floating Windows companion capable of surfacing approval-required, connection and project states.
 
-The key product rule expressed by the mockup remains canonical:
+The key product rule remains:
 
 > **The connection transports requests. The profile decides rights.**
 
-The desktop application is therefore not a prerequisite for proving the transport/session architecture, but its contracts must be considered now. Implementation of the full visual application remains later work after the host/session/autonomy service boundaries are stable.
+The desktop application is not a prerequisite for proving the transport/session architecture. Its implementation remains later work after host/session/auth/autonomy/local-approval service boundaries stabilize.
 
 ## Architecture direction
 
@@ -46,7 +51,7 @@ Host adapter
 (MCP stdio / MCP Streamable HTTP / future adapter)
         |
         v
-Connection authentication + HostContext
+Connection authentication + bounded HostContext
         |
         v
 SessionResolver
@@ -62,7 +67,7 @@ ActionEnvelope + capabilities + leases + policy
 Runtime + Windows containment
 ```
 
-Transport providers sit beside the host adapter, not inside the authorization model:
+Transport providers sit beside the host adapter, not inside authorization:
 
 ```text
 MCP Streamable HTTP
@@ -74,286 +79,270 @@ MCP Streamable HTTP
         +-- future provider
 ```
 
-A provider can make an endpoint reachable. It cannot decide what that endpoint may do.
+A provider makes an endpoint reachable. It cannot decide what that endpoint may do.
 
 ## HostContext and session mapping
 
-Every host adapter should normalize its observable, non-authoritative metadata into a bounded `HostContext`. The exact shape is still a design task, but the abstraction should be able to carry values such as:
+Every host adapter should normalize only bounded, understood metadata into `HostContext`, for example:
 
-- adapter kind;
+- adapter kind/version;
 - authenticated connection principal;
-- host-provided conversation/session correlation when available;
-- connection instance/reconnect generation;
-- target project selected locally;
-- capability metadata advertised by the host.
+- protocol revision/client capabilities;
+- host-provided conversation correlation when actually proven;
+- reconnect generation for diagnostics;
+- locally selected project reference.
 
-`SessionResolver` then maps this context to an opaque Optic-owned `SessionHandle`.
+`SessionResolver` then maps that context to an opaque Optic-owned `SessionHandle`.
 
 Host-provided ids are correlation inputs only. They are not capabilities, leases or bearer authority.
 
+Because MCP `2026-07-28` is stateless, H-03 must support two evidence-backed strategies:
+
+1. a proven host conversation signal used only as a mapping key; or
+2. an Optic-minted explicit application handle threaded between calls.
+
+The second strategy is the required fallback while conversation identity remains unproven.
+
 ## Autonomy model
 
-V1 should support human-selected session policy modes rather than asking for every action individually.
+### Review
 
-### 1. Review
+Conservative mode. Read-only project activity may be broadly allowed within the selected project. Mutations, execution and sensitive effects may require local review according to policy.
 
-Conservative mode. Read-only activity can be broadly allowed within the selected project. Mutations, execution or other sensitive effects may require a local review according to policy.
-
-### 2. Project Autonomy
+### Project Autonomy
 
 Recommended trusted-development mode. The current session may autonomously perform the normal development loop inside one selected project and within bounded toolchain/policy limits:
 
 - read/search project files;
-- write/patch/delete where the project profile permits it;
+- write/patch/delete where the project profile permits;
 - Git read and approved integration workflows;
 - start approved project toolchains;
 - build/test/read outputs;
-- repeat those operations without per-action confirmation while all policy/profile/resource/isolation checks continue to pass.
+- repeat without per-action confirmation while all deterministic checks continue to pass.
 
-This mode does **not** mean unrestricted machine access.
+This is not unrestricted machine access.
 
-### 3. Full Access (advanced / dangerous)
+### Full Access / advanced high-authority mode
 
-An intentionally high-authority session mode may be offered later for users who explicitly opt in, but the label must never imply that Optic disables its own hard safety boundary.
+A later advanced mode may grant broader authority after explicit local human choice, but the label never means Optic disables hard safety boundaries.
 
-Even in this mode, some effects remain hard-gated or unavailable unless separately designed and proven, including at minimum:
+Even there, the AI cannot:
 
-- changing Optic's own security policy from the remote AI;
-- silently escalating administrator privileges;
-- modifying protected Windows/security/credential boundaries without a dedicated contract;
-- bypassing isolation/resource ceilings;
-- minting new authority from the AI itself;
-- disabling audit/revocation mechanisms.
+- change Optic's own security policy by itself;
+- silently elevate administrator privileges;
+- mint or widen its own authority;
+- bypass isolation/resource ceilings;
+- disable audit/revocation;
+- access protected system/credential boundaries without dedicated proven contracts.
 
-The UI should clearly communicate the increased risk. A disclaimer is not a substitute for technical containment.
+A disclaimer is not containment.
 
 ## Tool execution: hybrid model
 
-Exact ToolProfiles remain useful, but they should not force a confirmation maze.
+Exact ToolProfiles remain useful without requiring a confirmation maze.
 
-The planned direction is a hybrid execution catalog:
+Planned direction:
 
-1. operator/application-owned executable identity stays pinned and classified;
+1. application/operator-owned executable identity remains pinned and classified;
 2. known development toolchains can be discovered/configured locally;
-3. structured executable + argv remains the process primitive; opaque shell strings do not become the fundamental API;
-4. session autonomy can authorize repeated invocations of an approved toolchain envelope within its project, resource and isolation limits;
-5. a genuinely new executable/toolchain can require one local decision to add it to the current session's bounded catalog, after which normal repeated use does not prompt again;
-6. high-risk interpreters/repository code still require the proven isolation path.
-
-This preserves the security work already completed while allowing realistic `build -> test -> inspect -> fix -> repeat` loops.
+3. structured executable + argv remains the primitive; opaque shell strings do not become the fundamental API;
+4. session autonomy can authorize repeated invocations of an approved toolchain envelope within project/resource/isolation limits;
+5. a genuinely new executable/toolchain can require one local decision before joining the current session's bounded catalog;
+6. high-risk interpreters/repository code remain subject to the proven isolation path.
 
 ## Approval UX direction
 
 MCP elicitation remains a compatibility option, not the only approval mechanism.
 
-The long-term human authority should be able to live locally in Optic (desktop app/widget, with a later headless fallback). This avoids depending on whether a specific AI host renders nested elicitation UI correctly.
-
-A future local approval broker may expose an opaque pending request contract such as:
+The long-term human authority path must be able to live locally in Optic (desktop app/widget, with a later headless fallback):
 
 ```text
 remote action requires authority
         -> Optic creates bounded pending request id
-        -> local Optic UI displays the request
+        -> local Optic UI displays request
         -> human accepts/rejects / chooses session scope
         -> Optic revalidates session + lease + policy + profile + expiry
         -> grant is issued only after successful revalidation
 ```
 
-The pending request id itself carries no authority and must be bounded, expiring, single-owner and replay-safe.
+The pending request id carries no authority and must be bounded, expiring, single-owner and replay-safe.
 
-## Existing evidence
+## Evidence — FranceStudent H-01
 
-### FranceStudent Streamable HTTP proof
+### Transport proof
 
-A prior isolated test used a deliberately harmless Python MCP server with only `ping` and `hello`, exposed as:
+FranceStudent has accepted a public MCP Streamable HTTP `/mcp` endpoint through a temporary Cloudflare Quick Tunnel from a real Windows PC. Real remote POST traffic reached the local harmless probe and `probe_ping` succeeded.
 
-- MCP Streamable HTTP;
-- `/mcp` endpoint;
-- stateless HTTP mode;
-- JSON responses;
-- temporary Cloudflare Quick Tunnel for reachability.
+Negotiated MCP revision was `2026-07-28`; no modern protocol transport session id was observed.
 
-That test is accepted as evidence that the basic FranceStudent remote-MCP transport path is viable on the tested environment. It does **not** yet prove Optic authentication, session correlation, reconnect semantics, parallel calls, local approval or autonomy.
+### Same-conversation evidence
 
-### H-01 reproducible host probe
+Two `probe_session_correlation` calls in the same FranceStudent conversation were corroborated by fresh local server traffic before the host outage. Core MCP client metadata remained stable while several network/tracing values varied.
 
-Draft PR #170 adds an authority-free, redacted characterization probe under `experiments/host-probe/` with:
+That alone is **not** a conversation identifier.
 
-- `probe_ping`;
-- `probe_host_context`;
-- `probe_session_correlation`;
-- `probe_parallel`;
-- `probe_reset`;
-- bounded in-memory correlation state;
-- complete omission of credential-like header values/names from observations;
-- one-way fingerprints for non-secret correlation candidates;
-- protocol-version and declared-client-capability observations;
-- Windows setup/test helpers;
-- a reproducible real-host result template.
+### Evidence-integrity correction
 
-On H-01 commit `2645e6b7`, the dedicated CI proves the unit redaction/correlation tests, PowerShell helper parsing and a real local MCP Streamable HTTP server/client smoke. The remaining H-01 evidence is host-specific and is tracked in issue #171 for FranceStudent: same-conversation stability, new-conversation separation, reconnect behavior, parallel calls, host confirmation behavior and harmless custom-header delivery.
+One earlier FranceStudent/Claude response for a supposed new-conversation test was later explicitly admitted by the model to have been generated without a real tool invocation. It is excluded.
 
-No H-01 signal is authority. The probe measures possible correlation inputs only.
+The v1 probe also fingerprinted `str(request_id)` even when the MCP SDK request id was absent. The previously stable request-id fingerprint is therefore ambiguous and excluded as a conversation signal.
 
-### A-08 reusable approval proof
+`h01-v2` corrects this by:
 
-A-08A through A-08D remain valid core/runtime work. The direct real-binary proof shows reusable profile authority works inside Optic. A-08E is now treated as **host-interaction blocked**, not as a failure of the reusable approval model: current host surfaces did not provide the expected reusable approval interaction consistently.
+- emitting `request_id_present` explicitly;
+- using `request_id_fingerprint=null` when absent;
+- returning a random per-call `probe_invocation` marker;
+- returning a random per-server-process instance id;
+- printing matching `[H01] TOOL_CALL ...` proof locally;
+- comparing appeared/disappeared correlation keys rather than only intersections;
+- grouping parallel-overlap evidence by explicit parallel `run_id`;
+- broadening credential-like header-name redaction.
 
-The reusable broker should be preserved and reused by the later local-approval/session-autonomy design where appropriate.
+### Host UI observation
 
-## Remote-authentication constraints already fixed
+No host-owned per-call approval/confirmation UI was observed for the harmless tool calls tested. The shown FranceStudent MCP configuration used `Authentication: None` and did not visibly expose a custom-header field. This is an observation of the shown UI, not proof that the product can never support headers elsewhere.
 
-H-02 implementation is not started yet, but two constraints are already safe to freeze:
+### Current external block
+
+FranceStudent then reported a host-side service incident. Remaining checks are **blocked by host**, not failed:
+
+- clean new-conversation separation under v2 proof;
+- reconnect comparison under the same proof standard;
+- grouped parallel dispatch;
+- optional safe cancellation/timeout;
+- exact authentication/header behavior.
+
+When service returns, use a fresh v2 server process and fresh correlation/parallel run ids. Old process-local fingerprints are not comparable across restarts.
+
+## Evidence — real Optic MCP link experiment
+
+Draft PR #178 adds an experiment-only bridge:
+
+```text
+Streamable HTTP MCP client
+  -> bounded Python compatibility adapter
+  -> real Rust `optic-bridge` stdio MCP server
+  -> disposable synthetic workspace
+```
+
+Remote allowlist is exactly:
+
+- `optic_session_info` -> upstream `session_info`;
+- `optic_fs_list` -> upstream `fs_list`;
+- `optic_fs_read` -> upstream `fs_read`.
+
+The adapter never accepts a caller-selected real workspace root and does not expose process tools, mutations, Git, `session_cancel` or arbitrary upstream method names.
+
+On experiment head `ef5bc84144670135d13f55a59a782611aeae762f`:
+
+- dedicated Real Optic MCP Link workflow #11 is green on Linux + Windows;
+- normal CI #653 is green on dependency policy + Ubuntu + Windows;
+- real Optic session/list/read behavior is reached;
+- real Optic rejects traversal;
+- two HTTP reads can be forwarded concurrently through the same long-lived upstream stdio session;
+- each successful adapter call has a server-minted invocation proof;
+- a new HTTP/MCP client connection can reconnect to the same adapter and observe the same long-lived upstream Optic application-session fingerprint.
+
+Reconnect continuity is transport evidence only. It is not FranceStudent conversation identity and not H-03.
+
+The Python experiment graph is frozen through shared constraints, with `pip check` and `pip freeze --all` in CI.
+
+Experiment admission bounds currently include 64 KiB request body, 32 admitted HTTP tasks, 8 concurrent upstream forwards, 250 ms admission wait, 15 s upstream timeout and 5 s keep-alive.
+
+## Remote security gates before real-project exposure
+
+The synthetic real-link experiment must remain synthetic while these cross-capability findings are open:
+
+- **#176** — sensitive content + metadata/listing classifier/policy and canonical list authorization;
+- **#180** — generic file mutation must not alter protected `.git` repository-control state and bypass dedicated Git authority;
+- **#181** — Unix native path segments must round-trip losslessly into authority-bearing `WorkspacePath`;
+- **#182** — `GitRead` must not bypass future sensitive-content policy through `git_diff` / `git_status`;
+- **#183** — `fs_read`, `fs_list` and Git read must hold session admission through the effect so revoke/quiescence semantics are truthful.
+
+See `../security/REMOTE_AUTONOMY_AUDIT_GATES.md` for the consolidated contract.
+
+## Remote authentication constraints
+
+H-02 implementation is still pending, but these constraints are already fixed:
 
 1. provider/tunnel identity never substitutes for Optic endpoint authentication;
-2. access tokens are never placed in URI query strings.
+2. access tokens never go in URI query strings;
+3. successful authentication creates only a connection principal/context, not project capability/session authority;
+4. credentials must be locally revocable/rotatable;
+5. reconnect must not resurrect revoked credentials or sessions.
 
-For HTTP hosts that can carry a custom `Authorization` header, a bearer-style path is the preferred simple candidate. If FranceStudent cannot carry the required header/auth flow, H-02 must choose another standards-compatible adapter path based on measured host behavior rather than weakening these constraints. The H-01 `X-Optic-Probe` test exists specifically to answer the custom-header transport question without transmitting a real credential.
+Prefer standards-compatible `Authorization`/OAuth behavior where the host actually supports it. If FranceStudent exposes only a different documented token/key mechanism, measure its exact behavior before implementing a compatibility adapter. Do not call a static compatibility key “OAuth”.
 
-## Gates before production refactor
+## Gates
 
-### H-00 — evidence and architecture freeze — COMPLETE
+### H-00 — COMPLETE
 
-Completed by the documentation/architecture branch and PR #169:
+Architecture/product freeze recorded by PR #169 / ADR-0012.
 
-- zero-cost/product invariants recorded;
-- existing core security boundaries explicitly preserved;
-- prior FranceStudent Streamable HTTP evidence recorded;
-- A-08E host-interaction limitation separated from reusable-approval correctness;
-- host-adapter/session/autonomy gates defined;
-- no production transport/runtime refactor performed.
+### H-01 — ACTIVE / HOST-BLOCKED
 
-### H-01 — harmless host capability probe — CURRENT
+The hardened authority-free v2 probe is implemented in PR #170. Automated validation is green; remaining primary-host comparisons depend on FranceStudent service recovery.
 
-The isolated probe implementation and automated validation are complete in draft PR #170. It has no filesystem, Git, process, Optic-runtime or mutation authority.
+H-01 is not complete until enough real-host evidence exists to inform H-02/H-03 honestly.
 
-Measure on each available host/surface:
+### H-02 — PENDING
 
-- tool discovery and invocation;
-- Streamable HTTP compatibility;
-- protocol version and declared client capabilities;
-- request metadata actually delivered to the server;
-- harmless custom-header delivery where configurable;
-- same-chat correlation across distinct calls;
-- reconnect behavior;
-- new-chat behavior;
-- parallel/concurrent calls;
-- host confirmations;
-- elicitation support/behavior if advertised;
-- request cancellation/timeouts where observable.
+Prove zero-cost remote authentication/revocation/rotation, bounds and reconnect behavior. No credentials in URLs/logs. Authentication remains separate from project authority.
 
-FranceStudent real-host evidence is tracked in issue #171. ChatGPT is probed only on surfaces/plans that actually allow connecting the endpoint.
+### H-03 — PENDING
 
-H-01 is not complete until at least the primary FranceStudent V1 target has reproducible real-host evidence sufficient to inform H-02/H-03.
+Define bounded `HostContext`, opaque Optic session creation/resolution, same/new chat rules where provable, reconnect behavior, cross-host separation, local revoke/reap and no authority from caller ids.
 
-### H-02 — transport/authentication proof — PENDING
+Also resolve the current single-startup-session production shape transactionally: read/process/mutation/Git-integration authorities are session-owned and cannot be turned multi-session by swapping one field.
 
-Using the harmless probe architecture:
+The current 30-minute initial session lifetime also needs an explicit H-03/H-04 idle/absolute renewal design rather than accidental expiry semantics.
 
-- prove a local Streamable HTTP server behind at least one zero-cost provider;
-- preserve provider replaceability;
-- add real endpoint authentication separate from tunnel identity;
-- reject missing/invalid/revoked credentials;
-- keep credentials out of URLs/logs;
-- test replay/basic rate/size bounds;
-- test provider reconnect without silently preserving invalid authority.
+### H-04 — PENDING
 
-Cloudflare and Tailscale are reference providers, not mandatory dependencies. The exact FranceStudent header/auth contract must come from H-01 evidence.
+Define transport-agnostic `Review`, `Project Autonomy` and advanced high-authority grant semantics. Every effect still revalidates. Project/toolchain/policy/resource drift cannot silently inherit authority. The AI cannot widen its own grant.
 
-### H-03 — SessionResolver contract
+### H-05 — PENDING
 
-Define and test:
+Prove a minimal host-independent local approval service contract. A full desktop app is not required for the proof, but the contract must fit the later app/widget.
 
-- bounded `HostContext`;
-- opaque Optic session creation;
-- same-conversation/session correlation rules per adapter;
-- reconnect behavior;
-- new-chat separation;
-- cross-host separation;
-- revocation/reap;
-- no authority from caller-supplied ids alone.
+### H-06 — GATED
 
-Only after this gate may user-facing wording claim a host conversation maps reliably to an Optic session for that adapter.
+Production-bounded Streamable HTTP beside stdio. Per-request host activity resolves through `SessionResolver`; transport-specific logic stays out of policy/runtime services.
 
-### H-04 — session autonomy grant model
+PR #178 proves that extra host tests can already use the real core through a compatibility adapter, so H-06 does not need to be rushed merely to obtain evidence.
 
-Define transport-agnostic authority for `Review`, `Project Autonomy` and the advanced high-authority profile.
+### H-07 — FranceStudent V1
 
-Acceptance conditions:
-
-- one explicit human/local policy choice can cover multiple distinct actions in the current session;
-- every action is still independently revalidated;
-- project/toolchain/resource/isolation drift does not silently inherit authority;
-- session revoke immediately blocks later reuse;
-- no AI action can widen its own autonomy grant;
-- audit records distinguish automatic use from newly granted authority.
-
-### H-05 — local approval broker proof
-
-Before building the full desktop application, prove a minimal local approval service contract independent of MCP elicitation.
-
-The proof may use a minimal developer UI/console harness initially, but the contract must be suitable for the planned desktop app/widget.
-
-### H-06 — production Streamable HTTP adapter
-
-Only after H-01 through H-05 are green:
-
-- add production-bounded MCP Streamable HTTP beside stdio;
-- do not replace the existing stdio adapter;
-- resolve per-request/per-host activity through `SessionResolver` instead of binding the entire server instance to one startup session;
-- keep TransportGuard-equivalent limits at the new boundary;
-- preserve the transport-agnostic application/runtime services.
-
-### H-07 — FranceStudent V1 adapter
-
-Close the first supported remote-host path end to end:
-
-- authenticated connection;
-- project selection locally;
-- session correlation;
-- read/mutation/process surface according to the selected profile;
-- session autonomy;
-- local revoke;
-- reconnect and stale-session negative tests;
-- zero-cost setup documentation.
+Authenticated connection, local project selection, session mapping, read/mutation/process profile, autonomy, local revoke, reconnect/stale-session negatives and zero-cost setup docs.
 
 ### H-08 — ChatGPT adapter
 
-Support ChatGPT only on surfaces/plans that actually expose the required compatible path. Do not make ChatGPT availability a requirement for Optic itself.
+Support only compatible surfaces/plans; never weaken Optic because one ChatGPT surface lacks the required path.
 
-If a ChatGPT surface cannot provide the required MCP path, keep the core ready and use/consider another adapter rather than weakening Optic's authorization model.
+### H-09 — provider setup adapters
 
-### H-09 — provider adapters and setup automation
+Tailscale, Cloudflare, custom HTTPS/manual and future providers behind one product concept.
 
-Productize provider setup behind one interface:
+### H-10 — desktop application
 
-- Tailscale reference adapter;
-- Cloudflare reference adapter;
-- custom HTTPS/manual adapter;
-- future providers without core changes.
-
-The desktop app should eventually detect/configure the easy path while still exposing an advanced custom-provider route.
-
-### H-10 — desktop application implementation
-
-Begin the full visual application only after the host/session/autonomy contracts are stable enough to avoid redesign churn.
-
-The existing Figma file remains the product-design baseline. Expected implementation areas include onboarding, projects, connections, sessions, activity, security, diagnostics, settings, notifications and the floating widget.
+Implement the visual app after contracts stabilize, using the existing Figma concept as the baseline.
 
 ## Explicit non-goals for the current gate
 
 Do not yet:
 
 - replace stdio with HTTP in production;
-- delete A-08 reusable approval code;
+- delete or weaken A-08 reusable approval;
 - weaken `ActionEnvelope`, lease, policy, ToolProfile or isolation checks;
 - add unrestricted shell execution;
-- bind authority to a tunnel URL or host conversation id;
+- bind authority to tunnel/transport/request/conversation ids;
+- expose a real repository through the synthetic PR #178 adapter;
+- expose `session_cancel` as a generic shared remote tool;
 - begin the full desktop UI implementation;
-- promise ChatGPT Free/Plus compatibility without a real compatible host path;
-- require Tailscale or Cloudflare as the only provider;
-- invent a FranceStudent auth/header behavior that H-01 has not measured.
+- promise unsupported ChatGPT plan/surface compatibility;
+- require one tunnel provider;
+- invent FranceStudent authentication/header semantics.
 
 ## Definition of done for this track
 
-This track is complete only when at least one supported remote student host can connect through a zero-cost setup, map into an Optic-owned session, receive a bounded user-selected autonomy profile, perform a realistic development loop without repeated approval spam, and be locally revoked without weakening the existing policy/isolation boundaries.
+This track is complete only when at least one supported remote student host can connect through a zero-cost setup, authenticate, map into an Optic-owned session, receive a bounded human-selected autonomy profile, perform a realistic development loop without repeated approval spam, and be locally revoked without weakening existing policy/isolation/security boundaries.
