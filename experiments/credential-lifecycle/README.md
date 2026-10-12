@@ -60,12 +60,18 @@ credential remains denied after reconnect, raw canary/credential absence in logs
 and returned error data. Uses modern MCP envelope and matching method/name
 headers; no real host is contacted. Inherited #186 unit/protocol tests also run.
 
-Still unmeasured: actual FranceStudent behavior on rotate/revoke, caching/retry/UI
-error semantics; tunnel restart during lifecycle; real secrets/durable storage;
-production auth/session provisioning. #186's two live sessions prove the header
-carrier and model handle feasibility, not these lifecycle behaviors. Historical
-missing-header requests remain unresolved. New live results must have new instance
-and independent server proof; do not reuse old seq/markers.
+Live FranceStudent/Luna proof now covers baseline ownerA epoch1, old-credential
+refusal after local rotation, v2 acceptance with same principal/epoch2, refusal
+after revoke at epoch3, refusal after connector disable/re-enable and independent
+ownerB success at epoch1. See `LIVE_EVIDENCE_2026-10-12.md` for exact markers,
+request methods, local acknowledgements and provenance limits. This finite run
+does not establish caching/retry behavior generally or TCP socket identity.
+
+Still unmeasured/unimplemented: tunnel restart during lifecycle; real secrets,
+durable revocation/storage, production auth/session provisioning and all other
+host/model variants. #186's sessions separately cover header/handle compatibility.
+Historical missing-header requests remain unresolved. New live results must have
+new instance and independent server proof; do not reuse old seq/markers.
 
 ## Windows — stop after each step for output review
 
