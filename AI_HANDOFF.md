@@ -4,6 +4,7 @@ Read this file before changing architecture or implementing features.
 
 For the current active project state, also read:
 
+- `docs/product/PROJECT_HEALTH_2026-10-12.md`;
 - `docs/product/CURRENT_STATE_2026-10-12.md`;
 - `docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md`;
 - `docs/security/REMOTE_AUTONOMY_AUDIT_GATES.md`;
@@ -18,6 +19,7 @@ For the current active project state, also read:
 - Preserve transport/core separation and the TransportGuard.
 - Treat MCP `2026-07-28` transport as stateless; use Optic-owned application `SessionHandle`s for stateful resources.
 - Treat host conversation/session/request ids as correlation hints only unless a host-specific proof establishes their semantics; they are never capability authority.
+- Treat the current PR #178 single-upstream-session behavior as an experiment property, not a production session-mapping model.
 - Keep tunnel/provider identity outside project authorization. Connectivity is not authority.
 - Keep endpoint authentication separate from project/session/autonomy authority.
 - Route every executable effect through a typed `ActionEnvelope` carrying one typed `Effect` variant.
@@ -40,6 +42,7 @@ For the current active project state, also read:
 - Test Windows process cleanup/security boundaries natively.
 - Add/update an ADR when an architectural/security invariant changes.
 - Pair external-host evidence with server-side proof when the host/model can fabricate or summarize tool results.
+- Distinguish “two calls in one model turn” from “true temporal parallelism”; require server-side overlap evidence before claiming concurrency.
 
 ## MUST NOT
 
@@ -48,7 +51,10 @@ For the current active project state, also read:
 - Let AI grant/approve permissions or use AI risk scores as authorization.
 - Trust a client-supplied session ID merely because it is syntactically valid.
 - Treat MCP connection state, request ids, Cloudflare headers, tunnel URLs or provider account identity as Optic session authority.
+- Treat the same PR #178 `adapter_instance` across multiple FranceStudent conversations as proof of FranceStudent conversation identity or absence thereof.
 - Put production access tokens in URL query strings.
+- Assume FranceStudent's `Bearer token ou secret` UI maps to a specific HTTP Authorization shape until measured.
+- Call a static bearer/key compatibility credential “OAuth” unless an actual OAuth flow is implemented and verified.
 - Expose `session_cancel` as an ordinary shared remote tool before remote ownership/control-plane semantics are defined.
 - Expose a real project through the synthetic PR #178 adapter while remote audit gates #176 and #180–#183 remain unresolved.
 - Expose arbitrary PID kill.
@@ -84,13 +90,28 @@ AI host
 
 If H-01 cannot prove a trustworthy host conversation-correlation signal, H-03 must use an Optic-minted explicit application handle rather than inventing a transport session.
 
+Live PR #178 evidence now demonstrates why H-03 is necessary: two genuinely different FranceStudent conversations reached the same long-lived experimental adapter/upstream context because the experiment deliberately owns one upstream stdio application session. Do not reproduce that behavior as the production multi-conversation model.
+
 MCP remains one adapter, not the product boundary.
 
 ## Current experiment rule
 
 The real Optic Streamable HTTP link in draft PR #178 is **synthetic-only**. It is useful because it exercises the actual Rust stdio application server through a replaceable remote compatibility adapter, but it deliberately exposes only session info, list and read against an adapter-created temporary workspace.
 
+Verified live host evidence includes a server-correlated real read, traversal rejection, two real calls from one FranceStudent turn, and a new FranceStudent conversation reaching the same live adapter/upstream experiment context.
+
 Do not widen that experiment to real repositories, process execution, mutation, Git or generic upstream forwarding merely because the transport path works.
+
+A future synthetic mutation tranche is acceptable only if it remains disposable/no-Git/no-process/no caller-selected workspace root and routes create/update/delete through the **real Optic transactional mutation service**, not direct Python file I/O.
+
+## Current FranceStudent auth/header note
+
+The current FranceStudent MCP editor visibly exposes:
+
+- `Bearer token ou secret`;
+- `Headers sécurisés (JSON)`.
+
+That is useful H-02 evidence, not a finished auth contract. Measure exact header behavior with harmless values before production design depends on it.
 
 ## Before coding
 
@@ -107,10 +128,10 @@ Identify:
 - crash recovery / uncertain outcomes;
 - platform-specific path/isolation behavior;
 - tests and exact-head CI gate;
-- whether required host evidence is actually known or still blocked.
+- whether required host evidence is actually known or still evidence-pending.
 
 If required information is missing, audit/document the missing evidence instead of writing speculative production code.
 
 ## Definition of done
 
-Formatting/lint/tests pass; security regression tests exist; no unbounded state was introduced; docs/contracts/issues/PR body match code; Windows-specific behavior is tested on Windows; remote-host claims are backed by real server evidence; `STATUS`/current-state/roadmap/CHANGELOG are accurate where applicable; benchmark claims remain TARGET until measured; draft/evidence-gated PRs remain draft until their stated exit criteria are satisfied.
+Formatting/lint/tests pass; security regression tests exist; no unbounded state was introduced; docs/contracts/issues/PR body match code; Windows-specific behavior is tested on Windows; remote-host claims are backed by real server evidence; `STATUS`/current-state/project-health/roadmap/CHANGELOG are accurate where applicable; benchmark claims remain TARGET until measured; draft/evidence-gated PRs remain draft until their stated exit criteria are satisfied.
