@@ -1,89 +1,156 @@
 # FranceStudent / Remote MCP candidate
 
-**Status:** active H-01 research target — transport feasibility proven in an isolated prototype; production auth/session semantics not yet proven.
-**Recorded:** 2026-10-08. **Updated:** 2026-10-10.
+**Status:** active H-01 research target — transport feasibility proven; conversation identity and production auth/session semantics still unproven.  
+**Recorded:** 2026-10-08  
+**Last updated:** 2026-10-12
 
 ## Motivation
 
-Optic may expose the same application-owned security/runtime core through a remote host adapter so a cloud client such as FranceStudent (FS) can use the Optic instance running on the student's own Windows PC.
+Optic may expose the same application-owned security/runtime core through a remote host adapter so a cloud client such as FranceStudent can use the Optic instance running on the student's own Windows PC.
 
-The intended product property is local-first and zero mandatory maintainer infrastructure: the user's PC keeps the workspace, CPU/RAM, state and Optic authority. A tunnel, if used, transports HTTPS only and must never become an authorization boundary.
+The intended product property is local-first and zero mandatory maintainer infrastructure: the user's PC keeps the workspace, CPU/RAM, state and Optic authority. A tunnel, if used, transports HTTPS only and never becomes an authorization boundary.
 
-FranceStudent and ChatGPT remain V1 product targets where the host surface actually supports the required connection, but MCP itself is an adapter rather than an Optic core requirement.
+FranceStudent is the priority remote V1 host. ChatGPT remains a target where the user's plan/surface exposes a compatible path. MCP itself remains an adapter rather than an Optic core requirement.
 
-## Existing external prototype evidence
+## Verified transport evidence
 
-A separate harmless prototype supplied by the project owner was tested against FranceStudent with only `ping` / `hello` tools and no file, Git, process or Optic authority.
-
-Observed path:
+A real Windows PC has proven this path:
 
 ```text
 FranceStudent
   -> HTTPS
   -> MCP Streamable HTTP /mcp
   -> Cloudflare Quick Tunnel
-  -> 127.0.0.1:8000/mcp
-  -> harmless prototype MCP server
+  -> local H-01 probe
 ```
 
-Observed result for `ping`:
+Accepted observations before the current host incident:
 
-```text
-pong - Streamable HTTP /mcp fonctionne
-```
+- FranceStudent displayed the custom MCP server as active;
+- real remote POST traffic reached the local probe;
+- `probe_ping` succeeded;
+- negotiated MCP revision was `2026-07-28`;
+- no modern MCP transport session id was observed;
+- two same-conversation `probe_session_correlation` calls were corroborated by fresh server traffic;
+- no host-owned per-call approval/confirmation UI was observed for those harmless calls;
+- the shown MCP configuration used `Authentication: None` and did not visibly expose a custom-header field.
 
-This is accepted evidence that the tested FranceStudent custom-MCP flow can discover and call a tool through Streamable HTTP `/mcp`. It is **not** evidence that production Optic remote access, authentication or high-authority tools are safe or compatible.
+This proves basic remote Streamable HTTP tool reachability. It does **not** prove production authentication, conversation identity, multi-session mapping or real-project safety.
 
-## H-01 reproducible probe
+## Evidence integrity correction
 
-Draft PR #170 replaces the one-off prototype as the current characterization instrument. The probe remains authority-free and contains no project/filesystem/Git/process/Optic-runtime mutation path.
+One earlier FranceStudent/Claude response that looked like a new-conversation probe result was later explicitly admitted by the model to have been produced without a real tool call. That sample is discarded.
 
-It exposes:
+Separately, H-01 v1 fingerprinted `str(request_id)` even when the MCP Python SDK request id was absent. A stable fingerprint of `None` can therefore masquerade as a stable host signal. The earlier constant request-id fingerprint is **ambiguous** and must not be used as conversation evidence.
+
+The rule is now:
+
+> FranceStudent/model output alone is not proof of tool execution when server-side proof can be collected.
+
+## H-01 v2 probe
+
+Draft PR #170 upgraded the authority-free probe to `h01-v2`.
+
+Tools:
 
 - `probe_ping`;
 - `probe_host_context`;
-- `probe_session_correlation`;
-- `probe_parallel`;
-- `probe_reset`.
+- `probe_session_correlation(run_id)`;
+- `probe_parallel(run_id, delay_ms)`;
+- `probe_reset(run_id)`.
 
-It deliberately redacts credential-like headers and returns one-way fingerprints for non-secret correlation candidates. It also records the negotiated protocol version and the client capabilities exposed by the MCP SDK.
+Important v2 properties:
 
-Dedicated H-01 CI is green on commit `2645e6b7` for:
+- credential-like headers are omitted/redacted;
+- other candidate correlation values are process-local one-way fingerprints;
+- request-id presence is explicit;
+- absent request id yields `request_id_fingerprint=null`;
+- every successful call returns a random per-call `probe_invocation` marker;
+- every server process has a random instance id;
+- the exact same invocation proof is printed locally as `[H01] TOOL_CALL ...`;
+- correlation reports appeared/disappeared keys as changes rather than ignoring them;
+- parallel overlap is counted only inside an explicit caller-selected parallel test run id;
+- correlation state is bounded;
+- request body is bounded to 64 KiB;
+- normal loopback mode enables DNS-rebinding protection;
+- random Quick-Tunnel host acceptance requires an explicit H-01-only switch.
 
-- redaction/correlation unit tests;
-- Windows PowerShell helper syntax;
-- a real local MCP Streamable HTTP server/client integration smoke.
+The probe has no filesystem, Git, process, real Optic runtime, mutation or Windows-effect authority.
 
-Real FranceStudent evidence is tracked in issue #171. The same run id is kept across same-conversation, new-conversation and reconnect comparisons so the probe can directly report signal changes.
+## Current real-host block
 
-## What is still not proven
+FranceStudent subsequently reported a service-wide technical incident. The remaining checks are therefore **blocked by host**, not failed.
 
-Before any production implementation/support claim, validate at least:
+When FranceStudent recovers, use a **fresh v2 server process + fresh run ids** and require matching local invocation proof.
 
-- whether FranceStudent can deliver a harmless custom header;
-- the exact FranceStudent "Token ou clé d'accès" request/header/auth behavior;
-- invalid/revoked credential behavior;
-- reconnect after local bridge/tunnel restart;
-- same-conversation versus new-conversation correlation signals;
-- multiple clients and application-principal/session mapping;
-- request/response byte ceilings, timeouts and concurrent calls;
-- real Optic read/Git tools only after the earlier gates permit them;
-- cancellation/progress behavior where relevant;
-- provider lifecycle/ownership and failure handling;
-- remote threat model, rate limiting and audit/redaction;
-- no authority widening caused by transport or tunnel configuration.
+Remaining checks:
 
-Do not assume a FranceStudent-specific header format until issue #171 measures it.
+1. **New conversation separation** — same correlation run id, genuinely new FranceStudent chat, compare only server-verified calls.
+2. **Reconnect** — toggle/reconnect the MCP server in the same visible conversation, then repeat a verified correlation call.
+3. **Parallel dispatch** — two simultaneous `probe_parallel` calls using the same fresh parallel run id and `delay_ms=500`; require server-side `overlap_observed` proof.
+4. **Optional cancellation/timeout** — only if the host exposes a safe UI action.
+5. **Authentication/header shape** — inspect actual FranceStudent auth configuration; test harmless header behavior only if the UI exposes it.
+
+Do not compare process-local HMAC fingerprints across probe restarts.
+
+## What is already safe to conclude
+
+- MCP `2026-07-28` should be treated as stateless at protocol level.
+- Missing `Mcp-Session-Id` is expected, not a failure.
+- No currently observed FranceStudent request/header/meta value is proven as conversation identity.
+- Cloudflare/network tracing headers are not conversation identity.
+- MCP client metadata may be stable across calls but is not conversation identity by itself.
+- Request id is not authority and the v1 request-id evidence is unusable as a conversation signal.
+- Host confirmation UI cannot be assumed.
+- Host/model-rendered JSON cannot be trusted as invocation proof without corroboration.
+
+H-03 must therefore keep an **Optic-minted explicit application-handle fallback** unless a later verified FranceStudent signal proves useful as a non-authoritative mapping input.
+
+The real authority remains an independent application-owned `SessionHandle`.
 
 ## Authentication constraints
 
 The production remote endpoint must authenticate independently from Cloudflare/Tailscale/provider identity.
 
-For standards-based HTTP MCP authorization, bearer access tokens belong in the `Authorization` request header and must not be placed in URI query strings. Optic therefore will not adopt `?token=...` URLs for production access.
+Access tokens do not belong in URI query strings. Production Optic will not use `?token=...` URLs.
 
-H-01 may optionally configure a harmless `X-Optic-Probe` header to determine whether the host can transmit custom HTTP headers. This is not a credential and does not authenticate anything. H-02 will decide the production mechanism after that host capability is measured.
+Preferred direction where supported:
 
-If FranceStudent can carry the required authorization header, a simple locally generated/revocable credential or standards-compatible OAuth path can be evaluated without any paid Optic backend. If it cannot, H-02 must evaluate another compatible adapter/auth flow rather than moving secrets into the URL or trusting the tunnel.
+- standard `Authorization` bearer behavior and standards-native OAuth/resource discovery when the host actually supports it.
+
+Compatibility direction where required:
+
+- a locally generated high-entropy static bearer/key mechanism may be considered only if the real FranceStudent configuration supports such a mechanism and its exact request behavior is measured;
+- document it honestly as a compatibility credential, not OAuth;
+- support local revoke and rotation;
+- never log the secret or return it from a tool.
+
+Authentication creates only a connection principal/context. It does not mint project capabilities, leases, autonomy grants or a caller-selected internal session handle.
+
+## Real Optic link available for next-stage host tests
+
+Draft PR #178 now proves a separate synthetic-only end-to-end path:
+
+```text
+remote Streamable HTTP MCP client
+  -> bounded compatibility adapter
+  -> real Rust `optic-bridge` stdio server
+  -> disposable synthetic workspace
+```
+
+The remote allowlist is exactly:
+
+- `optic_session_info`;
+- `optic_fs_list`;
+- `optic_fs_read`.
+
+No process, mutation, Git, `session_cancel` or arbitrary upstream forwarding is exposed.
+
+On experiment head `ef5bc84144670135d13f55a59a782611aeae762f`, dedicated workflow #11 is green on Linux + Windows and normal CI #653 is green on dependency policy + Ubuntu + Windows.
+
+This gives the next FranceStudent run a much stronger test target than `probe_ping`: it can exercise the real Optic session/policy/lease/filesystem stack while still touching only adapter-created synthetic data.
+
+Do **not** point PR #178 at a real repository. Real-project remote exposure remains blocked by the security audit gates documented in `../security/REMOTE_AUTONOMY_AUDIT_GATES.md`.
 
 ## Architecture direction
 
@@ -92,10 +159,10 @@ FranceStudent / other remote host
         |
         | HTTPS + Streamable HTTP /mcp
         v
-Remote host adapter (loopback locally)
+Remote host adapter
   - endpoint authentication
   - transport hard limits
-  - normalized HostContext
+  - bounded HostContext
   - HostContext -> Optic-owned SessionHandle resolution
         |
         v
@@ -106,41 +173,43 @@ Existing Optic normalization / PolicyEngine / leases / runtime
 
 Rules:
 
-1. The security/execution core stays transport-independent.
-2. The local HTTP listener binds loopback by default.
-3. A public/tunnel URL is never treated as a secret or authority.
-4. Real remote Optic access requires authentication.
-5. The remote client cannot mint sessions, capabilities, task leases, scopes or process grants.
-6. Host-provided session/conversation ids are correlation inputs only; Optic mints the real `SessionHandle`.
-7. Session-scoped autonomy never removes per-action policy/resource/isolation revalidation.
-8. `Interpreter` / `RepositoryCode` re-admission remains subject to the existing isolation gates regardless of remote connectivity.
+1. Security/execution core stays transport-independent.
+2. Local HTTP listener binds loopback by default.
+3. Public/tunnel URL is never a secret or authority.
+4. Real remote Optic access requires endpoint authentication.
+5. Remote client cannot mint sessions, capabilities, task leases, scopes or process grants.
+6. Host-provided conversation/session ids are correlation inputs only; Optic owns the real `SessionHandle`.
+7. Session autonomy never removes per-action policy/resource/isolation revalidation.
+8. Interpreter/repository-code execution remains subject to existing isolation gates regardless of transport.
 9. Tunnel providers are replaceable adapters outside PolicyEngine.
 10. No mandatory Optic-owned VPS/relay/database is introduced for the free path.
-11. Removing one tunnel provider must not require changes to core policy, leases or tool semantics.
+11. Removing one provider must not require changes to core policy, leases or tool semantics.
+12. `session_cancel` is a control-plane operation and is not exposed casually through a shared remote adapter.
 
 ## Transport candidate
 
 Primary candidate: MCP **Streamable HTTP `/mcp`**.
 
-Do not implement legacy `/sse` only because an example/placeholder mentions it. Add compatibility transports only when a real important client requires them.
+Do not implement legacy `/sse` merely because an example mentions it. Add compatibility transports only when a real important client requires them.
 
-## Connectivity / zero-cost candidate
+## Connectivity / zero-cost candidates
 
 Interchangeable options remain the goal:
 
-- Cloudflare Quick Tunnel for authority-free prototype/onboarding experiments only;
-- Tailscale Funnel as a possible stable user-owned free path, subject to real validation;
-- named/custom tunnel or user-provided reverse proxy for advanced users;
-- future provider adapters without changes to the Optic authorization core.
+- Cloudflare Quick Tunnel for authority-free/synthetic experiments only;
+- Tailscale/Funnel or equivalent user-owned path subject to real validation;
+- named/custom tunnel or user reverse proxy for advanced users;
+- future provider adapters without core changes.
 
-No third-party free tier is promised to remain free forever. The durability goal is provider interchangeability and absence of mandatory maintainer-hosted infrastructure.
+No third-party free tier is promised permanent. Durability comes from provider interchangeability and no mandatory maintainer-hosted infrastructure.
 
 ## Current gates
 
 1. **H-00 complete** — product/architecture freeze.
-2. **H-01 current** — harmless real-host characterization; automated probe is green, FranceStudent evidence remains issue #171.
-3. **H-02 pending** — endpoint authentication/revocation/rate-size-replay proof behind a zero-cost provider.
-4. **H-03 pending** — evidence-driven `HostContext -> SessionResolver -> SessionHandle` contract.
-5. Later gates add autonomy/local approval before production Streamable HTTP exposes real Optic effects.
+2. **H-01 active / host-blocked** — hardened real-host characterization, remaining FranceStudent checks await host recovery.
+3. **H-02 pending** — endpoint authentication/revocation/rotation/bounds proof behind a zero-cost provider.
+4. **H-03 pending** — evidence-driven `HostContext -> SessionResolver -> SessionHandle` contract with explicit-handle fallback.
+5. **H-04/H-05 pending** — autonomy/local approval before production remote real-project effects.
+6. **H-06+ gated** — production transport and host productization.
 
-Remote mutation/process exposure remains a later independent decision and must reuse the existing Optic authority model rather than weakening it.
+Remote mutation/process/Git exposure remains a later independent decision and must reuse the existing Optic authority model rather than weakening it.
