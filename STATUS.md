@@ -1,5 +1,9 @@
 # Project Status
 
+## 2026-10-12 read-boundary candidate — unmerged
+
+Branch `security/read-boundary-hardening`, based on main `156653a406f01383e2fc14cada513963453b04f3`, implements #183 effect-spanning admission, #181 native-path representation safety, and the #176 pagination-progress subfinding. This entry records proposed branch work, not a merged milestone. Validation and the deferred-decision register are in `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` and its PR. Historical entries below are preserved; #176 classifier/canonical-list, #180, #182 and H-02–H-05 remain open.
+
 **Last updated:** 2026-10-08
 **Lifecycle:** pre-alpha / Phase 3 multi-session runtime
 **Release:** none
