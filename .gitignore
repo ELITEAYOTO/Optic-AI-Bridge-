@@ -9,3 +9,6 @@
 .env
 .env.*
 !.env.example
+**/__pycache__/
+experiments/host-probe/.venv/
+.venv-host-probe/

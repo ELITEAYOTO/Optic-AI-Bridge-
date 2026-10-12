@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+from typing import Any
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+from mcp import Client
+
+ROOT = Path(__file__).resolve().parent
+MAX_REQUEST_BODY_BYTES = 64 * 1024
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_port(port: int, process: subprocess.Popen[str], timeout: float = 20.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            output = process.stdout.read() if process.stdout is not None else ""
+            raise RuntimeError(f"probe server exited early with {process.returncode}:\n{output}")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise TimeoutError(f"probe server did not listen on port {port} within {timeout}s")
+
+
+def _assert_oversized_request_rejected(url: str) -> None:
+    request = Request(
+        url,
+        data=b"x" * (MAX_REQUEST_BODY_BYTES + 1),
+        method="POST",
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2026-07-28",
+        },
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            raise AssertionError(
+                f"oversized request unexpectedly returned HTTP {response.status}"
+            )
+    except HTTPError as error:
+        if error.code != 413:
+            raise AssertionError(
+                f"oversized request returned HTTP {error.code}, expected 413"
+            ) from error
+    print(f"Verified request-body limit: {MAX_REQUEST_BODY_BYTES} bytes -> HTTP 413")
+
+
+def _structured(result: Any) -> Any:
+    for attr in ("structured_content", "structuredContent"):
+        value = getattr(result, attr, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _assert_hex(value: Any, length: int, label: str) -> str:
+    if not isinstance(value, str) or len(value) != length:
+        raise AssertionError(f"{label} has invalid shape: {value!r}")
+    try:
+        int(value, 16)
+    except ValueError as exc:
+        raise AssertionError(f"{label} is not hex: {value!r}") from exc
+    return value
+
+
+def _assert_invocation(payload: Any, tool_name: str) -> tuple[str, str]:
+    if not isinstance(payload, dict):
+        raise AssertionError(f"{tool_name} did not return an object: {payload!r}")
+    audit = payload.get("probe_invocation")
+    if not isinstance(audit, dict):
+        raise AssertionError(f"{tool_name} did not include probe_invocation: {payload!r}")
+    if audit.get("tool") != tool_name:
+        raise AssertionError(f"{tool_name} invocation tool mismatch: {audit!r}")
+    sequence = audit.get("sequence")
+    if not isinstance(sequence, int) or sequence <= 0:
+        raise AssertionError(f"{tool_name} invocation sequence is invalid: {audit!r}")
+    marker = _assert_hex(audit.get("marker"), 16, f"{tool_name} invocation marker")
+    server_instance = _assert_hex(
+        audit.get("server_instance"), 12, f"{tool_name} server instance"
+    )
+    return marker, server_instance
+
+
+async def _exercise(url: str) -> None:
+    async with Client(url) as client:
+        client_protocol = str(client.protocol_version)
+        if not client_protocol:
+            raise AssertionError("MCP client did not report a negotiated protocol version")
+
+        tools = await client.list_tools()
+        names = {tool.name for tool in tools.tools}
+        expected = {
+            "probe_ping",
+            "probe_host_context",
+            "probe_session_correlation",
+            "probe_reset",
+            "probe_parallel",
+        }
+        missing = expected.difference(names)
+        if missing:
+            raise AssertionError(f"missing probe tools: {sorted(missing)}")
+
+        ping = _structured(await client.call_tool("probe_ping", {}))
+        if not isinstance(ping, dict) or ping.get("ok") is not True:
+            raise AssertionError(f"unexpected ping result: {ping!r}")
+        ping_marker, server_instance = _assert_invocation(ping, "probe_ping")
+        observation = ping.get("observation")
+        if not isinstance(observation, dict):
+            raise AssertionError(f"ping did not include an observation: {ping!r}")
+        if "request_id_present" not in observation:
+            raise AssertionError(f"ping observation lacks request-id presence bit: {observation!r}")
+        server_protocol = str(observation.get("protocol_version") or "")
+        if server_protocol != client_protocol:
+            raise AssertionError(
+                f"protocol mismatch: client={client_protocol!r}, server={server_protocol!r}"
+            )
+        print(f"Negotiated MCP protocol version: {client_protocol}")
+        print(f"Verified server instance: {server_instance}")
+        print(f"Verified ping invocation marker: {ping_marker}")
+
+        run_id = "ci-host-probe-0001"
+        first = _structured(
+            await client.call_tool("probe_session_correlation", {"run_id": run_id})
+        )
+        second = _structured(
+            await client.call_tool("probe_session_correlation", {"run_id": run_id})
+        )
+        if not isinstance(first, dict) or first.get("call_index") != 1:
+            raise AssertionError(f"unexpected first correlation result: {first!r}")
+        if not isinstance(second, dict) or second.get("call_index") != 2:
+            raise AssertionError(f"unexpected second correlation result: {second!r}")
+        first_marker, first_instance = _assert_invocation(first, "probe_session_correlation")
+        second_marker, second_instance = _assert_invocation(second, "probe_session_correlation")
+        if first_marker == second_marker:
+            raise AssertionError("two real correlation calls reused the same invocation marker")
+        if first_instance != server_instance or second_instance != server_instance:
+            raise AssertionError("correlation calls unexpectedly crossed server instances")
+
+        parallel_run_id = "ci-parallel-0001"
+        left_raw, right_raw = await asyncio.gather(
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
+            client.call_tool(
+                "probe_parallel", {"run_id": parallel_run_id, "delay_ms": 200}
+            ),
+        )
+        left = _structured(left_raw)
+        right = _structured(right_raw)
+        left_marker, left_instance = _assert_invocation(left, "probe_parallel")
+        right_marker, right_instance = _assert_invocation(right, "probe_parallel")
+        if left_marker == right_marker:
+            raise AssertionError("parallel calls reused the same invocation marker")
+        if left_instance != server_instance or right_instance != server_instance:
+            raise AssertionError("parallel calls unexpectedly crossed server instances")
+        if left.get("run_id") != parallel_run_id or right.get("run_id") != parallel_run_id:
+            raise AssertionError(f"parallel run id mismatch: left={left!r}, right={right!r}")
+        if left.get("overlap_observed") is not True or right.get("overlap_observed") is not True:
+            raise AssertionError(f"parallel overlap was not proven: left={left!r}, right={right!r}")
+
+        reset = _structured(await client.call_tool("probe_reset", {"run_id": run_id}))
+        if not isinstance(reset, dict) or reset.get("removed") is not True:
+            raise AssertionError(f"unexpected reset result: {reset!r}")
+        _, reset_instance = _assert_invocation(reset, "probe_reset")
+        if reset_instance != server_instance:
+            raise AssertionError("reset unexpectedly crossed server instances")
+
+
+def main() -> int:
+    port = _free_port()
+    env = os.environ.copy()
+    env["OPTIC_HOST_PROBE_PORT"] = str(port)
+    env["OPTIC_HOST_PROBE_ALLOW_RANDOM_TUNNEL_HOST"] = "0"
+    process = subprocess.Popen(
+        [sys.executable, str(ROOT / "server.py")],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        _wait_for_port(port, process)
+        url = f"http://127.0.0.1:{port}/mcp"
+        _assert_oversized_request_rejected(url)
+        asyncio.run(_exercise(url))
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        if process.stdout is not None:
+            output = process.stdout.read().strip()
+            if output:
+                print(output)
+    print("H-01 host probe integration smoke passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
