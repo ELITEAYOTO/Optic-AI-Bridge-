@@ -1,6 +1,6 @@
 # FranceStudent / Remote MCP candidate
 
-**Status:** active H-01 research target — transport feasibility proven; conversation identity and production auth/session semantics still unproven.  
+**Status:** active H-01/H-02 research target — transport feasibility and synthetic real-Optic reachability proven; production auth/session semantics still unproven.  
 **Recorded:** 2026-10-08  
 **Last updated:** 2026-10-12
 
@@ -14,17 +14,9 @@ FranceStudent is the priority remote V1 host. ChatGPT remains a target where the
 
 ## Verified transport evidence
 
-A real Windows PC has proven this path:
+A real Windows PC has proven Streamable HTTP MCP reachability through a temporary Cloudflare Quick Tunnel.
 
-```text
-FranceStudent
-  -> HTTPS
-  -> MCP Streamable HTTP /mcp
-  -> Cloudflare Quick Tunnel
-  -> local H-01 probe
-```
-
-Accepted observations before the current host incident:
+Earlier H-01 observations:
 
 - FranceStudent displayed the custom MCP server as active;
 - real remote POST traffic reached the local probe;
@@ -32,8 +24,7 @@ Accepted observations before the current host incident:
 - negotiated MCP revision was `2026-07-28`;
 - no modern MCP transport session id was observed;
 - two same-conversation `probe_session_correlation` calls were corroborated by fresh server traffic;
-- no host-owned per-call approval/confirmation UI was observed for those harmless calls;
-- the shown MCP configuration used `Authentication: None` and did not visibly expose a custom-header field.
+- no host-owned per-call approval/confirmation UI was observed for those harmless calls.
 
 This proves basic remote Streamable HTTP tool reachability. It does **not** prove production authentication, conversation identity, multi-session mapping or real-project safety.
 
@@ -77,21 +68,90 @@ Important v2 properties:
 
 The probe has no filesystem, Git, process, real Optic runtime, mutation or Windows-effect authority.
 
-## Current real-host block
+## FranceStudent service state
 
-FranceStudent subsequently reported a service-wide technical incident. The remaining checks are therefore **blocked by host**, not failed.
+FranceStudent is stable again as of 2026-10-12. H-01 is therefore no longer blocked by the previous service incident.
 
-When FranceStudent recovers, use a **fresh v2 server process + fresh run ids** and require matching local invocation proof.
+The remaining H-01 checks are now **evidence-pending** and require an intentional reconnect to the H-01 v2 endpoint/process. Do not confuse them with the separate PR #178 Real Optic Link endpoint used for today's synthetic real-Optic tests.
 
-Remaining checks:
+Remaining H-01 checks:
 
 1. **New conversation separation** — same correlation run id, genuinely new FranceStudent chat, compare only server-verified calls.
 2. **Reconnect** — toggle/reconnect the MCP server in the same visible conversation, then repeat a verified correlation call.
 3. **Parallel dispatch** — two simultaneous `probe_parallel` calls using the same fresh parallel run id and `delay_ms=500`; require server-side `overlap_observed` proof.
 4. **Optional cancellation/timeout** — only if the host exposes a safe UI action.
-5. **Authentication/header shape** — inspect actual FranceStudent auth configuration; test harmless header behavior only if the UI exposes it.
+5. **Authentication/header shape** — measure the current FranceStudent auth/header UI with harmless values and local proof.
 
 Do not compare process-local HMAC fingerprints across probe restarts.
+
+## New FranceStudent authentication UI evidence
+
+The current FranceStudent MCP server editor now visibly exposes:
+
+- **Autorisation** labelled `Bearer token ou secret`;
+- **Headers sécurisés (JSON)**.
+
+This answers part of the earlier admin/host questions: FranceStudent now clearly has a credential field and a secure custom-header surface.
+
+It still does **not** prove:
+
+- that the credential field is sent exactly as `Authorization: Bearer <value>`;
+- that it is OAuth;
+- whether custom `Authorization` in the JSON field is accepted/rejected/merged;
+- whether arbitrary harmless custom headers are delivered exactly;
+- missing/wrong/revoked credential behavior.
+
+H-02 must measure those facts rather than assume them.
+
+## Real Optic Link evidence through FranceStudent (2026-10-12)
+
+Today's FranceStudent tests use the **current PR #178 Real Optic Link endpoint**, not the H-01 probe endpoint.
+
+The host discovered exactly:
+
+- `optic_session_info`;
+- `optic_fs_list`;
+- `optic_fs_read`.
+
+The adapter creates its own disposable synthetic workspace and accepts no caller-selected real workspace root.
+
+### Server-correlated real read
+
+A real `optic_fs_read("public/hello.txt")` returned:
+
+- `adapter_instance=20baecc2eeaf`;
+- `sequence=22`;
+- `marker=126b81f5327c1b59`.
+
+The exact instance/sequence/marker appeared in the local `[REAL-LINK] TOOL_CALL` log. This is accepted proof that FranceStudent reached the real Rust `optic-bridge` stdio application path and read the synthetic fixture through Optic's real filesystem service.
+
+### Real workspace containment negative
+
+- a caller-supplied absolute Windows path targeting the user's real Desktop/repository was rejected;
+- a deliberate `../outside.txt` read was rejected with `optic.invalid_workspace_path`, JSON-RPC code `-32602`, surfaced by FranceStudent as HTTP 400.
+
+This is accepted negative evidence for the synthetic fixture. It does not authorize real-project exposure.
+
+### Multiple calls from one assistant turn
+
+FranceStudent issued two distinct real reads from one assistant turn:
+
+- `seq=23`, marker `ff1fc559e79dd183`;
+- `seq=24`, marker `e6aeabb6875f6ffb`.
+
+Both matched local logs. This proves two real tool calls in one turn, **not** temporal overlap. True concurrent dispatch remains unproven until H-01 v2 `probe_parallel` or equivalent overlap instrumentation is used.
+
+### New FranceStudent conversation on the same live adapter
+
+One conversation produced verified `optic_session_info` `seq=25`, marker `16a1e00238f6c7f9`.
+
+A genuinely new FranceStudent conversation, while keeping the same live adapter/tunnel, produced `seq=26`, marker `5198a949dec91035`, with the same `adapter_instance=20baecc2eeaf` and the same upstream-visible experimental session-info context (`file_read`, `file_search`, `policy_epoch=1`, principal `local-stdio`, project `local-workspace`, monotonic expiry value `1800000`).
+
+Safe conclusion:
+
+> Distinct FranceStudent conversations currently converge on the same long-lived PR #178 adapter/upstream experimental context.
+
+This does **not** prove that FranceStudent provides no conversation identifier because PR #178 does not instrument H-01 correlation inputs. It does prove the current experimental bridge itself does not create one Optic application session per FranceStudent conversation. That is direct evidence for the necessity of H-03 `SessionResolver` semantics before real multi-conversation authority.
 
 ## What is already safe to conclude
 
@@ -103,6 +163,8 @@ Do not compare process-local HMAC fingerprints across probe restarts.
 - Request id is not authority and the v1 request-id evidence is unusable as a conversation signal.
 - Host confirmation UI cannot be assumed.
 - Host/model-rendered JSON cannot be trusted as invocation proof without corroboration.
+- FranceStudent can reach the real Optic synthetic read/list/session-info path.
+- The current PR #178 bridge does not isolate different FranceStudent conversations into separate upstream Optic application sessions.
 
 H-03 must therefore keep an **Optic-minted explicit application-handle fallback** unless a later verified FranceStudent signal proves useful as a non-authoritative mapping input.
 
@@ -114,22 +176,21 @@ The production remote endpoint must authenticate independently from Cloudflare/T
 
 Access tokens do not belong in URI query strings. Production Optic will not use `?token=...` URLs.
 
-Preferred direction where supported:
+The current FranceStudent UI now makes a static bearer/key compatibility path plausible, but the exact wire contract must be measured.
 
-- standard `Authorization` bearer behavior and standards-native OAuth/resource discovery when the host actually supports it.
+Requirements remain:
 
-Compatibility direction where required:
+- high-entropy locally generated connection credential;
+- authentication per request/context;
+- local revoke and rotation;
+- no secret in logs/diagnostics/tool output;
+- authenticated principal still has zero project/process authority until H-03/application policy maps it into an Optic-owned session and grants separate capability/lease authority.
 
-- a locally generated high-entropy static bearer/key mechanism may be considered only if the real FranceStudent configuration supports such a mechanism and its exact request behavior is measured;
-- document it honestly as a compatibility credential, not OAuth;
-- support local revoke and rotation;
-- never log the secret or return it from a tool.
+Do not call the static compatibility mode OAuth unless the host actually performs an OAuth flow.
 
-Authentication creates only a connection principal/context. It does not mint project capabilities, leases, autonomy grants or a caller-selected internal session handle.
+## Real Optic link available for host tests
 
-## Real Optic link available for next-stage host tests
-
-Draft PR #178 now proves a separate synthetic-only end-to-end path:
+Draft PR #178 proves:
 
 ```text
 remote Streamable HTTP MCP client
@@ -138,17 +199,9 @@ remote Streamable HTTP MCP client
   -> disposable synthetic workspace
 ```
 
-The remote allowlist is exactly:
-
-- `optic_session_info`;
-- `optic_fs_list`;
-- `optic_fs_read`.
-
 No process, mutation, Git, `session_cancel` or arbitrary upstream forwarding is exposed.
 
 On experiment head `ef5bc84144670135d13f55a59a782611aeae762f`, dedicated workflow #11 is green on Linux + Windows and normal CI #653 is green on dependency policy + Ubuntu + Windows.
-
-This gives the next FranceStudent run a much stronger test target than `probe_ping`: it can exercise the real Optic session/policy/lease/filesystem stack while still touching only adapter-created synthetic data.
 
 Do **not** point PR #178 at a real repository. Real-project remote exposure remains blocked by the security audit gates documented in `../security/REMOTE_AUTONOMY_AUDIT_GATES.md`.
 
@@ -186,28 +239,11 @@ Rules:
 11. Removing one provider must not require changes to core policy, leases or tool semantics.
 12. `session_cancel` is a control-plane operation and is not exposed casually through a shared remote adapter.
 
-## Transport candidate
-
-Primary candidate: MCP **Streamable HTTP `/mcp`**.
-
-Do not implement legacy `/sse` merely because an example mentions it. Add compatibility transports only when a real important client requires them.
-
-## Connectivity / zero-cost candidates
-
-Interchangeable options remain the goal:
-
-- Cloudflare Quick Tunnel for authority-free/synthetic experiments only;
-- Tailscale/Funnel or equivalent user-owned path subject to real validation;
-- named/custom tunnel or user reverse proxy for advanced users;
-- future provider adapters without core changes.
-
-No third-party free tier is promised permanent. Durability comes from provider interchangeability and no mandatory maintainer-hosted infrastructure.
-
 ## Current gates
 
 1. **H-00 complete** — product/architecture freeze.
-2. **H-01 active / host-blocked** — hardened real-host characterization, remaining FranceStudent checks await host recovery.
-3. **H-02 pending** — endpoint authentication/revocation/rotation/bounds proof behind a zero-cost provider.
+2. **H-01 active / evidence-pending** — harness implemented; remaining host-correlation/concurrency/header measurements require a deliberate H-01 v2 run.
+3. **H-02 pending** — endpoint authentication/revocation/rotation/bounds proof behind a zero-cost provider; new FranceStudent bearer/header UI is useful input but not yet measured on wire.
 4. **H-03 pending** — evidence-driven `HostContext -> SessionResolver -> SessionHandle` contract with explicit-handle fallback.
 5. **H-04/H-05 pending** — autonomy/local approval before production remote real-project effects.
 6. **H-06+ gated** — production transport and host productization.
