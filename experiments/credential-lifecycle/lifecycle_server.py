@@ -62,9 +62,10 @@ def app(allow=False):
         zero_arg_tools=("credential_probe",), handle_tool=None)
 
 
-def local_commands():
+def local_commands(state=None):
     # Fixed command grammar, bounded read. EOF leaves the registry unchanged.
     # No local HTTP control endpoint and no remote MCP control tool.
+    state = registry if state is None else state
     for _ in range(16):
         line = sys.stdin.readline(65)
         if not line:
@@ -75,7 +76,7 @@ def local_commands():
         command = line.strip()
         commands = {"rotate-a": ("rotate", "A"), "revoke-a": ("revoke", "A"),
                     "rotate-b": ("rotate", "B"), "revoke-b": ("revoke", "B")}
-        outcome = registry.control(*commands[command]) if command in commands else {
+        outcome = state.control(*commands[command]) if command in commands else {
             "ok": False, "code": "probe.invalid_local_command"}
         print("[LOCAL] " + json.dumps(outcome, sort_keys=True), flush=True)
     print('[LOCAL] {"ok":false,"code":"probe.local_command_budget"}', flush=True)
