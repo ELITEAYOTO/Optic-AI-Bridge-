@@ -30,3 +30,25 @@ Production gates #176 and #180–#183, and H-02–H-05, remain applicable. #184 
 unmerged hardening candidate, not evidence that those gates are closed. No drafts
 are merged, no real projects exposed, and no auth/SessionResolver completion is
 claimed by a harmless model handoff test.
+
+## Consolidated follow-up
+
+The implementation advanced on focused Draft #186, retaining the same #170 base.
+Exact implementation head `54ca313e3a88e8ce61800966c5818efff2de372b` has green
+probe matrix #3 / 38292476806 and general CI #688 / 38292476838. That proves this
+head, not any later documentation-only commit; latest-head CI belongs in the PR.
+
+Two user-run manual sessions are now recorded in
+`../../experiments/francestudent-probe/LIVE_EVIDENCE_2026-10-12.md`, with exact
+instances/markers and explicit user-log/model provenance. The no-prefix Bearer
+guide was corrected to measured full-prefix UI input. Model-mediated handoff,
+requested replay refusal, new call after connector toggle and delayed refusal
+beyond TTL are corroborated. V2 exposes safe method/stage diagnostics and proves
+its DELETE405 rows occur after authentication; it does not explain historical
+v1 missing-header requests or prove universal delivery/TCP reconnect.
+
+The user confirmed both sessions stopped and connectors disabled. Live owner
+change, credential lifecycle and production SessionResolver remain unproven;
+automated owner/lifecycle/race proof is explicitly separate. No further question
+blocks this documentation consolidation; none of these results authorize merge
+or real-project access. #178 remains distinct from H-01 grouped instrumentation.

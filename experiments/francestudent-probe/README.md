@@ -59,9 +59,14 @@ tunnel switch relaxes only this authority-free experiment. Do not copy it to cor
 - In the tested UI configuration the dedicated authorization field required the
   full `Bearer <dummy>` entry. The initial no-prefix guide failed; this is measured
   UI-entry behavior, not proof of the raw value of earlier rejected headers.
-- Universal secure-header delivery remains **unproven**: two observed requests
+- Live v2 also corroborates a fresh actual call after explicit connector
+  disable/re-enable, and a denied delayed consume with 309.563 seconds between
+  create/consume admission timestamps. This is not proof of TCP reconnect or an
+  exact deadline boundary. V2 405 rows are DELETE requests rejected inside MCP
+  after passing the unchanged header guard.
+- Universal secure-header delivery remains **unproven**: two first-session requests
   had matching Bearer but both custom headers absent. Their method/source was not
-  captured. Explicit connector reconnect, live expiry/owner-denial, timeout,
+  captured. TCP reconnect/handle continuity across toggle, live owner-denial, timeout,
   header conflict precedence and grouped temporal overlap remain unmeasured.
   Secure-field invisibility is an admin statement, not something the server can
   establish. Local lifecycle tests remain distinct from live host proof.
@@ -80,7 +85,8 @@ internal error. No arbitrary method/path/query/IP/user-agent/exception is echoed
 The rejection body stays generic and checks stay strict. These fields distinguish
 an absent-header GET from an authenticated SDK DELETE rejection in local tests;
 they do not identify a caller or retroactively explain the older live 401/405 rows.
-Source attribution remains unknown until a controlled new host run.
+The second controlled host run identifies its 405 rows as DELETE after guard
+admission; original missing-header source attribution remains unknown.
 
 The 64 KiB cumulative body bound is checked before appending each new chunk.
 Regression proof includes split/chunked overflow, timeout/cancellation capacity
