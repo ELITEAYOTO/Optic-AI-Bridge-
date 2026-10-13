@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft public-dummy DPAPI purpose separation: finite fixed fixture/registry labels, unknown-purpose refusal and native wrong-purpose/relabelled-prefix negative tests. No migration fallback, real credential input or production integration.
 - Draft protected dummy metadata validation: reject unreachable decoded states and preserve changed valid disk state when a live instance attempts a stale commit. Seven portable/native regression cases; no production storage or atomic hostile-writer guarantee.
 - Draft protected public-dummy registry composition: Windows-protected bounded metadata, replace-before-ack lifecycle and fail-closed commit errors in disposable fixtures; explicit characterization that old valid ciphertext replay is not prevented. No real credential or production integration.
 - Draft H-02 public dummy Windows protection experiment (#196): bounded CurrentUser DPAPI wrapper, exact fixed-fixture verification, real Windows roundtrip/fresh-process tests and portable native-failure cleanup tests. No real credentials, production integration or new MCP surface. H-01 grouped host evidence (#195) records sequential execution only; positive host overlap remains unmeasured.

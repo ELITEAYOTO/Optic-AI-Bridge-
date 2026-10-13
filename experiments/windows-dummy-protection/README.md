@@ -26,8 +26,8 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Twenty-seven tests declared: on Windows26 execute/1 non-Windows branch skips;
-on Linux12 execute/15 native cases explicitly skip. Windows cases include actual silent
+Thirty tests declared: on Windows29 execute/1 non-Windows branch skips;
+on Linux13 execute/17 native cases explicitly skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -85,9 +85,15 @@ parent reopens and verifies committed state. Children run fixed test source
 against owned temporary fixtures, timeout10s, no shell or PID selector, fixed
 acknowledgment text. This is process-exit evidence, not hardware/power-loss
 durability proof. The Windows protected payload contains dummy metadata, not
-production verifier material. It uses the same public entropy label as the
-fixed API fixture; distinct outer magic plus exact schema validation separates
-them, without claiming cryptographic domain separation between the experiments.
+production verifier material. The native helper accepts only two fixed internal
+purposes: `fixture` and `registry`, each with its own PUBLIC entropy label.
+Unknown purposes fail before native library loading. Tests protect the same
+public payload under each purpose and prove wrong-purpose native unprotect
+fails; relabelling a fixture outer prefix cannot make it a valid registry.
+Labels are not secret keys or additional authority. Earlier dummy registry
+blobs used the fixture label and are intentionally not accepted by this new
+registry purpose. No automatic fallback, migration or reset is performed;
+these tests use new disposable directories only, never operator application state.
 
 Old valid state replay **is accepted** in the characterization test: protection
 does not prove freshness. No ACL/reparse race/hostile local writer containment,

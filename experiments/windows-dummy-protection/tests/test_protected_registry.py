@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from protected_registry import ProtectedStore, ProtectedRegistry, FixtureError, _native, MAGIC
-from dummy_dpapi import MAX_BLOB
+from dummy_dpapi import MAX_BLOB, protect_public_fixture, MAGIC as FIXTURE_MAGIC
 from lifecycle_core import TOKENS
 
 
@@ -18,6 +18,14 @@ def bearer(version=0):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native protected registry requires Windows')
 class ProtectedTests(unittest.TestCase):
+    def test_relabelled_fixture_blob_is_not_a_registry_and_is_not_reset(self):
+        # Relabel only the public outer prefix; native purpose remains fixture.
+        blob = MAGIC + protect_public_fixture()[len(FIXTURE_MAGIC):]
+        path = self.root / 'state.protected'
+        path.write_bytes(blob)
+        with self.assertRaises(FixtureError):
+            ProtectedRegistry(self.root)
+        self.assertEqual(path.read_bytes(), blob)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / 'public-dummy-fixture'

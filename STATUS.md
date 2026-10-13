@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Public-dummy protection purposes are now separate fixed native labels for API
+fixture versus registry. Unknown purpose fails before loading; wrong-purpose
+unprotect and relabelled outer-prefix tests fail closed. Earlier disposable
+registry blobs are not migrated/reset automatically. Windows29 pass/1 skip,
+30 declared; no real secret storage or production authority.
+
 Protected-registry validation follow-up: exact decoded schema now rejects an
 unreachable active version0/advanced epoch, and a different valid on-disk state
 blocks a stale live commit without overwriting it. Native Windows suite:26 pass,
