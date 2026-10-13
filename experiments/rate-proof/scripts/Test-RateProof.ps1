@@ -7,5 +7,7 @@ try {
     $env:PYTHONPATH = $Root
     & $Python -m unittest discover -s (Join-Path $Root 'tests') -v
     if ($LASTEXITCODE -ne 0) { throw 'Rate proof failed.' }
+    & $Python (Join-Path $Root 'smoke_host.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Rate host HTTP/MCP smoke failed.' }
 } finally { $env:PYTHONPATH = $PreviousPath }
 Write-Host 'RATE PROOF PASS - local synthetic ASGI proof only; no host measurement.'

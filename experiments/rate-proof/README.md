@@ -1,9 +1,11 @@
 # Bounded global admission proof — H-02 synthetic candidate
 
 Stacked on #189 docs head99bdeeca7fbe7dd88c1c3e4c30756d1b124c8e76,
-whose CI696/persistence#2 are green. No production Rust changes, listener or
-FranceStudent manual test added. This is a candidate ASGI layer tested locally,
-not installed into any existing probe server or production transport.
+whose CI696/persistence#2 are green. #190 proves standalone admission; this
+follow-up integrates only a new synthetic listener, never production Rust or an
+existing credential/persistence server. FranceStudent controlled429/recovery
+trial completed2026-10-13; exact matched evidence and unknown retry semantics are
+in LIVE_EVIDENCE_2026-10-13.md. Code CI698/rate#2 are green.
 
 H-02 #172 still lacked a rate-admission proof. Fixed global token bucket defaults
 to burst8, refill2/second using monotonic time. It admits before auth/body parsing;
@@ -37,7 +39,48 @@ Windows with the existing isolated probe dependencies:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\experiments\rate-proof\scripts\Test-RateProof.ps1
 ```
 
-No startup/setup/tunnel flow is needed for this local-only candidate. Prior
+The follow-up includes a real loopback HTTP/MCP smoke and separate synthetic
+host_server.py onport8005. Exactly one remote tool, rate_probe, authority none.
+Existing dummy A/B Bearer and both custom dummy headers required; Guard allowlist
+rejects other tools (including session_cancel). No real workspace/process/Git or
+remote control interface. Fixed local stdin commands hold-rate/release-rate allow
+reproducible rejection and recovery without model-generated burst timing. Commands
+are bounded16/read65; state changes run on the single event loop. Hold forces429
+until release or process exit; release explicitly restores the burst budget.
+Neither action changes authentication. This controlled recovery is NOT proof of
+natural refill/host automatic retry. Natural refill remains unit-test evidence.
+Only32 safe429 diagnostic lines are emitted per server, with random instance id,
+fixed stage/status and remaining log budget, never header/path/body values.
+Operator must not use the controls on a production adapter.
+
+Real HTTP smoke proves exact one-tool discovery, marker-matched successful calls,
+40 held valid/invalid requests all429, log ceiling32, release recovery same server,
+unknown tool400 and missing auth401, no dummy/canary values in logs. Subprocess
+killed on exit, temporary port only; no external URL accepted by smoke.
+
+## Guided Windows host phase — review output after each step
+
+Extract a fresh source-only ZIP; old persistence fixture stays untouched. Scripts:
+Setup-RateHostProbe.ps1 installs frozen isolated dependencies;
+Test-RateProof.ps1 runs6 tests plus actual HTTP/MCP smoke;
+Start-RateHostProbe.ps1 -AllowRandomTunnelHost startsport8005/lifetime25min.
+New tunnel targets127.0.0.1:8005; connector uses HTTPS/mcp, full-prefix dummy A,
+same two secure headers, rate_probe only. No local initialization needed.
+
+Baseline prompt:
+```text
+Appelle réellement rate_probe une seule fois. Affiche le résultat complet ou l'erreur réelle. En cas d'échec, arrête-toi sans réessayer.
+```
+Match tool marker/instance/sequence in server log before local control. Operator
+types hold-rate and waits for LOCAL heldtrue ACK. Send the SAME prompt once, retain
+actual host error and safe RATE429 logs. Do not remove auth or retry in a loop.
+Then operator types release-rate and waits for heldfalse ACK; SAME prompt once,
+match successful new marker on same instance. Host automatic retries, error
+presentation and discovery behavior are observations, not assumptions. End with
+Ctrl+C server/tunnel and connector disabled. Assistant reviews each step separately.
+No manual call count limit or cancellation/H-01 claim follows from this phase.
+
+Prior
 FranceStudent persistence series is finished; its ledger remains under
 experiments/persistent-auth/LIVE_EVIDENCE_2026-10-13.md. H-01 overlap is separate
 from #178. Future rate integration requires measured host discovery/retry behavior
