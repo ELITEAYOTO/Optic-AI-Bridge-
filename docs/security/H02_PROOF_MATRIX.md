@@ -15,6 +15,7 @@ values and disposable state.
 | Boundary | Measured evidence | Remaining limit/gate |
 | --- | --- | --- |
 | Wire authentication | #186 real FS Bearer/custom header observations, markers matched to server | Real high-entropy credential enrollment and protected verifier design; not MCP OAuth conformance |
+| Real fixed-read host link | #205–207 Windows/Linux real-binary integration; [2026-10-14 FS measurement](FRANCESTUDENT_REAL_FIXED_READ_2026-10-14.md) correlates generated-file metadata/list/read, rotation/reconnect/revoke and local stop ack | Only one generated fixture binding; real project, native chat identity, local enrollment and production storage remain gated |
 | Per-request lifecycle | #187 old credential401 after rotation, same principal/new epoch succeeds; revoke401; B works | Production admission binding, exact operator recovery policy |
 | Handles | #188 exact handoff, epoch invalidation withinTTL, other-owner refusal then original owner consumption | No project authority; not a native host conversation ID |
 | Persistence | #189 dummy rotate/revoke after native process restart, plus user orderly restarts | Not power-loss durability or secure production verifier storage |
