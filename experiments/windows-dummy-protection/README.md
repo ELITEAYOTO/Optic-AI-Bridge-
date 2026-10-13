@@ -26,9 +26,9 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Forty-two tests declared: native Windows40 execute/2 non-Windows branches
+Forty-nine tests declared: native Windows47 execute/2 non-Windows branches
 skip when symlink creation is available; otherwise one additional native case
-explicitly skips. On Linux17 execute/25 native cases skip. Windows cases include actual silent
+explicitly skips. On Linux23 execute/26 native cases skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -166,6 +166,51 @@ Native read API references reviewed2026-10-13:
   normalized handle path and bounded buffer result.
 * [Microsoft GetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle):
   handle-observed attributes, file size and link count.
+
+## Read-only native owner/DACL observations
+
+`observe_fixture_security` accepts an already opened local `PreparedFixtureRead`,
+queries its root/file descriptors by handle and the current PROCESS TokenUser
+(TOKEN_QUERY only). It does not query impersonation identity, inspect another
+process/account or change any privileges/ACL/security policy. No arbitrary
+path/SID input, lookup of account names, SACL access or remote endpoint.
+
+Output contains only authoritynone/observation-only, owner-match bits, DACL
+presence/null bits, ACE count and limited ACE category counters. No username,
+SID string/raw descriptor/token buffer/credential is returned or logged.
+Counts distinguish simple ALLOW write-related mask bits for process user,
+LocalSystem, BuiltinAdministrators or other; DENY/inherit-only/unknown-type
+counts are separate. Unknown/conditional/object ACE types remain unparsed.
+These categories are observation, not trust approval or effective access.
+ALLOW counters include inherit-only entries and do NOT account for deny order,
+group membership, conditions, owner rights, inheritance evaluation or security
+descriptor changes after the snapshot. DACL existence/owner match/zero other
+counter is NEVER interpreted as a safe storage verdict.
+
+Caller token buffer4096, known SID buffers68, descriptor decode ceiling64KiB,
+ACE ceiling128; native returned pointers/spans/alignment are checked before
+SID/ACE interpretation. Native allocated descriptor is freed via LocalFree and
+query token closed on normal/error exit; failures return fixed codes, no native
+error strings. This bounds decoding, not every internal OS allocation or I/O.
+
+Seven cases cover ACL/token-input bounds, pointer bounds before dereference,
+write-mask bits, unknown ACE handling, and actual read-only owner/DACL query
+on pinned temporary files. A local diagnostic sample observed matching root/
+file owner, non-null present DACL and9 ACEs each. This is one machine snapshot,
+not a default policy. No ACL creation/repair or admission integration yet.
+
+Primary references reviewed2026-10-13:
+
+* [GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo):
+  handle-based owner/DACL query, READ_CONTROL, LocalFree and concurrent-change caveat.
+* [GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation):
+  token query rights and caller-buffer sizing.
+* [GetAclInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getaclinformation)
+  and [GetAce](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getace):
+  bounded counts and returned ACE pointers.
+* [CreateWellKnownSid](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createwellknownsid)
+  and [ACCESS_ALLOWED_ACE](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-access_allowed_ace):
+  fixed identity categories and ACE layout; no effective-access claim.
 
 Primary references reviewed2026-10-13:
 

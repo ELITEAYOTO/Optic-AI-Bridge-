@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Read-only native security characterization of pinned public-dummy root/file
+handles now observes owner/DACL and bounded simple ACE counters. No identity
+values exported, ACL mutation, effective-access/admission decision or security
+gate closure. Windows47 pass/2 deliberate skips,49 declared; ownership/ACL
+policy and protected write/lock identity remain to be designed/proven.
+
 Native prepared read follow-up holds root/file handles through protected dummy
 decryption and schema validation. Tests cover observed bytes, temporary
 write/rename denial, cleanup, hardlink/reparse refusal and input bounds.
