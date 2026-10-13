@@ -1,5 +1,10 @@
 # H-03 reusable synthetic resolver — local contract candidate
 
+Follow-up: BOOTSTRAP_CONTRACT.md specifies a separate idempotent-ticket candidate
+and synthetic8006 carrier. The helper now runs17 tests (8 original +9 new) plus
+actual MCP smoke. The direct-open Resolver below remains unchanged in scope;
+do not attribute ticket retry guarantees to its distinct-open API.
+
 Prior #188 proved single-use handoff, #189 persisted dummy credential lifecycle,
 #191 controlled429/recovery. None is a reusable Optic session resolver. This
 experiment tests that missing contract entirely locally, no network endpoint,

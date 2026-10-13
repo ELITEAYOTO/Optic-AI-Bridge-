@@ -67,12 +67,16 @@ class Guard:
     def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20,
                  header_observer=observe_headers,
                  zero_arg_tools=("probe_headers", "probe_create_handle"),
-                 handle_tool="probe_consume_handle"):
+                 handle_tool="probe_consume_handle", extra_handle_tools=()):
         self.app, self.clock, self.emit = app, clock, emit
         self.request_timeout = request_timeout
         self.header_observer = header_observer
         self.zero_arg_tools = zero_arg_tools
         self.handle_tool = handle_tool
+        if (not isinstance(extra_handle_tools, tuple) or len(extra_handle_tools) > 2
+                or any(not isinstance(name, str) or not 1 <= len(name) <= 64 for name in extra_handle_tools)):
+            raise ValueError('invalid fixed handle-tool allowlist')
+        self.extra_handle_tools = extra_handle_tools
         self.instance = secrets.token_hex(6)
         self.started = clock()
         self.sequence = self.active = 0
@@ -152,7 +156,7 @@ class Guard:
                             args = params.get("arguments", {})
                             if name in self.zero_arg_tools:
                                 valid = args == {}
-                            elif self.handle_tool is not None and name == self.handle_tool:
+                            elif (self.handle_tool is not None and name == self.handle_tool) or name in self.extra_handle_tools:
                                 valid = (isinstance(args, dict) and set(args) == {"application_handle"}
                                     and isinstance(args["application_handle"], str)
                                     and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
