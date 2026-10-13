@@ -158,6 +158,22 @@ class ProtectedTests(unittest.TestCase):
                 ProtectedRegistry(self.root)
             native.assert_not_called()
 
+    def test_decryption_occurs_while_observed_file_is_pinned(self):
+        observed = []
+        def inspect_pin(data, protect):
+            self.assertFalse(protect)
+            with self.assertRaises(OSError):
+                (self.root / 'state.protected').write_bytes(b'CHANGED PUBLIC DUMMY')
+            observed.append(True)
+            return _native(data, protect)
+        with patch('protected_registry._native', side_effect=inspect_pin):
+            state = ProtectedRegistry(self.root)
+        try:
+            self.assertEqual(observed, [True])
+            self.assertIsNotNone(state.authenticate(bearer()))
+        finally:
+            state.close()
+
     def run_child(self, body):
         # Only fixed test source and owned fixture path; no shell/PID selector.
         source = '''import os, sys

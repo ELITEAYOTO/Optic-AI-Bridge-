@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft native fixed-fixture prepared read: root/file handle observation, same-handle bounded ciphertext read and pins retained during dummy decryption. Native write/rename/link/cleanup tests; no production exposure or general filesystem security guarantee.
 - Draft public-dummy DPAPI purpose separation: finite fixed fixture/registry labels, unknown-purpose refusal and native wrong-purpose/relabelled-prefix negative tests. No migration fallback, real credential input or production integration.
 - Draft protected dummy metadata validation: reject unreachable decoded states and preserve changed valid disk state when a live instance attempts a stale commit. Seven portable/native regression cases; no production storage or atomic hostile-writer guarantee.
 - Draft protected public-dummy registry composition: Windows-protected bounded metadata, replace-before-ack lifecycle and fail-closed commit errors in disposable fixtures; explicit characterization that old valid ciphertext replay is not prevented. No real credential or production integration.

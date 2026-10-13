@@ -7,6 +7,7 @@ import sys
 from dummy_dpapi import _native as _dpapi_native, MAX_BLOB
 from lifecycle_core import Registry
 from persistent_core import Store, PersistentRegistry, FixtureError, validate, unique_object, ordinary, MAX_STATE
+from native_fixture_read import PreparedFixtureRead
 
 MAGIC = b'OPTIC-PUBLIC-DUMMY-REGISTRY-V1\0'
 
@@ -41,18 +42,18 @@ class ProtectedStore(Store):
         self.expected = None
 
     def read(self):
-        ordinary(self.directory, directory=True)
-        ordinary(self.path)
-        with self.path.open('rb') as file:
-            blob = file.read(MAX_BLOB + 1)
-        if not len(MAGIC) < len(blob) <= MAX_BLOB or not blob.startswith(MAGIC):
-            raise FixtureError('fixture.invalid_state')
         try:
-            raw = _native(blob[len(MAGIC):], False)
-            owners = decode_metadata(raw)
-            if self.expected is None:
-                self.expected = copy.deepcopy(owners)
-            return owners
+            # Observe/read/decrypt/validate while the same native handles remain
+            # held. Writes still use the earlier path-based replace experiment.
+            with PreparedFixtureRead(self.directory) as prepared:
+                blob = prepared.read()
+                if not len(MAGIC) < len(blob) <= MAX_BLOB or not blob.startswith(MAGIC):
+                    raise FixtureError('fixture.invalid_state')
+                raw = _native(blob[len(MAGIC):], False)
+                owners = decode_metadata(raw)
+                if self.expected is None:
+                    self.expected = copy.deepcopy(owners)
+                return owners
         except Exception:
             raise FixtureError('fixture.invalid_state') from None
 

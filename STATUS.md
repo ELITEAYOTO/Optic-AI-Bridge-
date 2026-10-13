@@ -2,6 +2,13 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Native prepared read follow-up holds root/file handles through protected dummy
+decryption and schema validation. Tests cover observed bytes, temporary
+write/rename denial, cleanup, hardlink/reparse refusal and input bounds.
+Windows37 pass/2 intentional skips (39 declared), native symlink case passed
+locally. ACLs, ancestor races, lock-file identity and protected write/replace
+remain separate; no general hostile-writer or production boundary claim.
+
 Public-dummy protection purposes are now separate fixed native labels for API
 fixture versus registry. Unknown purpose fails before loading; wrong-purpose
 unprotect and relabelled outer-prefix tests fail closed. Earlier disposable
