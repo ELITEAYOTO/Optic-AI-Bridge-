@@ -2,6 +2,14 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+New experimental fixed read-link admission module retains up to8 upstream
+slots after caller disconnect/timeout, rechecks dummy owner/epoch before dispatch
+and result delivery, and locally stops before bounded drain. Seven fake-upstream
+async tests pass locally. Exact7f535cb real Rust generated-fixture stdio smoke
+passed Windows/Linux workflow38474093643, including stable session metadata
+after dummy rotation. HTTP composition, actual Rust session revoke, child cleanup
+and production authority remain separate gates.
+
 User-selected remote alpha scope is one locally selected application session
 and project per configured connection. Chats sharing it share permissions;
 per-conversation routing is deferred to later V1 work. ADR-0013 records the
