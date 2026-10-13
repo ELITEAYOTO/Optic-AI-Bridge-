@@ -3,7 +3,9 @@
 Stacked on #189 docs head99bdeeca7fbe7dd88c1c3e4c30756d1b124c8e76,
 whose CI696/persistence#2 are green. #190 proves standalone admission; this
 follow-up integrates only a new synthetic listener, never production Rust or an
-existing credential/persistence server. FranceStudent manual behavior is pending.
+existing credential/persistence server. FranceStudent controlled429/recovery
+trial completed2026-10-13; exact matched evidence and unknown retry semantics are
+in LIVE_EVIDENCE_2026-10-13.md. Code CI698/rate#2 are green.
 
 H-02 #172 still lacked a rate-admission proof. Fixed global token bucket defaults
 to burst8, refill2/second using monotonic time. It admits before auth/body parsing;
