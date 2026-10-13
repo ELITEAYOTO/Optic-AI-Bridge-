@@ -203,7 +203,12 @@ The reusable broker should be preserved and reused by the later local-approval/s
 
 ## Remote-authentication constraints already fixed
 
-H-02 implementation is not started yet, but two constraints are already safe to freeze:
+H-02 production implementation is not started. Draft public-dummy experiments
+have measured header transport, rotation/revocation, restart persistence and
+native Windows protection separately. The proposed integration contract is
+[local credential storage](../security/H02_LOCAL_CREDENTIAL_STORAGE_CONTRACT.md).
+These proofs do not close the production storage/recovery gates. Two constraints
+are already safe to freeze:
 
 1. provider/tunnel identity never substitutes for Optic endpoint authentication;
 2. access tokens are never placed in URI query strings.
