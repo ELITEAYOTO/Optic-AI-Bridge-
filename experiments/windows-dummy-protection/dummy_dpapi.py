@@ -10,6 +10,7 @@ import sys
 
 MAGIC = b'OPTIC-PUBLIC-DUMMY-DPAPI-V1\0'
 ENTROPY = b'Optic-public-dummy-verifier-fixture-only-v1'
+REGISTRY_ENTROPY = b'Optic-public-dummy-registry-only-v1'
 MAX_BLOB = 16 * 1024
 UI_FORBIDDEN = 1
 PUBLIC_DUMMIES = (b'optic-probe-dummy-owner-a', b'optic-probe-dummy-owner-b')
@@ -34,7 +35,14 @@ def _blob(data):
     return Blob(len(data), ctypes.cast(keepalive, ctypes.POINTER(ctypes.c_ubyte))), keepalive
 
 
-def _native(data, protect):
+def _native(data, protect, *, purpose='fixture'):
+    # Internal finite purpose selector, not caller-supplied arbitrary entropy.
+    if purpose == 'fixture':
+        purpose_entropy = ENTROPY
+    elif purpose == 'registry':
+        purpose_entropy = REGISTRY_ENTROPY
+    else:
+        raise FixtureError('dummy_dpapi.invalid_purpose')
     if sys.platform != 'win32':
         raise FixtureError('dummy_dpapi.windows_required')
     # Fixed libraries/entrypoints, UI forbidden, no LOCAL_MACHINE flag or prompt.
@@ -51,7 +59,7 @@ def _native(data, protect):
     kernel.LocalFree.argtypes = [ctypes.c_void_p]
     kernel.LocalFree.restype = ctypes.c_void_p
     source, source_buffer = _blob(data)
-    entropy, entropy_buffer = _blob(ENTROPY)
+    entropy, entropy_buffer = _blob(purpose_entropy)
     output = Blob()
     try:
         succeeded = function(ctypes.byref(source), None, ctypes.byref(entropy), None, None,

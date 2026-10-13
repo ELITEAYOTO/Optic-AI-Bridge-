@@ -75,6 +75,12 @@ class NativeFailureTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_unknown_purpose_is_rejected_before_native_loading(self):
+        with patch.object(ctypes, 'WinDLL', side_effect=AssertionError('must not load'), create=True):
+            for purpose in (None, '', 'SYNTHETIC-CANARY', 'machine', b'fixture'):
+                with self.assertRaises(FixtureError) as error:
+                    dummy_dpapi._native(PAYLOAD, True, purpose=purpose)
+                self.assertEqual(str(error.exception), 'dummy_dpapi.invalid_purpose')
     def test_invalid_input_never_reaches_native(self):
         with patch('dummy_dpapi._native', side_effect=AssertionError('native should not run')):
             for blob in (None, {}, 'secret-canary', b'', MAGIC, MAGIC + b'x' * MAX_BLOB, b'unknown'):
@@ -105,6 +111,12 @@ class BoundaryTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native CurrentUser proof requires Windows')
 class NativeTests(unittest.TestCase):
+    def test_same_dummy_payload_cannot_be_unprotected_under_other_purpose(self):
+        for source, destination in (('fixture', 'registry'), ('registry', 'fixture')):
+            encrypted = dummy_dpapi._native(PAYLOAD, True, purpose=source)
+            self.assertEqual(dummy_dpapi._native(encrypted, False, purpose=source), PAYLOAD)
+            with self.assertRaises(FixtureError):
+                dummy_dpapi._native(encrypted, False, purpose=destination)
     def test_real_current_user_roundtrip_is_silent_and_no_plaintext_storage(self):
         capture = io.StringIO()
         with contextlib.redirect_stdout(capture):

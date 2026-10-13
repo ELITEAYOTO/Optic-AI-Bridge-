@@ -4,11 +4,15 @@ import json
 import os
 import sys
 
-from dummy_dpapi import _native, MAX_BLOB
+from dummy_dpapi import _native as _dpapi_native, MAX_BLOB
 from lifecycle_core import Registry
 from persistent_core import Store, PersistentRegistry, FixtureError, validate, unique_object, ordinary, MAX_STATE
 
 MAGIC = b'OPTIC-PUBLIC-DUMMY-REGISTRY-V1\0'
+
+
+def _native(data, protect):
+    return _dpapi_native(data, protect, purpose='registry')
 
 
 def decode_metadata(raw):
