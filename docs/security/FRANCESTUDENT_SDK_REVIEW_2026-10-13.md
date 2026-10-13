@@ -54,8 +54,6 @@ live SDK harness requires explicit account authorization and a separate bounded,
 redacted credential-handling contract. The SDK's CLI login can print a session
 token; it is not part of our test procedure and was not invoked.
 
-## Immutable source links
-
 ## Public OpenAPI cross-check
 
 The public unauthenticated [OpenAPI document](https://api.francestudent.ai/v3/api-docs)
