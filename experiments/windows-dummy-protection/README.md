@@ -219,7 +219,11 @@ creates one fixed `private-dummy-fixture` child. A caller-owned512byte ACL and
 absolute descriptor are initialized IN MEMORY, then supplied in non-inheritable
 SecurityAttributes to native CreateDirectoryW. Three fixed ALLOW/OI/CI/full-file
 trustees: process TokenUser, LocalSystem and BuiltinAdministrators. Owner is the
-process user; DACL is protected from parent inheritance. No arbitrary SID/mask/
+process user for the new directory; DACL is protected from parent inheritance.
+Ordinary child-file creation inherits the DACL, not this explicit owner: the
+creating token supplies its default owner, which differed on the Windows CI
+runner. Child owner match remains an observation, never an admission guarantee.
+No arbitrary SID/mask/
 SDDL input or caller-chosen filename. No existing-object SetSecurityInfo/repair,
 account changes, privilege enabling, production storage or real credential.
 
