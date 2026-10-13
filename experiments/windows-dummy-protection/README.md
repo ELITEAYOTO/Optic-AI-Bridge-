@@ -26,9 +26,9 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Forty-nine tests declared: native Windows47 execute/2 non-Windows branches
+Fifty-four tests declared: native Windows52 execute/2 non-Windows branches
 skip when symlink creation is available; otherwise one additional native case
-explicitly skips. On Linux23 execute/26 native cases skip. Windows cases include actual silent
+explicitly skips. On Linux24 execute/30 native cases skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -211,6 +211,52 @@ Primary references reviewed2026-10-13:
 * [CreateWellKnownSid](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createwellknownsid)
   and [ACCESS_ALLOWED_ACE](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-access_allowed_ace):
   fixed identity categories and ACE layout; no effective-access claim.
+
+## Creation-time explicit ACL candidate for a new dummy directory
+
+`create_private_fixture` accepts only an opened local dummy parent context and
+creates one fixed `private-dummy-fixture` child. A caller-owned512byte ACL and
+absolute descriptor are initialized IN MEMORY, then supplied in non-inheritable
+SecurityAttributes to native CreateDirectoryW. Three fixed ALLOW/OI/CI/full-file
+trustees: process TokenUser, LocalSystem and BuiltinAdministrators. Owner is the
+process user for the new directory; DACL is protected from parent inheritance.
+Ordinary child-file creation inherits the DACL, not this explicit owner: the
+creating token supplies its default owner, which differed on the Windows CI
+runner. Child owner match remains an observation, never an admission guarantee.
+No arbitrary SID/mask/
+SDDL input or caller-chosen filename. No existing-object SetSecurityInfo/repair,
+account changes, privilege enabling, production storage or real credential.
+
+This is a candidate fixture policy, explicitly NOT protection from System,
+administrators or same-user code. Existing file/directory child causes failure
+without changing contents/security. Creation failure does not retry with default
+permissions. Parent handle final path is reobserved; an uncertain outcome returns
+no success and is never followed by blind recursive deletion/adoption/reset.
+Native query token closes on normal/error exit; descriptors/SIDs/ACL are bounded
+caller-owned buffers, no plaintext SID conversion/logging.
+
+Five cases cover closed-parent refusal before loading, actual creation-time
+protected three-entry root DACL and child inheritance, existing directory/file
+preservation, and protected dummy registry rotation/revocation/reopen inside the
+created fixture. Tests touch only owned temporary roots. New root and file
+observations have no other-category simple write ACEs in these runs. This is
+structural evidence, not a cross-account effective-access test.
+
+Parent delete-child rights, ancestor replacement, system/admin intervention,
+lock-file identity, final write/replace atomicity and rollback remain separate.
+Parent permissions may permit denial-of-service/renaming while no handles pin
+the child. No persistent path/enrollment integration or availability guarantee.
+The protected registry's normal initialize path is unchanged: composition tests
+explicitly write initial PUBLIC dummy state after their own fresh creation;
+an existing operator directory is never adopted implicitly.
+
+Primary references reviewed2026-10-13:
+
+* [CreateDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectoryw):
+  creation-time descriptor, default inheritance and existing-target refusal.
+* [InitializeSecurityDescriptor](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-initializesecuritydescriptor)
+  and [SetSecurityDescriptorDacl](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-setsecuritydescriptordacl):
+  in-memory descriptor construction, not permission repair of existing objects.
 
 Primary references reviewed2026-10-13:
 

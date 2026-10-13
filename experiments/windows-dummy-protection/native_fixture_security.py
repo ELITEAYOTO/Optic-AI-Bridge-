@@ -123,6 +123,8 @@ def observe_fixture_security(prepared):
     api.GetSecurityDescriptorDacl.argtypes = [pointer, ctypes.POINTER(ctypes.c_int), pp,
                                             ctypes.POINTER(ctypes.c_int)]
     api.GetSecurityDescriptorDacl.restype = ctypes.c_int
+    api.GetSecurityDescriptorControl.argtypes = [pointer, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint32)]
+    api.GetSecurityDescriptorControl.restype = ctypes.c_int
     api.GetAclInformation.argtypes = [pointer, pointer, ctypes.c_uint32, ctypes.c_int]
     api.GetAclInformation.restype = ctypes.c_int
     api.IsValidSid.argtypes = [pointer]
@@ -185,6 +187,10 @@ def observe_fixture_security(prepared):
                 row = {'owner_matches_process_user': bool(api.EqualSid(owner, user.sid)),
                        'dacl_present': bool(present.value), 'null_dacl': not bool(dacl.value),
                        'ace_count': 0}
+                control, revision = ctypes.c_uint16(), ctypes.c_uint32()
+                if not api.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision)):
+                    raise SecurityError('fixture_security.descriptor_query_failed')
+                row['dacl_protected'] = bool(control.value & 0x1000)
                 if present.value and dacl.value:
                     if not descriptor.value <= dacl.value or dacl.value + 8 > descriptor.value + size:
                         raise SecurityError('fixture_security.acl_bound')

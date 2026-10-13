@@ -2,6 +2,13 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+New public-dummy directory creation candidate applies an explicit protected
+three-trustee DACL at native creation (process user/System/Administrators), then
+proves child inheritance and protected dummy lifecycle reopen. Existing targets
+are never adopted/repaired/truncated. Windows52 pass/2 skips,54 declared. This
+is structural fixture evidence, not production ACL/effective-access closure;
+parent/ancestor, writer-lock and final replacement boundaries remain open.
+
 Read-only native security characterization of pinned public-dummy root/file
 handles now observes owner/DACL and bounded simple ACE counters. No identity
 values exported, ACL mutation, effective-access/admission decision or security

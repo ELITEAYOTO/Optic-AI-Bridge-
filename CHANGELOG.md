@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft creation-time ACL fixture candidate: one new fixed temporary directory with explicit process-user/System/Administrators ACL, native inheritance and protected dummy lifecycle tests; no existing ACL repair or production enrollment.
 - Draft read-only native fixture owner/DACL characterization: bounded handle/token metadata queries, fixed ACE category counters and pointer/size regressions. No ACL modification, effective-access verdict or production authority.
 - Draft native fixed-fixture prepared read: root/file handle observation, same-handle bounded ciphertext read and pins retained during dummy decryption. Native write/rename/link/cleanup tests; no production exposure or general filesystem security guarantee.
 - Draft public-dummy DPAPI purpose separation: finite fixed fixture/registry labels, unknown-purpose refusal and native wrong-purpose/relabelled-prefix negative tests. No migration fallback, real credential input or production integration.
