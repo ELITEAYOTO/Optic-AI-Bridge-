@@ -23,7 +23,7 @@ async def exercise(url):
                     response = await http.post(url, json={'jsonrpc': '2.0', 'id': 1, 'method': 'ping'})
                     if response.status_code == 401:
                         break
-                except httpx2.ConnectError:
+                except (httpx2.ConnectError, httpx2.ConnectTimeout):
                     pass
                 await asyncio.sleep(.1)
     async with client(url, TOKENS['A'][0]) as session:
