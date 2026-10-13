@@ -26,8 +26,8 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Twelve tests declared: on Windows11 execute/1 non-Windows branch skips; on Linux8
-execute/4 native cases explicitly skip. Windows cases include actual silent
+Eighteen tests declared: on Windows17 execute/1 non-Windows branch skips; on Linux8
+execute/10 native cases explicitly skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -64,6 +64,29 @@ No Start/Initialize/tunnel steps, no persistent fixture deliverables. Actual
 DPAPI blobs generated in tests are temporary and are not committed/exported.
 Keep Draft, do not merge. H-01 positive host overlap is still unmeasured and
 #178 is separate; verified sequential host sample is in grouped-parallel ledger.
+
+## Disposable protected registry composition
+
+`protected_registry.py` combines the existing public-dummy schema/lifecycle and
+cooperating-writer lock with native protection. Only schema1/A/B metadata is
+accepted; no real verifier/token enrollment, listener or CLI file selector.
+Tests use owned TemporaryDirectory fixtures; no application credential store.
+Files are fixed `state.protected` and `state.protected.pending`, capped16KiB;
+decoded schema capped4096bytes. Pending bytes are never promoted on reopen.
+The inherited rotation/revocation path acknowledges only after replacement;
+failure blocks the live registry. Corrupt/missing state never resets implicitly.
+Six native integration cases prove reopen lifecycle, replacement failure,
+protection failure, corruption refusal, cooperating writer exclusion/missing
+state and explicit old-valid-ciphertext replay. Reopen is not a process-kill or
+power-loss proof. The Windows protected payload contains dummy metadata, not
+production verifier material. It uses the same public entropy label as the
+fixed API fixture; distinct outer magic plus exact schema validation separates
+them, without claiming cryptographic domain separation between the experiments.
+
+Old valid state replay **is accepted** in the characterization test: protection
+does not prove freshness. No ACL/reparse race/hostile local writer containment,
+antirollback or recovery guarantee is added. The inherited lstat/path checks
+and cooperating lock do not substitute for a native handle-based file policy.
 
 Primary references reviewed2026-10-13:
 

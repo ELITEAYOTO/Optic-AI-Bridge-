@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Protected dummy registry follow-up composes bounded metadata persistence with
+native Windows protection in temporary fixtures only. Six integration cases
+cover lifecycle reopen, commit/protection failure, corruption, writer exclusion
+and valid old-state replay. Replay remains accepted and is an explicit limitation.
+No real credentials, remote server, production integration or ACL guarantee.
+
 Draft #195 records a completed FranceStudent sequential grouped sample with no
 overlap; an earlier UI service error remains unexplained. This does not establish
 that the host cannot run calls concurrently. Its documentation head de3ea457
