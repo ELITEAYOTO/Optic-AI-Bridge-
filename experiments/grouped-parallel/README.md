@@ -1,5 +1,9 @@
 # H-01 guarded grouped temporal overlap — synthetic only
 
+Live trial2026-10-13 completed as a verified SEQUENTIAL sample, no real host
+overlap. Earlier UI-error attempt retained separately. See
+LIVE_EVIDENCE_2026-10-13.md; do not label this result a positive parallel proof.
+
 Separate supplement to #171/#170. Existing experiments/host-probe h01-v2 grouped
 instrumentation/correlation/reconnect tools remain intact. This carrier narrows
 the next measurement to actual SAME-GROUP pending tool overlap using measured
