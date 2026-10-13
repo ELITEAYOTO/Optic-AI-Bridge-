@@ -176,11 +176,13 @@ observation. The root stays pinned against rename; same-handle kind/link/size
 and final-path checks precede bounded marker read. No lock create, truncate,
 repair, removal, state mutation or credential handling is added.
 
-Seven new cases cover real same-process and fresh-process refusal, release,
+Eight new cases cover real same-process and fresh-process refusal, release,
 write/delete/file/root rename denial, missing/bad marker/hardlink preservation,
-context-error cleanup, sticky close failure and re-entry preserving an active
-pin. Existing read/protection tests remain in the same suite. Local native
-Windows61 cases:58 passed,3 deliberate unsupported-platform skips.
+context-error cleanup, sticky close failure, file/root symlink refusal when
+native creation is supported and re-entry preserving an active pin. Existing
+read/protection tests remain in the same suite. Local native Windows62 cases:
+59 passed,3 deliberate unsupported-platform skips; symlink support is reported
+separately if absent on another runner.
 
 This is an isolated candidate, not wired into Store/ProtectedStore. It excludes
 cooperating users of that fixed lock path while held; it does not prevent an

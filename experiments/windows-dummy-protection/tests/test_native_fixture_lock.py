@@ -34,6 +34,31 @@ class Bounds(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows lock proof')
 class Native(unittest.TestCase):
+    def test_file_and_root_symlinks_refused_without_following_when_supported(self):
+        with tempfile.TemporaryDirectory() as parent:
+            base = Path(parent)
+            target = base / 'target'
+            target.mkdir()
+            public = target / 'public.lock'
+            public.write_bytes(b'0')
+            file_link = target / 'writer.lock'
+            root_link = base / 'root-link'
+            try:
+                file_link.symlink_to(public)
+                root_link.symlink_to(target, target_is_directory=True)
+            except OSError:
+                self.skipTest('native symlink creation not permitted')
+            with self.assertRaises(LockError):
+                with PreparedFixtureLock(str(target)):
+                    self.fail('file reparse admitted')
+            file_link.unlink()
+            file_link.write_bytes(b'0')
+            with self.assertRaises(LockError):
+                with PreparedFixtureLock(str(root_link)):
+                    self.fail('root reparse admitted')
+            self.assertEqual(public.read_bytes(), b'0')
+            self.assertEqual(file_link.read_bytes(), b'0')
+
     def test_reentry_does_not_release_held_pin(self):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / 'writer.lock').write_bytes(b'0')
