@@ -1,11 +1,14 @@
 from pathlib import Path
 import subprocess
+import copy
+import json
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from protected_registry import ProtectedStore, ProtectedRegistry, FixtureError, _native
+from protected_registry import ProtectedStore, ProtectedRegistry, FixtureError, _native, MAGIC
+from dummy_dpapi import MAX_BLOB
 from lifecycle_core import TOKENS
 
 
@@ -108,6 +111,44 @@ class ProtectedTests(unittest.TestCase):
             self.assertIsNotNone(state.authenticate(bearer()))
         finally:
             state.close()
+
+    def test_valid_disk_drift_is_not_overwritten_by_live_registry(self):
+        state = ProtectedRegistry(self.root)
+        candidate = copy.deepcopy(state.states)
+        candidate['B'].update(epoch=2, active=False)
+        blob = MAGIC + _native(json.dumps({'schema': 1, 'owners': candidate}).encode(), True)
+        state.store.path.write_bytes(blob)  # controlled owned-fixture replacement
+        result = state.control('rotate', 'A')
+        self.assertEqual(result, {'ok': False, 'code': 'fixture.commit_failed_blocked'})
+        self.assertEqual(state.store.path.read_bytes(), blob)
+        self.assertIsNone(state.authenticate(bearer()))
+        state.close()
+        reopened = ProtectedRegistry(self.root)
+        try:
+            self.assertIsNone(reopened.authenticate(b'Bearer ' + TOKENS['B'][0]))
+            self.assertIsNotNone(reopened.authenticate(bearer()))
+        finally:
+            reopened.close()
+
+    def test_protected_unreachable_schema_is_rejected_without_reset(self):
+        state = ProtectedRegistry(self.root)
+        candidate = copy.deepcopy(state.states)
+        state.close()
+        candidate['A']['epoch'] = 2  # active version0/epoch2 cannot be produced
+        blob = MAGIC + _native(json.dumps({'schema': 1, 'owners': candidate}).encode(), True)
+        path = self.root / 'state.protected'
+        path.write_bytes(blob)
+        with self.assertRaises(FixtureError):
+            ProtectedRegistry(self.root)
+        self.assertEqual(path.read_bytes(), blob)
+
+    def test_oversized_ciphertext_is_rejected_before_native_api(self):
+        path = self.root / 'state.protected'
+        path.write_bytes(MAGIC + b'x' * MAX_BLOB)
+        with patch('protected_registry._native', side_effect=AssertionError('must not decrypt')) as native:
+            with self.assertRaises(FixtureError):
+                ProtectedRegistry(self.root)
+            native.assert_not_called()
 
     def run_child(self, body):
         # Only fixed test source and owned fixture path; no shell/PID selector.

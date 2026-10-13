@@ -11,6 +11,22 @@ from persistent_core import Store, PersistentRegistry, FixtureError, validate, u
 MAGIC = b'OPTIC-PUBLIC-DUMMY-REGISTRY-V1\0'
 
 
+def decode_metadata(raw):
+    """Exact finite dummy schema, never a permissive protected-state parser."""
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_STATE:
+        raise FixtureError('fixture.invalid_state')
+    try:
+        owners = validate(json.loads(raw, object_pairs_hook=unique_object))
+        # With version0, any revocation is terminal until rotation advances to1.
+        # No allowed local operation can produce active version0 at epoch>1.
+        if any(value['version'] == 0 and value['active'] and value['epoch'] != 1
+               for value in owners.values()):
+            raise FixtureError('fixture.invalid_state')
+        return copy.deepcopy(owners)
+    except (ValueError, UnicodeError, RecursionError):
+        raise FixtureError('fixture.invalid_state') from None
+
+
 class ProtectedStore(Store):
     def __init__(self, directory):
         if sys.platform != 'win32':
@@ -18,6 +34,7 @@ class ProtectedStore(Store):
         super().__init__(directory)
         self.path = self.directory / 'state.protected'
         self.pending = self.directory / 'state.protected.pending'
+        self.expected = None
 
     def read(self):
         ordinary(self.directory, directory=True)
@@ -28,9 +45,10 @@ class ProtectedStore(Store):
             raise FixtureError('fixture.invalid_state')
         try:
             raw = _native(blob[len(MAGIC):], False)
-            if len(raw) > MAX_STATE:
-                raise FixtureError('fixture.invalid_state')
-            return copy.deepcopy(validate(json.loads(raw, object_pairs_hook=unique_object)))
+            owners = decode_metadata(raw)
+            if self.expected is None:
+                self.expected = copy.deepcopy(owners)
+            return owners
         except Exception:
             raise FixtureError('fixture.invalid_state') from None
 
@@ -38,14 +56,15 @@ class ProtectedStore(Store):
         data = {'schema': 1, 'owners': owners}
         validate(data)  # only bounded public-dummy metadata; no arbitrary payload
         raw = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('ascii')
-        if len(raw) > MAX_STATE:
-            raise FixtureError('fixture.invalid_state')
+        decode_metadata(raw)
         ordinary(self.directory, directory=True)
         ordinary(self.path, missing=initialize)
         if initialize and self.path.exists():
             raise FixtureError('fixture.already_exists')
         if not initialize:
-            self.read()
+            current = self.read()
+            if current != self.expected:
+                raise FixtureError('fixture.state_changed')
         blob = MAGIC + _native(raw, True)
         if len(blob) > MAX_BLOB:
             raise FixtureError('fixture.invalid_state')
@@ -60,6 +79,7 @@ class ProtectedStore(Store):
             file.flush()
             os.fsync(file.fileno())
         os.replace(self.pending, self.path)
+        self.expected = copy.deepcopy(owners)
 
 
 class ProtectedRegistry(PersistentRegistry):

@@ -26,8 +26,8 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Twenty tests declared: on Windows19 execute/1 non-Windows branch skips; on Linux8
-execute/12 native cases explicitly skip. Windows cases include actual silent
+Twenty-seven tests declared: on Windows26 execute/1 non-Windows branch skips;
+on Linux12 execute/15 native cases explicitly skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -93,6 +93,23 @@ Old valid state replay **is accepted** in the characterization test: protection
 does not prove freshness. No ACL/reparse race/hostile local writer containment,
 antirollback or recovery guarantee is added. The inherited lstat/path checks
 and cooperating lock do not substitute for a native handle-based file policy.
+
+## Decoded state and live drift
+
+The decoded schema additionally rejects active version0 at epoch>1, which no
+allowed dummy lifecycle command can produce. Portable tests cover duplicate
+keys, unknown/extra schema fields, malformed/bounded input, typed values and
+valid lifecycle states. Decryption success alone is never schema validity.
+
+The store retains its first decoded snapshot. Before a subsequent commit, a
+different valid on-disk state causes denial rather than overwriting it with a
+candidate based on stale in-memory metadata. Failure blocks the live registry.
+Successful commits advance the snapshot. This comparison occurs before the
+write; it is NOT an atomic compare-and-replace primitive, external live revoke
+notification, hostile-writer containment or antirollback across restart. The
+existing valid-old-state replay characterization still succeeds on reopening.
+Native cases exercise valid changed state preservation, protected unreachable
+schema refusal and oversized ciphertext denial before the native API.
 
 Primary references reviewed2026-10-13:
 

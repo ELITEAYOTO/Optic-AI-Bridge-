@@ -11,6 +11,12 @@ code/test head d954653) proves CurrentUser DPAPI roundtrips and bounded native
 cleanup. Its fixture workflow #2 and general CI #707 passed. These are separate
 proofs: neither implements protected production registry persistence.
 
+Draft #197 composes the two mechanisms in temporary public-dummy fixtures.
+Its exact head fc0e8c3 passed fixture workflow #5 and CI #710 on rerun after
+one unexplained initial MCP doctor timeout. The composition proves abrupt
+process-exit and pre-replace pending-state behavior, not production integration.
+Old valid protected state replay is measured as accepted; freshness remains open.
+
 The next integration must remain disposable and public-dummy-only until its
 schema, commit failures and restart behavior are independently tested. Do not
 reuse its unsalted public hashes as a production credential verifier.
