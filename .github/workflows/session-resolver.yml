@@ -4,6 +4,9 @@ on:
     paths:
       - 'experiments/session-resolver/**'
       - 'experiments/credential-lifecycle/lifecycle_core.py'
+      - 'experiments/francestudent-probe/**'
+      - 'experiments/host-probe/requirements.txt'
+      - 'experiments/host-probe/constraints.txt'
       - '.github/workflows/session-resolver.yml'
 permissions:
   contents: read
@@ -13,14 +16,27 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - shell: pwsh
         run: |
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'install failed' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'dependency check failed' }
           $env:PYTHONPATH = 'experiments/session-resolver'
           python -m unittest discover -s experiments/session-resolver/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'resolver proof failed' }
-          [scriptblock]::Create((Get-Content -Raw experiments/session-resolver/scripts/Test-SyntheticSessionResolver.ps1)) | Out-Null
+          python experiments/session-resolver/smoke_bootstrap.py
+          if ($LASTEXITCODE -ne 0) { throw 'bootstrap MCP smoke failed' }
+          $env:PYTHONPATH = 'experiments/francestudent-probe'
+          python -m unittest discover -s experiments/francestudent-probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Guard regressions failed' }
+          python experiments/francestudent-probe/smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'Guard smoke failed' }
+          Get-ChildItem experiments/session-resolver/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
