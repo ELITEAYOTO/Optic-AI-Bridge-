@@ -49,7 +49,7 @@ class PreparedFixtureRead:
         self.kernel = None
         self.close_uncertain = False
 
-    def __enter__(self):
+    def _load_native(self):
         if self.kernel is not None:
             raise ReadError('fixture_read.already_opened')
         if sys.platform != 'win32':
@@ -73,6 +73,9 @@ class PreparedFixtureRead:
         kernel.ReadFile.restype = ctypes.c_int
         kernel.CloseHandle.argtypes = [handle]
         kernel.CloseHandle.restype = ctypes.c_int
+
+    def __enter__(self):
+        self._load_native()
         try:
             self.root = self._open(self.directory, directory=True)
             self._info(self.root, directory=True)

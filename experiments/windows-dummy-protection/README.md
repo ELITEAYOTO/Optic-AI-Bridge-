@@ -167,7 +167,32 @@ Native read API references reviewed2026-10-13:
 * [Microsoft GetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle):
   handle-observed attributes, file size and link count.
 
-## Read-only native owner/DACL observations
+## Exclusive fixed writer-lock pin candidate — 2026-10-14
+
+`PreparedFixtureLock` opens only an existing `writer.lock` in a disposable local
+fixture. The fixed public marker must be exactly one byte `0`. Native
+CreateFileW uses read-only access, zero sharing, OPEN_EXISTING and reparse-point
+observation. The root stays pinned against rename; same-handle kind/link/size
+and final-path checks precede bounded marker read. No lock create, truncate,
+repair, removal, state mutation or credential handling is added.
+
+Seven new cases cover real same-process and fresh-process refusal, release,
+write/delete/file/root rename denial, missing/bad marker/hardlink preservation,
+context-error cleanup, sticky close failure and re-entry preserving an active
+pin. Existing read/protection tests remain in the same suite. Local native
+Windows61 cases:58 passed,3 deliberate unsupported-platform skips.
+
+This is an isolated candidate, not wired into Store/ProtectedStore. It excludes
+cooperating users of that fixed lock path while held; it does not prevent an
+actor ignoring the lock from writing state directly. Full ancestor/ACL policy,
+lock initialization, pending identity, final replacement/atomicity and rollback
+remain open. Refactoring the native API loader leaves prepared state-file read
+semantics unchanged. No production session or remote endpoint uses this pin.
+
+Primary API contract: [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+documents zero-sharing refusal, OPEN_EXISTING and handle-lifetime sharing modes.
+
+## Read-only native owner/DACL observations (existing proof)
 
 `observe_fixture_security` accepts an already opened local `PreparedFixtureRead`,
 queries its root/file descriptors by handle and the current PROCESS TokenUser

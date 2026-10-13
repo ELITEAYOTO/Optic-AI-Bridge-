@@ -1,5 +1,12 @@
 # Project Status
 
+## Fixed native writer-lock candidate — 2026-10-14
+
+New isolated native existing writer.lock pin uses zero sharing, fixed public
+marker and observed root/file identity. Seven new regressions plus existing
+suite pass locally:61 Windows cases,58 pass/3 platform skips. Store integration,
+pending identity/final replace and production credential enrollment stay gated.
+
 ## FranceStudent real fixed-read host evidence — 2026-10-14
 
 Manual generated-fixture host run correlates five successful real Rust
