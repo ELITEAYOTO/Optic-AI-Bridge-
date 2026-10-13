@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -9,6 +10,38 @@ from dummy_dpapi import MAX_BLOB
 
 
 class DirectoryTests(unittest.TestCase):
+    def test_close_failure_still_attempts_both_handles_and_denies_success(self):
+        prepared = PreparedFixtureRead('C:\\dummy-fixture')
+        calls = []
+        class FakeKernel:
+            def CloseHandle(self, handle):
+                calls.append(handle)
+                return handle != 101
+        prepared.kernel = FakeKernel()
+        prepared.file, prepared.root = 101, 202  # simulated handles only
+        with self.assertRaises(ReadError) as error:
+            prepared.close()
+        self.assertEqual(str(error.exception), 'fixture_read.close_failed')
+        self.assertEqual(calls, [101, 202])
+        with self.assertRaises(ReadError):
+            prepared.close()  # uncertain cleanup stays failed; no blind retry
+        self.assertEqual(calls, [101, 202])
+        self.assertTrue(prepared.close_uncertain)
+
+    def test_invalid_native_read_count_is_not_copied(self):
+        for count in (0, 5, 0xffffffff):
+            prepared = PreparedFixtureRead('C:\\dummy-fixture')
+            class FakeKernel:
+                def ReadFile(self, handle, buffer, bound, output, overlapped):
+                    self.bound = bound
+                    output._obj.value = count
+                    return True
+            prepared.kernel = FakeKernel()
+            prepared.file, prepared.size = 101, 4  # simulated handle/count only
+            with self.assertRaises(ReadError) as error:
+                prepared.read()
+            self.assertEqual(str(error.exception), 'fixture_read.read_changed')
+            self.assertEqual(prepared.kernel.bound, MAX_BLOB + 1)
     def test_directory_grammar_rejects_device_unc_relative_and_traversal(self):
         for value in (None, {}, b'C:\\fixture', '', 'fixture', '\\\\server\\share',
                       '\\\\.\\C:', 'C:\\a\\..\\b', 'C:\\a\0b'):
@@ -53,6 +86,29 @@ class NativeReadTests(unittest.TestCase):
             with PreparedFixtureRead(self.root):
                 raise RuntimeError('fixed test failure')
         self.path.rename(self.root / 'renamed.protected')
+
+    def test_fresh_child_write_is_denied_until_parent_releases_pin(self):
+        code = '''from pathlib import Path
+import sys
+path = Path(sys.argv[1]) / 'state.protected'
+try:
+    path.write_bytes(b'PUBLIC DUMMY CHILD WRITE')
+except OSError:
+    print('DUMMY WRITE DENIED')
+else:
+    print('DUMMY WRITE ALLOWED')
+'''
+        def attempt():
+            child = subprocess.run([sys.executable, '-c', code, str(self.root)],
+                                   capture_output=True, text=True, timeout=10)
+            self.assertEqual(child.returncode, 0, 'fixed child did not complete')
+            self.assertEqual(child.stderr, '', 'raw child diagnostics not echoed')
+            return child.stdout.strip()
+        with PreparedFixtureRead(self.root) as prepared:
+            self.assertEqual(attempt(), 'DUMMY WRITE DENIED')
+            self.assertEqual(prepared.read(), b'PUBLIC DUMMY CIPHERTEXT SHAPE')
+        self.assertEqual(attempt(), 'DUMMY WRITE ALLOWED')
+        self.assertEqual(self.path.read_bytes(), b'PUBLIC DUMMY CHILD WRITE')
 
     def test_hardlinked_file_is_rejected(self):
         alias = self.root / 'dummy-alias'

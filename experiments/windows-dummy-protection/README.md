@@ -26,9 +26,9 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Thirty-nine tests declared: native Windows37 execute/2 non-Windows branches
+Forty-two tests declared: native Windows40 execute/2 non-Windows branches
 skip when symlink creation is available; otherwise one additional native case
-explicitly skips. On Linux15 execute/24 native cases skip. Windows cases include actual silent
+explicitly skips. On Linux17 execute/25 native cases skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -138,11 +138,19 @@ local Windows filesystem calls are not advertised as preemptible deadlines.
 
 Native tests prove read correctness, competing write/file rename/root rename
 denial while handles are held, release on exceptions, hardlink refusal,
-file/root symlink refusal where the runner permits creation, empty/oversized/
+file/root symlink refusal where the runner permits creation, fresh-child write
+denial until the parent releases its pin, empty/oversized/
 directory target and missing-file denial, and pin retention during decryption.
 Failure to create test symlinks is an explicit skip, never positive reparse proof.
 Read is effectively one-shot due to the file position; use a new context to read
 again. No seek/reuse/reset behavior is promised.
+
+Two portable fake-API cases check that a CloseHandle failure still attempts
+both cleanups and denies success, and an invalid/oversized ReadFile count is
+rejected before bytes are copied. These simulated failures are separate from
+native measurements. A failed native close is reported, not a claim that the
+OS released that failed handle. Uncertain cleanup stays failed on later close
+calls; no silent later success or blind close retry. The context cannot reopen.
 
 This closes an observation/read gap in the disposable registry, NOT the entire
 filesystem boundary: ancestor replacement races, hostile local writers, ACLs,

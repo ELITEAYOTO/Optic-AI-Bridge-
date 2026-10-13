@@ -5,9 +5,13 @@
 Native prepared read follow-up holds root/file handles through protected dummy
 decryption and schema validation. Tests cover observed bytes, temporary
 write/rename denial, cleanup, hardlink/reparse refusal and input bounds.
-Windows37 pass/2 intentional skips (39 declared), native symlink case passed
+Windows40 pass/2 intentional skips (42 declared), native symlink case passed
 locally. ACLs, ancestor races, lock-file identity and protected write/replace
 remain separate; no general hostile-writer or production boundary claim.
+
+The prepared-read cross-process case proves a fixed same-user child cannot
+write the observed fixture while pinned, then can write it after context close.
+The draft proof/remaining-gate matrix is in docs/security/H02_PROOF_MATRIX.md.
 
 Public-dummy protection purposes are now separate fixed native labels for API
 fixture versus registry. Unknown purpose fails before loading; wrong-purpose

@@ -253,6 +253,11 @@ H-01 is not complete until at least the primary FranceStudent V1 target has repr
 
 ### H-02 — transport/authentication proof — PENDING
 
+Draft experiments now cover public-dummy wire/lifecycle/persistence and native
+Windows storage components. The [proof matrix](../security/H02_PROOF_MATRIX.md)
+separates measured evidence from production/remaining gates. PENDING here means
+production contract/integration has not closed, not that no experiments exist.
+
 Using the harmless probe architecture:
 
 - prove a local Streamable HTTP server behind at least one zero-cost provider;

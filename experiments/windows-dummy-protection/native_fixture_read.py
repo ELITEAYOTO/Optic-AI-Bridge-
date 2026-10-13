@@ -47,6 +47,7 @@ class PreparedFixtureRead:
         self.directory = fixture_directory(directory)
         self.root = self.file = None
         self.kernel = None
+        self.close_uncertain = False
 
     def __enter__(self):
         if self.kernel is not None:
@@ -128,6 +129,8 @@ class PreparedFixtureRead:
         return bytes(buffer[:count.value])
 
     def close(self):
+        if self.close_uncertain:
+            raise ReadError('fixture_read.close_failed')
         failed = False
         for name in ('file', 'root'):
             handle = getattr(self, name)
@@ -136,6 +139,7 @@ class PreparedFixtureRead:
                 if not self.kernel.CloseHandle(handle):
                     failed = True
         if failed:
+            self.close_uncertain = True
             raise ReadError('fixture_read.close_failed')
 
     def __exit__(self, *args):
