@@ -1,5 +1,13 @@
 # Project Status
 
+## Fixed public pending creation candidate — 2026-10-14
+
+New isolated scratch creation requires a held native fixed lock, CREATE_NEW,
+zero sharing and observed same-handle identity/size. Fixed public marker only;
+exact-write/flush/failure/preservation cases added. Local Windows70 cases:
+67 pass/3 platform skips. No Store integration or commit/production guarantee;
+path-based creation still leaves ancestor stability/root-relative create gated.
+
 ## Fixed native writer-lock candidate — 2026-10-14
 
 New isolated native existing writer.lock pin uses zero sharing, fixed public
