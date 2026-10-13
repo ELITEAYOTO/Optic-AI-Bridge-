@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft generated-fixture HTTP composition: exact three zero-argument read/info tools, dummy principal/epoch ingress checks, reconnect proof and local bounded drain followed by actual Rust session cancellation; four local SDK/stop regressions. Public host packaging and user projects remain excluded.
 - Draft fixed read-link admission: retained bounded upstream slots after caller timeout/cancellation, local stop/late-result suppression and dummy epoch checks; seven async contract tests plus actual generated-fixture Rust stdio proof on Windows/Linux. No HTTP or user-project exposure.
 - Draft creation-time ACL fixture candidate: one new fixed temporary directory with explicit process-user/System/Administrators ACL, native inheritance and protected dummy lifecycle tests; no existing ACL repair or production enrollment.
 - Draft read-only native fixture owner/DACL characterization: bounded handle/token metadata queries, fixed ACE category counters and pointer/size regressions. No ACL modification, effective-access verdict or production authority.

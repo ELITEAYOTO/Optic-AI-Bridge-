@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Exact6703dcac generated-fixture HTTP -> real Rust proof passed Windows/Linux
+workflow38475057579: fixed three-tool allowlist, owner/argument/stale/revoked
+denial, stable session metadata on reconnect, local drain plus real session_cancel
+and subsequent exact optic.session_inactive read refusal. Four SDK/stop regressions
+pass locally. No public tunnel, user-project authority or host-ready package yet.
+
 New experimental fixed read-link admission module retains up to8 upstream
 slots after caller disconnect/timeout, rechecks dummy owner/epoch before dispatch
 and result delivery, and locally stops before bounded drain. Seven fake-upstream
