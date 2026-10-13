@@ -14,6 +14,7 @@ import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from real_smoke import structured
 from lifecycle_core import Registry, TOKENS
 from forward_core import ForwardGate
@@ -95,8 +96,12 @@ async def run(binary):
                     await denied(url, TOKENS['A'][1])
                     assert await local_stop(gate, upstream) == {
                         'ok': True, 'drained': True, 'session_revoked': True}
-                    rejected = await upstream.call_tool('fs_read', {'path': 'public/hello.txt', 'max_bytes': 1024})
-                    assert rejected.is_error
+                    try:
+                        await upstream.call_tool('fs_read', {'path': 'public/hello.txt', 'max_bytes': 1024})
+                    except MCPError as error:
+                        assert error.message == 'optic.session_inactive'
+                    else:
+                        raise AssertionError('real revoked session read was not denied')
                     await denied(url, TOKENS['A'][1])
                     capture = '\n'.join(logs)
                     for token in (item for values in TOKENS.values() for item in values):
