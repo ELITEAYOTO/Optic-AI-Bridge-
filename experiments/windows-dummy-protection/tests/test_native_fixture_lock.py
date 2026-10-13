@@ -1,8 +1,10 @@
 import os
+import queue
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 
 from native_fixture_lock import PreparedFixtureLock, LockError
@@ -34,6 +36,37 @@ class Bounds(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows lock proof')
 class Native(unittest.TestCase):
+    def test_abrupt_owner_exit_releases_kernel_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'writer.lock').write_bytes(b'0')
+            code = ('import os,sys; from native_fixture_lock import PreparedFixtureLock; '
+                    'pin=PreparedFixtureLock(sys.argv[1]); pin.__enter__(); '
+                    'print("PUBLIC_PIN_READY",flush=True); sys.stdin.read(1); os._exit(17)')
+            child = subprocess.Popen([sys.executable, '-c', code, directory],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            ready = queue.Queue(maxsize=1)
+            reader = threading.Thread(target=lambda: ready.put(child.stdout.readline(64)), daemon=True)
+            reader.start()
+            try:
+                self.assertEqual(ready.get(timeout=10).strip(), 'PUBLIC_PIN_READY')
+                with self.assertRaises(LockError):
+                    with PreparedFixtureLock(directory):
+                        self.fail('child-held pin admitted another writer')
+                child.stdin.write('x')
+                child.stdin.flush()
+                self.assertEqual(child.wait(timeout=10), 17)
+                self.assertEqual(child.stderr.read(4096), '')
+                with PreparedFixtureLock(directory):
+                    pass
+                self.assertEqual((Path(directory) / 'writer.lock').read_bytes(), b'0')
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=10)
+                reader.join(timeout=1)
+                for stream in (child.stdin, child.stdout, child.stderr):
+                    stream.close()
+
     def test_file_and_root_symlinks_refused_without_following_when_supported(self):
         with tempfile.TemporaryDirectory() as parent:
             base = Path(parent)

@@ -20,6 +20,18 @@ class Bounds(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows x64 relative-create proof')
 class Native(unittest.TestCase):
+    def test_unsupported_platform_never_creates_or_falls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'writer.lock').write_bytes(b'0')
+            with PreparedFixtureLock(directory) as pin:
+                with patch.object(sys, 'platform', 'unsupported'):
+                    with patch.object(ctypes, 'WinDLL', side_effect=AssertionError('must not load')):
+                        with self.assertRaises(PendingError):
+                            with RootRelativeFixturePending(pin):
+                                self.fail('unsupported platform admitted')
+            self.assertFalse((root / 'state.protected.pending').exists())
+
     def test_unexpected_native_completion_closes_only_success_owned_handle(self):
         for status, completion_status, information, expected_closes in (
                 (0, 0, 1, [101]), (1, 0, 2, [101]), (0, 1, 2, [101]), (-1, 0, 2, [])):

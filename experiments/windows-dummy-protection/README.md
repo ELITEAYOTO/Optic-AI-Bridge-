@@ -180,11 +180,13 @@ object attributes are fixed. No DELETE/WRITE_DAC/WRITE_OWNER authority is reques
 Success requires exact NT status0, completion status0 and FILE_CREATED2 with a
 valid owned handle before inherited empty-size/identity/public-write checks.
 
-Six new cases cover inactive pin before native load, actual relative creation
+Seven new relative cases cover inactive pin before native load, actual relative creation
 with absolute-create disabled, existing target preservation/no fallback,
 mutation of the stored path string while creation still uses the held root,
-loader failure preserving absence, and simulated ambiguous completion/owned
-handle cleanup. Full local Windows76 cases:73 pass/3 platform skips. Simulated
+loader/platform failure preserving absence, and simulated ambiguous completion/owned
+handle cleanup. A further native child abrupt-exit case verifies kernel release
+of its existing writer pin without Python cleanup. Full local Windows78 cases:
+75 pass/3 platform skips. Simulated
 completion checks are distinct from actual native creation evidence.
 
 This observes interoperability with the existing Win32-opened directory handle
