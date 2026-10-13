@@ -54,7 +54,31 @@ live SDK harness requires explicit account authorization and a separate bounded,
 redacted credential-handling contract. The SDK's CLI login can print a session
 token; it is not part of our test procedure and was not invoked.
 
-## Immutable source links
+## Public OpenAPI cross-check
+
+The public unauthenticated [OpenAPI document](https://api.francestudent.ai/v3/api-docs)
+was fetched on2026-10-13 with a15second timeout and2MiB download ceiling.
+Snapshot SHA-256:
+`0dd2cb50dae61fe8e82fec4d8a5c0806c8a175c0d6bbd6c216d5406c84c4989d`.
+No account login, SDK execution or authenticated API call was performed.
+
+The documented chat cancel route interrupts the provider call and closes the
+generation stream. It does not explicitly establish cancellation of an already
+running external MCP tool. Outgoing MCP conversation headers remain unspecified.
+
+The chat stream documentation separates backend `stream.open`, `response.created`
+and final `completed` from provider events. Opening a stream is not proof that
+the provider responded. It documents a default five-minute first-provider-response
+deadline and backend timeout errors even after HTTP200. This is a chat-generation
+contract, not an external MCP response-header timeout or retry policy. It cannot
+explain the earlier HTTP2 timeout or inference UI error without correlated evidence.
+`Last-Event-ID` is stream resumption, never authorization or exactly-once effects.
+
+The user now accepts a single-session remote alpha (ADR-0013). Unanswered backend
+identity/cancellation questions remain recorded but no longer block that truthful
+scope. Shared chats share the locally bound connection's session permissions.
+
+## Immutable SDK source links
 
 - [README](https://github.com/FranceStudent/francestudent-ai-sdk/blob/d8d054f7c9631756db200369e88569cf1b5a9e2f/README.md)
 - [MCP requests](https://github.com/FranceStudent/francestudent-ai-sdk/blob/d8d054f7c9631756db200369e88569cf1b5a9e2f/src/requests/Mcp.ts)

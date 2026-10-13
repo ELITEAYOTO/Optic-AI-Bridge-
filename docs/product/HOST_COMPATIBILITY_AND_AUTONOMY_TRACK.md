@@ -1,6 +1,18 @@
 # Host compatibility, zero-cost connectivity and session autonomy track
 
-Status: LIVING SUBTRACK. Last reviewed: 2026-10-10.
+Status: LIVING SUBTRACK. Last reviewed: 2026-10-13.
+
+## Alpha scope update — 2026-10-13
+
+The user accepts one locally selected Optic session/project per remote
+connection for the first alpha. Every host chat using that connection shares
+its permissions; the UI must disclose this and cannot promise “only this chat”.
+Per-conversation remote routing is deferred to later V1 work, while existing
+core multi-session safeguards remain intact. See
+[ADR-0013](../decisions/ADR-0013-SINGLE_SESSION_REMOTE_ALPHA.md) for binding,
+revocation, reconnect and delivery gates. Missing FS backend identity/cancel
+answers no longer block this scope; real-project security, credential storage
+and local authorization remain prerequisites.
 
 This subtrack records the product and architecture work required to make Optic AI Bridge usable by large numbers of students across multiple AI clients without coupling the core runtime to one host, one transport provider, one paid service or one host-specific approval UI.
 

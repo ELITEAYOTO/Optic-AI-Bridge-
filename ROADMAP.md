@@ -6,6 +6,9 @@ The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/
 **Current phase:** Phase 4 — same-repository parallelism, with H-01 multi-host capability characterization active in parallel
 **Implementation state:** executable Rust pre-alpha; Phase 1 and Phase 2 are complete; Phase 3 multi-session/resource isolation is substantially closed through Phase 3E3; truthful network-denied containment, exact human approval foundations and ToolProfile authorization are merged; Phase 4 same-repository worktree/merge orchestration is active through Phase 4AP; A-08 reusable session/profile approval is implemented through A-08D2; the separate authority-free H-01 host probe is implemented in draft PR #170
 **Release state:** no production-supported release
+**Alpha scope:** one locally selected session/project per remote connection;
+all host chats using it share permissions. Per-conversation routing is deferred
+to later V1 work; see [ADR-0013](docs/decisions/ADR-0013-SINGLE_SESSION_REMOTE_ALPHA.md).
 **Current gate:** H-01/H-02/H-03 draft closure — FranceStudent header transport, dummy authentication lifecycle, exact handles and synthetic session reuse have real-host evidence. Host temporal overlap/native conversation correlation remain unproved. Local protected dummy persistence is under native Windows validation; production credential storage, session binding and local approval gates remain open. See [H-02 proof matrix](docs/security/H02_PROOF_MATRIX.md). A-08E remains **blocked by host interaction**, not failed.
 
 The A-08 reusable-approval work remains deliberately narrow and preserved:
