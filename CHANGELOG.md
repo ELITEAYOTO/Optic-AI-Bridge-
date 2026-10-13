@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft explicit root-relative native public scratch candidate: fixed Unicode leaf under held directory handle, create-only NT completion checks, no path fallback and native/simulated regressions. No final replacement, Store integration or production persistence claim.
 - Draft fixed public pending-file creation: held native fixture lock, create-only absence precondition, non-shared same-handle write/flush/identity checks and failure/preservation tests. No state promotion, Store integration, ancestor containment or production persistence claim.
 - Draft native fixed writer-lock pin: existing public marker only, zero-sharing handle, root/file identity checks, cross-process exclusion and sticky cleanup/re-entry regressions. No Store integration, real credentials or production storage claim.
 - Draft FranceStudent real fixed-read measurement: five console-correlated Rust metadata/list/read successes, rotation/reconnect/revocation and local stop acknowledgement on a generated fixture; stop-path code audit found no network configuration mutation.

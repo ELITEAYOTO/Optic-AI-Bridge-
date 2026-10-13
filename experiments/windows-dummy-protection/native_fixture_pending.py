@@ -34,8 +34,7 @@ class PreparedFixturePending:
         self.kernel = item.kernel
         try:
             self.root_name = item._final(item.root).rstrip('\\')
-            self.file = self.kernel.CreateFileW(self.root_name + '\\state.protected.pending',
-                0xC0000000, 0, None, 1, 0x00200000, None)
+            self.file = self._create(item)
             if self.file is None or self.file == ctypes.c_void_p(-1).value:
                 self.file = None
                 raise PendingError('fixture_pending.create_failed')
@@ -53,6 +52,10 @@ class PreparedFixturePending:
             self.failed = True
             self.close()
             raise PendingError('fixture_pending.create_failed') from None
+
+    def _create(self, item):
+        return self.kernel.CreateFileW(self.root_name + '\\state.protected.pending',
+            0xC0000000, 0, None, 1, 0x00200000, None)
 
     def _identity(self, item):
         if (item.kernel is not self.kernel

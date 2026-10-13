@@ -1,5 +1,13 @@
 # Project Status
 
+## Explicit relative native scratch candidate — 2026-10-14
+
+New explicit NtCreateFile root-handle/fixed-leaf candidate refuses absolute-create
+fallback. Six regressions cover real relative create, existing-target preservation,
+path-string independence, ABI/native loader and ambiguous completion/cleanup.
+Local Windows76 cases:73 pass/3 platform skips. No Store/production integration;
+hostile ancestor/ACL, final replace, rollback and persistence ACK remain gated.
+
 ## Fixed public pending creation candidate — 2026-10-14
 
 New isolated scratch creation requires a held native fixed lock, CREATE_NEW,
