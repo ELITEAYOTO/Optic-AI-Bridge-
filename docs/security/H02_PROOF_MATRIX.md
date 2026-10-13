@@ -1,5 +1,10 @@
 # H-02 proof and remaining integration gates
 
+[FranceStudent SDK review](FRANCESTUDENT_SDK_REVIEW_2026-10-13.md) records the
+user-supplied client's exact source revision and API/backend distinctions.
+Client chat IDs, cancel/OAuth routes and approval fields are new research leads,
+not closure of external MCP host/session/cancellation/approval gates.
+
 Reviewed2026-10-13 on the draft experiment stack. This is not a declaration of
 merged/production authentication. Remote main was observed at156653a4 unchanged.
 Owning issues: #171 host measurements, #172 auth, #173 sessions. No issue closes
