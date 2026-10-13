@@ -34,7 +34,18 @@ def result(tool, payload):
         return {"ok": False, "code": "probe.transport_required"}
     invocation = {"tool": tool, "marker": secrets.token_hex(8),
                   "server_instance": proof["server_instance"], "request_sequence": proof["sequence"]}
-    print("[FS-PROBE] TOOL " + json.dumps(invocation, sort_keys=True), flush=True)
+    if proof.get('timed_diagnostics'):
+        now = proof['clock']()
+        invocation['elapsed_ms'] = round(max(0, now - proof['started']) * 1000, 3)
+        invocation['request_elapsed_ms'] = round(max(0, now - proof['admitted']) * 1000, 3)
+    line = "[FS-PROBE] TOOL " + json.dumps(invocation, sort_keys=True)
+    emitter = proof.get('tool_emit')
+    if emitter is None:
+        print(line, flush=True)
+    else:
+        queued = emitter(line)
+        if proof.get('timed_diagnostics'):
+            invocation['console_queued'] = queued is not False
     return {**payload, "probe_invocation": invocation, "request_observation": proof["observation"]}
 
 
@@ -67,7 +78,7 @@ class Guard:
     def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20,
                  header_observer=observe_headers,
                  zero_arg_tools=("probe_headers", "probe_create_handle"),
-                 handle_tool="probe_consume_handle", extra_handle_tools=()):
+                 handle_tool="probe_consume_handle", extra_handle_tools=(), timed_diagnostics=False):
         self.app, self.clock, self.emit = app, clock, emit
         self.request_timeout = request_timeout
         self.header_observer = header_observer
@@ -77,6 +88,9 @@ class Guard:
                 or any(not isinstance(name, str) or not 1 <= len(name) <= 64 for name in extra_handle_tools)):
             raise ValueError('invalid fixed handle-tool allowlist')
         self.extra_handle_tools = extra_handle_tools
+        self.timed_diagnostics = timed_diagnostics
+        self.tool_emit = (lambda line: print(line, flush=True)) if emit is print else emit
+        self.proof_version = 'fs-probe-v3' if timed_diagnostics else PROOF_VERSION
         self.instance = secrets.token_hex(6)
         self.started = clock()
         self.sequence = self.active = 0
@@ -84,6 +98,7 @@ class Guard:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        admitted = self.clock()
         if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= MAX_LIFETIME:
             return await self.reject(send, 429)
         self.sequence += 1
@@ -93,7 +108,7 @@ class Guard:
         # URLs, paths, query strings, user-agent values, proxy headers or IPs.
         http_method = raw_method if raw_method in ("GET", "POST", "DELETE", "HEAD", "OPTIONS", "PUT", "PATCH") else "other"
         proof = {"server_instance": self.instance, "sequence": self.sequence,
-                 "proof_version": PROOF_VERSION, "http_method": http_method,
+                 "proof_version": self.proof_version, "http_method": http_method,
                  "path_is_mcp": scope.get("path") == "/mcp",
                  "query_present": bool(scope.get("query_string")),
                  "elapsed_ms": round(max(0, self.clock() - self.started) * 1000, 3),
@@ -101,16 +116,29 @@ class Guard:
         self.emit("[FS-PROBE] HTTP " + json.dumps(proof, sort_keys=True))
         original_send = send
         response_started = False
+        response_status = None
         stage = "header_bounds"
         async def safe_send(message):
-            nonlocal response_started
+            nonlocal response_started, response_status
             if message["type"] == "http.response.start":
                 response_started = True
+                response_status = message['status']
                 self.emit("[FS-PROBE] STATUS " + json.dumps({
                     "server_instance": self.instance, "sequence": proof["sequence"],
                     "status": message["status"], "stage": stage,
-                    "proof_version": PROOF_VERSION}, sort_keys=True))
+                    "proof_version": self.proof_version,
+                    **({'elapsed_ms': round(max(0, self.clock() - self.started) * 1000, 3),
+                        'request_elapsed_ms': round(max(0, self.clock() - admitted) * 1000, 3)}
+                       if self.timed_diagnostics else {})}, sort_keys=True))
             await original_send(message)
+            if (self.timed_diagnostics and message['type'] == 'http.response.body'
+                    and not message.get('more_body', False)):
+                now = self.clock()
+                self.emit('[FS-PROBE] COMPLETE ' + json.dumps({
+                    'server_instance': self.instance, 'sequence': proof['sequence'],
+                    'proof_version': self.proof_version, 'status': response_status,
+                    'elapsed_ms': round(max(0, now - self.started) * 1000, 3),
+                    'request_elapsed_ms': round(max(0, now - admitted) * 1000, 3)}, sort_keys=True))
         send = safe_send
         headers = scope.get("headers", [])
         if len(headers) > 64 or sum(len(k) + len(v) for k, v in headers) > MAX_HEADERS:
@@ -128,7 +156,9 @@ class Guard:
         if self.active >= MAX_ACTIVE:
             return await self.reject(send, 503)
         self.active += 1
-        token = request_proof.set({**proof, "owner": owner})
+        token = request_proof.set({**proof, "owner": owner, 'tool_emit': self.tool_emit,
+            'timed_diagnostics': self.timed_diagnostics, 'clock': self.clock,
+            'started': self.started, 'admitted': admitted})
         try:
             async with asyncio.timeout(self.request_timeout):
                 stage = "body_bounds"

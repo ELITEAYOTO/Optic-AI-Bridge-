@@ -84,6 +84,11 @@ def main():
         ack = acks.get(timeout=5)
         assert ack['ok'] and ack['operation'] == 'close'
         proofs.extend(asyncio.run(after_close(url, ticket, opened)))
+        # Writer FIFO barrier: do not kill before accepted TOOL proof reaches sink.
+        process.stdin.write('proof-stats\n')
+        process.stdin.flush()
+        stats = acks.get(timeout=5)
+        assert stats['operation'] == 'proof_stats' and not stats['failed'] and stats['dropped'] == 0
     finally:
         process.kill()
         process.wait(timeout=10)
@@ -91,6 +96,8 @@ def main():
     joined = ''.join(logs)
     for data in proofs:
         invocation = data['probe_invocation']
+        assert invocation['console_queued']
+        assert invocation['request_elapsed_ms'] >= 0
         assert invocation['marker'] in joined
         assert data['request_observation']['matches_dummy']
         if 'application_handle' in data:

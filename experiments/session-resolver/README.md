@@ -1,7 +1,9 @@
 # H-03 reusable synthetic resolver — local contract candidate
 
 Follow-up: BOOTSTRAP_CONTRACT.md specifies a separate idempotent-ticket candidate
-and synthetic8006 carrier. The helper now runs17 tests (8 original +9 new) plus
+and synthetic8006 carrier. PROOF_CHANNEL_CONTRACT.md adds a bounded output sink
+and opt-in timing for carrier v2. The helper now runs23 tests (8 original, 9 bootstrap,
+6 diagnostic) plus
 actual MCP smoke. The direct-open Resolver below remains unchanged in scope;
 do not attribute ticket retry guarantees to its distinct-open API.
 

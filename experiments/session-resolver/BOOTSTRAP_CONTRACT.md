@@ -1,5 +1,10 @@
 # H-03 bounded idempotent bootstrap — synthetic candidate
 
+This document retains the testedv1 bootstrap contract and its17 tests. Subsequent
+carrier v2 uses bounded queued proof/timing (PROOF_CHANNEL_CONTRACT.md); helper
+now runs23 tests. Bootstrap/session semantics are unchanged. v1 live evidence
+must not be claimed as a live measurement of v2 diagnostic behavior.
+
 Follow-up to #192 local reusable resolver. No production invariant changes;
 AI_HANDOFF authority/ownership/bounds rules remain. Separate BootstrapResolver
 and port8006 listener, public dummy auth, zero authority. Existing Resolver stays
