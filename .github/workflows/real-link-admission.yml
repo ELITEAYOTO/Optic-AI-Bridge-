@@ -1,0 +1,27 @@
+name: Experimental Read Link Admission
+on:
+  pull_request:
+    paths:
+      - 'experiments/real-link-admission/**'
+      - 'experiments/credential-lifecycle/lifecycle_core.py'
+      - '.github/workflows/real-link-admission.yml'
+permissions:
+  contents: read
+jobs:
+  admission:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fixed fixture admission and retained cancellation accounting
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = @('experiments/real-link-admission', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
+          python -m unittest discover -s experiments/real-link-admission/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'read-link admission proof failed' }
