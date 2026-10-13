@@ -26,8 +26,9 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Thirty tests declared: on Windows29 execute/1 non-Windows branch skips;
-on Linux13 execute/17 native cases explicitly skip. Windows cases include actual silent
+Forty-two tests declared: native Windows40 execute/2 non-Windows branches
+skip when symlink creation is available; otherwise one additional native case
+explicitly skips. On Linux17 execute/25 native cases skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -116,6 +117,55 @@ notification, hostile-writer containment or antirollback across restart. The
 existing valid-old-state replay characterization still succeeds on reopening.
 Native cases exercise valid changed state preservation, protected unreachable
 schema refusal and oversized ciphertext denial before the native API.
+
+## Native prepared read of the protected fixture
+
+`PreparedFixtureRead` opens only the fixed `state.protected` child of an
+absolute local-drive directory chosen by the LOCAL test harness. No remote
+file/directory selector, production grant, write primitive or ACL mutation.
+Tests create only owned temporary fixtures; the helper itself is not an
+authorization policy and must never be exposed as an arbitrary file tool.
+
+Fixed System32 kernel32, OPEN_EXISTING and non-inheritable handles; root/file
+reparse attributes are rejected, file must be disk/non-directory/single-link,
+canonical handle paths must match the exact root+fixed filename (no prefix
+authorization). Root path is reobserved after file open. Path buffer4096,
+ciphertext16KiB; size/read mismatch fails closed. Root handle omits delete
+sharing; file handle permits read sharing only. File bytes are read from the
+same observed handle, held across native decryption/schema validation.
+Close runs on normal/exceptional exit, with fixed failure code. Synchronous
+local Windows filesystem calls are not advertised as preemptible deadlines.
+
+Native tests prove read correctness, competing write/file rename/root rename
+denial while handles are held, release on exceptions, hardlink refusal,
+file/root symlink refusal where the runner permits creation, fresh-child write
+denial until the parent releases its pin, empty/oversized/
+directory target and missing-file denial, and pin retention during decryption.
+Failure to create test symlinks is an explicit skip, never positive reparse proof.
+Read is effectively one-shot due to the file position; use a new context to read
+again. No seek/reuse/reset behavior is promised.
+
+Two portable fake-API cases check that a CloseHandle failure still attempts
+both cleanups and denies success, and an invalid/oversized ReadFile count is
+rejected before bytes are copied. These simulated failures are separate from
+native measurements. A failed native close is reported, not a claim that the
+OS released that failed handle. Uncertain cleanup stays failed on later close
+calls; no silent later success or blind close retry. The context cannot reopen.
+
+This closes an observation/read gap in the disposable registry, NOT the entire
+filesystem boundary: ancestor replacement races, hostile local writers, ACLs,
+writer-lock file identity, path-based pending creation/replace, antirollback and
+power loss remain unproved. Protected writes still use the earlier path-based
+experiment. No production integration is enabled.
+
+Native read API references reviewed2026-10-13:
+
+* [Microsoft CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew):
+  sharing, OPEN_EXISTING, reparse-point and directory handle flags.
+* [Microsoft GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew):
+  normalized handle path and bounded buffer result.
+* [Microsoft GetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle):
+  handle-observed attributes, file size and link count.
 
 Primary references reviewed2026-10-13:
 

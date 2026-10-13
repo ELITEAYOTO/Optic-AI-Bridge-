@@ -2,11 +2,11 @@
 
 The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md). The reusable-approval subtrack is recorded in [docs/product/A08_REUSABLE_APPROVAL_TRACK.md](docs/product/A08_REUSABLE_APPROVAL_TRACK.md). The active multi-host, zero-cost connectivity and session-autonomy research track is recorded in [docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md](docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md) so the large canonical roadmap can be realigned surgically without rewriting unrelated history.
 
-**Last reviewed:** 2026-10-10
+**Last reviewed:** 2026-10-13 (draft H-track evidence; no production release)
 **Current phase:** Phase 4 — same-repository parallelism, with H-01 multi-host capability characterization active in parallel
 **Implementation state:** executable Rust pre-alpha; Phase 1 and Phase 2 are complete; Phase 3 multi-session/resource isolation is substantially closed through Phase 3E3; truthful network-denied containment, exact human approval foundations and ToolProfile authorization are merged; Phase 4 same-repository worktree/merge orchestration is active through Phase 4AP; A-08 reusable session/profile approval is implemented through A-08D2; the separate authority-free H-01 host probe is implemented in draft PR #170
 **Release state:** no production-supported release
-**Current gate:** H-01 — automated Streamable HTTP host-probe validation is green on the H-01 branch; real FranceStudent conversation/reconnect/header behavior must now be measured on the target PC under issue #171 before the H-03 `HostContext -> SessionResolver` contract is frozen. A-08E remains **blocked by host interaction**, not failed.
+**Current gate:** H-01/H-02/H-03 draft closure — FranceStudent header transport, dummy authentication lifecycle, exact handles and synthetic session reuse have real-host evidence. Host temporal overlap/native conversation correlation remain unproved. Local protected dummy persistence is under native Windows validation; production credential storage, session binding and local approval gates remain open. See [H-02 proof matrix](docs/security/H02_PROOF_MATRIX.md). A-08E remains **blocked by host interaction**, not failed.
 
 The A-08 reusable-approval work remains deliberately narrow and preserved:
 
