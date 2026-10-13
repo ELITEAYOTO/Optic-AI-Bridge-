@@ -169,6 +169,37 @@ Native read API references reviewed2026-10-13:
 
 ## Exclusive fixed writer-lock pin candidate — 2026-10-14
 
+## Fixed public pending-file creation candidate — 2026-10-14
+
+`PreparedFixturePending` accepts only a held `PreparedFixtureLock`. It creates
+one fixed `state.protected.pending` with native CREATE_NEW and zero sharing;
+existing files/directories/hardlinks/symlinks are refused without repair or
+removal. Same-handle kind/link/empty-size/final-path observations precede a
+single synchronous WriteFile of a fixed public marker. Exact byte count,
+FlushFileBuffers, observed final size and final path are required. No arbitrary
+payload/leaf/path selector, state promotion, replace or delete operation exists.
+
+Eight new cases cover unopened/closed pin denial, invalid/partial write count,
+failed flush, sticky close failure, same-handle native write/share refusal,
+re-entry/repeat-write refusal, existing file/directory/link preservation and
+native symlink refusal when available. Local Windows70 cases:67 pass/3 platform
+skips. Failed creation/write leaves inert scratch bytes; no old scratch is
+promoted or implicitly cleaned up. This is not a persistence acknowledgement.
+
+Creation still uses a path derived from the observed root, not a root-relative
+native create. Root/path rechecks do not close an ancestor replacement race and
+cannot undo an empty scratch creation if a containing path was changed. This
+partial fixture proof is NOT general authorized filesystem containment. ACL,
+ancestor stability, final replacement, state freshness and power-loss durability
+remain separate gates. Synchronous native I/O has no claimed latency bound.
+ProtectedStore remains unchanged and does not use this candidate.
+
+Primary API references: [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[WriteFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-writefile),
+[FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+## Exclusive fixed writer-lock pin candidate (existing proof)
+
 `PreparedFixtureLock` opens only an existing `writer.lock` in a disposable local
 fixture. The fixed public marker must be exactly one byte `0`. Native
 CreateFileW uses read-only access, zero sharing, OPEN_EXISTING and reparse-point

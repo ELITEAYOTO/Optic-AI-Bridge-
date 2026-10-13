@@ -27,6 +27,8 @@ values and disposable state.
 | Decoded state/live drift | #198 exact schema and impossible state refusal; changed valid disk state preserved on stale commit | Pre-write check is not atomic compare-and-replace or external revoke notification |
 | Protection purposes | #199 distinct fixed public labels, wrong-purpose/relabelled prefix refused natively | Earlier disposable blobs not migrated; labels are not secret keys or authority |
 | Prepared protected read | #200 same observed native handle held through decode; write/rename/link/size negatives | Partial read proof, not full ancestor/hostile-writer/ACL/write-commit containment |
+| Fixed writer pin | #209 native existing public writer.lock, zero-sharing handle, same/fresh-process exclusion, links/rename/re-entry/cleanup refusal | Not wired into Store; actors ignoring the lock, ACL/ancestor policy and lock initialization remain open |
+| Public scratch create | Native fixed CREATE_NEW scratch under held writer pin, exact same-handle public write/flush and existing-target refusal | Path-based create is not root-relative confinement; no committed-state promotion, final replace or persistence ACK |
 
 ## Sequenced next work
 
