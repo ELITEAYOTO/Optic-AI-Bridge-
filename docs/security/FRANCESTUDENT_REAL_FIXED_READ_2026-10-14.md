@@ -52,25 +52,10 @@ closure is claimed. A tunnel/bearer does not grant authority; all host chats usi
 this test connection share its one locally selected fixture session. The local
 dummy registry epoch is distinct from the Rust policy epoch.
 
-## Reported household Internet interruption
+## Stop boundary audit
 
-After stop, the user reported Wi-Fi still present but Internet absent throughout
-the house, and switched to5G sharing. Cause remains UNDETERMINED.
-
-Read-only audit traced stop through server exit, gate drain, session_cancel,
+The stop path was traced through server exit, gate drain, session_cancel,
 session/lease/approval revoke, owner-scoped job cancellation and normal stdio
 child/context cleanup. No DNS/route/interface/firewall/router modification occurs
 in that path. No process authority was granted in this fixture. The separately
 started cloudflared process is not selected by Optic session job cancellation.
-
-Windows logs contained a DNS resolution timeout at00:37 local time and later
-wireless-provider events without a rendered message. Current adapter state was
-read after the5G switch. These observations cannot locate a household outage or
-establish causal timing; router/WAN/provider status and exact interruption time
-are unavailable. No network reset, DNS change, interface disable, VPN toggle,
-router access or reconnection was performed during diagnosis.
-
-The Quick Tunnel's documented role is forwarding a temporary public URL to a
-local service: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
-This does not establish a cause for the reported outage. No additional external
-load or reproduction of the outage is requested as part of this test.

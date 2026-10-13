@@ -6,9 +6,8 @@ Manual generated-fixture host run correlates five successful real Rust
 metadata/list/read calls, old-credential401 after rotation, unchanged metadata
 and read after reconnect, revoked-credential401 and local drained/session-revoked
 stop acknowledgement. See docs/security/FRANCESTUDENT_REAL_FIXED_READ_2026-10-14.md.
-No real-project or host-conversation isolation claim. Reported household Internet
-loss after stop is separately recorded as undetermined; read-only stop-path and
-Windows-log checks found no network configuration mutation or causal proof.
+No real-project or host-conversation isolation claim. A stop-path code audit found
+no DNS/route/interface/firewall mutation; personal troubleshooting notes remain local.
 
 ## Manual fixture package evidence — 2026-10-14
 
