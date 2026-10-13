@@ -27,9 +27,13 @@ jobs:
           $env:PYTHONPATH = 'experiments/rate-proof'
           python -m unittest discover -s experiments/rate-proof/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'rate proof failed' }
+          python experiments/rate-proof/smoke_host.py
+          if ($LASTEXITCODE -ne 0) { throw 'rate host smoke failed' }
           $env:PYTHONPATH = 'experiments/francestudent-probe'
           python -m unittest discover -s experiments/francestudent-probe/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'guard proof failed' }
           python experiments/francestudent-probe/smoke.py
           if ($LASTEXITCODE -ne 0) { throw 'guard smoke failed' }
-          [scriptblock]::Create((Get-Content -Raw experiments/rate-proof/scripts/Test-RateProof.ps1)) | Out-Null
+          Get-ChildItem experiments/rate-proof/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
