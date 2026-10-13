@@ -41,3 +41,30 @@ from real application-session cleanup. An upstream task that never completes
 keeps its slot; the service lifetime and child teardown remain separate gates.
 No automatic retry or replacement task may hide uncertain cleanup. Output bounds
 and structured parsing remain obligations of the actual fixed read adapter.
+
+## Loopback HTTP composition and local real-session stop
+
+`http_adapter.py` composes the existing bounded dummy-header Guard with the
+fixed gate. Its three tools take no arguments. Only the locally selected dummy
+principal is accepted; B, malformed/extra tool arguments, old epochs and stopped
+bindings are refused. The post-ingress check runs before SDK dispatch. Replies
+carry the bounded existing console correlation proof; arbitrary input is never
+included in diagnostics. This is a generated-fixture experiment, not enrollment.
+
+`http_smoke.py` starts a loopback-only ephemeral listener and the real Rust binary
+on generated temporary files. It checks exact discovery, listing/read data,
+reconnect with unchanged session metadata after local rotation, stale/revoked
+credential denial and log canaries. The local-only `local_stop` closes admission,
+drains retained reads for at most5seconds, then calls real Rust `session_cancel`
+with a5second acknowledgement deadline. No remote control tool is exposed.
+Failure/timeout returns a fixed error and leaves admission stopped; it is not
+acknowledged as successful revocation or followed by automatic retry/reopening.
+The smoke requires a subsequent direct Rust read to fail with the exact MCP
+error `optic.session_inactive`, not a generic transport error.
+
+Four local SDK/stop regressions cover actual HTTP discovery, fixed arguments,
+owner/stale/reconnect denial, drain ordering, SDK failure and negative revoke
+acknowledgements. These pass locally; exact cross-platform real-binary evidence
+passed at exact6703dcac47b43669b4f1ae2709cf01c08720ab49 in workflow38475057579
+on Windows/Linux. No public tunnel, interactive driver/package,
+host cancellation propagation or real-project support is implemented here.
