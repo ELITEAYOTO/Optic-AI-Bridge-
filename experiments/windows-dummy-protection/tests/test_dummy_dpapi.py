@@ -1,4 +1,5 @@
 import contextlib
+import ctypes
 import io
 from pathlib import Path
 import sys
@@ -9,6 +10,68 @@ from unittest.mock import patch
 
 from dummy_dpapi import (check_public_fixture, protect_public_fixture, FixtureError,
                          PAYLOAD, MAGIC, MAX_BLOB, UI_FORBIDDEN, PUBLIC_DUMMIES)
+import dummy_dpapi
+
+
+class NativeFailureTests(unittest.TestCase):
+    def invoke_fake(self, *, succeeded=True, size=4, free_failed=False):
+        # Controlled allocation owned by this test; never touch arbitrary memory.
+        buffer = (ctypes.c_ubyte * 4)(1, 2, 3, 4)
+        freed = []
+
+        class Function:
+            def __init__(self, callback):
+                self.callback = callback
+
+            def __call__(self, *args):
+                return self.callback(*args)
+
+        def transform(*args):
+            output = args[-1]._obj
+            output.size = size
+            output.data = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte))
+            return succeeded
+
+        def release(pointer):
+            freed.append(bytes(buffer))
+            return 1 if free_failed else None
+
+        class Library:
+            pass
+
+        crypt, kernel = Library(), Library()
+        crypt.CryptProtectData = Function(transform)
+        kernel.LocalFree = Function(release)
+        with patch.object(dummy_dpapi.sys, 'platform', 'win32'), patch.object(
+                ctypes, 'WinDLL', side_effect=[crypt, kernel], create=True):
+            try:
+                result = dummy_dpapi._native(PAYLOAD, True)
+            except FixtureError as error:
+                result = error.code
+        return result, freed
+
+    def test_failed_native_call_still_zeroes_and_frees_output(self):
+        result, freed = self.invoke_fake(succeeded=False)
+        self.assertEqual(result, 'dummy_dpapi.protect_failed')
+        self.assertEqual(freed, [b'\0' * 4])
+
+    def test_oversized_output_is_not_copied_or_zeroed_beyond_bound(self):
+        with patch.object(ctypes, 'string_at', side_effect=AssertionError('must not copy')):
+            result, freed = self.invoke_fake(size=MAX_BLOB + 1)
+        self.assertEqual(result, 'dummy_dpapi.output_bound')
+        self.assertEqual(freed, [bytes([1, 2, 3, 4])])
+
+    def test_free_failure_prevents_success(self):
+        result, freed = self.invoke_fake(free_failed=True)
+        self.assertEqual(result, 'dummy_dpapi.native_free_failed')
+        self.assertEqual(freed, [b'\0' * 4])
+
+    def test_library_failure_is_fixed_and_has_no_fallback(self):
+        with patch.object(dummy_dpapi.sys, 'platform', 'win32'), patch.object(
+                ctypes, 'WinDLL', side_effect=OSError('SYNTHETIC-CANARY'), create=True):
+            with self.assertRaises(FixtureError) as error:
+                protect_public_fixture()
+        self.assertEqual(str(error.exception), 'dummy_dpapi.native_unavailable')
 
 
 class BoundaryTests(unittest.TestCase):

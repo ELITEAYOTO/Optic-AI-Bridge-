@@ -26,7 +26,7 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Eight tests declared: on Windows7 execute/1 non-Windows branch skips; on Linux4
+Twelve tests declared: on Windows11 execute/1 non-Windows branch skips; on Linux8
 execute/4 native cases explicitly skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
@@ -35,6 +35,14 @@ prove input bounds before native call, unexpected plaintext not returned/echoed,
 public-only fixture and fixed flag. Child writes only its disposable test fixture,
 has10s timeout, outputs fixed PASS/FAIL; no shell or arbitrary PID control.
 No actual other-user/other-machine denial test was run; do NOT report such a proof.
+
+Four portable fault-injection cases additionally exercise the native wrapper:
+an allocated output is zeroed/freed even when the API reports failure; oversized
+output is freed without copying or attempting an out-of-bounds zero; LocalFree
+failure prevents a success result; loader failure returns a fixed code without
+fallback or exception-message echo. These are controlled fake API results, not
+claims that Windows naturally produced these faults. Native roundtrips remain
+separate real Windows tests.
 
 Microsoft's documented default user scope has exceptions/recovery context; it
 is not protection from same-user malware/admin, rollback, replay of valid prior

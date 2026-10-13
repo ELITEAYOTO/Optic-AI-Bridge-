@@ -1,5 +1,20 @@
 # Project Status
 
+## Draft H-track evidence update — 2026-10-13
+
+Draft #195 records a completed FranceStudent sequential grouped sample with no
+overlap; an earlier UI service error remains unexplained. This does not establish
+that the host cannot run calls concurrently. Its documentation head de3ea457
+passed CI #705, H-01 #39 and grouped probe #2.
+
+Draft #196 adds a standalone Windows CurrentUser protection proof for a fixed
+public dummy fixture only. Initial head bd9a02e passed the Windows/Linux fixture
+workflow #1. The follow-up native Windows run has 11 passing tests and one
+intentional non-Windows skip, including four simulated native error/cleanup
+cases. No production storage, credential enrollment or runtime authority is
+implemented. ACLs, recovery, rollback and real-secret lifecycle remain open.
+This draft evidence does not supersede merged production history below.
+
 **Last updated:** 2026-10-08
 **Lifecycle:** pre-alpha / Phase 3 multi-session runtime
 **Release:** none
