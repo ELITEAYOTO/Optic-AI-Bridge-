@@ -1,0 +1,25 @@
+name: Public Dummy Windows Protection
+on:
+  pull_request:
+    paths:
+      - 'experiments/windows-dummy-protection/**'
+      - '.github/workflows/windows-dummy-protection.yml'
+permissions:
+  contents: read
+jobs:
+  fixture:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - shell: pwsh
+        run: |
+          $env:PYTHONPATH = 'experiments/windows-dummy-protection'
+          python -m unittest discover -s experiments/windows-dummy-protection/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'public fixture proof failed' }
+          [scriptblock]::Create((Get-Content -Raw experiments/windows-dummy-protection/scripts/Test-WindowsDummyProtection.ps1)) | Out-Null
