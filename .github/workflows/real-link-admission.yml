@@ -51,3 +51,5 @@ jobs:
           $Binary = if ($IsWindows) { 'target/debug/optic-bridge.exe' } else { 'target/debug/optic-bridge' }
           python experiments/real-link-admission/real_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
+          python experiments/real-link-admission/http_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
