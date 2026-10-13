@@ -1,10 +1,18 @@
 # Experimental fixed read-link admission
 
-Local contract module only. No HTTP server, real Rust process, user workspace,
-real credential, persistence or product authority is exposed by this step.
-The next integration composes this behavior with the generated-workspace Rust
-link, then validates actual upstream cleanup. Python remains an experiment
+The contract module itself exposes no HTTP server, real Rust process, user
+workspace, real credential, persistence or product authority. The separate
+stdio smoke below composes it with a generated-workspace Rust process; HTTP
+composition and actual session cleanup remain next gates. Python is an experiment
 harness, not a new core dependency.
+
+`real_smoke.py` separately launches the actual Rust stdio binary against its
+own generated temporary files. Exact head7f535cb15005c5ad4d93d0f9e3776ef3e36b349b
+passed dedicated workflow run38474093643 on Windows and Linux: fixed listing,
+two fixture reads, stable session metadata after dummy credential rotation,
+other-owner/stale/revoked denial and completed gate drain. No HTTP, real-project
+or actual Rust session-revoke evidence is inferred. Local compilation hit missing
+MSVC `msvcrt.lib`; no machine installation was modified.
 
 One application-selected dummy principal owns one fixed binding. Only session
 information, a four-entry listing of `public` and a1024byte read of
