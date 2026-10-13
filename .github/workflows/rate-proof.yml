@@ -1,0 +1,35 @@
+name: Synthetic Rate Admission
+on:
+  pull_request:
+    paths:
+      - 'experiments/rate-proof/**'
+      - 'experiments/francestudent-probe/**'
+      - 'experiments/host-probe/requirements.txt'
+      - 'experiments/host-probe/constraints.txt'
+      - '.github/workflows/rate-proof.yml'
+permissions:
+  contents: read
+jobs:
+  admission:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - shell: pwsh
+        run: |
+          python -m pip install -r experiments/host-probe/requirements.txt -c experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'install failed' }
+          $env:PYTHONPATH = 'experiments/rate-proof'
+          python -m unittest discover -s experiments/rate-proof/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'rate proof failed' }
+          $env:PYTHONPATH = 'experiments/francestudent-probe'
+          python -m unittest discover -s experiments/francestudent-probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'guard proof failed' }
+          python experiments/francestudent-probe/smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'guard smoke failed' }
+          [scriptblock]::Create((Get-Content -Raw experiments/rate-proof/scripts/Test-RateProof.ps1)) | Out-Null
