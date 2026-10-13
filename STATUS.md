@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+User-selected remote alpha scope is one locally selected application session
+and project per configured connection. Chats sharing it share permissions;
+per-conversation routing is deferred to later V1 work. ADR-0013 records the
+truthful UI wording and fixed binding/revocation gates. Existing core isolation
+and real-project security gates remain unchanged; no runtime release yet.
+
 New public-dummy directory creation candidate applies an explicit protected
 three-trustee DACL at native creation (process user/System/Administrators), then
 proves child inheritance and protected dummy lifecycle reopen. Existing targets
