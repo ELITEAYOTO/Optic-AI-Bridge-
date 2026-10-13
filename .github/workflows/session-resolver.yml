@@ -1,0 +1,26 @@
+name: Synthetic Session Resolver
+on:
+  pull_request:
+    paths:
+      - 'experiments/session-resolver/**'
+      - 'experiments/credential-lifecycle/lifecycle_core.py'
+      - '.github/workflows/session-resolver.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - shell: pwsh
+        run: |
+          $env:PYTHONPATH = 'experiments/session-resolver'
+          python -m unittest discover -s experiments/session-resolver/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'resolver proof failed' }
+          [scriptblock]::Create((Get-Content -Raw experiments/session-resolver/scripts/Test-SyntheticSessionResolver.ps1)) | Out-Null
