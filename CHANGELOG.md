@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft FranceStudent real fixed-read measurement: five console-correlated Rust metadata/list/read successes, rotation/reconnect/revocation and local stop acknowledgement on a generated fixture. Household Internet interruption reported separately; read-only audit found no network configuration mutation, cause undetermined.
 - Draft generated-fixture manual host runner and exact tested Windows binary package: fixed local controls, bounded lifetime/proof output, binary/commit manifest and stepwise FranceStudent test guide. Dedicated Windows/Linux startup/read/stop proof plus local downloaded-binary validation; no production release or user-project enrollment.
 - Draft generated-fixture HTTP composition: exact three zero-argument read/info tools, dummy principal/epoch ingress checks, reconnect proof and local bounded drain followed by actual Rust session cancellation; four local SDK/stop regressions. Public host packaging and user projects remain excluded.
 - Draft fixed read-link admission: retained bounded upstream slots after caller timeout/cancellation, local stop/late-result suppression and dummy epoch checks; seven async contract tests plus actual generated-fixture Rust stdio proof on Windows/Linux. No HTTP or user-project exposure.

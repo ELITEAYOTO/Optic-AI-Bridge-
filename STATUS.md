@@ -1,5 +1,15 @@
 # Project Status
 
+## FranceStudent real fixed-read host evidence — 2026-10-14
+
+Manual generated-fixture host run correlates five successful real Rust
+metadata/list/read calls, old-credential401 after rotation, unchanged metadata
+and read after reconnect, revoked-credential401 and local drained/session-revoked
+stop acknowledgement. See docs/security/FRANCESTUDENT_REAL_FIXED_READ_2026-10-14.md.
+No real-project or host-conversation isolation claim. Reported household Internet
+loss after stop is separately recorded as undetermined; read-only stop-path and
+Windows-log checks found no network configuration mutation or causal proof.
+
 ## Manual fixture package evidence — 2026-10-14
 
 Generated-only fixed read host runner and matching Windows binary package passed
