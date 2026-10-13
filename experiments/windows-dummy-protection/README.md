@@ -26,8 +26,8 @@ Application fixture comparison is separate from DPAPI integrity checking. This
 is not a general secure state parser: production schema/epoch/owner/tamper policy
 still needs design. No arbitrary user data/file is an accepted test input.
 
-Eighteen tests declared: on Windows17 execute/1 non-Windows branch skips; on Linux8
-execute/10 native cases explicitly skip. Windows cases include actual silent
+Twenty tests declared: on Windows19 execute/1 non-Windows branch skips; on Linux8
+execute/12 native cases explicitly skip. Windows cases include actual silent
 roundtrip, temporary protected-file roundtrip, corrupted ciphertext rejection,
 randomized protection of same public fixture, and fixture produced by a fresh
 child process verifying in parent under same CurrentUser context. Other tests
@@ -75,10 +75,16 @@ Files are fixed `state.protected` and `state.protected.pending`, capped16KiB;
 decoded schema capped4096bytes. Pending bytes are never promoted on reopen.
 The inherited rotation/revocation path acknowledges only after replacement;
 failure blocks the live registry. Corrupt/missing state never resets implicitly.
-Six native integration cases prove reopen lifecycle, replacement failure,
+Eight native integration cases prove reopen lifecycle, replacement failure,
 protection failure, corruption refusal, cooperating writer exclusion/missing
-state and explicit old-valid-ciphertext replay. Reopen is not a process-kill or
-power-loss proof. The Windows protected payload contains dummy metadata, not
+state and explicit old-valid-ciphertext replay. Two fixed subprocess cases
+additionally prove acknowledged rotation/revocation survive `os._exit(77)`
+without registry close, and an abrupt exit immediately before replace never
+promotes pending bytes. The OS releases the writer lock on process exit; the
+parent reopens and verifies committed state. Children run fixed test source
+against owned temporary fixtures, timeout10s, no shell or PID selector, fixed
+acknowledgment text. This is process-exit evidence, not hardware/power-loss
+durability proof. The Windows protected payload contains dummy metadata, not
 production verifier material. It uses the same public entropy label as the
 fixed API fixture; distinct outer magic plus exact schema validation separates
 them, without claiming cryptographic domain separation between the experiments.

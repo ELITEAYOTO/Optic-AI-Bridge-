@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Protected registry follow-up native Windows run: 19 passing tests and one
+intentional non-Windows skip. Fixed subprocesses prove acknowledged rotation
+and revoke survive abrupt process exit, and exit before replacement leaves the
+committed state authoritative. No power-loss or antirollback guarantee. Initial
+#197 head 2ea255b passed fixture workflow #4 and CI #709.
+
 Protected dummy registry follow-up composes bounded metadata persistence with
 native Windows protection in temporary fixtures only. Six integration cases
 cover lifecycle reopen, commit/protection failure, corruption, writer exclusion

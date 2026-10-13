@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -105,5 +106,64 @@ class ProtectedTests(unittest.TestCase):
         state = ProtectedRegistry(self.root)
         try:
             self.assertIsNotNone(state.authenticate(bearer()))
+        finally:
+            state.close()
+
+    def run_child(self, body):
+        # Only fixed test source and owned fixture path; no shell/PID selector.
+        source = '''import os, sys
+from protected_registry import ProtectedRegistry
+from lifecycle_core import TOKENS
+state = ProtectedRegistry(sys.argv[1])
+''' + body
+        child = subprocess.run([sys.executable, '-c', source, str(self.root)],
+                               capture_output=True, text=True, timeout=10)
+        self.assertEqual(child.returncode, 77, 'fixed fixture child did not reach expected exit')
+        self.assertEqual(child.stderr, '', 'child diagnostics suppressed from assertion')
+        return child.stdout.strip()
+
+    def test_acknowledged_rotation_and_revoke_survive_abrupt_child_exit(self):
+        state = ProtectedRegistry(self.root)
+        principal = state.authenticate(bearer()).principal
+        state.close()
+        output = self.run_child('''assert state.control('rotate', 'A')['persisted']
+print('DUMMY COMMIT ACK', flush=True)
+os._exit(77)
+''')
+        self.assertEqual(output, 'DUMMY COMMIT ACK')
+        state = ProtectedRegistry(self.root)
+        self.assertIsNone(state.authenticate(bearer()))
+        identity = state.authenticate(bearer(1))
+        self.assertEqual((identity.principal, identity.epoch), (principal, 2))
+        state.close()
+        self.assertEqual(self.run_child('''assert state.control('revoke', 'A')['persisted']
+print('DUMMY COMMIT ACK', flush=True)
+os._exit(77)
+'''), 'DUMMY COMMIT ACK')
+        state = ProtectedRegistry(self.root)
+        try:
+            self.assertIsNone(state.authenticate(bearer()))
+            self.assertIsNone(state.authenticate(bearer(1)))
+            self.assertIsNotNone(state.authenticate(b'Bearer ' + TOKENS['B'][0]))
+        finally:
+            state.close()
+
+    def test_abrupt_exit_before_replace_never_promotes_pending_state(self):
+        old = (self.root / 'state.protected').read_bytes()
+        self.assertEqual(self.run_child('''import protected_registry
+def stop_before_replace(*args):
+    os._exit(77)
+protected_registry.os.replace = stop_before_replace
+state.control('rotate', 'A')
+'''), '')
+        self.assertTrue((self.root / 'state.protected.pending').exists())
+        self.assertEqual((self.root / 'state.protected').read_bytes(), old)
+        state = ProtectedRegistry(self.root)
+        try:
+            self.assertIsNotNone(state.authenticate(bearer()))
+            self.assertIsNone(state.authenticate(bearer(1)))
+            # A subsequent explicit commit may discard fixed scratch under lock.
+            self.assertTrue(state.control('rotate', 'A')['persisted'])
+            self.assertFalse(state.store.pending.exists())
         finally:
             state.close()
