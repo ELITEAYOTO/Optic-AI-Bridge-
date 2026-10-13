@@ -2,6 +2,12 @@
 
 ## Draft H-track evidence update — 2026-10-13
 
+Protected-registry validation follow-up: exact decoded schema now rejects an
+unreachable active version0/advanced epoch, and a different valid on-disk state
+blocks a stale live commit without overwriting it. Native Windows suite:26 pass,
+1 deliberate skip;27 declared. This is pre-write drift detection, not atomic
+hostile-writer/ACL containment, external revoke notification or antirollback.
+
 Protected registry follow-up native Windows run: 19 passing tests and one
 intentional non-Windows skip. Fixed subprocesses prove acknowledged rotation
 and revoke survive abrupt process exit, and exit before replacement leaves the
