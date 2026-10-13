@@ -1,5 +1,13 @@
 # Project Status
 
+## Manual fixture package evidence — 2026-10-14
+
+Generated-only fixed read host runner and matching Windows binary package passed
+dedicated Windows/Linux run38476906798 at branch419dd1c. Artifact11854671497
+outer digest, manifest source and binary hash verified; actual downloaded binary
+passed local MCP read/local stop/clean runner exit. Host measurement remains
+pending. No user project, real credential, persistence or production release.
+
 ## Draft H-track evidence update — 2026-10-13
 
 Exact6703dcac generated-fixture HTTP -> real Rust proof passed Windows/Linux

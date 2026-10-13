@@ -56,3 +56,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
+          python experiments/real-link-admission/runner_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'manual runner startup/stop failed' }
+          Get-ChildItem experiments/real-link-admission/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
+      - name: Package exact tested Windows fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-fixed-read-package'
+          $SourceZip = Join-Path $env:RUNNER_TEMP 'optic-fixed-read-source.zip'
+          git archive --format=zip --output $SourceZip HEAD experiments/real-link-admission experiments/francestudent-probe/server.py experiments/francestudent-probe/probe_core.py experiments/francestudent-probe/scripts/Setup-FranceStudentProbe.ps1 experiments/credential-lifecycle/lifecycle_core.py experiments/session-resolver/proof_channel.py experiments/host-probe/requirements.txt experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'fixed source archive failed' }
+          Expand-Archive -LiteralPath $SourceZip -DestinationPath $Stage
+          $BinDirectory = Join-Path $Stage 'packaging/fixed-read-test'
+          New-Item -ItemType Directory -Path $BinDirectory | Out-Null
+          Copy-Item -LiteralPath 'target/debug/optic-bridge.exe' -Destination (Join-Path $BinDirectory 'optic-bridge.exe')
+          $Manifest = @{ source_commit = $env:GITHUB_SHA; binary_sha256 = (Get-FileHash -LiteralPath (Join-Path $BinDirectory 'optic-bridge.exe') -Algorithm SHA256).Hash }
+          $Manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'FIXTURE_MANIFEST.json') -Encoding utf8
+          $env:GITHUB_SHA | Set-Content -LiteralPath (Join-Path $Stage 'SOURCE_COMMIT.txt') -Encoding ascii
+          $Package = Join-Path $env:RUNNER_TEMP 'Optic-Fixed-Read-Host-Test.zip'
+          Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath $Package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Windows'
+        with:
+          name: Optic-Fixed-Read-Host-Test-${{ github.sha }}
+          path: ${{ runner.temp }}/Optic-Fixed-Read-Host-Test.zip
+          retention-days: 7
+          if-no-files-found: error

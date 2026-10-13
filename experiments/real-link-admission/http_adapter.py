@@ -11,7 +11,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
 
 
-def make_app(gate, state, emit=print):
+def make_app(gate, state, emit=print, allow_random_tunnel=False):
     mcp = MCPServer('Optic-Fixed-Read-Link', instructions=(
         'Generated test files only. All chats using this connection share one '
         'locally selected Optic session. No caller project or session selection.'))
@@ -61,7 +61,8 @@ def make_app(gate, state, emit=print):
 
     sdk = mcp.streamable_http_app(stateless_http=True, json_response=True,
         max_request_body_size=MAX_BODY,
-        transport_security=TransportSecuritySettings(
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
+            if allow_random_tunnel else TransportSecuritySettings(
             allowed_hosts=['127.0.0.1:*', 'localhost:*'],
             allowed_origins=['http://127.0.0.1:*', 'http://localhost:*']))
     return Guard(Recheck(sdk), header_observer=observe, emit=emit,

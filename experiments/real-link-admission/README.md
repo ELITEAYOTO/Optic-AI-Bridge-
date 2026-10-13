@@ -68,3 +68,27 @@ acknowledgements. These pass locally; exact cross-platform real-binary evidence
 passed at exact6703dcac47b43669b4f1ae2709cf01c08720ab49 in workflow38475057579
 on Windows/Linux. No public tunnel, interactive driver/package,
 host cancellation propagation or real-project support is implemented here.
+
+## Manual generated-fixture test package — 2026-10-14
+
+The separate `host_runner.py` now supplies the bounded manual test driver and
+an explicit random-tunnel-host experiment switch. Only generated files and
+public dummy A credentials are supported. Local rotate/revoke change dummy
+authentication; local stop/lifetime close admission, drain and revoke the real
+session before normal child teardown. ProofChannel bounds console output; missing
+or dropped proof is never success evidence. No remote control tool is added.
+
+Exact branch head419dd1c64065022ba66ec2a9e58b96ecc24086cc passed all dedicated
+Windows/Linux jobs in run38476906798, including the actual runner child. Windows
+artifact11854671497 contains selected tracked sources plus the same tested binary.
+The checkout/package source commit is35a617d3c32528e13b6e5e107da632d124947229
+(the workflow merge commit). Its manifest/hash were verified after download;
+the downloaded binary also passed a local generated-fixture runner read/stop.
+The local readiness harness needed to tolerate a bounded initial ConnectTimeout
+on Windows; full MCP read and stop acknowledgement are still mandatory.
+
+`Start-FixedReadHost.ps1` checks package manifest and binary hash; this detects
+mixups, not malicious replacement/signature authenticity. CI creates the ZIP only
+after successful real-binary tests. No installed Python environment, account
+credential or user files are packaged. See HOST_TEST_STEPS.md; perform one step
+at a time with Codex. This is a test artifact, not a signed product release.
