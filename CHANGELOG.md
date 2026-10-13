@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft read-only native fixture owner/DACL characterization: bounded handle/token metadata queries, fixed ACE category counters and pointer/size regressions. No ACL modification, effective-access verdict or production authority.
 - Draft native fixed-fixture prepared read: root/file handle observation, same-handle bounded ciphertext read and pins retained during dummy decryption. Native write/rename/link/cleanup tests; no production exposure or general filesystem security guarantee.
 - Draft public-dummy DPAPI purpose separation: finite fixed fixture/registry labels, unknown-purpose refusal and native wrong-purpose/relabelled-prefix negative tests. No migration fallback, real credential input or production integration.
 - Draft protected dummy metadata validation: reject unreachable decoded states and preserve changed valid disk state when a live instance attempts a stale commit. Seven portable/native regression cases; no production storage or atomic hostile-writer guarantee.
