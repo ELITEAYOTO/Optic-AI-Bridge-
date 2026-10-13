@@ -18,9 +18,10 @@ from lifecycle_server import Recheck
 from probe_core import observe_headers
 from server import Guard, request_proof, result, MAX_BODY, MAX_HEADERS, MAX_LIFETIME
 from bootstrap_core import BootstrapResolver
+from proof_channel import ProofChannel
 
 
-def make_app(state, resolver, allow=False):
+def make_app(state, resolver, allow=False, emit=print):
     mcp = MCPServer('Optic-Synthetic-Session-Bootstrap', instructions=(
         'Authority none. session_bootstrap returns a ticket as application_handle. '
         'Pass it unchanged to session_open; repeated open with SAME ticket returns '
@@ -52,12 +53,12 @@ def make_app(state, resolver, allow=False):
         allowed_origins=['http://127.0.0.1:*', 'http://localhost:*'])
     upstream = mcp.streamable_http_app(stateless_http=True, json_response=True,
         max_request_body_size=MAX_BODY, transport_security=security)
-    return Guard(Recheck(upstream, state), header_observer=observe,
+    return Guard(Recheck(upstream, state), header_observer=observe, emit=emit,
         zero_arg_tools=('session_bootstrap',), handle_tool='session_open',
-        extra_handle_tools=('session_probe',))
+        extra_handle_tools=('session_probe',), timed_diagnostics=True)
 
 
-def console(state, resolver):
+def console(state, resolver, channel):
     commands = {'rotate-a': ('rotate', 'A'), 'revoke-a': ('revoke', 'A'),
                 'rotate-b': ('rotate', 'B'), 'revoke-b': ('revoke', 'B'),
                 'close-a': ('close', 'A'), 'close-b': ('close', 'B')}
@@ -66,12 +67,15 @@ def console(state, resolver):
         if not line or len(line) > 64 or not line.endswith('\n'):
             return
         command = commands.get(line.strip())
+        if line.strip() == 'proof-stats':
+            channel.emit('[LOCAL] ' + json.dumps({'operation': 'proof_stats', **channel.snapshot()}, sort_keys=True))
+            continue
         if command is None:
-            print('[LOCAL] command_refused', flush=True)
+            channel.emit('[LOCAL] command_refused')
             continue
         operation, owner = command
         payload = resolver.close_owner_local(owner) if operation == 'close' else state.control(operation, owner)
-        print('[LOCAL] ' + json.dumps(payload, sort_keys=True), flush=True)
+        channel.emit('[LOCAL] ' + json.dumps(payload, sort_keys=True))
 
 
 async def run():
@@ -79,10 +83,12 @@ async def run():
     resolver = BootstrapResolver(state)
     port = int(os.environ.get('OPTIC_SESSION_PROBE_PORT', '8006'))
     allow = os.environ.get('OPTIC_SESSION_PROBE_TUNNEL', '0') == '1'
-    print(f'Authority NONE | synthetic-session-bootstrap-v1 | http://127.0.0.1:{port}/mcp | lifetime25min', flush=True)
+    print(f'Authority NONE | synthetic-session-bootstrap-v2 | http://127.0.0.1:{port}/mcp | lifetime25min', flush=True)
     print('Ticket/session TTL120; live32/tickets128. Local close-a/b, rotate-a/b, revoke-a/b. No persistence.', flush=True)
-    threading.Thread(target=console, args=(state, resolver), daemon=True).start()
-    service = uvicorn.Server(uvicorn.Config(make_app(state, resolver, allow), host='127.0.0.1', port=port,
+    print('Bounded proof queue128/budget4096; local proof-stats. Missing logs are not proof.', flush=True)
+    channel = ProofChannel()
+    threading.Thread(target=console, args=(state, resolver, channel), daemon=True).start()
+    service = uvicorn.Server(uvicorn.Config(make_app(state, resolver, allow, channel.emit), host='127.0.0.1', port=port,
         access_log=False, log_config=None, limit_concurrency=32, timeout_keep_alive=5,
         h11_max_incomplete_event_size=MAX_HEADERS, timeout_graceful_shutdown=5))
     async def stop():
@@ -93,6 +99,7 @@ async def run():
         await service.serve()
     finally:
         timer.cancel()
+        channel.close()
 
 
 if __name__ == '__main__':
