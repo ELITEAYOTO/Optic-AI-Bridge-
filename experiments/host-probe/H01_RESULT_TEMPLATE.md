@@ -157,3 +157,16 @@ After collecting all correlation comparisons, call `probe_reset` for the correla
 MCP v2 request ids are optional. H-01 v2 exposes absence explicitly; do not treat a v1 constant request-id fingerprint as conversation identity without independent evidence that a real request id was present.
 
 No observed header, `_meta` field, tunnel identity, request id, test run id, invocation marker, server-instance id or transport session id becomes Optic authorization authority. H-03 may use proven host signals only as correlation inputs before minting an independent Optic-owned `SessionHandle`.
+# Separate guarded grouped-overlap supplement
+
+The optional experiments/grouped-parallel carrier measures only grouped temporal
+overlap with dummy authentication and minted group handles. It is separate from
+this h01-v2 schema and from #178. Retain tested Git head, banner, server instance,
+tool markers/request sequences, diagnostic group_id, wait invocation_id,
+active_on_entry, completed entry/exit intervals and completed_pair_overlap.
+Require matching GROUP enter/exit and TOOL console proof, exactlytwo successful
+waits in the SAME group, strict interval intersection. Two displayed results,
+native SDK gather tests and unrelated-group activity are not host evidence.
+Do not paste bearer values or raw group handles into public evidence. Follow
+experiments/grouped-parallel/README.md; correlation/new-chat/reconnect tests above
+remain distinct, not completed by this narrower supplement.
