@@ -15,11 +15,13 @@ from lifecycle_core import TOKENS
 
 async def exercise(url):
     async with asyncio.timeout(20):
-        async with httpx2.AsyncClient(headers=headers(TOKENS['A'][0]), timeout=2) as http:
+        # Readiness must not open an authenticated long-lived GET/SSE stream.
+        # A missing-credential POST is rejected before SDK dispatch with401.
+        async with httpx2.AsyncClient(timeout=2) as http:
             while True:
                 try:
-                    response = await http.get(url)
-                    if response.status_code == 405:
+                    response = await http.post(url, json={'jsonrpc': '2.0', 'id': 1, 'method': 'ping'})
+                    if response.status_code == 401:
                         break
                 except httpx2.ConnectError:
                     pass
