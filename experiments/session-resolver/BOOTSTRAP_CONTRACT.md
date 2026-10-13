@@ -78,7 +78,9 @@ local-closes A then denies old reference AND same-ticket open, and permits an
 explicit fresh ticket/new empty session. All output markers match logs; no raw
 credentials/tickets/session handles logged. Child killed at smoke exit.
 12 inherited Guard tests/actual MCP smoke also pass natively after opt-in change.
-CI runs Windows/Linux and inherited regressions. FranceStudent behavior pending.
+CI runs Windows/Linux and inherited regressions. FranceStudent series completed
+2026-10-13: clean repeated open/probe then local close/denial within73.532s; ledger
+LIVE_EVIDENCE_2026-10-13.md retains the earlier timeout/late response separately.
 
 ## Windows guided phase — one output review per setup step
 
