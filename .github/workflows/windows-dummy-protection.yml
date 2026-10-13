@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
       - shell: pwsh
         run: |
-          $env:PYTHONPATH = 'experiments/windows-dummy-protection'
+          $env:PYTHONPATH = @('experiments/windows-dummy-protection', 'experiments/persistent-auth', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
           python -m unittest discover -s experiments/windows-dummy-protection/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'public fixture proof failed' }
           [scriptblock]::Create((Get-Content -Raw experiments/windows-dummy-protection/scripts/Test-WindowsDummyProtection.ps1)) | Out-Null
