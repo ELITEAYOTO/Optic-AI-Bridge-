@@ -77,7 +77,7 @@ class NativeSecurityTests(unittest.TestCase):
                 self.assertEqual(result['authority'], 'none')
                 self.assertTrue(result['observation_only'])
                 for row in (result['root'], result['file']):
-                    self.assertEqual(set(row), {'owner_matches_process_user', 'dacl_present', 'null_dacl', 'ace_count', 'aces'})
+                    self.assertEqual(set(row), {'owner_matches_process_user', 'dacl_present', 'null_dacl', 'ace_count', 'aces', 'dacl_protected'})
                     self.assertIs(type(row['owner_matches_process_user']), bool)
                     self.assertIs(type(row['dacl_present']), bool)
                     self.assertIs(type(row['null_dacl']), bool)
