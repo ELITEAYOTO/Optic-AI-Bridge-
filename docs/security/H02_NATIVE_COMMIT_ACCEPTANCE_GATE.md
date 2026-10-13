@@ -18,6 +18,9 @@ storage. DPAPI integrity remains distinct from state freshness/rollback.
 1. Prove initial publication to an absent fixed destination separately from
    rotation/revocation replacement. It must refuse every existing target rather
    than toggling replace-on-exist after a sharing or collision failure.
+   Initialization requires a fresh locally created fixture root in that same
+   operation. A missing state in a previously enrolled/existing root is not
+   initialization authority and must not trigger credential resurrection/reset.
 2. Specify the selected writer/threat model and ACL/owner policy for both lock
    and state. A cooperating lock alone does not exclude a writer ignoring it.
 3. Select and test the actual replacement primitive against expected committed
@@ -35,6 +38,7 @@ storage. DPAPI integrity remains distinct from state freshness/rollback.
 | --- | --- |
 | Absent initial state | Fixed expected destination appears, validates fully before acknowledgement |
 | Existing initial target: file/dir/link | Failure, existing bytes/identity preserved; no delete/repair/fallback |
+| Missing state in an existing enrolled root | Failure, no implicit initialization or recovery by absence |
 | Partial write or failed flush | No success acknowledgement; scratch inert, auth blocked if composing a transition |
 | Native publish failure | No success acknowledgement; committed state preserved or explicit uncertainty |
 | Old/current state changed during admission | Refusal or proven serialization, never silently overwritten |
