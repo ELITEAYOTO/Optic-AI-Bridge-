@@ -72,7 +72,11 @@ same fixture with new server instance, proves old credential denied/new accepted
 same principal/epoch2; then revoke ACK, kill/restart, proves both A versions denied
 and B epoch1 accepted. Exact one-tool discovery and no credential raw bytes in
 logs/errors/state. TemporaryDirectory contains all disposable smoke state.
-No actual FranceStudent restart proof yet. Prior host tests cover different
+FranceStudent operator Ctrl+C/restart proof completed on2026-10-13: acknowledged
+rotation persisted, same A principal/epoch2 accepted, revoked A-v2 stayed denied
+after second restart, and independent B epoch1 succeeded. Matched markers and
+limits are in LIVE_EVIDENCE_2026-10-13.md. Manual proof is not abrupt-kill or
+power-loss proof. Prior host tests cover different
 finite carrier/handle/lifecycle behaviors; their markers are not reused here.
 All24 inherited tests and3 inherited protocol smokes remain separate regressions.
 
