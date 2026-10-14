@@ -16,6 +16,7 @@ JOB = re.compile(r'[0-9a-f]{64}\Z', re.ASCII)
 SAFE = {'optic.process_isolation_unavailable', 'optic.process_executable_not_allowed',
         'optic.network_runtime_unavailable', 'optic.process_profile_changed',
         'optic.process_profile_not_found', 'optic.session_inactive', 'optic.policy_denied'}
+TASK_TOOLS = ('optic_task_start', 'optic_task_result', 'optic_task_read', 'optic_task_stop')
 
 
 def integer(value, low, high):
@@ -50,12 +51,50 @@ def freeze_profiles(profiles):
     return frozen
 
 
+def validate_arguments(tool, arguments, profiles):
+    if type(arguments) is not dict:
+        raise ValueError()
+    if tool == 'optic_task_start':
+        if (set(arguments) != {'profile'} or type(arguments['profile']) is not str
+                or arguments['profile'] not in profiles):
+            raise ValueError()
+        return
+    if tool not in TASK_TOOLS:
+        raise ValueError()
+    expected = {'job_id', 'stream', 'cursor', 'max_bytes'} if tool == 'optic_task_read' else {'job_id'}
+    if (not {'job_id'} <= set(arguments) or not set(arguments) <= expected
+            or tool != 'optic_task_read' and set(arguments) != expected
+            or type(arguments['job_id']) is not str
+            or not JOB.fullmatch(arguments['job_id'])):
+        raise ValueError()
+    if tool == 'optic_task_read':
+        if arguments.get('stream', 'stdout') not in ('stdout', 'stderr'):
+            raise ValueError()
+        integer(arguments.get('cursor', 0), 0, 65536)
+        integer(arguments.get('max_bytes', 1024), 1, 1024)
+
+
+def bind_admission(files, execution):
+    # Both gates must be freshly constructed for one exact connection binding.
+    if (files.pending or execution.pending or files.stopped or execution.stopped
+            or files.owner != execution.owner or files.principal != execution.principal
+            or files.registry is not execution.registry or files.upstream is not execution.upstream):
+        raise ValueError('execution.binding_mismatch')
+    execution.pending = files.pending
+    execution.file_gate = files
+
+
 class ExecutionGate(ForwardGate):
     def __init__(self, registry, identity, upstream, profiles, deadline=15):
         super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
         self.profiles = freeze_profiles(profiles)
         self.jobs = {}
         self.starts = 0
+        self.file_gate = None
+
+    def _current(self, identity):
+        return (super()._current(identity)
+                and (self.file_gate is None or self.file_gate._current(identity)))
 
     async def call(self, identity, tool, arguments):
         self._loop()
@@ -82,8 +121,7 @@ class ExecutionGate(ForwardGate):
                                else 'link.response_timeout') from None
 
     def normalize(self, identity, tool, arguments):
-        if type(arguments) is not dict:
-            raise ValueError()
+        validate_arguments(tool, arguments, self.profiles)
         if tool == 'optic_task_start':
             if set(arguments) != {'profile'} or type(arguments['profile']) is not str:
                 raise ValueError()
@@ -92,19 +130,14 @@ class ExecutionGate(ForwardGate):
             return 'process_start', json.loads(self.profiles[arguments['profile']])
         if tool not in ('optic_task_result', 'optic_task_read', 'optic_task_stop'):
             raise ValueError()
-        expected = {'job_id', 'stream', 'cursor', 'max_bytes'} if tool == 'optic_task_read' else {'job_id'}
-        if set(arguments) != expected or type(arguments['job_id']) is not str:
-            raise ValueError()
         job = arguments['job_id']
         if not JOB.fullmatch(job) or self.jobs.get(job) != (identity.principal, identity.epoch):
             raise ValueError()
         request = {'job_id': job}
         if tool == 'optic_task_read':
-            if arguments['stream'] not in ('stdout', 'stderr'):
-                raise ValueError()
-            request.update(stream=arguments['stream'],
-                cursor=integer(arguments['cursor'], 0, 65536),
-                max_bytes=integer(arguments['max_bytes'], 1, 1024))
+            request.update(stream=arguments.get('stream', 'stdout'),
+                cursor=integer(arguments.get('cursor', 0), 0, 65536),
+                max_bytes=integer(arguments.get('max_bytes', 1024), 1, 1024))
         return {'optic_task_result': 'process_result', 'optic_task_read': 'process_read',
                 'optic_task_stop': 'process_stop'}[tool], request
 

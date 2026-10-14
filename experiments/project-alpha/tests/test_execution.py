@@ -4,7 +4,8 @@ import unittest
 
 from forward_core import ForwardError
 from lifecycle_core import Registry, TOKENS
-from execution_gate import ExecutionGate, freeze_profiles
+from execution_gate import ExecutionGate, freeze_profiles, bind_admission
+from project_gate import ProjectGate
 
 
 def profiles():
@@ -119,3 +120,22 @@ class Execution(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ForwardError, 'execution.upstream_failed'):
             await gate.call(self.identity, 'optic_task_read',
                 {'job_id': job, 'stream': 'stdout', 'cursor': 0, 'max_bytes': 1})
+
+    async def test_file_and_process_admission_share_one_retained_slot(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def held(name, args):
+            entered.set()
+            await release.wait()
+            return {'job_id': 'a' * 64}
+        files = ProjectGate(self.state, self.identity, held)
+        execution = ExecutionGate(self.state, self.identity, held, profiles())
+        bind_admission(files, execution)
+        caller = asyncio.create_task(execution.call(self.identity, 'optic_task_start', {'profile': 'check'}))
+        await entered.wait()
+        with self.assertRaisesRegex(ForwardError, 'link.busy'):
+            await files.call(self.identity, 'optic_fs_write', {'path': 'src/x', 'content': 'x', 'expected_kind': 'absent'})
+        self.assertFalse(await files.stop(0))
+        release.set()
+        with self.assertRaisesRegex(ForwardError, 'execution.outcome_unknown'):
+            await caller
+        self.assertTrue(await files.stop())

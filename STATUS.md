@@ -3,10 +3,14 @@
 ## Node alpha preparation and host editing evidence — 2026-10-14
 
 User selected Node web applications for the next end-to-end alpha. See
-[delivery contract](docs/product/NODE_PROJECT_ALPHA_DELIVERY.md). Six new
-synthetic execution-gate tests plus ten editing tests pass locally. Named frozen
+[delivery contract](docs/product/NODE_PROJECT_ALPHA_DELIVERY.md). Eight new
+gate/SDK tests plus ten editing tests pass locally. Native HTTP->Rust->isolated
+Node fixed-driver failing assertion/source fix/passing test also passed using
+CI767's verified binary/helper pair. Direct module entry is denied on ancestor
+lstat; full build/dependency/preview remains gated. Named frozen
 profiles forward to existing Rust process tools, with bounded owned-job state
-and uncertainty-aware cancellation; NOT exposed by current editing HTTP runner.
+and uncertainty-aware cancellation; optional ten-tool HTTP composition exists,
+but the current editing startup does NOT enable it.
 No real-project enrollment or FS Node build/test/preview claim yet.
 
 FS task-list creation/paged read acceptance and user browser feature checks

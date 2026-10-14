@@ -42,7 +42,7 @@ jobs:
         run: |
           rustup toolchain install 1.99.0 --profile minimal
           if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
-          cargo build --locked -p optic-bridge-app --bin optic-bridge
+          cargo build --locked -p optic-bridge-app --bins
           if ($LASTEXITCODE -ne 0) { throw 'binary build failed' }
       - name: Frozen SDK and generated fixture proof
         shell: pwsh
@@ -65,6 +65,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'HTTP alpha project editing failed' }
           python experiments/project-alpha/runner_edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'alpha project runner failed' }
+          if ($IsWindows) {
+            $Node = (Get-Command node.exe -ErrorAction Stop).Source
+            python experiments/project-alpha/node_http_smoke.py $Binary $Node
+            if ($LASTEXITCODE -ne 0) { throw 'native alpha Node task integration failed' }
+          }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
           python experiments/real-link-admission/runner_smoke.py $Binary
