@@ -62,7 +62,8 @@ async def run(args):
     channel = ProofChannel()
     try:
         params = StdioServerParameters(command=str(binary), args=[str(project),
-            '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal), *process_arguments])
+            '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
+            '--session-lifetime-seconds', str(args.lifetime), *process_arguments])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as upstream:
                 async with asyncio.timeout(20):
@@ -136,10 +137,10 @@ def main():
     parser.add_argument('--node', help='Locally selected installed node.exe; optional generated check/test mode')
     parser.add_argument('--output-root', required=True)
     parser.add_argument('--port', type=int, default=8009)
-    parser.add_argument('--lifetime', type=int, default=1500)
+    parser.add_argument('--lifetime', type=int, default=3000)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')
     args = parser.parse_args()
-    if not 1024 <= args.port <= 65535 or not 5 <= args.lifetime <= 1500:
+    if not 1024 <= args.port <= 65535 or not 5 <= args.lifetime <= 3000:
         raise SystemExit('project.invalid_bounds')
     logging.disable(logging.CRITICAL)
     try:

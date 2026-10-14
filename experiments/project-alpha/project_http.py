@@ -39,10 +39,10 @@ class ProjectGuard(Guard):
 
 
 def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None,
-                     lifetime=1500, clock=time.monotonic, compact_results=False):
+                     lifetime=3000, clock=time.monotonic, compact_results=False):
     if type(compact_results) is not bool:
         raise ValueError('project.invalid_result_mode')
-    if type(lifetime) is not int or not 5 <= lifetime <= 1500:
+    if type(lifetime) is not int or not 5 <= lifetime <= 3000:
         raise ValueError('project.invalid_lifetime')
     started = clock()
     if type(started) not in (int, float) or not math.isfinite(started):

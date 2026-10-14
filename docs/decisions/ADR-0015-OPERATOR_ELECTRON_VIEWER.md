@@ -44,7 +44,7 @@ MCP project scope. Optional JSON blob downloads are limited to8 per opening,
 2–65536bytes, application/json and fixed fresh .json paths under run/exports.
 Unknown-size or external downloads denied. No arbitrary output path selector.
 Chromium profile/cache writes are normal operator runtime storage, NOT a bounded
-Optic task spool or hard filesystem quota claim. Viewer lifetime25minutes.
+Optic task spool or hard filesystem quota claim. Viewer lifetime50minutes.
 Import uses the user's normal file picker/Blob APIs; model must validate data,
 size and schema. No private-file or privileged IPC access is added.
 

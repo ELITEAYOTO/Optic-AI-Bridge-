@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let limits = HardLimits::default().validate_nonzero()?;
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
-    let expires_at = now.saturating_add_millis(INITIAL_SESSION_TTL_MS);
+    let expires_at = now.saturating_add_millis(args.session_lifetime_ms);
     let processes = Arc::new(build_process_manager(&args, limits)?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
     let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits)?);
@@ -641,6 +641,7 @@ fn provision_process_leases(
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
+    session_lifetime_ms: u64,
     policy_epoch: u64,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
@@ -674,6 +675,7 @@ impl AppArgs {
         }
 
         let mut workspace = None;
+        let mut session_lifetime_ms = None;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
@@ -690,7 +692,30 @@ impl AppArgs {
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
-            if arg == "--allow-executable" {
+            if arg == "--session-lifetime-seconds" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "session lifetime requires seconds",
+                    )
+                })?;
+                let seconds = os_string_to_utf8(value, "session lifetime")?
+                    .parse::<u64>()
+                    .map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "invalid session lifetime",
+                        )
+                    })?;
+                if !(5..=3000).contains(&seconds)
+                    || session_lifetime_ms.replace(seconds * 1000).is_some()
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "session lifetime must be supplied once, within 5..3000 seconds",
+                    ));
+                }
+            } else if arg == "--allow-executable" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -905,6 +930,7 @@ impl AppArgs {
 
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
+            session_lifetime_ms: session_lifetime_ms.unwrap_or(INITIAL_SESSION_TTL_MS),
             policy_epoch: 1,
             allowed_executables,
             process_read_grants,
@@ -1162,6 +1188,44 @@ fn os_string_to_utf8(value: OsString, label: &str) -> Result<String, std::io::Er
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn operator_session_lifetime_is_bounded_and_explicit() {
+        assert_eq!(
+            super::AppArgs::parse_from(args(&["workspace"]))
+                .unwrap()
+                .session_lifetime_ms,
+            1_800_000
+        );
+        assert_eq!(
+            super::AppArgs::parse_from(args(&["workspace", "--session-lifetime-seconds", "3000"]))
+                .unwrap()
+                .session_lifetime_ms,
+            3_000_000
+        );
+        for value in ["0", "4", "3001", "-1", "18446744073709551615", "invalid"] {
+            assert!(
+                super::AppArgs::parse_from(args(&[
+                    "workspace",
+                    "--session-lifetime-seconds",
+                    value
+                ]))
+                .is_err()
+            );
+        }
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--session-lifetime-seconds",
+                "3000",
+                "--session-lifetime-seconds",
+                "2400"
+            ]))
+            .is_err()
+        );
+        assert!(
+            super::AppArgs::parse_from(args(&["workspace", "--session-lifetime-seconds"])).is_err()
+        );
+    }
 
     #[test]
     fn classified_environment_grant_parser_preserves_operator_class() {

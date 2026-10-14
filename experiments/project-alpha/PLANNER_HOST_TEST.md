@@ -35,7 +35,7 @@ Dans FS, URL du tunnel suivie de /mcp. Autorisation :
 ## 2. Prompts dans l’ordre
 
 Envoyer PROMPT_PLANNER_LOGIC.md, puis son résultat à Codex. Après tests réussis,
-envoyer PROMPT_PLANNER_UI.md. Durée25minutes : project_info donne le temps restant.
+envoyer PROMPT_PLANNER_UI.md. Durée50minutes : project_info donne le temps restant.
 Ne pas redémarrer pour prolonger un projet en cours. Si la durée est insuffisante,
 conserver les sources et transmettre les logs ; aucune reprise implicite.
 

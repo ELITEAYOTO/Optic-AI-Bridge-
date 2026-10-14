@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   window.webContents.on('will-prevent-unload', event => event.preventDefault());
-  timer = setTimeout(() => { ses.flushStorageData(); app.exit(smoke ? 1 : 0); }, smoke ? 20000 : 1500000);
+  timer = setTimeout(() => { ses.flushStorageData(); app.exit(smoke ? 1 : 0); }, smoke ? 20000 : 3000000);
   await window.loadURL('optic-alpha://app/index.html');
   if (smoke) {
     if (repeat) assert.equal(await window.webContents.executeJavaScript("localStorage.getItem('public-probe')"), 'ok');

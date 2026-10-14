@@ -1,5 +1,17 @@
 # Project Status
 
+## User-selected fifty-minute alpha — native validation pending
+
+User requested40–50minutes rather than25. Alpha defaults now50minutes and local
+PowerShell SessionMinutes can select1–50. Both HTTP deadline and core session /
+leases use the selected monotonic lifetime through an operator-only CLI option
+--session-lifetime-seconds (5–3000, duplicate/malformed/out-of-range denied).
+Core default stays30minutes for other callers. No model renewal or wider grants.
+Viewer close limit also50minutes. Test12 logs show last request at22m07 followed
+by expiry warning; they do not show confirmed stop, so FS inference error is not
+attributed to TTL. Existing saved sources remain at alpha-zpre99l7. New binary /
+package requires native CI; old package cannot be extended by changing HTTP only.
+
 ## Agenda/budget Electron test package accepted — 2026-10-15
 
 At85b7d86 all nine workflows passed (CI785 / real-link37), including pinned
