@@ -1,5 +1,7 @@
 """Own generated runner child, real HTTP edit, stop and retained project proof."""
 import asyncio
+import hashlib
+import json
 from pathlib import Path
 import socket
 import subprocess
@@ -33,6 +35,9 @@ async def exercise(url, node_mode=False):
         observed = structured(await session.call_tool('optic_fs_read', {'path': 'src/index.html'}))
         assert observed['upstream']['content_version'] == payload['upstream']['content_version']
         if node_mode:
+            style = structured(await session.call_tool('optic_fs_write', {
+                'path': 'src/style.css', 'content': 'body{font-family:system-ui}', 'expected_kind': 'absent'}))
+            assert style['ok'], style
             from node_http_smoke import finished
             names = {tool.name for tool in (await session.list_tools()).tools}
             from project_schema import TOOLS
@@ -92,6 +97,8 @@ def run(binary, node=None):
             reader.start()
         try:
             asyncio.run(exercise(f'http://127.0.0.1:{port}/mcp', bool(node)))
+            if node:
+                assert not list(Path(directory).glob('alpha-*/viewer-ready.json'))
             child.stdin.write('stop\n')
             child.stdin.flush()
             assert child.wait(timeout=20) == 0
@@ -104,6 +111,12 @@ def run(binary, node=None):
             assert len(files) == 1 and files[0].read_text() == '<h1>Saved public project</h1>'
             if node:
                 assert (files[0].parent / 'model.js').read_text() == 'module.exports.add=(a,b)=>a+b;'
+                ready = json.loads((files[0].parents[2] / 'viewer-ready.json').read_text())
+                assert ready['version'] == 1
+                assert set(ready['files']) == {'index.html', 'style.css', 'app.js', 'model.js', 'tests.js'}
+                for name, version in ready['files'].items():
+                    assert hashlib.sha256((files[0].parent / name).read_bytes()).hexdigest() == version
+                assert '"viewer_ready": true' in output
         finally:
             if child.poll() is None:
                 child.kill()
