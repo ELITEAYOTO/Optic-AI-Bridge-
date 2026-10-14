@@ -421,3 +421,12 @@ sharing prevents reader opens until close. Eleven native regressions include act
 exits after link/disposition. Latest local Windows130 cases /127 passed /3 platform
 skips. Entire fixture path containment, durable auth commit and antirollback remain
 gated; see H02_NATIVE_PUBLIC_SEAL.md. No production runtime/Store change.
+
+# One-object public admission checkpoint — 2026-10-14
+
+PublicSuccessorAdmission serializes observation and complete portable publication
+within one object using an immediate-refusal lock. Own completed matching pair
+alone becomes locally confirmed; failure/change/restart never adopts or repairs
+existing data. Seven new regressions; latest local Windows137 /134 passed /3
+platform skips. No cross-process lock, I/O deadline, durable ACK or subsequent
+effect authorization. See H02_PUBLIC_SUCCESSOR_ADMISSION.md. Production unchanged.
