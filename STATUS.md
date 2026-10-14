@@ -1,5 +1,22 @@
 # Project Status
 
+## Agenda/budget Electron test package accepted — 2026-10-15
+
+At85b7d86 all nine workflows passed (CI785 / real-link37), including pinned
+Electron44.7.2 native renderer/network/export/reopen proof and actual Node
+runner stop -> readiness snapshot with matching source hashes.23 Python alpha
+and4 viewer policy tests pass. Downloaded artifact11934343405 verified; its
+bridge/helper and main/policy digests matched the manifest, and the exact
+package passed Electron and Node runner proofs again on this PC.
+User package: outputs/Optic-Planner-Electron.zip, SHA256
+5a451f75f3158e8f67c7cad8647d9e99e7905ee05a48d95878e59b1e9caf32bc.
+Tested merge source1e377d5b09afbcc890d26c164c782efbef9b0df1. Logic/UI prompts
+and local-window manual steps are packaged. Actual planner feature acceptance
+is the next FS user test. Electron stays an operator-opened fixed viewer,
+not a remote GUI process grant, installer or arbitrary generated main code.
+Earlier pending entries below describe the validation history.
+
+
 ## Agenda/budget operator Electron test preparation — 2026-10-15
 
 Expense app test11 accepted by user in browser: addition/filter/delete/validation

@@ -1,6 +1,6 @@
 # ADR0015 — Operator Electron viewer for generated app acceptance
 
-Status: IMPLEMENTED / CI PENDING
+Status: IMPLEMENTED / NATIVE VALIDATED AT85b7d86
 Date:2026-10-15
 
 ## Decision
@@ -58,3 +58,5 @@ must repeat the native viewer test with pinned external Electron before package
 delivery. Actual agenda/budget feature acceptance remains a manual FS exercise.
 
 [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security).
+
+Acceptance: CI785 / real-link37 passed all native and package checks at85b7d86. The exact artifact also passed locally with installed Electron44.7.2 and Node22.15.1. Planner feature acceptance remains a separate FS manual test.
