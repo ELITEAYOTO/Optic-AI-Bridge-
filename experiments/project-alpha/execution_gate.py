@@ -178,7 +178,7 @@ class ExecutionGate(ForwardGate):
                 if type(response['requested']) is not bool:
                     raise ValueError()
                 return {'requested': response['requested']}  # request, not proof of exit.
-            statuses = {'running', 'exited', 'killed', 'timed_out', 'output_limit_exceeded',
+            statuses = {'running', 'exited', 'stopped', 'timed_out', 'output_limit_exceeded',
                         'termination_uncertain', 'failed'}
             if (response['status'] not in statuses or type(response['output_truncated']) is not bool
                     or response['exit_code'] is not None and type(response['exit_code']) is not int):

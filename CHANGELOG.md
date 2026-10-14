@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Native relative Node module proof passed at3c0228 with list/read/write denials. Outside-root helper regression now uses an owned test root rather than System32; execution adapter preserves native stopped status (19 local alpha tests pass; full corrected Windows CI pending).
 - Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).
 - Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.
 - Experimental named-profile process forwarding preparation with bounded owned jobs, retained cancellation accounting and six synthetic tests; disabled in the editing HTTP runner until native Node/enrollment integration gates pass.

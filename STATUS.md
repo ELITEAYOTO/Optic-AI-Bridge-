@@ -2,6 +2,15 @@
 
 ## Node module metadata correction — native CI pending
 
+At3c0228, real-link26 passed on Windows, including actual relative Node module
+resolution with directory-listing, sibling-read and file-create denial. Ubuntu
+Rust passed. General Windows CI774 stopped on the outside-root launcher test:
+its System32 workspace failed ACL access before the expected containment check.
+The test now uses an owned disposable root and requires the ancestor-escape
+diagnostic. Native validation of all remaining tests is still pending.
+The Python execution adapter now preserves Rust's `stopped` status; an unknown
+`killed` status remains rejected. All19 local alpha tests pass.
+
 ADR0014 defines source-directory attribute/traversal access derived from exact
 operator-authorized source reads, without directory listing/data/write rights.
 The Windows helper now pins the root and bounded ancestors before adding

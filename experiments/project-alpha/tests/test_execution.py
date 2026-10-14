@@ -60,6 +60,19 @@ class Execution(unittest.IsolatedAsyncioTestCase):
             await gate.call(other, 'optic_task_start', {'profile': 'check'})
         self.assertFalse(self.calls)
 
+    async def test_native_stopped_status_is_preserved_and_unknown_status_denied(self):
+        status = 'stopped'
+        async def upstream(name, args):
+            if name == 'process_start':
+                return {'job_id': 'a' * 64}
+            return {'status': status, 'exit_code': None, 'output_truncated': False}
+        gate = ExecutionGate(self.state, self.identity, upstream, profiles())
+        job = (await gate.call(self.identity, 'optic_task_start', {'profile': 'check'}))['job_id']
+        self.assertEqual((await gate.call(self.identity, 'optic_task_result', {'job_id': job}))['status'], 'stopped')
+        status = 'killed'
+        with self.assertRaisesRegex(ForwardError, 'execution.upstream_failed'):
+            await gate.call(self.identity, 'optic_task_result', {'job_id': job})
+
     async def test_rotation_invalidates_old_job_access_and_start_budget_is_finite(self):
         gate = ExecutionGate(self.state, self.identity, self.upstream, profiles())
         job = (await gate.call(self.identity, 'optic_task_start', {'profile': 'check'}))['job_id']
