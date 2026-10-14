@@ -1,5 +1,12 @@
 # Project Status
 
+## Public root selection negative evidence — 2026-10-14
+
+Actual same-name valid fixture substitution before native root open is accepted;
+held-root ordinary rename denial only applies after opening. Two characterizations;
+local154 /151 pass /3 skips. Passing negative test is not a fix. Trusted enrollment
+and expected root identity remain required before production integration.
+
 ## Held-root relative public read — 2026-10-14
 
 Explicit Windows x64 reader opens three fixed existing leaves relative to its

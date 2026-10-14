@@ -453,3 +453,10 @@ RelativePublicPair explicitly selects three fixed NT opens under the held root,
 never creates missing leaves or falls back to path opens. Five native tests;
 local152 /149 passed /3 skips. NativePublicAdmission remains the previous variant;
 no silent switch or root-selection guarantee. See H02_RELATIVE_PUBLIC_PAIR_READ.md.
+
+# Root selection negative checkpoint — 2026-10-14
+
+Two regressions distinguish accepted same-name valid substitution before root
+open from ordinary rename denied while held. Passing negative characterization
+does not fix selection. Local154 /151 passed /3 skips; see
+H02_PUBLIC_ROOT_SELECTION_GAP.md before defining trusted enrollment/identity.
