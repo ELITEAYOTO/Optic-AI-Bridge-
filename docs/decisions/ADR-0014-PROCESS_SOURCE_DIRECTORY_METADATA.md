@@ -1,6 +1,6 @@
 # ADR-0014 — Source ancestor metadata for isolated process reads
 
-Status: IMPLEMENTED / NATIVE VALIDATION PENDING
+Status: IMPLEMENTED / NATIVE VALIDATED AT4b5ca2e
 Date:2026-10-14
 
 ## Context
@@ -46,3 +46,8 @@ Native tests must prove directory metadata access, listing/read/create denial,
 outside-workspace/reparse rejection, root rename denial while held, explicit
 revocation and actual relative Node module resolution with sibling denial.
 No production readiness or successful new native test is claimed before CI.
+
+Acceptance passed in CI779 and real-link31. The matching artifact also passed
+locally with Node22.15.1, including relative import, failing assertion, exact
+source correction and successful repeat test. This is a generated-project
+check/test milestone, not general filesystem writes, npm or server readiness.

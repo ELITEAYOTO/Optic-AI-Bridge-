@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Generated Node check/test milestone validated at4b5ca2e: all nine workflows, native metadata deny/revoke tests, pinned Node22.15.1 runner and matching downloaded package on the local installed Node pass. SYNCHRONIZE enables synchronous attribute handles without list/data/write rights. First FS process exercise pending; no dependencies/build/server or personal project enrollment claim.
 - Optional generated Node runner with explicit installed executable selection, fixed check/test profiles and three source-read slots; matching hashed helper package and native runner lifecycle proof added (21 local tests; native runner validation pending).
 - Native relative Node module proof passed at3c0228 with list/read/write denials. Outside-root helper regression now uses an owned test root rather than System32; execution adapter preserves native stopped status (19 local alpha tests pass; full corrected Windows CI pending).
 - Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).

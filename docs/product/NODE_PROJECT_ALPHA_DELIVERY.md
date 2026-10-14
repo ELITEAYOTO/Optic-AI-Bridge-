@@ -26,6 +26,14 @@ and localhost preview need separate verified network/containment scopes.
 
 ## Implemented preparation
 
+Current acceptance: all nine workflows green at4b5ca2e (CI779 / real-link31).
+21 local tests pass. The downloaded matched bridge/helper package also passed
+the owned Node runner locally with Node22.15.1. Native metadata grants include
+SYNCHRONIZE for synchronous handles, while list/read/create denial and revoke
+tests pass. The optional runner is ready for its first FS check/test exercise;
+FS process execution itself remains unmeasured. Pending notes below predate
+this acceptance and are retained as evidence history.
+
 Generated runner now has an explicit optional `--node` mode (native lifecycle
 validation pending). A locally selected installed node.exe receives three exact
 source slots: src/model.js, src/app.js and src/tests.js. Locally frozen `check`

@@ -1,5 +1,20 @@
 # Project Status
 
+## Node check/test milestone accepted — 2026-10-14
+
+At4b5ca2e all nine workflows passed (CI779 / real-link31). Native metadata
+attribute access, revocation/pinning and data/list/create denials passed. The
+Node22.15.1 HTTP and generated runner proofs passed; SYNCHRONIZE resolves the
+older synchronous-stat failure without directory listing/data/write authority.
+Artifact11931087651 verified and matching bridge/helper tested locally with
+installed Node22.15.1: failing assertion -> versioned fix -> passing check/test
+-> local stop -> retained sources.21 local tests pass. FS execution test pending.
+User package outputs/Optic-Node-Alpha.zip, SHA256
+5f18c885fc929af813886ee8e779ed4ad409f6ec246c7d34ef282f1dde387c24;
+tested merge sourcece5c52ef7056511c021b374c6abe264e6cc7eaac.
+Generated project only, three Node source slots, no dependencies/build/server
+or personal project selection. Earlier pending entries below record chronology.
+
 ## Cross-version Node validation — correction pending
 
 Real-link28 passed the actual new generated Node runner and packaged both
