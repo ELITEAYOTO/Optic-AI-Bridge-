@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Draft fresh public-marker initial publication fixture: explicit NT relative no-replace rename, fixed same-handle validation and close-before-success; eight regressions including collision preservation and post-rename uncertainty. No production registry initialization or replacement.
 - Native private-root/writer-pin/relative-scratch descriptor composition regression; administrator reply recorded with conversation identity and cancellation ambiguity kept separate. No published state or production storage change.
 - Draft explicit root-relative native public scratch candidate: fixed Unicode leaf under held directory handle, create-only NT completion checks, no path fallback and native/simulated regressions. No final replacement, Store integration or production persistence claim.
 - Draft fixed public pending-file creation: held native fixture lock, create-only absence precondition, non-shared same-handle write/flush/identity checks and failure/preservation tests. No state promotion, Store integration, ancestor containment or production persistence claim.

@@ -1,6 +1,11 @@
 # H-02 native commit gate after fixed scratch creation
 
 Status: PROPOSED TEST SEQUENCE / NOT IMPLEMENTED
+
+Update: an isolated [initial public-marker candidate](H02_INITIAL_PUBLICATION_FIXTURE.md)
+now covers a subset of step1. It is not protected auth state or production
+initialization. Replacement, crash/reopen composition and hostile-writer/ancestor
+proofs remain unimplemented gates.
 Date: 2026-10-14
 Owner: #172; complements H02_LOCAL_CREDENTIAL_STORAGE_CONTRACT.md
 

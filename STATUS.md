@@ -1,5 +1,14 @@
 # Project Status
 
+## Initial public-marker publication candidate — 2026-10-14
+
+Fresh private child in the same fixture operation, one fixed scratch write,
+explicit no-replace root-relative NT rename, same-handle readback and close-before-
+success. Eight regressions; local Windows87 cases / 84 pass / 3 platform skips.
+Existing child with missing state never initializes. Post-rename validation/close
+failure gives no ACK and may leave destination present; no retry/rollback claim.
+No protected registry composition, production storage or existing-state replacement.
+
 ## Private root / lock / relative scratch composition — 2026-10-14
 
 Native Windows regression composes fresh creation-time private ACL, fixed writer
