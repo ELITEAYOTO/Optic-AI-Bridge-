@@ -6,8 +6,10 @@ User selected Node web applications for the next end-to-end alpha. See
 [delivery contract](docs/product/NODE_PROJECT_ALPHA_DELIVERY.md). Eight new
 gate/SDK tests plus ten editing tests pass locally. Native HTTP->Rust->isolated
 Node fixed-driver failing assertion/source fix/passing test also passed using
-CI767's verified binary/helper pair. Direct module entry is denied on ancestor
-lstat; full build/dependency/preview remains gated. Named frozen
+CI767's verified binary/helper pair. Direct unflagged entry is denied locally on
+ancestor lstat; locally frozen symlink-resolution flags permit syntax checking
+and direct test-file entry while a sibling stays denied. Normal module trees,
+full build/dependency/preview remain gated. Named frozen
 profiles forward to existing Rust process tools, with bounded owned-job state
 and uncertainty-aware cancellation; optional ten-tool HTTP composition exists,
 but the current editing startup does NOT enable it.

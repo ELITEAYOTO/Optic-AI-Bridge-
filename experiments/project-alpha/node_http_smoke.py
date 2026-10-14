@@ -49,10 +49,13 @@ async def run(binary, node):
         journal.mkdir()
         (project / 'src').mkdir()
         logic, tests = project / 'src/logic.js', project / 'src/tests.js'
+        ungranted = project / 'src/ungranted.txt'
+        ungranted.write_text('PUBLIC_UNGRANTED_SENTINEL', encoding='utf-8')
         logic.write_text('function add(a,b){ return a-b; } add(2,3);', encoding='utf-8')
         tests.write_text("const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');"
             "const value=vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'));"
-            "assert.equal(value,5);console.log('TEST_PASS');", encoding='utf-8')
+            "assert.equal(value,5);let denied=false;try{fs.readFileSync(process.argv[3]);}catch{denied=true;}"
+            "assert.equal(denied,true);console.log('TEST_PASS:SIBLING_DENIED');", encoding='utf-8')
         def profile(args):
             return {'executable': str(executable), 'args': args, 'cwd': None, 'env_allowlist': [],
                     'network': False, 'timeout_ms': 10000, 'output_budget': 65536,
@@ -63,7 +66,9 @@ async def run(binary, node):
         check_driver = "const fs=require('node:fs'),vm=require('node:vm');new vm.Script(fs.readFileSync(process.argv[1],'utf8'));"
         test_driver = "const fs=require('node:fs'),vm=require('node:vm');vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{require,process,console});"
         profiles = {'check': profile(['-e', check_driver, str(logic)]),
-                    'test': profile(['-e', test_driver, str(tests), str(logic)]),
+                    'test': profile(['-e', test_driver, str(tests), str(logic), str(ungranted)]),
+                    'module-flags': profile(['--preserve-symlinks-main', '--preserve-symlinks', '--check', str(logic)]),
+                    'entry-test': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(tests), str(logic), str(ungranted)]),
                     'module-check': profile(['--check', str(logic)])}
         params = StdioServerParameters(command=str(bridge), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
@@ -123,10 +128,25 @@ async def run(binary, node):
                         module = structured(await session.call_tool('optic_task_start', {'profile': 'module-check'}))
                         assert module['ok']
                         blocked = await finished(session, module['upstream']['job_id'])
-                        assert blocked['status'] == 'exited' and blocked['exit_code'] != 0
-                        details = structured(await session.call_tool('optic_task_read',
-                            {'job_id': module['upstream']['job_id'], 'stream': 'stderr'}))
-                        assert 'EPERM' in details['upstream']['text'] and 'lstat' in details['upstream']['text']
+                        assert blocked['status'] == 'exited'
+                        if blocked['exit_code'] != 0:
+                            details = structured(await session.call_tool('optic_task_read',
+                                {'job_id': module['upstream']['job_id'], 'stream': 'stderr'}))
+                            assert 'EPERM' in details['upstream']['text'] and 'lstat' in details['upstream']['text']
+                        # Ancestor ACL baselines vary by host; characterize,
+                        # never treat unrelated failure/timeout as success.
+                        print('NODE_UNFLAGGED_ENTRY_EXIT', blocked['exit_code'])
+                        flags = structured(await session.call_tool('optic_task_start', {'profile': 'module-flags'}))
+                        assert flags['ok']
+                        flag_result = await finished(session, flags['upstream']['job_id'])
+                        assert flag_result['status'] == 'exited' and flag_result['exit_code'] == 0
+                        entry = structured(await session.call_tool('optic_task_start', {'profile': 'entry-test'}))
+                        assert entry['ok']
+                        entry_result = await finished(session, entry['upstream']['job_id'])
+                        assert entry_result['status'] == 'exited' and entry_result['exit_code'] == 0
+                        entry_output = structured(await session.call_tool('optic_task_read',
+                            {'job_id': entry['upstream']['job_id']}))
+                        assert 'TEST_PASS:SIBLING_DENIED' in entry_output['upstream']['text']
                         state.control('revoke', 'A')
                         assert (await local_stop(files, upstream))['session_revoked']
                         assert str(project) not in '\n'.join(logs)
@@ -136,7 +156,7 @@ async def run(binary, node):
                     server.should_exit = True
                     await asyncio.wait_for(service, 10)
                     listener.close()
-    print('NODE HTTP PASS: isolated fixed driver failing assertion -> exact-version source fix -> syntax check and passing test; shared HTTP tasks and session revoke. Direct module entry remains denied on ancestor lstat. No dependency/build/server proof.')
+    print('NODE HTTP PASS: isolated failing assertion -> exact-version source fix -> syntax and test success; unflagged entry denied, locally selected symlink-resolution flags permit file entry while ungranted sibling remains denied. No dependency/build/server proof.')
 
 
 if __name__ == '__main__':

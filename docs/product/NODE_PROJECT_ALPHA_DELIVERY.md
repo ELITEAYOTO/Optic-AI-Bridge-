@@ -49,17 +49,22 @@ reads exactly granted project sources, reaches a failing assertion, receives a
 version-preconditioned source fix and passes syntax/test. Stop revokes Rust
 session. vm is a test driver only; AppContainer owns containment.
 
-Direct Node --check <file> failed on ancestor lstat EPERM despite exact-file
-grants. This is a separate negative characterization, not a positive module
-build proof. Ancestor metadata/module loading, dependency installation, build
-output writes and preview are not admitted by the successful fixed-driver test.
+Direct unflagged Node --check <file> failed locally on ancestor lstat EPERM
+despite exact-file grants. With locally frozen --preserve-symlinks-main and
+--preserve-symlinks options, both syntax checking and direct test-file entry
+passed without adding ancestor ACL rights. The test-file entry also proves an
+ungranted sibling remains unreadable. The unflagged result is host-dependent
+characterization; unrelated failure/timeout is still rejected. No general npm/
+module-tree/build output/network permission follows from this small proof.
+Dependency installation, build output writes and preview remain gated.
 Workflow now builds sibling helpers and runs this native characterization on
 Windows. Current-source CI confirmation remains pending.
 
 ## Remaining integration gates
 
-- Shared admission/lifecycle between file and process tools, native isolated
-  Node exact-file source execution/check/test with no ambient secrets/network.
+- Package the shared admission/lifecycle and measured isolated exact-file Node
+  check/test path, then validate normal module trees without expanding grants
+  implicitly. Actual network denial remains an independent required check.
 - Explicit workspace creation/read/write scope and safe directory tools;
   runtime output-write/descendant needs cannot be inferred from FileWrite.
 - Local enrollment/reusable grants suitable for selected personal projects.
