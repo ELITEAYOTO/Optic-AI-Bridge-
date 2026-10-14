@@ -36,6 +36,11 @@ negative characterizations, not a successful concurrency-security verdict.
 
 ## Consequence and next gate
 
+A [single-slot create-only election](H02_CREATE_ONLY_SUCCESSOR_ELECTION.md) now
+tests whether a late claimant can avoid overwriting a competitor. It is only
+public operation-marker reservation; no state-selection/auth commit protocol or
+production journal is chosen. The replacing fixture's measured gap remains.
+
 Keep ProtectedStore's path-based replacement and the new NT replace trial out
 of production enrollment. A read/hash/check followed by ordinary replacement
 does not provide atomic compare-and-swap. Rechecking just before replacement
