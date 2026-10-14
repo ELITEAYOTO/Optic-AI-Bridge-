@@ -1,5 +1,14 @@
 # Project Status
 
+## Public successor local admission — 2026-10-14
+
+One-object nonblocking coordination refuses readers/second writers during the
+whole publication. Only own completed exact publication becomes locally
+confirmed; uncertainty/change/restart blocks without adoption or repair.
+Seven regressions; local Windows137 /134 pass /3 platform skips. Volatile
+zero-authority snapshots only, not cross-process locking, durable auth commit,
+async host cancellation or protection for subsequent effects. Production unchanged.
+
 ## Native public seal link/disposition — 2026-10-14
 
 Explicit Windows x64 candidate retains owned NT source/root while closing its
