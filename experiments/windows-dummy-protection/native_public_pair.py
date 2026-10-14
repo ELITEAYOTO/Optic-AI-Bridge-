@@ -19,6 +19,9 @@ class NativePublicPair:
     def _open_public(self, leaf):
         return self.prepared._open(self.prepared.directory + '\\' + leaf, False)
 
+    def _validate_root(self):
+        self.prepared._info(self.prepared.root, True)
+
     def __enter__(self):
         if self.used:
             raise SuccessorError('public_pair.already_attempted')
@@ -27,7 +30,7 @@ class NativePublicPair:
         try:
             item._load_native()
             item.root = item._open(item.directory, True)
-            item._info(item.root, True)
+            self._validate_root()
             root_name = item._final(item.root).rstrip('\\')
             values = []
             for leaf, limit in (('baseline.public', 64), ('successor.0001.public', 64), ('successor.0001.seal', 96)):
