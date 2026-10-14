@@ -443,5 +443,6 @@ See H02_PUBLIC_CONFIRMED_WORK.md. No actual effect or production integration.
 
 NativePublicPair holds exactly three fixed public file read references and the
 root through public digest use. Actual other-process writes refuse until close.
-Two native cases; local145 /142 passed /3 skips. Not yet composed with admission,
-no root containment or mapped-writer exclusion. See H02_NATIVE_PUBLIC_PAIR_PIN.md.
+Four native cases; local147 /144 passed /3 skips. Explicit NativePublicAdmission
+composes pinned computation and close uncertainty; publication/observations remain
+portable. No root containment or mapped-writer exclusion. See H02_NATIVE_PUBLIC_PAIR_PIN.md.

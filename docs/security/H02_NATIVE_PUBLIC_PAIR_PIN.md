@@ -15,11 +15,15 @@ Re-entry fails before releasing ownership. Exit closes files then root. Invalid
 entry attempts all owned closes and never repairs existing bytes. Close failure
 is sticky, with no retry. Output always fixture_only=true / authority=none.
 
-Two added native regressions measure actual separate-process writes refused for
+Four added native regressions measure actual separate-process writes refused for
 all three files, ordinary write succeeding after owner close, re-entry preserving
 live pins and invalid-pair cleanup preserving invalid bytes. Child waits are
 ten-second bounded and stdout/stderr discarded; only children created by the
-test are involved. Local full Windows145 cases /142 passed /3 platform skips.
+test are involved. Explicit NativePublicAdmission composition also verifies
+ordinary write and busy-close refusal during the pinned calculation, then write
+availability after close. Injected uncertainty after actual native cleanup
+suppresses the result and blocks coordination. This injection is not an actual
+OS close failure. Local full Windows147 cases /144 passed /3 platform skips.
 
 ## Limits
 
@@ -28,8 +32,11 @@ final-name observations do not prove hostile ancestor containment or authorize
 the selected root. Sequential opens are not an atomic snapshot. Ordinary
 CreateFile sharing observations are not a claim against pre-existing writable
 memory mappings, privileged kernel access or every filesystem/Windows version.
-This candidate is separate from the local admission coordinator and is not yet
-its publication/read implementation. There is no credential state, action lease,
+NativePublicAdmission explicitly selects pinned work with no portable work
+fallback; its publication and before/after observations remain the earlier
+portable path-based variant. The admission lock spans native use and close;
+file pins span computation but close before the coordinator's final observation.
+This does not extend native ownership across every observation. There is no credential state, action lease,
 durability, recovery or production Effect integration. A digest computed while
 held grants no permission after close. Existing replacement-gap evidence remains
 valid and production Store/runtime are unchanged.

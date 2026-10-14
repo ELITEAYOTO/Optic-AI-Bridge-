@@ -3,10 +3,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from create_only_successor import BASELINE, SuccessorError
 from published_public_successor import PublishedPublicSuccessor
-from native_public_pair import NativePublicPair
+from native_public_pair import NativePublicPair, NativePublicAdmission
 
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows fixture')
@@ -53,3 +54,39 @@ sys.exit(0)
         self.assertIsNone(pair.prepared.root)
         seal.write_bytes(b'PUBLIC STILL INVALID')
         self.assertEqual(seal.read_bytes(), b'PUBLIC STILL INVALID')
+
+    def test_explicit_admission_composes_exact_pins_and_closes_before_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'baseline.public').write_bytes(BASELINE)
+            gate = NativePublicAdmission(directory)
+            gate.publish_once('rotate-a', BASELINE)
+            original = NativePublicPair.probe
+            def measured(pair):
+                with self.assertRaises(OSError):
+                    (root / 'successor.0001.public').write_bytes(b'PUBLIC CHANGED')
+                with self.assertRaisesRegex(SuccessorError, 'busy'):
+                    gate.close()
+                return original(pair)
+            with patch.object(NativePublicPair, 'probe', measured):
+                self.assertEqual(gate.probe_confirmed()['attempt'], 1)
+            # The result is a detached observation, not a surviving file lease.
+            (root / 'successor.0001.public').write_bytes(b'PUBLIC CHANGED')
+            with self.assertRaises(SuccessorError):
+                gate.probe_confirmed()
+
+    def test_native_close_uncertainty_blocks_coordinator_without_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'baseline.public').write_bytes(BASELINE)
+            gate = NativePublicAdmission(directory)
+            gate.publish_once('rotate-a', BASELINE)
+            original = NativePublicPair.close
+            def uncertain(pair):
+                original(pair)
+                raise SuccessorError('public_pair.close_failed')
+            with patch.object(NativePublicPair, 'close', uncertain):
+                with self.assertRaises(SuccessorError):
+                    gate.probe_confirmed()
+            with self.assertRaises(SuccessorError):
+                gate.read()

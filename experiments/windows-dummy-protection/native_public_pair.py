@@ -5,6 +5,7 @@ import hashlib
 from create_only_successor import BASELINE, RECORDS, SuccessorError
 from native_fixture_read import PreparedFixtureRead
 from public_successor_reader import SEALS
+from public_successor_admission import PublicSuccessorAdmission
 
 
 class NativePublicPair:
@@ -74,3 +75,18 @@ class NativePublicPair:
 
     def __exit__(self, *args):
         self.close()
+
+
+class NativePublicAdmission(PublicSuccessorAdmission):
+    """Explicit native work variant; publication remains portable.
+
+    Admission lock spans work and close. File pins span the computation only;
+    final path observation occurs after close. No production effect is admitted.
+    """
+    def _measure_public(self):
+        with NativePublicPair(str(self._directory)) as pair:
+            if pair.operation != self._operation:
+                raise SuccessorError('public_pair.changed')
+            result = pair.probe()
+        # A close failure prevents the result from reaching the coordinator.
+        return result['public_digest']

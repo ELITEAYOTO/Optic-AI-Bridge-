@@ -4,9 +4,10 @@
 
 Fixed baseline/record/seal read handles stay owned through public digest use.
 Actual separate-process ordinary writes fail while held and succeed after close;
-invalid entry releases pins without repairing data. Two native cases; local145
-/142 pass /3 skips. Path-based root selection and sequential opens remain; no
-coordinator composition, credential authority or production effect integration.
+invalid entry releases pins without repairing data. Explicit admission composition
+suppresses result on close uncertainty. Four native cases; local147 /144 pass /3
+skips. Path-based publication/observations remain; no credential authority or
+production effect integration.
 
 ## Fixed confirmed public work — 2026-10-14
 
