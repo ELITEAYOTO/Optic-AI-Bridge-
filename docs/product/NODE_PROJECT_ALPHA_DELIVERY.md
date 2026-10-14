@@ -57,8 +57,21 @@ ungranted sibling remains unreadable. The unflagged result is host-dependent
 characterization; unrelated failure/timeout is still rejected. No general npm/
 module-tree/build output/network permission follows from this small proof.
 Dependency installation, build output writes and preview remain gated.
+Relative require('./math.js') also failed locally although direct fs reading of
+the explicitly granted math.js bytes succeeded. Native characterization
+distinguishes direct read from module lookup, with a dedicated exit44 marker;
+unrelated process failure/timeouts cannot pass it. Directory metadata lookup
+must be solved for real multi-module Node projects without granting outside
+workspace content. A fixed driver is not the final application experience.
 Workflow now builds sibling helpers and runs this native characterization on
 Windows. Current-source CI confirmation remains pending.
+
+Operator-configured compact_results removes per-call probe/auth metadata from
+AI replies while retaining local TOOL proof logs and useful status/version/output.
+The existing diagnostic editing runner remains verbose by default. No token
+benchmark claim is made. project_info now reports connection.remaining_seconds
+and expires_soon, and the runner warns locally120seconds before normal expiry.
+It neither renews core grants nor silently adopts a stopped project.
 
 ## Remaining integration gates
 
@@ -76,8 +89,11 @@ Current blocking evidence for native execution: CI769 Windows test
 capability_free_appcontainer_denies_node_loopback_connection timed out before
 Node emitted NETWORK_ATTEMPT (stdout/stderr empty, no connection accepted).
 This is not proof of a successful network denial. Failed job was rerun without
-weakening assertions; rerun was cancelled when a newer head started. Ubuntu Rust, dependency
-policy and the eight other workflows at53a4391 succeeded.
+weakening assertions; rerun was cancelled when a newer head started. Atf6827cb,
+all nine workflows succeeded, including CI772's actual Windows network denial,
+isolated Node and reusable approval checks, and real-link24's native Node HTTP
+proof. This resolves the earlier failed check for that tested head; later UX
+changes still require their own CI confirmation.
 
 ## Host evidence already collected
 

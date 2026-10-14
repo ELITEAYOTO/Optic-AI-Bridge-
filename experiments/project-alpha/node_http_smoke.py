@@ -51,6 +51,13 @@ async def run(binary, node):
         logic, tests = project / 'src/logic.js', project / 'src/tests.js'
         ungranted = project / 'src/ungranted.txt'
         ungranted.write_text('PUBLIC_UNGRANTED_SENTINEL', encoding='utf-8')
+        module_source, module_test = project / 'src/math.js', project / 'src/module-test.js'
+        module_source.write_text('module.exports.add=(a,b)=>a+b;', encoding='utf-8')
+        module_test.write_text("const assert=require('node:assert/strict'),fs=require('node:fs');"
+            "assert.equal(fs.readFileSync(process.argv[2],'utf8'),'module.exports.add=(a,b)=>a+b;');"
+            "console.log('DIRECT_GRANTED_BYTES_READ');let math;try{math=require('./math.js');}catch(error){"
+            "if(error.code==='MODULE_NOT_FOUND'){console.log('RELATIVE_LOOKUP_DENIED');process.exit(44);}throw error;}"
+            "assert.equal(math.add(2,3),5);console.log('MODULE_TREE_PASS');", encoding='utf-8')
         logic.write_text('function add(a,b){ return a-b; } add(2,3);', encoding='utf-8')
         tests.write_text("const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');"
             "const value=vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'));"
@@ -69,13 +76,16 @@ async def run(binary, node):
                     'test': profile(['-e', test_driver, str(tests), str(logic), str(ungranted)]),
                     'module-flags': profile(['--preserve-symlinks-main', '--preserve-symlinks', '--check', str(logic)]),
                     'entry-test': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(tests), str(logic), str(ungranted)]),
+                    'module-tree': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(module_test), str(module_source)]),
                     'module-check': profile(['--check', str(logic)])}
         params = StdioServerParameters(command=str(bridge), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
             '--allow-executable', 'interpreter:' + str(executable),
             '--allow-isolated-node', str(executable),
             '--allow-process-read-file', str(executable), 'src/logic.js',
-            '--allow-process-read-file', str(executable), 'src/tests.js'])
+            '--allow-process-read-file', str(executable), 'src/tests.js',
+            '--allow-process-read-file', str(executable), 'src/math.js',
+            '--allow-process-read-file', str(executable), 'src/module-test.js'])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as upstream:
                 await upstream.initialize()
@@ -86,7 +96,7 @@ async def run(binary, node):
                 files = ProjectGate(state, identity, forward)
                 execution = ExecutionGate(state, identity, forward, profiles)
                 logs = []
-                app = make_project_app(files, state, emit=logs.append, execution=execution)
+                app = make_project_app(files, state, emit=logs.append, execution=execution, compact_results=True)
                 listener = socket.socket()
                 listener.bind(('127.0.0.1', 0))
                 listener.listen(32)
@@ -147,6 +157,20 @@ async def run(binary, node):
                         entry_output = structured(await session.call_tool('optic_task_read',
                             {'job_id': entry['upstream']['job_id']}))
                         assert 'TEST_PASS:SIBLING_DENIED' in entry_output['upstream']['text']
+                        tree = structured(await session.call_tool('optic_task_start', {'profile': 'module-tree'}))
+                        assert tree['ok']
+                        tree_result = await finished(session, tree['upstream']['job_id'])
+                        tree_output = structured(await session.call_tool('optic_task_read',
+                            {'job_id': tree['upstream']['job_id']}))
+                        assert tree_result['status'] == 'exited'
+                        assert 'DIRECT_GRANTED_BYTES_READ' in tree_output['upstream']['text']
+                        if tree_result['exit_code'] == 0:
+                            assert 'MODULE_TREE_PASS' in tree_output['upstream']['text']
+                            print('NODE_MODULE_TREE_MODE: allowed')
+                        else:
+                            assert tree_result['exit_code'] == 44
+                            assert 'RELATIVE_LOOKUP_DENIED' in tree_output['upstream']['text']
+                            print('NODE_MODULE_TREE_MODE: granted bytes readable, relative lookup denied')
                         state.control('revoke', 'A')
                         assert (await local_stop(files, upstream))['session_revoked']
                         assert str(project) not in '\n'.join(logs)

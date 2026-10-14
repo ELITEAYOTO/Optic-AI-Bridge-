@@ -28,7 +28,8 @@ class Http(unittest.IsolatedAsyncioTestCase):
             return {'public': True}
         gate = ProjectGate(state, identity, upstream)
         logs = []
-        app = make_project_app(gate, state, emit=logs.append)
+        observed_clock = [0.0]
+        app = make_project_app(gate, state, emit=logs.append, lifetime=1400, clock=lambda: observed_clock[0])
         listener = socket.socket()
         listener.bind(('127.0.0.1', 0))
         listener.listen(32)
@@ -78,7 +79,15 @@ class Http(unittest.IsolatedAsyncioTestCase):
             async with httpx2.AsyncClient(headers=headers(TOKENS['A'][0]), timeout=5) as http:
                 self.assertEqual((await http.post(url, json={'method': 'ping'})).status_code, 401)
             async with client(url, TOKENS['A'][1]) as session:
-                self.assertTrue(structured(await session.call_tool('optic_project_info', {}))['ok'])
+                observed_clock[0] = 1390.0
+                info = structured(await session.call_tool('optic_project_info', {}))
+                self.assertTrue(info['ok'])
+                self.assertEqual(info['connection']['remaining_seconds'], 10)
+                self.assertTrue(info['connection']['expires_soon'])
+                observed_clock[0] = 1400.0
+                expired = structured(await session.call_tool('optic_project_info', {}))
+                self.assertFalse(expired['ok'])
+                self.assertEqual(expired['code'], 'link.inactive')
             state.control('revoke', 'A')
             async with httpx2.AsyncClient(headers=headers(TOKENS['A'][1]), timeout=5) as http:
                 self.assertEqual((await http.post(url, json={'method': 'ping'})).status_code, 401)

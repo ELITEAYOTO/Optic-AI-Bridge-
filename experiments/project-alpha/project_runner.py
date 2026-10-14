@@ -69,7 +69,7 @@ async def run(args):
                     return structured(await upstream.call_tool(name, arguments))
                 gate = ProjectGate(state, identity, forward)
                 app = make_project_app(gate, state, emit=channel.emit,
-                    allow_random_tunnel=args.allow_random_tunnel_host)
+                    allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime)
                 service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                     log_config=None, access_log=False, limit_concurrency=32, timeout_keep_alive=5,
                     timeout_graceful_shutdown=5, h11_max_incomplete_event_size=16384))
@@ -77,8 +77,15 @@ async def run(args):
                 loop = asyncio.get_running_loop()
                 threading.Thread(target=console, args=(state, loop, stopped, channel), daemon=True).start()
                 async def watch():
+                    if args.lifetime > 120:
+                        try:
+                            async with asyncio.timeout(args.lifetime - 120):
+                                await stopped.wait()
+                        except TimeoutError:
+                            channel.emit('[LOCAL] ' + json.dumps({'operation': 'expiry-warning',
+                                'remaining_seconds': 120, 'project_saved_after_stop': True}, sort_keys=True))
                     try:
-                        async with asyncio.timeout(args.lifetime):
+                        async with asyncio.timeout(min(args.lifetime, 120)):
                             await stopped.wait()
                     except TimeoutError:
                         pass
@@ -87,6 +94,7 @@ async def run(args):
                 watcher = asyncio.create_task(watch())
                 channel.emit(f'GENERATED PROJECT ALPHA | http://127.0.0.1:{args.port}/mcp | file editing only')
                 channel.emit('Public dummy auth. Shared connection. Local: rotate-a / revoke-a / stop / proof-stats.')
+                channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
                 channel.emit('Project saved under output/' + root.name + '/project/src after stop. No existing project is accepted.')
                 try:
                     await service.serve()

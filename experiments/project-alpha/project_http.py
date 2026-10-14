@@ -1,6 +1,8 @@
 """Six parameterized generated-project tools, behind bounded auth/schema guard."""
 import json
+import math
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'francestudent-probe'))
@@ -36,7 +38,16 @@ class ProjectGuard(Guard):
             return False
 
 
-def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None):
+def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None,
+                     lifetime=1500, clock=time.monotonic, compact_results=False):
+    if type(compact_results) is not bool:
+        raise ValueError('project.invalid_result_mode')
+    if type(lifetime) is not int or not 5 <= lifetime <= 1500:
+        raise ValueError('project.invalid_lifetime')
+    started = clock()
+    if type(started) not in (int, float) or not math.isfinite(started):
+        raise ValueError('project.invalid_clock')
+    deadline = started + lifetime
     if execution is not None:
         bind_admission(gate, execution)
     mcp = MCPServer('Optic-Project-Alpha', instructions=(
@@ -49,6 +60,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         'reading if it changes. Binary pages use base64 and text=null. '
         'Create with expected_kind=absent; replace with expected_kind=content '
         'and exact expected_version. Never retry an outcome_unknown write blindly. '
+        'project_info reports connection.remaining_seconds and expires_soon; '
+        'when expiry is near, finish verification rather than begin a long edit. '
         'Send calls one at a time; link.busy means the request was not admitted. '
         'Patch offsets/removals count UTF-8 bytes, not characters. '
         + ('Named task profiles available: ' + ', '.join(execution.profiles)
@@ -56,16 +69,34 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
            'Stop is a request, not confirmation. Never retry uncertain starts.'
            if execution is not None else 'No process tools are enabled.')))
 
+    def reply(name, payload):
+        observed = result(name, payload)  # Keep operator proof logs in both modes.
+        if compact_results:
+            return {key: value for key, value in observed.items()
+                    if key not in ('probe_invocation', 'request_observation')}
+        return observed
+
     async def call(name, arguments):
         proof = request_proof.get()
         try:
+            now = clock()
+            if not math.isfinite(now) or now < started or now >= deadline:
+                gate.stopped = True
+                if execution is not None:
+                    execution.stopped = True
+                raise ForwardError('link.inactive')
             selected = execution if execution is not None and name in TASK_TOOLS else gate
             payload = await selected.call(proof['owner'] if proof else None, name, arguments)
             if len(json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()) > 65536:
                 raise ForwardError('project.output_bound')
-            return result(name, {'ok': True, 'generated_project_only': True, 'upstream': payload})
+            connection = ({'connection': {'shared': True,
+                'remaining_seconds': max(0, math.ceil(deadline - clock())),
+                'expires_soon': deadline - clock() <= 120}}
+                if name == 'optic_project_info' else {})
+            return reply(name, {'ok': True, 'generated_project_only': True,
+                **connection, 'upstream': payload})
         except ForwardError as error:
-            return result(name, {'ok': False, 'code': str(error)})
+            return reply(name, {'ok': False, 'code': str(error)})
 
     @mcp.tool()
     async def optic_project_info() -> dict:
@@ -158,5 +189,5 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                     return False
             return super().valid_arguments(name, args)
 
-    return CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit,
+    return CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit, clock=clock,
                         zero_arg_tools=(), handle_tool=None, timed_diagnostics=True)

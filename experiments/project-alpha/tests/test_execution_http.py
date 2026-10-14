@@ -33,7 +33,7 @@ class ExecutionHttp(unittest.IsolatedAsyncioTestCase):
         files = ProjectGate(state, identity, upstream)
         execution = ExecutionGate(state, identity, upstream, profiles())
         logs = []
-        app = make_project_app(files, state, emit=logs.append, execution=execution)
+        app = make_project_app(files, state, emit=logs.append, execution=execution, compact_results=True)
         listener = socket.socket()
         listener.bind(('127.0.0.1', 0))
         listener.listen(32)
@@ -53,6 +53,8 @@ class ExecutionHttp(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS + TASK_TOOLS))
                 value = structured(await session.call_tool('optic_task_start', {'profile': 'check'}))
                 self.assertTrue(value['ok'])
+                self.assertNotIn('probe_invocation', value)
+                self.assertNotIn('request_observation', value)
                 job = value['upstream']['job_id']
                 self.assertEqual(calls[0], ('process_start', profiles()['check']))
                 result = structured(await session.call_tool('optic_task_result', {'job_id': job}))
@@ -70,6 +72,7 @@ class ExecutionHttp(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before, len(calls))
             self.assertNotIn('a' * 64, '\n'.join(logs))
             self.assertNotIn('C:/Selected', '\n'.join(logs))
+            self.assertTrue(any(' TOOL ' in line and '"marker"' in line for line in logs))
             self.assertTrue(await files.stop())
         finally:
             service.should_exit = True

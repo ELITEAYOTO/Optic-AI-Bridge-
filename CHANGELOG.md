@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.
 - Experimental named-profile process forwarding preparation with bounded owned jobs, retained cancellation accounting and six synthetic tests; disabled in the editing HTTP runner until native Node/enrollment integration gates pass.
 - Alpha read pagination with full observed versions on each bounded page and no duplicated text/base64; UTC millisecond diagnostic timestamps. FS generated-app browser acceptance recorded separately from incomplete final counter edit.
 - Generated-project six-tool HTTP editing alpha, strict bounded schemas, retained serialized forwarding, uncertainty-aware mutation replies, saved generated projects and matching CI package/manual steps. Complete offset0 Rust reads now expose observed content versions; partial reads return null. No process/Git/delete or real-project enrollment grant.

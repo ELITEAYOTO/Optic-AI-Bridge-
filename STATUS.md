@@ -19,7 +19,11 @@ FS task-list creation/paged read acceptance and user browser feature checks
 passed. Latest extra counter edit remained unconfirmed and absent on disk before
 25-minute stop. Corrected paging commit53a4391: eight experiment workflows,
 Ubuntu Rust/dependency checks passed; Windows CI769 network-isolation test
-timed out before probe output, rerun requested with assertions unchanged.
+timed out before probe output; all nine workflows passed later atf6827cb,
+including actual Windows network denial and reusable Node approval. New UX/
+module-lookup characterization changes have eighteen local tests plus native
+Node proof, with exact new-head CI still pending. project_info reports time
+remaining; local expiry warning and optional compact AI replies added.
 
 ## Generated project alpha delivery — 2026-10-14
 
