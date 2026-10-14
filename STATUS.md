@@ -11,6 +11,12 @@ and retained-source proof. No dependency/build/server or personal project claim.
 
 ## Node module metadata correction — native CI pending
 
+CI775 reached the native metadata primitive after the owned-root helper test
+passed, but its std::fs::metadata child failed the positive attribute-read
+assertion. The child now explicitly opens with FILE_READ_ATTRIBUTES rather
+than std's broader path-based fallback; no production ACL rights are widened.
+Diagnostic output is included in positive assertions. Native rerun pending.
+
 At3c0228, real-link26 passed on Windows, including actual relative Node module
 resolution with directory-listing, sibling-read and file-create denial. Ubuntu
 Rust passed. General Windows CI774 stopped on the outside-root launcher test:

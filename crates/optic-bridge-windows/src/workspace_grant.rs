@@ -474,7 +474,16 @@ mod tests {
         );
 
         match mode {
-            "metadata" => assert!(fs::metadata(&target).expect("directory metadata").is_dir()),
+            "metadata" => {
+                // Request only the declared attribute rights. std::fs::metadata
+                // may use a broader directory-open fallback under AppContainer.
+                let directory = OpenOptions::new()
+                    .access_mode(FILE_READ_ATTRIBUTES.0)
+                    .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
+                    .open(&target)
+                    .expect("open directory for attributes only");
+                assert!(directory.metadata().expect("handle metadata").is_dir());
+            }
             "list" => {
                 let _ = fs::read_dir(&target).expect("directory listing");
             }
@@ -536,10 +545,8 @@ mod tests {
         let grant = profile
             .grant_directory_metadata_within(&root, &root)
             .expect("metadata grant");
-        assert_eq!(
-            run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
-            0
-        );
+        let metadata = run_workspace_probe(&profile, &probe, &root, "metadata");
+        assert_eq!(metadata.exit_code, 0, "{}", metadata.diagnostic());
         for mode in ["list", "create"] {
             assert_ne!(
                 run_workspace_probe(&profile, &probe, &root, mode).exit_code,
@@ -580,10 +587,8 @@ mod tests {
             let _drop_grant = profile
                 .grant_directory_metadata_within(&root, &root)
                 .unwrap();
-            assert_eq!(
-                run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
-                0
-            );
+            let metadata = run_workspace_probe(&profile, &probe, &root, "metadata");
+            assert_eq!(metadata.exit_code, 0, "{}", metadata.diagnostic());
         }
         assert_ne!(
             run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
