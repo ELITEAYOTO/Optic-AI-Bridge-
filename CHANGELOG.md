@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).
 - Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.
 - Experimental named-profile process forwarding preparation with bounded owned jobs, retained cancellation accounting and six synthetic tests; disabled in the editing HTTP runner until native Node/enrollment integration gates pass.
 - Alpha read pagination with full observed versions on each bounded page and no duplicated text/base64; UTC millisecond diagnostic timestamps. FS generated-app browser acceptance recorded separately from incomplete final counter edit.

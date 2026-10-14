@@ -43,4 +43,4 @@ pub use job::LimitedJobObject;
 #[cfg(windows)]
 pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
-pub use workspace_grant::AppContainerReadFileGrant;
+pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};

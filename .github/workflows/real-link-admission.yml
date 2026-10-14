@@ -6,6 +6,8 @@ on:
       - 'experiments/project-alpha/**'
       - 'experiments/francestudent-probe/server.py'
       - 'crates/optic-bridge-mcp/src/server.rs'
+      - 'crates/optic-bridge-app/src/bin/optic_bridge_isolation_launcher.rs'
+      - 'crates/optic-bridge-windows/**'
       - 'experiments/credential-lifecycle/lifecycle_core.py'
       - '.github/workflows/real-link-admission.yml'
 permissions:

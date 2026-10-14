@@ -3,6 +3,7 @@
 #[cfg(windows)]
 mod windows_launcher {
     use std::{
+        collections::BTreeSet,
         error::Error,
         fs::{self, OpenOptions},
         io::{Error as IoError, ErrorKind, Read},
@@ -20,6 +21,7 @@ mod windows_launcher {
     const MAX_REQUEST_BYTES: usize = 64 * 1024;
     const MAX_ARGS: usize = 128;
     const MAX_WORKSPACE_READ_FILES: usize = 32;
+    const MAX_METADATA_DIRECTORIES: usize = 64;
     const MAX_COMMAND_WORST_CASE_UTF16_UNITS: usize = 30_000;
     const INTERNAL_FAILURE_EXIT: i32 = 126;
 
@@ -56,6 +58,36 @@ mod windows_launcher {
         let workspace_root = absolute_path(&request.workspace_root, "workspace root")?;
         let profile = AppContainerProfile::create_ephemeral()
             .map_err(|error| IoError::other(format!("create AppContainer profile: {error}")))?;
+        let mut _metadata_grants = Vec::new();
+        if !request.workspace_read_files.is_empty() {
+            // Pin the root before resolving ancestors. Never grant volume/user
+            // ancestors above the locally selected workspace, or directory data.
+            _metadata_grants
+                .push(profile.grant_directory_metadata_within(&workspace_root, &workspace_root)?);
+            let canonical_root = fs::canonicalize(&workspace_root)?;
+            let mut directories = BTreeSet::new();
+            for value in &request.workspace_read_files {
+                let file = canonical_file(value)?;
+                let mut parent = file.parent();
+                while let Some(directory) = parent {
+                    if !directory.starts_with(&canonical_root) {
+                        return Err(IoError::other("read-grant ancestor escapes workspace").into());
+                    }
+                    if directory == canonical_root {
+                        break;
+                    }
+                    directories.insert(directory.to_path_buf());
+                    if directories.len() >= MAX_METADATA_DIRECTORIES {
+                        return Err(IoError::other("read-grant metadata directory limit").into());
+                    }
+                    parent = directory.parent();
+                }
+            }
+            for directory in directories {
+                _metadata_grants
+                    .push(profile.grant_directory_metadata_within(&directory, &workspace_root)?);
+            }
+        }
         let mut _workspace_grants = Vec::with_capacity(request.workspace_read_files.len());
         for value in &request.workspace_read_files {
             let path = absolute_path(value, "workspace read grant")?;

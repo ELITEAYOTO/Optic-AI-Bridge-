@@ -55,9 +55,11 @@ async def run(binary, node):
         module_source.write_text('module.exports.add=(a,b)=>a+b;', encoding='utf-8')
         module_test.write_text("const assert=require('node:assert/strict'),fs=require('node:fs');"
             "assert.equal(fs.readFileSync(process.argv[2],'utf8'),'module.exports.add=(a,b)=>a+b;');"
-            "console.log('DIRECT_GRANTED_BYTES_READ');let math;try{math=require('./math.js');}catch(error){"
-            "if(error.code==='MODULE_NOT_FOUND'){console.log('RELATIVE_LOOKUP_DENIED');process.exit(44);}throw error;}"
-            "assert.equal(math.add(2,3),5);console.log('MODULE_TREE_PASS');", encoding='utf-8')
+            "console.log('DIRECT_GRANTED_BYTES_READ');const math=require('./math.js');"
+            "assert.equal(math.add(2,3),5);assert.equal(fs.statSync(__dirname).isDirectory(),true);"
+            "assert.throws(()=>fs.readdirSync(__dirname));assert.throws(()=>fs.readFileSync(process.argv[3]));"
+            "assert.throws(()=>fs.writeFileSync(__dirname+'/forbidden-new.txt','x'));"
+            "console.log('MODULE_TREE_PASS:LIST_READ_WRITE_DENIED');", encoding='utf-8')
         logic.write_text('function add(a,b){ return a-b; } add(2,3);', encoding='utf-8')
         tests.write_text("const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');"
             "const value=vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'));"
@@ -76,7 +78,7 @@ async def run(binary, node):
                     'test': profile(['-e', test_driver, str(tests), str(logic), str(ungranted)]),
                     'module-flags': profile(['--preserve-symlinks-main', '--preserve-symlinks', '--check', str(logic)]),
                     'entry-test': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(tests), str(logic), str(ungranted)]),
-                    'module-tree': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(module_test), str(module_source)]),
+                    'module-tree': profile(['--preserve-symlinks-main', '--preserve-symlinks', str(module_test), str(module_source), str(ungranted)]),
                     'module-check': profile(['--check', str(logic)])}
         params = StdioServerParameters(command=str(bridge), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
@@ -164,13 +166,10 @@ async def run(binary, node):
                             {'job_id': tree['upstream']['job_id']}))
                         assert tree_result['status'] == 'exited'
                         assert 'DIRECT_GRANTED_BYTES_READ' in tree_output['upstream']['text']
-                        if tree_result['exit_code'] == 0:
-                            assert 'MODULE_TREE_PASS' in tree_output['upstream']['text']
-                            print('NODE_MODULE_TREE_MODE: allowed')
-                        else:
-                            assert tree_result['exit_code'] == 44
-                            assert 'RELATIVE_LOOKUP_DENIED' in tree_output['upstream']['text']
-                            print('NODE_MODULE_TREE_MODE: granted bytes readable, relative lookup denied')
+                        assert tree_result['exit_code'] == 0, tree_result
+                        assert 'MODULE_TREE_PASS:LIST_READ_WRITE_DENIED' in tree_output['upstream']['text']
+                        assert not (project / 'src/forbidden-new.txt').exists()
+                        print('NODE_MODULE_TREE_MODE: resolved; directory listing, sibling data and writes denied')
                         state.control('revoke', 'A')
                         assert (await local_stop(files, upstream))['session_revoked']
                         assert str(project) not in '\n'.join(logs)

@@ -515,7 +515,7 @@ fn profiled_process_approval_message(
         .as_ref()
         .map_or("<workspace-root>", WorkspacePath::as_str);
     format!(
-        "Approve exact tool profile '{}'\nExecutable: {}\nClass: {:?}\nWorkload: {:?}\nArgs: {:?}\nCwd: {}\nWorkspace read files: {:?}\nEnvironment allowlist: {:?}\nNetwork: {:?}\nRequested resources: timeout={}ms output={}B memory={}B process_count={}",
+        "Approve exact tool profile '{}'\nExecutable: {}\nClass: {:?}\nWorkload: {:?}\nArgs: {:?}\nCwd: {}\nWorkspace read files: {:?}\nSource reads include ancestor metadata within the workspace, without directory listing or writes.\nEnvironment allowlist: {:?}\nNetwork: {:?}\nRequested resources: timeout={}ms output={}B memory={}B process_count={}",
         profile.name().as_str(),
         invocation.executable,
         invocation.class,

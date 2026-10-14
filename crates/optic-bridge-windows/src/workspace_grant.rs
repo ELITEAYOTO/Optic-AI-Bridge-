@@ -19,9 +19,10 @@ use windows::Win32::{
         DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
     },
     Storage::FileSystem::{
-        FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_OPEN_REPARSE_POINT,
-        FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-        FileAttributeTagInfo, GetFileInformationByHandleEx,
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo,
+        GetFileInformationByHandleEx,
     },
 };
 
@@ -31,8 +32,49 @@ use crate::{
 };
 
 const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
+const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
 
 impl AppContainerProfile {
+    /// Permit metadata/traversal of one pinned directory inside a pinned root.
+    /// No listing, file-content, write or inheritable permission is granted.
+    pub fn grant_directory_metadata_within<'a>(
+        &'a self,
+        path: &Path,
+        workspace_root: &Path,
+    ) -> Result<AppContainerDirectoryMetadataGrant<'a>> {
+        if !path.is_absolute() || !workspace_root.is_absolute() {
+            return Err(Error::other("metadata grant paths must be absolute"));
+        }
+        if !self.external_acl_grants_allowed() {
+            return Err(Error::other(
+                "workspace grants require an ephemeral profile",
+            ));
+        }
+        let root = open_metadata_directory(workspace_root)?;
+        let root_path = query_final_path(&root).map_err(Error::other)?;
+        let directory = open_metadata_directory(path)?;
+        let final_path = query_final_path(&directory).map_err(Error::other)?;
+        if !final_path.starts_with(&root_path) {
+            return Err(Error::other(
+                "metadata directory resolves outside workspace",
+            ));
+        }
+        let sid = self.package_sid();
+        modify_file_dacl(
+            &directory,
+            sid,
+            true,
+            FILE_READ_ATTRIBUTES.0 | FILE_TRAVERSE.0,
+        )?;
+        Ok(AppContainerDirectoryMetadataGrant {
+            directory,
+            _root: root,
+            sid,
+            active: true,
+            _profile: PhantomData,
+        })
+    }
+
     /// Grant this fresh AppContainer profile read-only access to one exact file.
     ///
     /// The profile Package SID is already part of every process token created for
@@ -97,7 +139,7 @@ impl<'a> AppContainerReadFileGrant<'a> {
             }
         }
         let sid = profile.package_sid();
-        modify_file_dacl(&file, sid, true)?;
+        modify_file_dacl(&file, sid, true, FILE_GENERIC_READ.0)?;
         Ok(Self {
             file,
             sid,
@@ -113,7 +155,7 @@ impl<'a> AppContainerReadFileGrant<'a> {
 
     fn revoke_inner(&mut self) -> Result<()> {
         if self.active {
-            modify_file_dacl(&self.file, self.sid, false)?;
+            modify_file_dacl(&self.file, self.sid, false, FILE_GENERIC_READ.0)?;
             self.active = false;
         }
         Ok(())
@@ -126,12 +168,58 @@ impl Drop for AppContainerReadFileGrant<'_> {
     }
 }
 
-fn modify_file_dacl(file: &File, sid: PSID, grant: bool) -> Result<()> {
+/// Pins both directory objects without delete sharing for the grant lifetime.
+#[derive(Debug)]
+pub struct AppContainerDirectoryMetadataGrant<'a> {
+    directory: File,
+    _root: File,
+    sid: PSID,
+    active: bool,
+    _profile: PhantomData<&'a AppContainerProfile>,
+}
+
+impl AppContainerDirectoryMetadataGrant<'_> {
+    /// Revoke the exact SID entry and release both namespace pins.
+    pub fn revoke(mut self) -> Result<()> {
+        self.revoke_inner()
+    }
+
+    fn revoke_inner(&mut self) -> Result<()> {
+        if self.active {
+            modify_file_dacl(&self.directory, self.sid, false, 0)?;
+            self.active = false;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for AppContainerDirectoryMetadataGrant<'_> {
+    fn drop(&mut self) {
+        let _ = self.revoke_inner();
+    }
+}
+
+fn open_metadata_directory(path: &Path) -> Result<File> {
+    let directory = OpenOptions::new()
+        .access_mode(
+            READ_CONTROL_ACCESS | WRITE_DAC_ACCESS | FILE_READ_ATTRIBUTES.0 | FILE_TRAVERSE.0,
+        )
+        .share_mode(FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(path)?;
+    reject_reparse(&directory)?;
+    if !directory.metadata()?.is_dir() {
+        return Err(Error::other("metadata grant requires a directory"));
+    }
+    Ok(directory)
+}
+
+fn modify_file_dacl(file: &File, sid: PSID, grant: bool, permissions: u32) -> Result<()> {
     let handle = HANDLE(file.as_raw_handle());
     let mut old_acl = ptr::null_mut::<ACL>();
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
-    // SAFETY: handle is a live exact-file handle opened with READ_CONTROL via
-    // FILE_GENERIC_READ. Returned DACL aliases the returned LocalAlloc descriptor.
+    // SAFETY: handle is a live exact-object handle opened with READ_CONTROL.
+    // Returned DACL aliases the returned LocalAlloc descriptor.
     let status = unsafe {
         GetSecurityInfo(
             handle,
@@ -156,7 +244,7 @@ fn modify_file_dacl(file: &File, sid: PSID, grant: bool) -> Result<()> {
     // SAFETY: SID is owned by the live AppContainer profile and remains valid throughout.
     unsafe { BuildTrusteeWithSidW(&mut trustee, Some(sid)) };
     let entry = EXPLICIT_ACCESS_W {
-        grfAccessPermissions: if grant { FILE_GENERIC_READ.0 } else { 0 },
+        grfAccessPermissions: if grant { permissions } else { 0 },
         grfAccessMode: if grant { GRANT_ACCESS } else { REVOKE_ACCESS },
         grfInheritance: Default::default(),
         Trustee: trustee,
@@ -386,6 +474,12 @@ mod tests {
         );
 
         match mode {
+            "metadata" => assert!(fs::metadata(&target).expect("directory metadata").is_dir()),
+            "list" => {
+                let _ = fs::read_dir(&target).expect("directory listing");
+            }
+            "create" => fs::write(target.join("forbidden-create.txt"), b"forbidden")
+                .expect("directory create"),
             "read" => {
                 let content = fs::read_to_string(&target).expect("probe read exact file");
                 assert_eq!(content, PROBE_SENTINEL);
@@ -413,6 +507,106 @@ mod tests {
             profile.grant_file_read(&sentinel).is_err(),
             "predictably named profiles must not mint persistent filesystem grants"
         );
+        assert!(
+            profile
+                .grant_directory_metadata_within(
+                    sentinel.parent().unwrap(),
+                    sentinel.parent().unwrap()
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn directory_metadata_grant_cannot_list_read_create_or_escape_and_pins_root() {
+        let root = unique_temp_file();
+        fs::create_dir(&root).expect("create unique metadata root");
+        let sentinel = root.join("ungranted.txt");
+        fs::write(&sentinel, PROBE_SENTINEL).expect("write ungranted file");
+        let profile = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let profile_dir = profile.profile_storage_path_for_tests();
+        let probe = profile_dir.join("metadata-probe.exe");
+        let _probe_cleanup = Cleanup(probe.clone());
+        let _config_cleanup = Cleanup(profile_dir.join(PROBE_CONFIG));
+        fs::copy(std::env::current_exe().unwrap(), &probe).expect("copy probe");
+        assert_ne!(
+            run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
+            0
+        );
+        let grant = profile
+            .grant_directory_metadata_within(&root, &root)
+            .expect("metadata grant");
+        assert_eq!(
+            run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
+            0
+        );
+        for mode in ["list", "create"] {
+            assert_ne!(
+                run_workspace_probe(&profile, &probe, &root, mode).exit_code,
+                0
+            );
+        }
+        assert_ne!(
+            run_workspace_probe(&profile, &probe, &sentinel, "read").exit_code,
+            0
+        );
+        assert!(!root.join("forbidden-create.txt").exists());
+        assert!(
+            profile
+                .grant_directory_metadata_within(root.parent().unwrap(), &root)
+                .is_err()
+        );
+        assert!(
+            profile
+                .grant_directory_metadata_within(&sentinel, &root)
+                .is_err()
+        );
+        assert!(
+            profile
+                .grant_directory_metadata_within(Path::new("relative"), &root)
+                .is_err()
+        );
+        let moved = root.with_extension("moved");
+        assert!(
+            fs::rename(&root, &moved).is_err(),
+            "live metadata grant must pin root identity"
+        );
+        grant.revoke().expect("revoke metadata rights");
+        assert_ne!(
+            run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
+            0
+        );
+        {
+            let _drop_grant = profile
+                .grant_directory_metadata_within(&root, &root)
+                .unwrap();
+            assert_eq!(
+                run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
+                0
+            );
+        }
+        assert_ne!(
+            run_workspace_probe(&profile, &probe, &root, "metadata").exit_code,
+            0
+        );
+        let alias = root.with_extension("alias");
+        if std::os::windows::fs::symlink_dir(&root, &alias).is_ok() {
+            assert!(
+                profile
+                    .grant_directory_metadata_within(&alias, &root)
+                    .is_err()
+            );
+            assert!(
+                profile
+                    .grant_directory_metadata_within(&root, &alias)
+                    .is_err()
+            );
+            fs::remove_dir(&alias).expect("remove owned directory symlink only");
+        }
+        fs::rename(&root, &moved).expect("pins released after revoke");
+        fs::rename(&moved, &root).expect("restore fixture name");
+        fs::remove_file(&sentinel).expect("remove owned sentinel");
+        fs::remove_dir(&root).expect("remove empty owned root");
     }
 
     #[test]

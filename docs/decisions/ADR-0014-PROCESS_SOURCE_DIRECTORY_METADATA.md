@@ -1,0 +1,40 @@
+# ADR-0014 — Source ancestor metadata for isolated process reads
+
+Status: IMPLEMENTED / NATIVE VALIDATION PENDING
+Date:2026-10-14
+
+## Context
+
+The Node alpha proved that a process can read exactly granted source bytes but
+ordinary require('./math.js') cannot resolve the module. Node first queries the
+source directory. Exact-file data permissions alone do not support that lookup.
+Granting directory read/listing or ambient filesystem rights would be excessive.
+
+## Decision
+
+An operator-authorized process source-file read grant includes non-inheritable
+FILE_READ_ATTRIBUTES and FILE_TRAVERSE on ancestors inside the selected workspace,
+including its root. It does not include FILE_LIST_DIRECTORY, file data, writes,
+creation, delete or ancestors above the workspace. No model-controlled selector
+or new permission-granting tool is introduced. Rust ProcessRun/lease ownership,
+class/approval/isolation/resource checks remain unchanged.
+
+The launcher derives at most64 unique metadata directories from at most32
+already authorized file reads. Fresh AppContainer SID only. Directory targets
+and workspace roots are opened without following final reparse points, checked
+using handle-derived component paths, and held without delete sharing. Grants
+are revoked by exact handle on explicit revoke or best-effort Drop. Crash-left
+ACEs cannot be reused by a later randomly named profile. This is not an ACL
+anti-rollback or same-user adversary defense claim.
+
+Node profiles may retain local symlink-resolution flags to avoid realpath
+metadata probes above the workspace. These flags do not grant filesystem rights.
+Whole directory listing/read/write grants, dependency trees, network and build
+output write remain separate gates.
+
+## Acceptance
+
+Native tests must prove directory metadata access, listing/read/create denial,
+outside-workspace/reparse rejection, root rename denial while held, explicit
+revocation and actual relative Node module resolution with sibling denial.
+No production readiness or successful new native test is claimed before CI.

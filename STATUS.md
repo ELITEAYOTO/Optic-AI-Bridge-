@@ -1,5 +1,16 @@
 # Project Status
 
+## Node module metadata correction — native CI pending
+
+ADR0014 defines source-directory attribute/traversal access derived from exact
+operator-authorized source reads, without directory listing/data/write rights.
+The Windows helper now pins the root and bounded ancestors before adding
+non-inheritable metadata ACEs. Native primitive tests cover data/list/create/
+outside-root denial, revocation and namespace pinning; Node HTTP proof now
+requires actual relative-module success with listing/sibling/write denial.
+Formatting passes. Local Rust linking still lacks msvcrt.lib; successful native
+compilation/tests must be confirmed by CI before this implementation is accepted.
+
 ## Node alpha preparation and host editing evidence — 2026-10-14
 
 User selected Node web applications for the next end-to-end alpha. See
