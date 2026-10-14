@@ -1,5 +1,22 @@
 # Project Status
 
+## Fifty-minute retained alpha delivery accepted — 2026-10-15
+
+Runtime head e37c6a7c8ad8d19dd0636823081db79708a91dae passed all nine
+PR workflows, including CI790 (38656395720) and Read Link Admission42
+(38656395481). Windows runner proof now stops and reopens the same retained run,
+preserves every source byte, executes the preserved Node test successfully and
+regenerates the viewer snapshot only after another confirmed stop. Windows25
+Python tests, isolated Node22.15.1 and operator Electron44.7.2 proofs passed.
+The downloaded exact package also passed the actual runner/restart proof locally
+with installed Node22.15.1. Artifact11936343395 corresponds to merge source
+f98b7c99fc23ee79526b9d18619c950a243e26cc. Delivered inner ZIP SHA256:
+d13fc9c27bbbddef8c6d62717d11934c769247bd776939fdbd331dbdde6d07b7.
+Archive bounds/paths and all four manifest binary/viewer hashes verified. Package
+contains no output folder; existing test12 alpha-zpre99l7 can remain in place
+when updating program files, then local -ResumeRun reauthorizes it for50minutes.
+FS reconnection and completion of that user's unfinished app.js remain manual.
+
 ## Explicit retained alpha resume — native runner CI pending
 
 Local -ResumeRun selects an alpha name directly under package output. Existing
