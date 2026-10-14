@@ -446,3 +446,10 @@ root through public digest use. Actual other-process writes refuse until close.
 Four native cases; local147 /144 passed /3 skips. Explicit NativePublicAdmission
 composes pinned computation and close uncertainty; publication/observations remain
 portable. No root containment or mapped-writer exclusion. See H02_NATIVE_PUBLIC_PAIR_PIN.md.
+
+# Root-relative public read checkpoint — 2026-10-14
+
+RelativePublicPair explicitly selects three fixed NT opens under the held root,
+never creates missing leaves or falls back to path opens. Five native tests;
+local152 /149 passed /3 skips. NativePublicAdmission remains the previous variant;
+no silent switch or root-selection guarantee. See H02_RELATIVE_PUBLIC_PAIR_READ.md.
