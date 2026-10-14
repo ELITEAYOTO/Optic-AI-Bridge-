@@ -1,5 +1,20 @@
 # Project Status
 
+## Node alpha preparation and host editing evidence — 2026-10-14
+
+User selected Node web applications for the next end-to-end alpha. See
+[delivery contract](docs/product/NODE_PROJECT_ALPHA_DELIVERY.md). Six new
+synthetic execution-gate tests plus ten editing tests pass locally. Named frozen
+profiles forward to existing Rust process tools, with bounded owned-job state
+and uncertainty-aware cancellation; NOT exposed by current editing HTTP runner.
+No real-project enrollment or FS Node build/test/preview claim yet.
+
+FS task-list creation/paged read acceptance and user browser feature checks
+passed. Latest extra counter edit remained unconfirmed and absent on disk before
+25-minute stop. Corrected paging commit53a4391: eight experiment workflows,
+Ubuntu Rust/dependency checks passed; Windows CI769 network-isolation test
+timed out before probe output, rerun requested with assertions unchanged.
+
 ## Generated project alpha delivery — 2026-10-14
 
 Priority shifted from storage micro-proofs to a usable single-session project
