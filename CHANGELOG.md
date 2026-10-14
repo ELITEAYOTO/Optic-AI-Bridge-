@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Optional closed staged public seal publication: fixed exclusive hard-link target, reader refusal until staged unlink, eight error/abrupt-exit regressions, and no false ACK or automatic repair. Path-based disposable proof only; no durable auth commit or production authority.
 - Bounded public successor/seal observer with empty/reserved/validated classifications and zero authority; exact finite pair validation, no adoption/repair, and actual abrupt-exit/failed-flush evidence distinguishing readable data from ACK/durability. No auth journal or production integration.
 - Draft one-slot create-only public successor election: actual two-thread/two-process competing claims, late-competitor preservation, fixed payloads/capacity, bounded readback and no repair of partial/existing slots. No journal, auth commit or production replacement selected.
 - Native negative replacement-gap characterization: actual read-pin sharing refusal, uncooperative write after release and protected dummy revocation overwritten after the precheck. Production replacement remains gated; no runtime API or replacement authority added.

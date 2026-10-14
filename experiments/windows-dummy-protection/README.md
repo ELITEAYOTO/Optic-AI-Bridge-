@@ -403,3 +403,12 @@ are not keyed/authentic and do not prove ACK or durability: actual abrupt exits
 and failed seal flush demonstrate this distinction. No old claim adoption or
 repair. Nine regressions; local Windows111 cases / 108 passed / 3 platform skips.
 See H02_PUBLIC_SUCCESSOR_READER.md before any state/auth integration.
+# Closed staged public seal checkpoint — 2026-10-14
+
+Optional variant prepares/flushes/verifies/closes the fixed public seal before
+exclusive hard-link publication. Reader rejects the intermediate two-link state
+until staged unlink. Eight new regressions include actual exits before link,
+between link/unlink and before reply; no repair or invented ACK. Local Windows
+119 cases / 116 passed / 3 platform skips. Owned path-based fixtures only,
+hard-link support required; no durable/auth/native containment guarantee. See
+H02_CLOSED_STAGE_PUBLIC_SEAL.md for exact limits.

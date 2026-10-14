@@ -1,5 +1,14 @@
 # Project Status
 
+## Closed-stage public seal publication — 2026-10-14
+
+Optional fixed staged-seal variant writes/flushes/verifies/closes before exclusive
+hard-link publication. Reader refuses two-link intermediate state; collisions,
+failed close/flush/unlink and actual abrupt exits never repair or invent ACK.
+Eight additional regressions; local119 cases / 116 pass / 3 platform skips.
+Path-based owned public fixtures only, hard-link support required; no native
+containment, durable/auth commit, antirollback or production file deletion claim.
+
 ## Bounded public successor/seal reader — 2026-10-14
 
 Observer distinguishes empty/reserved/validated public pairs, rejects malformed

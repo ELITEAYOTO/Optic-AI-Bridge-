@@ -43,11 +43,17 @@ Neither result grants authentication or permits automatic retry/reinitialization
 
 ## Validation and next gate
 
-Nine regressions cover empty/partial/full unsealed states, each fixed sealed pair,
+An optional [closed staged-seal variant](H02_CLOSED_STAGE_PUBLIC_SEAL.md) now
+publishes after prepared write/flush/readback/close. The reader rejects its
+two-link intermediate state. It still grants zero authority and explicitly
+permits validated public data with a lost reply; no durable auth commit chosen.
+
+The reader-only checkpoint's nine regressions cover empty/partial/full unsealed states, each fixed sealed pair,
 orphan/partial/mismatch/unknown seals, seal flush failure, existing seal refusal,
 oversize/missing baseline, actual abrupt exits before seal/reply, hardlinked or
 changed records and invalid expected input before I/O. Local Windows suite:
-111 cases,108 passed,3 deliberate platform skips. CI evidence is recorded
+111 cases,108 passed,3 deliberate platform skips. With the eight staged-seal
+regressions, the latest local total is119/116/3. CI evidence is recorded
 separately. Child processes are owned, waited with ten-second bounds, outputs
 read with64/4096-byte ceilings and killed only on test cleanup if still alive.
 
