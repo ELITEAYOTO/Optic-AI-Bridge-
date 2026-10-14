@@ -8,7 +8,7 @@ import httpx2
 import uvicorn
 from lifecycle_core import Registry, TOKENS
 from http_smoke import client, headers, structured
-from project_schema import TOOLS
+from project_schema import TOOLS, MAX_READ
 from project_gate import ProjectGate
 from project_http import make_project_app
 
@@ -21,7 +21,8 @@ class Http(unittest.IsolatedAsyncioTestCase):
         async def upstream(name, args):
             calls.append((name, args))
             if name == 'fs_read':
-                return {'path': args['path'], 'data': base64.b64encode(b'public line\n').decode(),
+                raw = b'\0' * MAX_READ if args['path'] == 'src/escaped' else b'public line\n'
+                return {'path': args['path'], 'data': base64.b64encode(raw).decode(),
                         'encoding': 'base64', 'eof': True, 'content_version': 'a' * 64}
             return {'public': True}
         gate = ProjectGate(state, identity, upstream)
@@ -50,6 +51,9 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 written = structured(await session.call_tool('optic_fs_write', {
                     'path': 'src/Main.java', 'content': 'class Main {}', 'expected_kind': 'absent'}))
                 self.assertTrue(written['ok'])
+                escaped = structured(await session.call_tool('optic_fs_read', {'path': 'src/escaped'}))
+                self.assertTrue(escaped['ok'])
+                self.assertEqual(len(escaped['upstream']['text']), MAX_READ)
             self.assertEqual(calls[1][0], 'fs_write')
             self.assertEqual(calls[1][1]['expected'], {'kind': 'absent'})
             before = len(calls)
