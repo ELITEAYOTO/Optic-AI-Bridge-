@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Negative native root-selection characterization: actual valid same-name substitution before root open is accepted, while held-root rename is denied. Two public-only regressions; no security fix or production enrollment selected.
 - Explicit held-root NT fixed public-pair read candidate: open-existing only, exact completion ownership checks, no leaf path fallback and five native regressions. No initial-root containment or production authentication claim.
 - Native fixed public-pair read pins retained during harmless computation, with actual separate-process write denial/release, invalid-entry cleanup and explicit admission/close-uncertainty composition tests. No root containment, memory-mapping exclusion, credential authority or production integration claim.
 - Fixed confirmed public-work probe under one-object ownership,32-attempt ceiling, busy-close refusal and six regressions including the negative external-mutation boundary. No arbitrary callback, effect authorization, process lock or production integration.
