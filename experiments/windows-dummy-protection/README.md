@@ -379,3 +379,10 @@ Actual child exit before publication leaves scratch inert; after ACK the marker
 reopens successfully, while neither case grants reinitialization of an old child.
 Local Windows: 90 cases / 87 passed / 3 platform skips. See
 `docs/security/H02_INITIAL_PUBLICATION_FIXTURE.md` for evidence and limitations.
+# Negative replacement characterization — 2026-10-14
+
+Two new native regressions reproduce pin-release drift and a protected dummy
+revocation lost after a successful precheck. These passing tests record a known
+limit, not safe production replacement. Local Windows: 92 cases / 89 passed /
+3 platform skips. Initial publisher remains no-replace; test-only replace packet
+is never exposed as a runtime API. See the H02 replacement gap security note.

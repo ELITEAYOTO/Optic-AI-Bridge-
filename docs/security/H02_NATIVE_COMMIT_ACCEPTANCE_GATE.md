@@ -27,6 +27,11 @@ against another user or an uncooperative same-user writer. No state is published
 
 ## Next implementation order
 
+The [replacement gap characterization](H02_REPLACEMENT_GAP_CHARACTERIZATION.md)
+now measures both native pin-release drift and an overwritten protected dummy
+revocation after the existing precheck. Do not promote that fixture replacement
+or treat a second pre-read as an atomic CAS fix.
+
 1. Prove initial publication to an absent fixed destination separately from
    rotation/revocation replacement. It must refuse every existing target rather
    than toggling replace-on-exist after a sharing or collision failure.

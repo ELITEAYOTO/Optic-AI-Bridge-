@@ -1,5 +1,14 @@
 # Project Status
 
+## Replacement gap measured — 2026-10-14
+
+Two negative Windows regressions show that a held state pin blocks replacement,
+but releasing it permits an uncooperative same-user write despite writer.lock.
+Existing protected fixture precheck can lose a later valid B revocation while
+acknowledging A rotation. Local92 cases / 89 pass / 3 platform skips; this is
+evidence of a limitation, not concurrency security. Production replacement stays
+gated. Initial no-replace candidate #213 is fully green (CI745 / fixture23).
+
 ## Initial public-marker publication candidate — 2026-10-14
 
 Fresh private child in the same fixture operation, one fixed scratch write,
