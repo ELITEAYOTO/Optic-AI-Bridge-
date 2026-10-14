@@ -12,7 +12,7 @@ All host chats on this connection share the same session/project and grants.
 The remote boundary has a fixed tool allowlist, strict duplicate/nonfinite JSON
 refusal, typed bounds, relative ASCII path segments, UTF-8 contents, exact absent/
 content versions and no caller project/session/authority selectors. Output payload
-ceiling32768bytes; core upstream structured ceiling16384bytes. Full offset0 core
+ceiling65536bytes (including worst-case escaped UTF-8 text); core upstream structured ceiling16384bytes. Full offset0 core
 reads expose a BLAKE3 ContentVersion of observed bytes, not a credential or a
 promise that a later mutation will succeed. Partial/tail reads return null.
 

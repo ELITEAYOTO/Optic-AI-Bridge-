@@ -56,6 +56,7 @@ Après confirmation, envoyer le prompt suivant.
 ## 4. Faire développer un mini-site
 
 > Réalise réellement un petit gestionnaire de tâches en HTML/CSS/JavaScript,
+> en effectuant les appels Optic l'un après l'autre, sans appels simultanés.
 > sans bibliothèque, téléchargement, lien externe ni requête réseau. Crée
 > src/index.html, src/style.css et src/app.js avec les outils Optic. Interface
 > française, ajout/suppression/validation des tâches et filtre toutes/actives/

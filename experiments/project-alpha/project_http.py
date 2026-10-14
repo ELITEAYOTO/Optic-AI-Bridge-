@@ -43,13 +43,14 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False):
         'base64; content_version is supplied only for full reads from offset0. '
         'Create with expected_kind=absent; replace with expected_kind=content '
         'and exact expected_version. Never retry an outcome_unknown write blindly. '
+        'Send calls one at a time; link.busy means the request was not admitted. '
         'Patch offsets/removals count UTF-8 bytes, not characters.'))
 
     async def call(name, arguments):
         proof = request_proof.get()
         try:
             payload = await gate.call(proof['owner'] if proof else None, name, arguments)
-            if len(json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()) > 32768:
+            if len(json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()) > 65536:
                 raise ForwardError('project.output_bound')
             return result(name, {'ok': True, 'generated_project_only': True, 'upstream': payload})
         except ForwardError as error:
