@@ -15,7 +15,8 @@ for directory in ('real-link-admission', 'credential-lifecycle'):
 import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from real_smoke import structured
+from real_smoke import structured as upstream_structured
+from project_results import structured
 from lifecycle_core import Registry, TOKENS
 from http_smoke import client, denied
 from http_adapter import local_stop
@@ -41,7 +42,7 @@ async def run(binary):
                 state = Registry()
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, args):
-                    return structured(await upstream.call_tool(name, args))
+                    return upstream_structured(await upstream.call_tool(name, args))
                 gate = ProjectGate(state, identity, forward)
                 app = make_project_app(gate, state, emit=logs.append)
                 listener = socket.socket()

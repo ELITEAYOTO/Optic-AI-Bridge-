@@ -11,7 +11,8 @@ HERE = Path(__file__).resolve().parent
 for directory in ('real-link-admission', 'credential-lifecycle'):
     sys.path.insert(0, str(HERE.parent / directory))
 import httpx2
-from http_smoke import client, structured
+from http_smoke import client
+from project_results import structured
 from lifecycle_core import TOKENS
 
 

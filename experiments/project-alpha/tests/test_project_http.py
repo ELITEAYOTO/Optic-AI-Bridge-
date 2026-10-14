@@ -7,7 +7,8 @@ import unittest
 import httpx2
 import uvicorn
 from lifecycle_core import Registry, TOKENS
-from http_smoke import client, headers, structured
+from http_smoke import client, headers
+from project_results import structured
 from project_schema import TOOLS, MAX_READ
 from project_gate import ProjectGate
 from project_http import make_project_app
