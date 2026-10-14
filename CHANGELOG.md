@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Agenda/budget/subscription FS test kit and optional fixed operator Electron viewer after confirmed session stop, with source versions, immutable asset protocol, sandboxed no-Node renderer and bounded fixed-directory JSON export (ADR0015). Native local close/reopen/network/export proof and23 Python/3 policy tests pass; CI pending. No MCP GUI process, npm/build or installer grant.
 - FS Luna Node22 host acceptance: correlated source modification, real failing assertion, versioned restoration and successful check/test. Sonnet runtime custom-header omission recorded separately from successful configuration discovery and Luna transport; no general FS component diagnosis asserted.
 - Generated Node check/test milestone validated at4b5ca2e: all nine workflows, native metadata deny/revoke tests, pinned Node22.15.1 runner and matching downloaded package on the local installed Node pass. SYNCHRONIZE enables synchronous attribute handles without list/data/write rights. First FS process exercise pending; no dependencies/build/server or personal project enrollment claim.
 - Optional generated Node runner with explicit installed executable selection, fixed check/test profiles and three source-read slots; matching hashed helper package and native runner lifecycle proof added (21 local tests; native runner validation pending).

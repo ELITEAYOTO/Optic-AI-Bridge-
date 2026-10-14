@@ -24,6 +24,7 @@ from project_gate import ProjectGate
 from project_http import make_project_app
 from execution_gate import ExecutionGate
 from node_profiles import configure_node
+from viewer_snapshot import write_viewer_ready
 
 
 def prepare_project(output_root):
@@ -119,6 +120,12 @@ async def run(args):
                     watcher.cancel()
                     outcome = await local_stop(gate, upstream)
                     channel.emit('[LOCAL] ' + json.dumps({'operation': 'stop', **outcome}, sort_keys=True))
+                    if profiles and outcome.get('ok'):
+                        try:
+                            ready = write_viewer_ready(root)
+                        except (OSError, ValueError):
+                            ready = {'viewer_ready': False, 'code': 'viewer.sources_not_ready'}
+                        channel.emit('[LOCAL] ' + json.dumps({'operation': 'viewer-snapshot', **ready}, sort_keys=True))
     finally:
         channel.close()
 

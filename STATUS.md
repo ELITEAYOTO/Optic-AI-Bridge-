@@ -1,5 +1,16 @@
 # Project Status
 
+## Agenda/budget operator Electron test preparation — 2026-10-15
+
+Expense app test11 accepted by user in browser: addition/filter/delete/validation
+and persistence confirmed, after FS Node check/test succeeded. Next fixture is
+agenda/budget/subscriptions with import/export and a fixed operator Electron
+viewer (ADR0015). No generated privileged main/preload or new MCP GUI permission.
+Create-only readiness versions after confirmed stop, immutable four-asset view,
+sandboxed no-Node renderer, blocked connections/navigation and fixed JSON export.
+Three policy tests,23 Python tests and actual local Electron44.7.2 hidden
+close/reopen/network/export proof pass; CI/package validation pending.
+
 ## FS Node check/test host acceptance — 2026-10-15
 
 Luna completed test11 on server instance cdaecdde161c, installed Node22.15.1.
