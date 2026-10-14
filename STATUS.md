@@ -1,5 +1,12 @@
 # Project Status
 
+## Held-root relative public read — 2026-10-14
+
+Explicit Windows x64 reader opens three fixed existing leaves relative to its
+owned root via NT, with strict status/IO/FILE_OPENED checks and no fallback.
+Five native cases; local152 /149 pass /3 platform skips. Root selection and
+sequential observation remain gated; no credential or production integration.
+
 ## Native public pair held use — 2026-10-14
 
 Fixed baseline/record/seal read handles stay owned through public digest use.
