@@ -13,15 +13,15 @@ function directory(value) {
 }
 
 function readBounded(file, limit) {
-  const info = fs.lstatSync(file);
+  const info = fs.lstatSync(file, {bigint: true});
   if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > limit) throw new Error('viewer.invalid_file');
   const fd = fs.openSync(file, 'r');
   try {
-    const opened = fs.fstatSync(fd);
+    const opened = fs.fstatSync(fd, {bigint: true});
     if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino || opened.size !== info.size) throw new Error('viewer.changed_file');
     const bytes = Buffer.alloc(limit + 1);
     const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
-    if (length !== info.size || length > limit) throw new Error('viewer.changed_file');
+    if (BigInt(length) !== info.size || length > limit) throw new Error('viewer.changed_file');
     return bytes.subarray(0, length);
   } finally { fs.closeSync(fd); }
 }

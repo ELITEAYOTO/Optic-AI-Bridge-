@@ -32,7 +32,16 @@ test('snapshot is generated-root-only; content changes refused; held bytes are c
     }
     const marker = path.join(root, 'viewer-ready.json'); created.push(marker);
     fs.writeFileSync(marker, JSON.stringify({version: 1, files: versions}));
-    const snapshot = policy.loadSnapshot(root, parent);
+    let snapshot;
+    try { snapshot = policy.loadSnapshot(root, parent); }
+    catch (error) {
+      const fd = fs.openSync(marker, 'r');
+      try {
+        const a = fs.lstatSync(marker, {bigint: true}), b = fs.fstatSync(fd, {bigint: true});
+        console.error('PUBLIC_SNAPSHOT_STAT', ['dev','ino','size'].map(key => [key, String(a[key]), String(b[key])]));
+      } finally { fs.closeSync(fd); }
+      throw error;
+    }
     assert.equal(snapshot.assets.has('tests.js'), false);
     assert.throws(() => policy.loadSnapshot(root, src));
     fs.writeFileSync(path.join(src, 'model.js'), 'changed');
