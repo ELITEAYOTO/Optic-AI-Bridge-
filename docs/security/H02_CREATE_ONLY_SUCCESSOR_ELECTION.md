@@ -40,6 +40,11 @@ credential rotation/revocation or a persisted authorization acknowledgement.
 
 ## Limits and next gate
 
+The [public successor/seal reader](H02_PUBLIC_SUCCESSOR_READER.md) now classifies
+reserved versus exact validated public pairs. It explicitly measures that a
+validated pair can exist without writer ACK and grants no authentication or
+durability authority. It is not a chosen journal/commit protocol.
+
 No existing ProtectedStore or initial publisher behavior changes. This does not
 fix #214's replacing fixture or provide atomic CAS on an arbitrary mutable state.
 Other same-user programs can still modify/delete/replay files. Path/ancestor

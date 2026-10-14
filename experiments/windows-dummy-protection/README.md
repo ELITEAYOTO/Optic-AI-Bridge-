@@ -395,3 +395,29 @@ slots exhaust the single slot and never auto-repair. Local Windows102 cases /
 99 passed / 3 platform skips. This is election only, not a credential journal or
 auth commit, and it does not fix the measured replacing-fixture race. See the
 H02 create-only successor election security note before extending this candidate.
+# Public successor/seal reader checkpoint — 2026-10-14
+
+Bounded observer classifies empty/reserved/validated, always fixture-only and
+authority none. A full unsealed marker remains reserved. Exact finite seal pairs
+are not keyed/authentic and do not prove ACK or durability: actual abrupt exits
+and failed seal flush demonstrate this distinction. No old claim adoption or
+repair. Nine regressions; local Windows111 cases / 108 passed / 3 platform skips.
+See H02_PUBLIC_SUCCESSOR_READER.md before any state/auth integration.
+# Closed staged public seal checkpoint — 2026-10-14
+
+Optional variant prepares/flushes/verifies/closes the fixed public seal before
+exclusive hard-link publication. Reader rejects the intermediate two-link state
+until staged unlink. Eight new regressions include actual exits before link,
+between link/unlink and before reply; no repair or invented ACK. Local Windows
+119 cases / 116 passed / 3 platform skips. Owned path-based fixtures only,
+hard-link support required; no durable/auth/native containment guarantee. See
+H02_CLOSED_STAGE_PUBLIC_SEAL.md for exact limits.
+# Explicit native public seal checkpoint — 2026-10-14
+
+Optional Windows x64 variant holds root/source through no-replace native link,
+then marks only its owned source for removal at close. The CRT I/O duplicate is
+owned separately from its borrowed FileIO view and explicitly non-inheritable. No path unlink/fallback; live NT
+sharing prevents reader opens until close. Eleven native regressions include actual
+exits after link/disposition. Latest local Windows130 cases /127 passed /3 platform
+skips. Entire fixture path containment, durable auth commit and antirollback remain
+gated; see H02_NATIVE_PUBLIC_SEAL.md. No production runtime/Store change.

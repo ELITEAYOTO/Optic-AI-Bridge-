@@ -1,5 +1,32 @@
 # Project Status
 
+## Native public seal link/disposition — 2026-10-14
+
+Explicit Windows x64 candidate retains owned NT source/root while closing its
+borrowed I/O view and owned CRT descriptor, then performs fixed no-replace native
+link and source disposition/close. No path unlink or fallback. Eleven native cases,
+including non-inheritance and actual exits after link/disposition; local130 /127 pass /3 platform skips.
+Reader sharing denial and final one-link visibility measured. No full fixture
+containment, auth journal, durable ACK, antirollback or production Store change.
+
+## Closed-stage public seal publication — 2026-10-14
+
+Optional fixed staged-seal variant writes/flushes/verifies/closes before exclusive
+hard-link publication. Reader refuses two-link intermediate state; collisions,
+failed close/flush/unlink and actual abrupt exits never repair or invent ACK.
+Eight additional regressions; local119 cases / 116 pass / 3 platform skips.
+Path-based owned public fixtures only, hard-link support required; no native
+containment, durable/auth commit, antirollback or production file deletion claim.
+
+## Bounded public successor/seal reader — 2026-10-14
+
+Observer distinguishes empty/reserved/validated public pairs, rejects malformed
+seals and never infers an operation from an unsealed reservation. All results
+have zero authority. Sealed writer refuses existing/orphan seal and never adopts
+old claims. Nine regressions; local111 cases / 108 pass / 3 platform skips.
+Actual exits and injected seal-flush failure show validated data can exist with
+no writer ACK; no durable/auth commit claim. #215 fully green (CI747/fixture25).
+
 ## Create-only successor election — 2026-10-14
 
 One fixed public slot, two fixed operation markers and one attempt per candidate.
