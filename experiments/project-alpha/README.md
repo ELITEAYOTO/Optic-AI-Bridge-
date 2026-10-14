@@ -39,7 +39,7 @@ files survive stop under output/alpha-.../project/src; credentials/grants do not
 Existing user directories, delete/Git/process/network/project-switch tools remain
 excluded. The public dummy tokens are suitable only for this generated playground.
 
-Eight local Python tests cover schema/auth/JSON/forwarding/uncertainty and safe
+Nine local Python tests cover schema/auth/JSON/forwarding/uncertainty and safe
 proof logging; dedicated actual HTTP/Rust and owned runner child proofs are wired
 into Windows/Linux CI (Windows mutation proof, non-Windows explicit refusal).
 The CI-built package includes its source commit and binary SHA256 manifest.

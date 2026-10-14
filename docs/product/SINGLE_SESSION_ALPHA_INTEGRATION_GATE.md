@@ -1,8 +1,24 @@
 # Single-session alpha integration gate
 
-Status: PLANNED / NOT IMPLEMENTED
+Status: GENERATED-FIXTURE READ/EDIT IMPLEMENTED; LIVE FS EDITING TEST PENDING
 Date: 2026-10-13
 Scope: [ADR-0013](../decisions/ADR-0013-SINGLE_SESSION_REMOTE_ALPHA.md)
+
+## 2026-10-14 delivery checkpoint
+
+The original three-tool read stage was measured in FS in test9. The next
+generated-project editing stage is implemented on the alpha delivery branch:
+six tools with strict parameter schemas, exact read versions, typed Rust write
+preconditions, one retained serialized slot, dummy-auth rechecks and real local
+stop. The CI package preserves generated output for inspection. See
+[generated-project alpha](GENERATED_PROJECT_ALPHA.md) and the packaged
+experiments/project-alpha/HOST_TEST_STEPS.md. This is a public disposable exercise,
+not existing-user-project enrollment or credential-storage completion.
+
+The historical requirements below describe the original read stage. Broader
+filesystem edits are now automated integration evidence; live FS mini-project
+creation/modification still needs its manual result. Process/build/Java runtime
+eligibility and actual user-project authority remain separate gates.
 
 ## Existing reusable proof
 

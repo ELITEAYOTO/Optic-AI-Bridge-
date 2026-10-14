@@ -118,3 +118,24 @@ class Gate(unittest.IsolatedAsyncioTestCase):
             return {'path': 'src/x', 'data': '/w==', 'eof': True}
         gate = ProjectGate(self.state, self.identity, binary)
         self.assertIsNone((await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x'}))['text'])
+
+    async def test_patch_growth_bound_and_revoke_after_preparatory_read(self):
+        calls = []
+        async def full(name, args):
+            calls.append(name)
+            return {'data': base64.b64encode(b'x' * MAX_CONTENT).decode(), 'eof': True}
+        arguments = {'path': 'src/x', 'expected_version': 'a' * 64,
+                     'offset': 0, 'remove_bytes': 0, 'insert': 'x'}
+        gate = ProjectGate(self.state, self.identity, full)
+        with self.assertRaisesRegex(ForwardError, 'project.patch_limit'):
+            await gate.call(self.identity, 'optic_fs_patch', arguments)
+        self.assertEqual(calls, ['fs_read'])
+        calls.clear()
+        async def revoked(name, args):
+            calls.append(name)
+            self.state.control('revoke', 'A')
+            return {'data': 'eA==', 'eof': True}
+        gate = ProjectGate(self.state, self.identity, revoked)
+        with self.assertRaisesRegex(ForwardError, 'link.inactive'):
+            await gate.call(self.identity, 'optic_fs_patch', arguments)
+        self.assertEqual(calls, ['fs_read'])
