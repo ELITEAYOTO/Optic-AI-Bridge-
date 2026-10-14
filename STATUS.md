@@ -1,5 +1,13 @@
 # Project Status
 
+## Generated project alpha delivery — 2026-10-14
+
+Priority shifted from storage micro-proofs to a usable single-session project
+alpha. First real Rust MCP vertical step creates/reads/edits a generated HTML
+project with exact preconditions; stale/absent/out-of-scope/traversal/revoked
+writes refused. Local Windows binary proof passed; current-source Windows/Linux
+workflow added. Parameterized FS HTTP editing and isolated execution still pending.
+
 ## Volatile expected public root identity — 2026-10-14
 
 Snapshot from an active owned root compared against the reopened reference

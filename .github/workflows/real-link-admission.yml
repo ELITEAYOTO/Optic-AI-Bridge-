@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'experiments/real-link-admission/**'
+      - 'experiments/project-alpha/**'
       - 'experiments/credential-lifecycle/lifecycle_core.py'
       - '.github/workflows/real-link-admission.yml'
 permissions:
@@ -54,6 +55,8 @@ jobs:
           $Binary = if ($IsWindows) { 'target/debug/optic-bridge.exe' } else { 'target/debug/optic-bridge' }
           python experiments/real-link-admission/real_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
+          python experiments/project-alpha/edit_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'generated alpha project editing failed' }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
           python experiments/real-link-admission/runner_smoke.py $Binary
