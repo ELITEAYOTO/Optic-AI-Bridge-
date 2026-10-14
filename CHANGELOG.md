@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Native fixed public-pair read pins retained during harmless computation, with actual separate-process write denial/release and invalid-entry cleanup tests. No root containment, memory-mapping exclusion, credential authority or production integration claim.
 - Fixed confirmed public-work probe under one-object ownership,32-attempt ceiling, busy-close refusal and six regressions including the negative external-mutation boundary. No arbitrary callback, effect authorization, process lock or production integration.
 - Public successor one-object admission coordinator: immediate busy refusal during publication, own-completion-only volatile confirmation, sticky uncertainty/change/restart refusal and seven regressions. No durable/auth commit, process-wide lock or production integration.
 - Explicit native public seal variant: held-root no-replace link, owned-source disposition at close, single non-inherited CRT descriptor ownership and sharing denial until NT close; eleven native failure/ownership/abrupt-exit cases. No path unlink/fallback or production auth authority.
