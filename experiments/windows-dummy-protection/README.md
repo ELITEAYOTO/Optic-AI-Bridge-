@@ -368,3 +368,14 @@ parsed lock/scratch entries with no other write-allow category. The test borrows
 the scratch handle for observation and restores lock ownership in `finally`.
 It publishes no committed state and does not test effective access by another
 principal. Current local Windows suite: 79 cases / 76 passed / 3 platform skips.
+# Initial public-marker publication checkpoint — 2026-10-14
+
+The explicit fresh-only wrapper creates a private child in the same operation,
+writes fixed public scratch bytes, then selects root-relative NtSetInformationFile
+without replace/fallback. Same-handle readback and context closure precede success.
+Existing child with missing state is never reset. An error after rename can leave
+state present without ACK; no retry, rollback, power-loss or production claim.
+Actual child exit before publication leaves scratch inert; after ACK the marker
+reopens successfully, while neither case grants reinitialization of an old child.
+Local Windows: 90 cases / 87 passed / 3 platform skips. See
+`docs/security/H02_INITIAL_PUBLICATION_FIXTURE.md` for evidence and limitations.

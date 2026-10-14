@@ -30,6 +30,9 @@ class RootRelativeFixturePending(PreparedFixturePending):
     Only fixed leaf state.protected.pending. No arbitrary object attributes,
     handle, disposition, access, privileges or create fallback exposed.
     """
+    def _desired_access(self):
+        return 0x0012019F
+
     def _create(self, item):
         if (sys.platform != 'win32' or ctypes.sizeof(ctypes.c_void_p) != 8
                 or ctypes.sizeof(ctypes.c_wchar) != 2
@@ -52,7 +55,7 @@ class RootRelativeFixturePending(PreparedFixturePending):
             ctypes.pointer(name), 0x40, None, None)  # case insensitive, non-inheritable
         output = ctypes.c_void_p()
         completion = IoStatus()
-        status = native.NtCreateFile(ctypes.byref(output), 0x0012019F,
+        status = native.NtCreateFile(ctypes.byref(output), self._desired_access(),
             ctypes.byref(attributes), ctypes.byref(completion), None, 0x80,
             0, 2, 0x00200060, None, 0)
         # FILE_CREATE2; synchronous nonalert/non-directory/open-reparse; no EA.
