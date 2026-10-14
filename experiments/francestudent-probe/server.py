@@ -85,7 +85,11 @@ class Guard:
     def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20,
                  header_observer=observe_headers,
                  zero_arg_tools=("probe_headers", "probe_create_handle"),
-                 handle_tool="probe_consume_handle", extra_handle_tools=(), timed_diagnostics=False):
+                 handle_tool="probe_consume_handle", extra_handle_tools=(), timed_diagnostics=False,
+                 lifetime=MAX_LIFETIME):
+        if type(lifetime) is not int or not 5 <= lifetime <= 3000:
+            raise ValueError('invalid probe lifetime')
+        self.lifetime = lifetime
         self.app, self.clock, self.emit = app, clock, emit
         self.request_timeout = request_timeout
         self.header_observer = header_observer
@@ -118,7 +122,7 @@ class Guard:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         admitted = self.clock()
-        if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= MAX_LIFETIME:
+        if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= self.lifetime:
             return await self.reject(send, 429)
         self.sequence += 1
         owner, observation = self.header_observer(scope.get("headers", []))

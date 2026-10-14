@@ -190,4 +190,4 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
             return super().valid_arguments(name, args)
 
     return CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit, clock=clock,
-                        zero_arg_tools=(), handle_tool=None, timed_diagnostics=True)
+                        zero_arg_tools=(), handle_tool=None, timed_diagnostics=True, lifetime=lifetime)
