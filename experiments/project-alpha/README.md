@@ -17,6 +17,10 @@ outer test deadline; contents/read/output are small fixed public payloads.
 
 Local Windows proof uses the previously CI-verified bridge0.1.4 fixture binary.
 The workflow builds the current source and runs the same proof on Windows/Linux.
+Windows verifies the editing journey. Other platforms explicitly verify
+optic.mutation_platform_unsupported and unchanged files; no cross-platform
+mutation support is claimed. See PROJECT_TARGETS.md for website/application/
+Java Minecraft goals and their separate execution gates.
 This is not yet a downloadable FS write-enabled alpha or a model-generated app.
 
 ## Next delivery checkpoints

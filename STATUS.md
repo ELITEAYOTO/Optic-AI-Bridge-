@@ -7,6 +7,10 @@ alpha. First real Rust MCP vertical step creates/reads/edits a generated HTML
 project with exact preconditions; stale/absent/out-of-scope/traversal/revoked
 writes refused. Local Windows binary proof passed; current-source Windows/Linux
 workflow added. Parameterized FS HTTP editing and isolated execution still pending.
+User targets now explicitly include websites, applications and Java Minecraft
+plugins. Java execution eligibility/build/server tests remain pending, independently
+of common source editing. Non-Windows editing proof verifies explicit unsupported
+refusal rather than claiming mutation portability.
 
 ## Volatile expected public root identity — 2026-10-14
 

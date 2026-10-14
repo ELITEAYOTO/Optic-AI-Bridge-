@@ -38,6 +38,18 @@ async def run(binary):
                 def request(path, content, expected):
                     return {'path': path, 'content_base64': base64.b64encode(content).decode('ascii'),
                             'expected': expected}
+                if sys.platform != 'win32':
+                    try:
+                        await client.call_tool('fs_write', request('src/index.html', first, {'kind': 'absent'}))
+                    except MCPError as error:
+                        assert error.message == 'optic.mutation_platform_unsupported'
+                    else:
+                        raise AssertionError('unsupported mutation acknowledged')
+                    assert not (workspace / 'src' / 'index.html').exists()
+                    assert (workspace / 'README.txt').read_bytes() == sentinel
+                    assert not (await client.call_tool('session_cancel', {})).is_error
+                    print('PASS: actual non-Windows mutation refuses unsupported platform without creating files.')
+                    return
                 created = structured(await client.call_tool('fs_write',
                     request('src/index.html', first, {'kind': 'absent'})))
                 assert (workspace / 'src' / 'index.html').read_bytes() == first
