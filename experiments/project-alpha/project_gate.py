@@ -1,0 +1,92 @@
+"""One selected real session; serialized retained forwarding and bounded results."""
+import asyncio
+import base64
+
+from mcp.shared.exceptions import MCPError
+from forward_core import ForwardGate, ForwardError
+from project_schema import normalize, SchemaError, MAX_CONTENT
+
+SAFE_UPSTREAM_ERRORS = {
+    'optic.precondition_failed', 'optic.policy_denied', 'optic.session_inactive',
+    'optic.invalid_workspace_path', 'optic.path_not_found', 'optic.not_file',
+    'optic.not_directory', 'optic.invalid_patch', 'optic.fs_read_limit_exceeded',
+    'optic.fs_list_limit_exceeded', 'optic.fs_mutation_limit_exceeded',
+    'optic.mutation_platform_unsupported', 'optic.invalid_mutation_target',
+}
+MUTATIONS = {'optic_fs_write', 'optic_fs_patch'}
+
+
+class ProjectGate(ForwardGate):
+    def __init__(self, registry, identity, upstream, deadline=15):
+        super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
+
+    async def call(self, identity, tool, arguments):
+        self._loop()
+        if not self._current(identity):
+            raise ForwardError('link.inactive')
+        try:
+            name, args = normalize(tool, arguments)
+        except SchemaError:
+            raise ForwardError('project.invalid_arguments') from None
+        if self.pending:
+            raise ForwardError('link.busy')
+        search = (arguments['text'], arguments.get('limit', 16)) if tool == 'optic_fs_search' else None
+        task = asyncio.create_task(self._run_project(identity, tool, name, args, search))
+        self.pending.add(task)
+        task.add_done_callback(self._complete)
+        try:
+            async with asyncio.timeout(self.deadline):
+                return await asyncio.shield(task)
+        except TimeoutError:
+            raise ForwardError('project.outcome_unknown' if tool in MUTATIONS else 'link.response_timeout') from None
+
+    async def _run_project(self, identity, tool, name, arguments, search):
+        dispatched = False
+        try:
+            if not self._current(identity):
+                raise ForwardError('link.inactive')
+            if tool == 'optic_fs_patch':
+                current = await self.upstream('fs_read', {'path': arguments['path'],
+                    'offset': 0, 'max_bytes': MAX_CONTENT + 1})
+                raw = base64.b64decode(current['data'], validate=True)
+                inserted = base64.b64decode(arguments['insert_base64'], validate=True)
+                if (not current['eof'] or len(raw) > MAX_CONTENT
+                        or arguments['offset'] + arguments['remove_bytes'] > len(raw)
+                        or len(raw) - arguments['remove_bytes'] + len(inserted) > MAX_CONTENT):
+                    raise ForwardError('project.patch_limit')
+                # Recheck after the preparatory read; Rust still owns the exact
+                # mutation precondition and must compare the supplied version.
+                if not self._current(identity):
+                    raise ForwardError('link.inactive')
+            dispatched = True
+            response = await self.upstream(name, arguments)
+            if not self._current(identity):
+                raise ForwardError('project.outcome_unknown' if tool in MUTATIONS else 'link.inactive')
+            if tool in ('optic_fs_read', 'optic_fs_search'):
+                raw = base64.b64decode(response['data'], validate=True)
+                try:
+                    content = raw.decode('utf-8', errors='strict')
+                except UnicodeError:
+                    if search:
+                        raise ForwardError('project.text_encoding') from None
+                    return {**response, 'text': None}
+                if search:
+                    needle, limit = search
+                    hits = []
+                    for index, line in enumerate(content.splitlines(), 1):
+                        if needle in line:
+                            hits.append({'line': index, 'text': line[:256]})
+                            if len(hits) == limit:
+                                break
+                    return {'path': response['path'], 'matches': hits,
+                            'searched_bytes': len(raw), 'eof': response['eof']}
+                return {**response, 'text': content}
+            return response
+        except MCPError as error:
+            code = error.message if error.message in SAFE_UPSTREAM_ERRORS else (
+                'project.outcome_unknown' if dispatched and tool in MUTATIONS else 'project.upstream_failed')
+            raise ForwardError(code) from None
+        except ForwardError:
+            raise
+        except Exception:
+            raise ForwardError('project.outcome_unknown' if dispatched and tool in MUTATIONS else 'project.upstream_failed') from None

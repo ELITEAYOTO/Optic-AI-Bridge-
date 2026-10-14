@@ -21,19 +21,39 @@ Windows verifies the editing journey. Other platforms explicitly verify
 optic.mutation_platform_unsupported and unchanged files; no cross-platform
 mutation support is claimed. See PROJECT_TARGETS.md for website/application/
 Java Minecraft goals and their separate execution gates.
-This is not yet a downloadable FS write-enabled alpha or a model-generated app.
+The new project_http/project_gate/project_runner path exposes exactly six tools
+on a generated retained project: info/list/read/write/patch/literal in-file search.
+Guard request budgets/headers/body/auth and exact schemas precede SDK dispatch.
+Core reads now include content_version only for complete offset0 reads, so edits
+use observed versions instead of guessed hashes. This is not a general user-project
+server or an already measured FS model-generated app.
+
+The project path is generated locally; write authority is prefix:src. File text
+and resulting patches are limited to8192UTF-8 bytes, paths are ASCII segments
+with no traversal/Windows reserved names, reads8192bytes, list pages32entries,
+literal searches16hits within one file prefix. Mutation forwarding is serialized
+and retains its slot after caller cancellation/timeout until actual completion.
+An uncertain write returns project.outcome_unknown; no rollback/retry is claimed.
+Local stop drains first, then actually cancels the real Rust session. Project
+files survive stop under output/alpha-.../project/src; credentials/grants do not.
+Existing user directories, delete/Git/process/network/project-switch tools remain
+excluded. The public dummy tokens are suitable only for this generated playground.
+
+Eight local Python tests cover schema/auth/JSON/forwarding/uncertainty and safe
+proof logging; dedicated actual HTTP/Rust and owned runner child proofs are wired
+into Windows/Linux CI (Windows mutation proof, non-Windows explicit refusal).
+The CI-built package includes its source commit and binary SHA256 manifest.
+Use HOST_TEST_STEPS.md only with the matching verified artifact.
 
 ## Next delivery checkpoints
 
-1. Parameterized HTTP adapter for list/read/search/write/patch: explicit bounded
-   schemas, relative paths, version preconditions, exact fixed session binding,
-   current credential/epoch checks and retained cancellation accounting.
-2. Package one generated project and locally selected write scopes; expose local
-   stop. Demonstrate FS actually creates and edits a small app with correlated logs.
-3. Add one locally chosen isolated test runtime/profile, then process start/status/
+1. Verify and deliver the parameterized adapter/package, then measure FS actually
+   creates and edits the task-list mini-site with correlated results. Automated
+   editing remains distinct from a real model-driven host run.
+2. Add one locally chosen isolated test runtime/profile, then process start/status/
    output/termination through existing policy/approval/lease boundaries. Verify
    negative network/process cleanup cases before an FS execution test.
-4. Review and consolidate the dependency stack for alpha. Merge verified product
+3. Review and consolidate the dependency stack for alpha. Merge verified product
    changes deliberately; research-only negative fixtures need not become runtime.
 
 First exercise: a static HTML task-list app with CSS/JavaScript, followed by local

@@ -4,6 +4,8 @@ on:
     paths:
       - 'experiments/real-link-admission/**'
       - 'experiments/project-alpha/**'
+      - 'experiments/francestudent-probe/server.py'
+      - 'crates/optic-bridge-mcp/src/server.rs'
       - 'experiments/credential-lifecycle/lifecycle_core.py'
       - '.github/workflows/real-link-admission.yml'
 permissions:
@@ -22,7 +24,7 @@ jobs:
       - name: Fixed fixture admission and retained cancellation accounting
         shell: pwsh
         run: |
-          $env:PYTHONPATH = @('experiments/real-link-admission', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
+          $env:PYTHONPATH = @('experiments/project-alpha', 'experiments/real-link-admission', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
           python -m unittest discover -s experiments/real-link-admission/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'read-link admission proof failed' }
   real-stdio:
@@ -49,7 +51,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'SDK install failed' }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { throw 'SDK dependency check failed' }
-          $env:PYTHONPATH = @('experiments/real-link-admission', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
+          $env:PYTHONPATH = @('experiments/project-alpha', 'experiments/real-link-admission', 'experiments/credential-lifecycle') -join [IO.Path]::PathSeparator
+          python -m unittest discover -s experiments/project-alpha/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'project alpha guard/admission proof failed' }
           python -m unittest discover -s experiments/real-link-admission/http_tests -v
           if ($LASTEXITCODE -ne 0) { throw 'local stop contract failed' }
           $Binary = if ($IsWindows) { 'target/debug/optic-bridge.exe' } else { 'target/debug/optic-bridge' }
@@ -57,11 +61,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
           python experiments/project-alpha/edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'generated alpha project editing failed' }
+          python experiments/project-alpha/http_edit_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'HTTP alpha project editing failed' }
+          python experiments/project-alpha/runner_edit_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'alpha project runner failed' }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
           python experiments/real-link-admission/runner_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'manual runner startup/stop failed' }
           Get-ChildItem experiments/real-link-admission/scripts -Filter '*.ps1' | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
+          }
+          Get-ChildItem experiments/project-alpha/scripts -Filter '*.ps1' | ForEach-Object {
             [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
           }
       - name: Package exact tested Windows fixture
@@ -86,5 +97,29 @@ jobs:
         with:
           name: Optic-Fixed-Read-Host-Test-${{ github.sha }}
           path: ${{ runner.temp }}/Optic-Fixed-Read-Host-Test.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Package exact tested project alpha
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $AlphaStage = Join-Path $env:RUNNER_TEMP 'optic-project-alpha-package'
+          $AlphaSource = Join-Path $env:RUNNER_TEMP 'optic-project-alpha-source.zip'
+          git archive --format=zip --output $AlphaSource HEAD experiments/project-alpha experiments/real-link-admission experiments/francestudent-probe/server.py experiments/francestudent-probe/probe_core.py experiments/francestudent-probe/scripts/Setup-FranceStudentProbe.ps1 experiments/credential-lifecycle/lifecycle_core.py experiments/session-resolver/proof_channel.py experiments/host-probe/requirements.txt experiments/host-probe/constraints.txt
+          if ($LASTEXITCODE -ne 0) { throw 'alpha source archive failed' }
+          Expand-Archive -LiteralPath $AlphaSource -DestinationPath $AlphaStage
+          $AlphaBin = Join-Path $AlphaStage 'packaging/project-alpha'
+          New-Item -ItemType Directory -Path $AlphaBin | Out-Null
+          Copy-Item -LiteralPath 'target/debug/optic-bridge.exe' -Destination (Join-Path $AlphaBin 'optic-bridge.exe')
+          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; scope='generated-project-editing-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
+          $env:GITHUB_SHA | Set-Content -LiteralPath (Join-Path $AlphaStage 'SOURCE_COMMIT.txt') -Encoding ascii
+          Copy-Item -LiteralPath 'experiments/project-alpha/HOST_TEST_STEPS.md' -Destination (Join-Path $AlphaStage 'COMMENCER_ICI.md')
+          $AlphaPackage = Join-Path $env:RUNNER_TEMP 'Optic-Project-Alpha.zip'
+          Compress-Archive -Path (Join-Path $AlphaStage '*') -DestinationPath $AlphaPackage
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Windows'
+        with:
+          name: Optic-Project-Alpha-${{ github.sha }}
+          path: ${{ runner.temp }}/Optic-Project-Alpha.zip
           retention-days: 7
           if-no-files-found: error

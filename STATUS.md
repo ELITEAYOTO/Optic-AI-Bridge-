@@ -5,8 +5,10 @@
 Priority shifted from storage micro-proofs to a usable single-session project
 alpha. First real Rust MCP vertical step creates/reads/edits a generated HTML
 project with exact preconditions; stale/absent/out-of-scope/traversal/revoked
-writes refused. Local Windows binary proof passed; current-source Windows/Linux
-workflow added. Parameterized FS HTTP editing and isolated execution still pending.
+writes refused. Six-tool parameterized HTTP editing/retained-project runner now
+implemented with bounded schemas, observed read versions, serialized retained
+forwarding and real local stop. Current-source integration/artifact checks pending;
+FS manual editing and isolated execution still require their separate evidence.
 User targets now explicitly include websites, applications and Java Minecraft
 plugins. Java execution eligibility/build/server tests remain pending, independently
 of common source editing. Non-Windows editing proof verifies explicit unsupported

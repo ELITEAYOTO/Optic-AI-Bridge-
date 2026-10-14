@@ -95,6 +95,18 @@ class Guard:
         self.started = clock()
         self.sequence = self.active = 0
 
+    def valid_arguments(self, name, args):
+        if name in self.zero_arg_tools:
+            return args == {}
+        if (self.handle_tool is not None and name == self.handle_tool) or name in self.extra_handle_tools:
+            return (isinstance(args, dict) and set(args) == {"application_handle"}
+                and isinstance(args["application_handle"], str)
+                and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
+        return False
+
+    def decode_request(self, body):
+        return json.loads(body)
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
@@ -177,21 +189,14 @@ class Guard:
                 if body:
                     stage = "request_shape"
                     try:
-                        request = json.loads(body)
+                        request = self.decode_request(body)
                         if not isinstance(request, dict):
                             raise ValueError()
                         if request.get("method") == "tools/call":
                             params = request.get("params", {})
                             name = params.get("name")
                             args = params.get("arguments", {})
-                            if name in self.zero_arg_tools:
-                                valid = args == {}
-                            elif (self.handle_tool is not None and name == self.handle_tool) or name in self.extra_handle_tools:
-                                valid = (isinstance(args, dict) and set(args) == {"application_handle"}
-                                    and isinstance(args["application_handle"], str)
-                                    and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
-                            else:
-                                valid = False
+                            valid = self.valid_arguments(name, args)
                             if not valid:
                                 raise ValueError()
                     except (ValueError, TypeError, AttributeError, RecursionError):

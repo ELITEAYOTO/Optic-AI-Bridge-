@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
-    ActionEnvelope, ActionId, Capability, Effect, HardLimits, LimitError, ResourceBudget,
-    SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,
+    ActionEnvelope, ActionId, Capability, ContentVersion, Effect, HardLimits, LimitError,
+    ResourceBudget, SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
@@ -412,10 +412,12 @@ impl ReadonlyMcpServer {
         let response = FsReadResponse {
             path: canonical_path.as_str().to_owned(),
             encoding: "base64".to_owned(),
-            data: STANDARD.encode(chunk.bytes),
+            data: STANDARD.encode(&chunk.bytes),
             offset: chunk.offset,
             next_offset: chunk.next_offset,
             eof: chunk.eof,
+            content_version: (chunk.offset == 0 && chunk.eof)
+                .then(|| ContentVersion::from_bytes(&chunk.bytes).to_hex()),
         };
         self.ensure_structured_payload_fits(&response)?;
         drop(permit);
@@ -634,6 +636,9 @@ pub struct FsReadResponse {
     pub offset: u64,
     pub next_offset: u64,
     pub eof: bool,
+    /// Exact version of the observed bytes only for a complete read from zero.
+    /// A later mutation must still compare it; this is not an authority grant.
+    pub content_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -937,6 +942,22 @@ mod tests {
             .0;
         assert_eq!(response.data, STANDARD.encode(b"hello"));
         assert!(response.eof);
+        assert_eq!(
+            response.content_version,
+            Some(ContentVersion::from_bytes(b"hello").to_hex())
+        );
+        for (offset, max_bytes) in [(0, 2), (2, 3)] {
+            let partial = server
+                .fs_read(Parameters(FsReadRequest {
+                    path: "hello.bin".to_owned(),
+                    offset: Some(offset),
+                    max_bytes: Some(max_bytes),
+                }))
+                .await
+                .expect("bounded partial read")
+                .0;
+            assert!(partial.content_version.is_none());
+        }
 
         fs::remove_dir_all(root).expect("remove fixture");
     }

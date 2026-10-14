@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Generated-project six-tool HTTP editing alpha, strict bounded schemas, retained serialized forwarding, uncertainty-aware mutation replies, saved generated projects and matching CI package/manual steps. Complete offset0 Rust reads now expose observed content versions; partial reads return null. No process/Git/delete or real-project enrollment grant.
 - Generated project alpha delivery track and actual Rust MCP create/read/edit mini-project proof with narrow operator write scope, exact preconditions and negative/revocation checks; Windows/Linux workflow coverage. FS parameterized editing and isolated execution remain separate delivery checkpoints.
 - Volatile expected public-root identity comparison on the actual owned reference before child opens, with unchanged reopen and actual substitution refusal regressions. No trusted enrollment, snapshot authenticity/persistence or antirollback selected.
 - Negative native root-selection characterization: actual valid same-name substitution before root open is accepted, while held-root rename is denied. Two public-only regressions; no security fix or production enrollment selected.
