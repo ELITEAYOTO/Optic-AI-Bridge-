@@ -18,6 +18,9 @@ that view. The view and CRT descriptor close before publication, but the NT
 source reference stays live. A failed view construction closes the owned
 descriptor exactly once; uncertainty blocks publication and never retries.
 Re-entry is rejected before cleanup can release live ownership.
+The CRT descriptor explicitly requests no inheritance and is set non-inheritable;
+actual GetHandleInformation/get_inheritable observations also verify the root,
+source and descriptor inheritance flags.
 
 NtSetInformationFile FileLinkInformation11 uses the held root, fixed final leaf
 and replace=false. After observing two links, FileDispositionInformation13 marks
@@ -33,11 +36,11 @@ Windows fixture behavior, not all-volume/OS conformance or durable auth commit.
 
 ## Evidence
 
-Ten native regressions cover actual link/disposition without path unlink, live
+Eleven native regressions cover actual link/disposition without path unlink, live
 sharing denial, failed disposition, existing stage preservation, failed FileIO
 view construction, CRT close uncertainty, actual destination collision, ambiguous
-NT completion, re-entry ownership and actual process exits after link/disposition.
-Local full Windows suite:129 cases,126 passed,3 deliberate platform skips.
+NT completion, re-entry ownership, non-inheritance and actual process exits after link/disposition.
+Local full Windows suite:130 cases,127 passed,3 deliberate platform skips.
 
 Actual exit after link (before disposition) leaves two links and reader refusal.
 Exit after disposition closes the original kernel handle and leaves a validated

@@ -4,8 +4,8 @@
 
 Explicit Windows x64 candidate retains owned NT source/root while closing its
 borrowed I/O view and owned CRT descriptor, then performs fixed no-replace native
-link and source disposition/close. No path unlink or fallback. Ten native cases,
-including actual exits after link/disposition; local129 /126 pass /3 platform skips.
+link and source disposition/close. No path unlink or fallback. Eleven native cases,
+including non-inheritance and actual exits after link/disposition; local130 /127 pass /3 platform skips.
 Reader sharing denial and final one-link visibility measured. No full fixture
 containment, auth journal, durable ACK, antirollback or production Store change.
 

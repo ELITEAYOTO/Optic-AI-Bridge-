@@ -45,6 +45,20 @@ class Native(unittest.TestCase):
             self.assertEqual(stream.read(96), SEALS['rotate-a'])
         self.assertEqual((self.root / 'successor.0001.seal').read_bytes(), SEALS['rotate-a'])
 
+    def test_actual_root_source_and_crt_descriptor_are_non_inheritable(self):
+        stage = _NativeSeal(self.root)
+        with stage as stream:
+            self.assertFalse(os.get_inheritable(stream.fileno()))
+            kernel = stage.prepared.kernel
+            kernel.GetHandleInformation.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+            kernel.GetHandleInformation.restype = ctypes.c_int
+            for handle in (stage.prepared.root, stage.prepared.file):
+                flags = ctypes.c_uint32()
+                self.assertTrue(kernel.GetHandleInformation(handle, ctypes.byref(flags)))
+                self.assertEqual(flags.value & 1, 0)
+            self.assertEqual(stream.write(SEALS['rotate-a']), 65)
+            os.fsync(stream.fileno())
+
     def test_shared_read_is_refused_while_original_handle_stays_open(self):
         original = _NativeSeal._set_info
         observations = []

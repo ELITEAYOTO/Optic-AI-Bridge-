@@ -416,8 +416,8 @@ H02_CLOSED_STAGE_PUBLIC_SEAL.md for exact limits.
 
 Optional Windows x64 variant holds root/source through no-replace native link,
 then marks only its owned source for removal at close. The CRT I/O duplicate is
-owned separately from its borrowed FileIO view. No path unlink/fallback; live NT
-sharing prevents reader opens until close. Ten native regressions include actual
-exits after link/disposition. Latest local Windows129 cases /126 passed /3 platform
+owned separately from its borrowed FileIO view and explicitly non-inheritable. No path unlink/fallback; live NT
+sharing prevents reader opens until close. Eleven native regressions include actual
+exits after link/disposition. Latest local Windows130 cases /127 passed /3 platform
 skips. Entire fixture path containment, durable auth commit and antirollback remain
 gated; see H02_NATIVE_PUBLIC_SEAL.md. No production runtime/Store change.

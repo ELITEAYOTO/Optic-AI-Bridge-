@@ -76,11 +76,13 @@ class _NativeSeal:
                 raise SuccessorError('native_seal.duplicate_failed')
             import msvcrt
             try:
-                self.descriptor = msvcrt.open_osfhandle(duplicate.value, os.O_RDWR | os.O_BINARY)
+                self.descriptor = msvcrt.open_osfhandle(duplicate.value,
+                    os.O_RDWR | os.O_BINARY | os.O_NOINHERIT)
             except Exception:
                 if not kernel.CloseHandle(duplicate):
                     raise SuccessorError('native_seal.close_failed') from None
                 raise
+            os.set_inheritable(self.descriptor, False)
             # FileIO is a borrowed view. This context alone owns the CRT fd,
             # including failed view construction; avoid double-close on error.
             self.stream = io.FileIO(self.descriptor, 'r+', closefd=False)
