@@ -386,3 +386,12 @@ revocation lost after a successful precheck. These passing tests record a known
 limit, not safe production replacement. Local Windows: 92 cases / 89 passed /
 3 platform skips. Initial publisher remains no-replace; test-only replace packet
 is never exposed as a runtime API. See the H02 replacement gap security note.
+# One-slot successor election — 2026-10-14
+
+Portable public fixture with fixed baseline, two fixed operation markers and one
+exclusive-create slot. Ten tests include actual competing threads/processes and
+preservation of a competitor admitted after the initial check. Partial/existing
+slots exhaust the single slot and never auto-repair. Local Windows102 cases /
+99 passed / 3 platform skips. This is election only, not a credential journal or
+auth commit, and it does not fix the measured replacing-fixture race. See the
+H02 create-only successor election security note before extending this candidate.

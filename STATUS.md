@@ -1,5 +1,14 @@
 # Project Status
 
+## Create-only successor election — 2026-10-14
+
+One fixed public slot, two fixed operation markers and one attempt per candidate.
+Actual two-thread/two-process races and a post-precheck competitor have one winner;
+loser cannot overwrite it. Empty/partial/existing slots never repair or reset.
+Ten regressions; local102 cases / 99 pass / 3 platform skips. Election only,
+not a journal, authentication ACK, native containment or production CAS fix.
+Prior negative gap #214 fully green (CI746 / fixture24).
+
 ## Replacement gap measured — 2026-10-14
 
 Two negative Windows regressions show that a held state pin blocks replacement,
