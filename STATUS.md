@@ -7,9 +7,10 @@ alpha. First real Rust MCP vertical step creates/reads/edits a generated HTML
 project with exact preconditions; stale/absent/out-of-scope/traversal/revoked
 writes refused. Six-tool parameterized HTTP editing/retained-project runner now
 implemented with bounded schemas, observed read versions, serialized retained
-forwarding and real local stop. Initial current-source integration/package passed
-and downloaded Windows package passed actual HTTP/runner tests; final added patch
-boundary regression is under CI. No FS editing result claimed yet;
+forwarding and real local stop. Runtime snapshot4247f1f passed all nine workflows
+(general CI767/real-link19); matching downloaded Windows package passed HTTP,
+runner, isolated setup and actual Windows PowerShell launch/write/read/stop.
+Nine boundary regressions pass. No FS editing result claimed yet;
 FS manual editing and isolated execution still require their separate evidence.
 User targets now explicitly include websites, applications and Java Minecraft
 plugins. Java execution eligibility/build/server tests remain pending, independently
