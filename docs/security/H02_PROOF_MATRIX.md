@@ -29,8 +29,13 @@ values and disposable state.
 | Prepared protected read | #200 same observed native handle held through decode; write/rename/link/size negatives | Partial read proof, not full ancestor/hostile-writer/ACL/write-commit containment |
 | Fixed writer pin | #209 native existing public writer.lock, zero-sharing handle, same/fresh-process exclusion, links/rename/re-entry/cleanup refusal | Not wired into Store; actors ignoring the lock, ACL/ancestor policy and lock initialization remain open |
 | Public scratch create | Native fixed CREATE_NEW scratch under held writer pin, exact same-handle public write/flush and existing-target refusal | Path-based create is not root-relative confinement; no committed-state promotion, final replace or persistence ACK |
+| Explicit relative scratch | #211 native NtCreateFile fixed leaf under held root, no absolute-create fallback, completion/platform/cleanup cases | Native fixture evidence only; ACL/hostile interleavings, state publication and replacement stay gated |
 
 ## Sequenced next work
+
+The next narrowly scoped native storage sequence is specified in
+[native commit acceptance gate](H02_NATIVE_COMMIT_ACCEPTANCE_GATE.md). Initial
+absent-state publication and existing-state replacement must be proved separately.
 
 1. Finish native storage policy: directory/file ownership and ACL contract,
    lock identity, pending creation and final replacement; retain failure/no-ACK

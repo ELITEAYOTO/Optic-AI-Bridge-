@@ -167,9 +167,40 @@ Native read API references reviewed2026-10-13:
 * [Microsoft GetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle):
   handle-observed attributes, file size and link count.
 
-## Exclusive fixed writer-lock pin candidate — 2026-10-14
-
 ## Fixed public pending-file creation candidate — 2026-10-14
+
+## Explicit root-relative pending candidate — 2026-10-14
+
+`RootRelativeFixturePending` explicitly selects NtCreateFile with the held root
+directory handle and one fixed Unicode leaf. It does not call absolute
+CreateFileW for scratch creation and never falls back to the path-based candidate.
+Windows x64 ABI sizes, two-byte wide chars, fixed System32 ntdll, synchronous
+non-directory/open-reparse options, FILE_CREATE, zero sharing and non-inheritable
+object attributes are fixed. No DELETE/WRITE_DAC/WRITE_OWNER authority is requested.
+Success requires exact NT status0, completion status0 and FILE_CREATED2 with a
+valid owned handle before inherited empty-size/identity/public-write checks.
+
+Seven new relative cases cover inactive pin before native load, actual relative creation
+with absolute-create disabled, existing target preservation/no fallback,
+mutation of the stored path string while creation still uses the held root,
+loader/platform failure preserving absence, and simulated ambiguous completion/owned
+handle cleanup. A further native child abrupt-exit case verifies kernel release
+of its existing writer pin without Python cleanup. Full local Windows78 cases:
+75 pass/3 platform skips. Simulated
+completion checks are distinct from actual native creation evidence.
+
+This observes interoperability with the existing Win32-opened directory handle
+on the tested Windows x64 system. It is not universal filesystem/driver/platform
+conformance. Inherited path rechecks may still refuse root-path drift; no hostile
+ancestor race, ACL/enrollment, final replacement, Store integration, state
+promotion, rollback or power-loss durability guarantee is claimed. No real
+payload, credential or remote tool accepts this primitive.
+
+Primary reference: [NtCreateFile](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile)
+documents RootDirectory/ObjectName relative naming, FILE_CREATE, completion
+information and SYNCHRONIZE for synchronous nonalert I/O.
+
+## Fixed public pending-file creation candidate (path-based proof)
 
 `PreparedFixturePending` accepts only a held `PreparedFixtureLock`. It creates
 one fixed `state.protected.pending` with native CREATE_NEW and zero sharing;
