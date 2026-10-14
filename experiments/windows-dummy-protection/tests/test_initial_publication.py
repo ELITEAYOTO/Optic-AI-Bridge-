@@ -21,6 +21,25 @@ class Bounds(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows initial publication')
 class Native(unittest.TestCase):
+    def test_wrong_same_length_public_bytes_are_denied_before_rename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'writer.lock').write_bytes(b'0')
+            with PreparedFixtureLock(root) as pin:
+                with _InitialPending(pin) as pending:
+                    write = pending.kernel.WriteFile
+                    def corrupt(handle, buffer, size, count, overlapped):
+                        public_wrong = ctypes.create_string_buffer(b'X' * len(PUBLIC_PENDING))
+                        return write(handle, public_wrong, size, count, overlapped)
+                    with patch.object(pending.kernel, 'WriteFile', side_effect=corrupt):
+                        pending.write_once()
+                    with patch.object(pending, '_rename', side_effect=AssertionError('rename reached')) as rename:
+                        with self.assertRaises(PendingError):
+                            pending.publish_once()
+                        rename.assert_not_called()
+            self.assertFalse((root / 'state.protected').exists())
+            self.assertEqual((root / 'state.protected.pending').read_bytes(), b'X' * len(PUBLIC_PENDING))
+
     def test_ambiguous_native_completion_never_acknowledges_or_retries(self):
         for status, io_status in ((1, 0), (0, 1), (-1, 0)):
             with tempfile.TemporaryDirectory() as directory:

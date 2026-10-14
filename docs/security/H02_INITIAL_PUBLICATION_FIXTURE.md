@@ -23,11 +23,11 @@ explicitly; it does not try multiple APIs at runtime to evade failure.
 
 ## Evidence
 
-Eight regressions cover unopened parent refusal, real fresh publication and no
+Nine regressions cover unopened parent refusal, real fresh publication and no
 reset of an existing child with missing state, preservation of existing destination
 file/directory/hardlink, one-attempt native failure, repeated publish/write refusal,
 ambiguous native completion, post-rename readback failure and close uncertainty.
-Last local Windows suite: 87 cases, 84 passed, 3 deliberate platform skips.
+Last local Windows suite: 88 cases, 85 passed, 3 deliberate platform skips.
 Completion, readback and close failures are injected; successful rename and
 destination collisions are actual native operations. CI evidence is recorded
 separately when available.
