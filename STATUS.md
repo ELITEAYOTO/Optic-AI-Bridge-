@@ -4,10 +4,12 @@
 
 Fresh private child in the same fixture operation, one fixed scratch write,
 explicit no-replace root-relative NT rename, same-handle readback and close-before-
-success. Nine regressions; local Windows88 cases / 85 pass / 3 platform skips.
+success. Eleven regressions; local Windows90 cases / 87 pass / 3 platform skips.
 Existing child with missing state never initializes. Post-rename validation/close
 failure gives no ACK and may leave destination present; no retry/rollback claim.
 No protected registry composition, production storage or existing-state replacement.
+Actual abrupt child exit before publication leaves scratch inert; after ACK the
+marker remains readable. Kernel writer pin releases; existing child never resets.
 
 ## Private root / lock / relative scratch composition — 2026-10-14
 

@@ -23,12 +23,18 @@ explicitly; it does not try multiple APIs at runtime to evade failure.
 
 ## Evidence
 
-Nine regressions cover unopened parent refusal, real fresh publication and no
+Eleven regressions cover unopened parent refusal, real fresh publication and no
 reset of an existing child with missing state, preservation of existing destination
 file/directory/hardlink, one-attempt native failure, repeated publish/write refusal,
 ambiguous native completion, post-rename readback failure, close uncertainty and
 incorrect public bytes of the expected size refused before rename.
-Last local Windows suite: 88 cases, 85 passed, 3 deliberate platform skips.
+Two actual child processes exit via os._exit before publication or after the
+wrapper returned and a fixed public ACK was emitted. Reopen finds only inert
+scratch before publish and readable marker after ACK; both refuse adoption/reset.
+The pre-publish kernel lock can be acquired again after child exit. Each owned
+child has a ten-second wait bound and bounded output reads, and only that child
+is terminated on test failure. This is process-exit evidence, not power-loss proof.
+Last local Windows suite: 90 cases, 87 passed, 3 deliberate platform skips.
 Completion, readback and close failures are injected; successful rename and
 destination collisions are actual native operations. CI evidence is recorded
 separately when available.

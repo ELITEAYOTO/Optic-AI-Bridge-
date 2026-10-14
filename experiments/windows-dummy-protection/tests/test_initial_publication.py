@@ -1,6 +1,7 @@
 import ctypes
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -21,6 +22,69 @@ class Bounds(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'win32', 'native Windows initial publication')
 class Native(unittest.TestCase):
+    def _exit_child(self, directory, after_publish):
+        script = '''
+import os,sys
+from pathlib import Path
+from native_fixture_read import PreparedFixtureRead
+from native_fixture_creation import create_private_fixture
+from native_fixture_lock import PreparedFixtureLock
+from native_initial_publication import publish_fresh_public_fixture,_InitialPending
+with PreparedFixtureRead(sys.argv[1]) as parent:
+    if sys.argv[2] == 'after':
+        publish_fresh_public_fixture(parent)
+        print('PUBLIC_ACK',flush=True)
+    else:
+        root=create_private_fixture(parent)
+        (root/'writer.lock').write_bytes(b'0')
+        with PreparedFixtureLock(root) as pin:
+            with _InitialPending(pin) as pending:
+                pending.write_once()
+                print('PUBLIC_PENDING_ONLY',flush=True)
+                os._exit(17)
+os._exit(17)
+'''
+        child = subprocess.Popen([sys.executable, '-c', script, directory,
+                                  'after' if after_publish else 'before'],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertEqual(child.wait(timeout=10), 17)
+            self.assertEqual(child.stdout.read(64).strip(),
+                             b'PUBLIC_ACK' if after_publish else b'PUBLIC_PENDING_ONLY')
+            self.assertEqual(child.stderr.read(4096), b'')
+        finally:
+            if child.poll() is None:
+                child.kill()  # only the child owned by this test
+                child.wait(timeout=10)
+            child.stdout.close()
+            child.stderr.close()
+
+    def test_abrupt_exit_before_publish_does_not_promote_pending_on_reopen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'state.protected').write_bytes(b'PUBLIC PARENT')
+            self._exit_child(directory, False)
+            root = Path(directory) / 'private-dummy-fixture'
+            self.assertFalse((root / 'state.protected').exists())
+            self.assertEqual((root / 'state.protected.pending').read_bytes(), PUBLIC_PENDING)
+            with PreparedFixtureRead(directory) as parent:
+                with self.assertRaises(CreationError):
+                    publish_fresh_public_fixture(parent)
+            self.assertFalse((root / 'state.protected').exists())
+            with PreparedFixtureLock(root):
+                pass  # actual kernel pin released despite os._exit
+
+    def test_abrupt_exit_after_ack_retains_marker_and_refuses_reinitialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'state.protected').write_bytes(b'PUBLIC PARENT')
+            self._exit_child(directory, True)
+            root = Path(directory) / 'private-dummy-fixture'
+            with PreparedFixtureRead(root) as published:
+                self.assertEqual(published.read(), PUBLIC_PENDING)
+            self.assertFalse((root / 'state.protected.pending').exists())
+            with PreparedFixtureRead(directory) as parent:
+                with self.assertRaises(CreationError):
+                    publish_fresh_public_fixture(parent)
+
     def test_wrong_same_length_public_bytes_are_denied_before_rename(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

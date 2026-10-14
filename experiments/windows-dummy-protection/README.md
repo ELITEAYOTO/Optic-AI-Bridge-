@@ -375,5 +375,7 @@ writes fixed public scratch bytes, then selects root-relative NtSetInformationFi
 without replace/fallback. Same-handle readback and context closure precede success.
 Existing child with missing state is never reset. An error after rename can leave
 state present without ACK; no retry, rollback, power-loss or production claim.
-Local Windows: 88 cases / 85 passed / 3 platform skips. See
+Actual child exit before publication leaves scratch inert; after ACK the marker
+reopens successfully, while neither case grants reinitialization of an old child.
+Local Windows: 90 cases / 87 passed / 3 platform skips. See
 `docs/security/H02_INITIAL_PUBLICATION_FIXTURE.md` for evidence and limitations.
