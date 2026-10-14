@@ -395,3 +395,11 @@ slots exhaust the single slot and never auto-repair. Local Windows102 cases /
 99 passed / 3 platform skips. This is election only, not a credential journal or
 auth commit, and it does not fix the measured replacing-fixture race. See the
 H02 create-only successor election security note before extending this candidate.
+# Public successor/seal reader checkpoint — 2026-10-14
+
+Bounded observer classifies empty/reserved/validated, always fixture-only and
+authority none. A full unsealed marker remains reserved. Exact finite seal pairs
+are not keyed/authentic and do not prove ACK or durability: actual abrupt exits
+and failed seal flush demonstrate this distinction. No old claim adoption or
+repair. Nine regressions; local Windows111 cases / 108 passed / 3 platform skips.
+See H02_PUBLIC_SUCCESSOR_READER.md before any state/auth integration.

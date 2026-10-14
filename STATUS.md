@@ -1,5 +1,14 @@
 # Project Status
 
+## Bounded public successor/seal reader — 2026-10-14
+
+Observer distinguishes empty/reserved/validated public pairs, rejects malformed
+seals and never infers an operation from an unsealed reservation. All results
+have zero authority. Sealed writer refuses existing/orphan seal and never adopts
+old claims. Nine regressions; local111 cases / 108 pass / 3 platform skips.
+Actual exits and injected seal-flush failure show validated data can exist with
+no writer ACK; no durable/auth commit claim. #215 fully green (CI747/fixture25).
+
 ## Create-only successor election — 2026-10-14
 
 One fixed public slot, two fixed operation markers and one attempt per candidate.
