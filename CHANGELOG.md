@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Fixed confirmed public-work probe under one-object ownership,32-attempt ceiling, busy-close refusal and six regressions including the negative external-mutation boundary. No arbitrary callback, effect authorization, process lock or production integration.
 - Public successor one-object admission coordinator: immediate busy refusal during publication, own-completion-only volatile confirmation, sticky uncertainty/change/restart refusal and seven regressions. No durable/auth commit, process-wide lock or production integration.
 - Explicit native public seal variant: held-root no-replace link, owned-source disposition at close, single non-inherited CRT descriptor ownership and sharing denial until NT close; eleven native failure/ownership/abrupt-exit cases. No path unlink/fallback or production auth authority.
 - Optional closed staged public seal publication: fixed exclusive hard-link target, reader refusal until staged unlink, eight error/abrupt-exit regressions, and no false ACK or automatic repair. Path-based disposable proof only; no durable auth commit or production authority.

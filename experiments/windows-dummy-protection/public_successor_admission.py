@@ -1,5 +1,6 @@
 """One-process, no-queue public fixture coordination. No authentication authority."""
 import threading
+import hashlib
 
 from create_only_successor import BASELINE, RECORDS, SuccessorError
 from public_successor_reader import observe_public_successor
@@ -19,6 +20,7 @@ class PublicSuccessorAdmission:
         self._lock = threading.Lock()
         self._state = 'blocked'
         self._operation = None
+        self._probes = 0
         try:
             if observe_public_successor(directory)['status'] == 'empty':
                 self._state = 'empty'
@@ -32,6 +34,50 @@ class PublicSuccessorAdmission:
     def _snapshot(self):
         return {'status': self._state, 'operation': self._operation,
                 'fixture_only': True, 'authority': 'none'}
+
+    def _observe_confirmed(self):
+        if self._state != 'confirmed':
+            raise SuccessorError('successor_admission.unconfirmed')
+        observed = observe_public_successor(self._directory)
+        if observed['status'] != 'validated' or observed['operation'] != self._operation:
+            raise SuccessorError('successor_admission.changed')
+
+    def _measure_public(self):
+        # Fixed public in-memory computation only, never a caller callback.
+        return hashlib.sha256(RECORDS[self._operation]).hexdigest()
+
+    def probe_confirmed(self):
+        """Keep ownership through fixed public work and final observation.
+
+        At most 32 attempts per object; no effects, lease or durable results.
+        External writers remain outside the lock. Post-check failure suppresses
+        the result but cannot undo computation that has already happened.
+        """
+        self._enter()
+        try:
+            if self._state != 'confirmed' or self._probes >= 32:
+                raise SuccessorError('successor_admission.unavailable')
+            self._probes += 1
+            try:
+                self._observe_confirmed()
+                digest = self._measure_public()
+                self._observe_confirmed()
+                return {**self._snapshot(), 'public_digest': digest,
+                        'attempt': self._probes}
+            except BaseException:
+                self._state, self._operation = 'blocked', None
+                raise SuccessorError('successor_admission.blocked') from None
+        finally:
+            self._lock.release()
+
+    def close(self):
+        """Local bookkeeping only. Busy refusal is NOT a completed close."""
+        self._enter()
+        try:
+            self._state, self._operation = 'blocked', None
+            return {'closed': True, 'fixture_only': True, 'authority': 'none'}
+        finally:
+            self._lock.release()
 
     def read(self):
         self._enter()

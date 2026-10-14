@@ -1,5 +1,13 @@
 # Project Status
 
+## Fixed confirmed public work — 2026-10-14
+
+Local ownership now spans before/after observation and one fixed harmless public
+calculation, with32 attempts maximum. Busy close never acknowledges completion;
+interruption blocks. External mutation regression explicitly shows post-check
+refusal cannot undo already performed work. Six cases; local143 /140 pass /3
+platform skips. No production effect authorization or cross-process exclusion.
+
 ## Public successor local admission — 2026-10-14
 
 One-object nonblocking coordination refuses readers/second writers during the
