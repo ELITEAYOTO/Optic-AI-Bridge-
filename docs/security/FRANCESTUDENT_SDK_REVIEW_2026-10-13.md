@@ -78,7 +78,21 @@ The user now accepts a single-session remote alpha (ADR-0013). Unanswered backen
 identity/cancellation questions remain recorded but no longer block that truthful
 scope. Shared chats share the locally bound connection's session permissions.
 
-## Immutable SDK source links
+## Administrator reply relayed by the user — 2026-10-14
+
+The user relayed the administrator's reply to the earlier combined question:
+“Non y a pas çaça peut être une idée d'ajout”. This is reported communication,
+not a newly measured host trace. It is consistent with the absence of the
+requested stable outgoing MCP conversation identifier; the short reply does
+not distinguish that feature from cancellation propagation. Cancellation of
+already-running external MCP work therefore remains unverified.
+
+ADR-0013's single shared session alpha remains the selected scope. Do not derive
+per-chat authorization from chat API identifiers or assume that stopping a host
+generation cancels admitted Optic work. Local stop/revoke and bounded cleanup
+remain required. A later host feature requires a separate integration proof.
+
+## Immutable SDK source links (reviewed revision)
 
 - [README](https://github.com/FranceStudent/francestudent-ai-sdk/blob/d8d054f7c9631756db200369e88569cf1b5a9e2f/README.md)
 - [MCP requests](https://github.com/FranceStudent/francestudent-ai-sdk/blob/d8d054f7c9631756db200369e88569cf1b5a9e2f/src/requests/Mcp.ts)

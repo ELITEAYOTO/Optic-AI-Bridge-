@@ -13,6 +13,13 @@ absolute-create fallback. These are disposable public-marker fixtures. None
 publishes committed auth state, stores a real credential or closes production
 storage. DPAPI integrity remains distinct from state freshness/rollback.
 
+A native composition regression now creates the private dummy child, opens its
+fixed writer marker, creates/writes the root-relative scratch, and observes the
+root/lock/scratch descriptors while the handles remain live. Root owner and
+protected DACL, three parsed entries and no other write-allow category are
+asserted. This is measured descriptor composition, not effective-access proof
+against another user or an uncooperative same-user writer. No state is published.
+
 ## Next implementation order
 
 1. Prove initial publication to an absent fixed destination separately from

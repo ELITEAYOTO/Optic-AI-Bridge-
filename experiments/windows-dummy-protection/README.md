@@ -359,3 +359,12 @@ Primary references reviewed2026-10-13:
 * [Microsoft LoadLibraryEx](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexw)
   and [LocalFree](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-localfree):
   System32-only loader flag and native buffer release/failure contract.
+# Private-root composition checkpoint — 2026-10-14
+
+One additional native regression composes the creation-time private dummy root,
+existing fixed writer pin and root-relative pending write. Read-only descriptor
+queries on the live handles verify the root owner/protected DACL and three
+parsed lock/scratch entries with no other write-allow category. The test borrows
+the scratch handle for observation and restores lock ownership in `finally`.
+It publishes no committed state and does not test effective access by another
+principal. Current local Windows suite: 79 cases / 76 passed / 3 platform skips.
