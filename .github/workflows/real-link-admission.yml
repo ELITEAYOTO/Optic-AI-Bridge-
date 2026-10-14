@@ -40,12 +40,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Build pinned real binary
+        # The alpha must work with the actual user's installed Node version,
+        # not just the newer runner image whose stat API can hide ACL gaps.
         shell: pwsh
         run: |
           rustup toolchain install 1.99.0 --profile minimal
           if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
           cargo build --locked -p optic-bridge-app --bins
           if ($LASTEXITCODE -ne 0) { throw 'binary build failed' }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: runner.os == 'Windows'
+        with:
+          node-version: '22.15.1'
+          package-manager-cache: false
       - name: Frozen SDK and generated fixture proof
         shell: pwsh
         run: |

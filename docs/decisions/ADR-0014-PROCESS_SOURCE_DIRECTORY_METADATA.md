@@ -13,7 +13,7 @@ Granting directory read/listing or ambient filesystem rights would be excessive.
 ## Decision
 
 An operator-authorized process source-file read grant includes non-inheritable
-FILE_READ_ATTRIBUTES and FILE_TRAVERSE on ancestors inside the selected workspace,
+FILE_READ_ATTRIBUTES, FILE_TRAVERSE and SYNCHRONIZE on ancestors inside the selected workspace,
 including its root. It does not include FILE_LIST_DIRECTORY, file data, writes,
 creation, delete or ancestors above the workspace. No model-controlled selector
 or new permission-granting tool is introduced. Rust ProcessRun/lease ownership,
@@ -31,6 +31,14 @@ Node profiles may retain local symlink-resolution flags to avoid realpath
 metadata probes above the workspace. These flags do not grant filesystem rights.
 Whole directory listing/read/write grants, dependency trees, network and build
 output write remain separate gates.
+
+Native attribute-only CreateFile opens were denied without SYNCHRONIZE; this
+right permits completion synchronization on the directory handle, not listing
+or data access. Older Node22/libuv also uses a synchronous attribute handle;
+the newer CI runtime's fast stat path masked the missing right. This correction
+must pass native attribute/revoke/deny tests and the Node22.15.1 runner proof.
+See [Microsoft synchronous file open contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-zwcreatefile)
+and [libuv attribute stat implementation](https://github.com/libuv/libuv/blob/v1.49.2/src/win/fs.c).
 
 ## Acceptance
 

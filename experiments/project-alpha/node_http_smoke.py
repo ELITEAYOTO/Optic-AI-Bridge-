@@ -166,7 +166,10 @@ async def run(binary, node):
                             {'job_id': tree['upstream']['job_id']}))
                         assert tree_result['status'] == 'exited'
                         assert 'DIRECT_GRANTED_BYTES_READ' in tree_output['upstream']['text']
-                        assert tree_result['exit_code'] == 0, tree_result
+                        if tree_result['exit_code'] != 0:
+                            details = structured(await session.call_tool('optic_task_read',
+                                {'job_id': tree['upstream']['job_id'], 'stream': 'stderr'}))
+                            raise AssertionError({'result': tree_result, 'stderr': details['upstream']})
                         assert 'MODULE_TREE_PASS:LIST_READ_WRITE_DENIED' in tree_output['upstream']['text']
                         assert not (project / 'src/forbidden-new.txt').exists()
                         print('NODE_MODULE_TREE_MODE: resolved; directory listing, sibling data and writes denied')

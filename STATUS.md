@@ -1,5 +1,15 @@
 # Project Status
 
+## Cross-version Node validation — correction pending
+
+Real-link28 passed the actual new generated Node runner and packaged both
+executables. Verified artifact11930124023 was downloaded, but the same proof
+failed locally with installed Node22.15.1: relative module was not found. General
+CI's explicit attribute-only CreateFile test also failed access denied. Directory
+grants now include SYNCHRONIZE (completion synchronization, not listing/data).
+ADR0014 records the narrow correction; workflow pins Node22.15.1 to prevent the
+newer runner fast-stat path hiding this discrepancy. No package released to user.
+
 ## Generated Node runner integration — validation pending
 
 Optional locally selected Node mode now composes the ten-tool alpha with fixed

@@ -33,6 +33,7 @@ use crate::{
 
 const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
 const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
+const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
 
 impl AppContainerProfile {
     /// Permit metadata/traversal of one pinned directory inside a pinned root.
@@ -64,7 +65,7 @@ impl AppContainerProfile {
             &directory,
             sid,
             true,
-            FILE_READ_ATTRIBUTES.0 | FILE_TRAVERSE.0,
+            FILE_READ_ATTRIBUTES.0 | FILE_TRAVERSE.0 | SYNCHRONIZE_ACCESS,
         )?;
         Ok(AppContainerDirectoryMetadataGrant {
             directory,
