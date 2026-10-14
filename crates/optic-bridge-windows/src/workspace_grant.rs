@@ -331,12 +331,15 @@ mod tests {
         ffi::OsString,
         fs::{self, OpenOptions},
         io::Write as _,
-        os::windows::io::AsHandle,
+        os::windows::{fs::OpenOptionsExt, io::AsHandle},
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
     };
 
     use crate::{AppContainerProfile, AppContainerStdio, spawn_appcontainer_suspended};
+    use windows::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+    };
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(1);
     const WAIT_MS: u32 = 10_000;
