@@ -430,3 +430,11 @@ alone becomes locally confirmed; failure/change/restart never adopts or repairs
 existing data. Seven new regressions; latest local Windows137 /134 passed /3
 platform skips. No cross-process lock, I/O deadline, durable ACK or subsequent
 effect authorization. See H02_PUBLIC_SUCCESSOR_ADMISSION.md. Production unchanged.
+
+# Fixed public work checkpoint — 2026-10-14
+
+probe_confirmed keeps the same lock through fixed public computation and both
+observations, bounded to32 attempts. Busy close is refused without completion.
+External mutation can suppress output but cannot undo completed work: explicit
+negative regression. Six new cases; local143 /140 passed /3 platform skips.
+See H02_PUBLIC_CONFIRMED_WORK.md. No actual effect or production integration.
