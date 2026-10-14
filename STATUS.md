@@ -1,5 +1,12 @@
 # Project Status
 
+## Volatile expected public root identity — 2026-10-14
+
+Snapshot from an active owned root compared against the reopened reference
+before any child open. Actual same-name substitution refused; unchanged reopen
+passes. Three regressions; local157 /154 pass /3 skips. Conditional identity
+comparison only: trusted capture/persistence, recycling and recovery remain gated.
+
 ## Public root selection negative evidence — 2026-10-14
 
 Actual same-name valid fixture substitution before native root open is accepted;

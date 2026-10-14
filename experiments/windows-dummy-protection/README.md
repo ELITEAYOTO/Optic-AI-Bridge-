@@ -460,3 +460,10 @@ Two regressions distinguish accepted same-name valid substitution before root
 open from ordinary rename denied while held. Passing negative characterization
 does not fix selection. Local154 /151 passed /3 skips; see
 H02_PUBLIC_ROOT_SELECTION_GAP.md before defining trusted enrollment/identity.
+
+# Expected public root identity checkpoint — 2026-10-14
+
+ExpectedRootPublicPair compares a volatile identity captured from a previously
+active root on the newly owned reference before child opens. Three tests;
+local157 /154 passed /3 skips. Trusted capture/protected persistence remain
+unselected; see H02_PUBLIC_EXPECTED_ROOT_IDENTITY.md. No production authority.
