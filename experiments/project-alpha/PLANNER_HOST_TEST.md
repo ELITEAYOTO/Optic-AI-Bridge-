@@ -19,6 +19,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\experiments\project-alpha\
 ```
 
 Conserver le nom alpha-… affiché. Un nouveau lancement crée un autre projet.
+Pour reprendre le même projet après arrêt, fermer sa fenêtre Electron puis ajouter
+`-ResumeRun alpha-…` à la commande Start-ProjectAlpha. Les sources et le journal
+sont conservés ; une nouvelle session locale de50minutes est créée. Le dossier
+doit être directement dans output de ce paquet. Un verrou Windows empêche deux
+lanceurs simultanés. Après reconnexion, demander au modèle de relire les fichiers
+et leurs versions ; les anciens job_id ne sont pas réutilisables.
 Un tunnel existant vers127.0.0.1:8009 peut être conservé si toujours actif ; sinon :
 
 ```powershell

@@ -1,5 +1,15 @@
 # Project Status
 
+## Explicit retained alpha resume — native runner CI pending
+
+Local -ResumeRun selects an alpha name directly under package output. Existing
+Node sources are validated and preserved, never regenerated. A Windows lock
+excludes another runner and is released by OS process exit. The previous viewer
+marker is invalidated while editing and republished after confirmed stop. Close
+the prior viewer first. Fresh authorization and jobs replace the expired session;
+the model cannot renew access. 25 local Python tests pass on Windows. Actual
+child restart and preserved-source execution proof added to CI, delivery pending.
+
 ## User-selected fifty-minute alpha — native validation pending
 
 User requested40–50minutes rather than25. Alpha defaults now50minutes and local

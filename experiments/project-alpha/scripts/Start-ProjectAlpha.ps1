@@ -1,4 +1,4 @@
-param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50)
+param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50, [ValidatePattern('^alpha-[a-z0-9_-]{1,64}$')][string]$ResumeRun)
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Experiments = Split-Path -Parent $Root
@@ -43,5 +43,6 @@ if (-not (Test-Path -LiteralPath $Output)) { New-Item -ItemType Directory -Path 
 $RunnerArguments = @((Join-Path $Root 'project_runner.py'), '--binary', $Binary, '--output-root', $Output, '--port', "$Port", '--lifetime', "$($SessionMinutes * 60)")
 if ($AllowRandomTunnelHost) { $RunnerArguments += '--allow-random-tunnel-host' }
 if ($NodeExecutable) { $RunnerArguments += @('--node', $NodeExecutable) }
+if ($ResumeRun) { $RunnerArguments += @('--resume-run', $ResumeRun) }
 & $Python @RunnerArguments
 if ($LASTEXITCODE -ne 0) { throw 'Project alpha failed; inspect the retained generated run without retrying uncertain writes.' }

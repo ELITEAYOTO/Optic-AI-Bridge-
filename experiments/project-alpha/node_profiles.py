@@ -4,7 +4,7 @@ from pathlib import Path
 SOURCE_FILES = ('src/model.js', 'src/app.js', 'src/tests.js')
 
 
-def configure_node(project, executable):
+def configure_node(project, executable, resume=False):
     node = Path(executable).resolve(strict=True)
     if not node.is_file() or node.name.lower() != 'node.exe':
         raise ValueError('project.node_executable_required')
@@ -17,9 +17,20 @@ def configure_node(project, executable):
         "const model = require('./model.js');\n"
         "assert.equal(model.add(2, 3), 5);\nconsole.log('ALPHA_TEST_PASS');\n",
     )
-    for relative, content in zip(SOURCE_FILES, initial):
-        with (root / relative).open('x', encoding='utf-8', newline='\n') as stream:
-            stream.write(content)
+    if resume:
+        from project_resume import ordinary
+        for relative in SOURCE_FILES:
+            path = root / relative
+            ordinary(path)
+            with path.open('rb') as stream:
+                raw = stream.read(8193)
+            if not 1 <= len(raw) <= 8192:
+                raise ValueError('project.resume_source_bound')
+            raw.decode('utf-8', errors='strict')
+    else:
+        for relative, content in zip(SOURCE_FILES, initial):
+            with (root / relative).open('x', encoding='utf-8', newline='\n') as stream:
+                stream.write(content)
     def profile(arguments):
         return {'executable': str(node), 'args': arguments, 'cwd': None,
                 'env_allowlist': [], 'network': False, 'timeout_ms': 10000,

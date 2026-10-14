@@ -69,6 +69,25 @@ async def exercise(url, node_mode=False):
                 assert 'ALPHA_' + profile.upper() + '_PASS' in output['upstream']['text'], output
 
 
+async def exercise_resume(url):
+    async with asyncio.timeout(20):
+        async with httpx2.AsyncClient(timeout=2) as http:
+            while True:
+                try:
+                    if (await http.post(url, json={'method': 'ping'})).status_code == 401:
+                        break
+                except (httpx2.ConnectError, httpx2.ConnectTimeout):
+                    pass
+                await asyncio.sleep(.1)
+    async with client(url, TOKENS['A'][0]) as session:
+        value = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
+        assert value['upstream']['text'] == 'module.exports.add=(a,b)=>a+b;'
+        from node_http_smoke import finished
+        start = structured(await session.call_tool('optic_task_start', {'profile': 'test'}))
+        result = await finished(session, start['upstream']['job_id'])
+        assert result['status'] == 'exited' and result['exit_code'] == 0, result
+
+
 def run(binary, node=None):
     if sys.platform != 'win32':
         print('RUNNER EDIT SKIP: Windows mutation runner only; platform refusal tested separately.')
@@ -117,6 +136,23 @@ def run(binary, node=None):
                 for name, version in ready['files'].items():
                     assert hashlib.sha256((files[0].parent / name).read_bytes()).hexdigest() == version
                 assert '"viewer_ready": true' in output
+                saved = {name: (files[0].parent / name).read_bytes() for name in ready['files']}
+                resumed = subprocess.Popen(arguments + ['--resume-run', files[0].parents[2].name],
+                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+                try:
+                    asyncio.run(exercise_resume(f'http://127.0.0.1:{port}/mcp'))
+                    assert not (files[0].parents[2] / 'viewer-ready.json').exists()
+                    resumed.stdin.write('stop\n')
+                    resumed.stdin.flush()
+                    assert resumed.wait(timeout=20) == 0
+                    assert len(list(Path(directory).glob('alpha-*'))) == 1
+                    assert saved == {name: (files[0].parent / name).read_bytes() for name in saved}
+                    assert (files[0].parents[2] / 'viewer-ready.json').is_file()
+                finally:
+                    if resumed.poll() is None:
+                        resumed.kill()
+                        resumed.wait(timeout=10)
+                    resumed.stdin.close()
         finally:
             if child.poll() is None:
                 child.kill()

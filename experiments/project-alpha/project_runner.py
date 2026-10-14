@@ -25,6 +25,7 @@ from project_http import make_project_app
 from execution_gate import ExecutionGate
 from node_profiles import configure_node
 from viewer_snapshot import write_viewer_ready
+from project_resume import select_run, session_lock
 
 
 def prepare_project(output_root):
@@ -46,16 +47,22 @@ def prepare_project(output_root):
 async def run(args):
     if sys.platform != 'win32':
         raise ValueError('project.windows_required')
+    selected = select_run(args.output_root, args.resume_run) if args.resume_run else prepare_project(args.output_root)
+    with session_lock(selected[0]):
+        await serve_project(args, *selected)
+
+
+async def serve_project(args, root, project, journal):
     binary = Path(args.binary).resolve(strict=True)
     if not binary.is_file():
         raise ValueError('project.binary_missing')
-    root, project, journal = prepare_project(args.output_root)
     profiles, process_arguments = {}, []
     if args.node:
         if not (binary.parent / 'optic-bridge-isolation-launcher.exe').is_file():
             raise ValueError('project.isolation_helper_required')
-        profiles, process_arguments = configure_node(project, args.node)
-        (project / 'src/README.txt').write_text(
+        profiles, process_arguments = configure_node(project, args.node, resume=bool(args.resume_run))
+        if not args.resume_run:
+            (project / 'src/README.txt').write_text(
             'Generated Node alpha. Edit index.html/style.css and app.js for the browser.\n'
             'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
             'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
@@ -114,7 +121,7 @@ async def run(args):
                     channel.emit('Fixed profiles: check / test. Reads: model.js / app.js / tests.js. Network and process writes denied.')
                 channel.emit('Public dummy auth. Shared connection. Local: rotate-a / revoke-a / stop / proof-stats.')
                 channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
-                channel.emit('Project saved under output/' + root.name + '/project/src after stop. No existing project is accepted.')
+                channel.emit('Project saved under output/' + root.name + '/project/src after stop. Local alpha resume only.')
                 try:
                     await service.serve()
                 finally:
@@ -136,6 +143,7 @@ def main():
     parser.add_argument('--binary', required=True)
     parser.add_argument('--node', help='Locally selected installed node.exe; optional generated check/test mode')
     parser.add_argument('--output-root', required=True)
+    parser.add_argument('--resume-run', help='Operator-selected alpha run name within this package output directory')
     parser.add_argument('--port', type=int, default=8009)
     parser.add_argument('--lifetime', type=int, default=3000)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')

@@ -3,6 +3,19 @@
 Status: ACCEPTED PRODUCT SCOPE / IMPLEMENTATION GATED
 Date: 2026-10-13
 
+## Retained alpha restart amendment — 2026-10-15
+
+Expiration revokes authorization, not the generated project. An explicit local
+operator ResumeRun name can reopen a retained alpha directly under package output
+with fresh bounded authorization (default50minutes, maximum50). No MCP tool can
+select a workspace or renew permissions. Node sources and mutation journal remain;
+jobs and authentication state are new. Windows byte-range locking excludes two
+runner processes for the same run, releasing on crash without stale lock removal.
+Reparse run/project/src/journal objects are refused. Invalidate the prior viewer
+snapshot while editing and regenerate after confirmed stop; close the prior viewer
+before reopening. This is local generated-run selection, not private project
+enrollment, per-chat routing, or automatic session renewal.
+
 ## Context
 
 The user explicitly accepts a single-session alpha while the FranceStudent
