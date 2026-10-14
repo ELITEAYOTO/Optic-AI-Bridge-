@@ -1,5 +1,14 @@
 # Project Status
 
+## Native public pair held use — 2026-10-14
+
+Fixed baseline/record/seal read handles stay owned through public digest use.
+Actual separate-process ordinary writes fail while held and succeed after close;
+invalid entry releases pins without repairing data. Explicit admission composition
+suppresses result on close uncertainty. Four native cases; local147 /144 pass /3
+skips. Path-based publication/observations remain; no credential authority or
+production effect integration.
+
 ## Fixed confirmed public work — 2026-10-14
 
 Local ownership now spans before/after observation and one fixed harmless public

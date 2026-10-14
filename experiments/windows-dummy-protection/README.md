@@ -438,3 +438,11 @@ observations, bounded to32 attempts. Busy close is refused without completion.
 External mutation can suppress output but cannot undo completed work: explicit
 negative regression. Six new cases; local143 /140 passed /3 platform skips.
 See H02_PUBLIC_CONFIRMED_WORK.md. No actual effect or production integration.
+
+# Native public pair checkpoint — 2026-10-14
+
+NativePublicPair holds exactly three fixed public file read references and the
+root through public digest use. Actual other-process writes refuse until close.
+Four native cases; local147 /144 passed /3 skips. Explicit NativePublicAdmission
+composes pinned computation and close uncertainty; publication/observations remain
+portable. No root containment or mapped-writer exclusion. See H02_NATIVE_PUBLIC_PAIR_PIN.md.
