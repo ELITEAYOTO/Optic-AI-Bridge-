@@ -1,5 +1,15 @@
 # Project Status
 
+## Private root / lock / relative scratch composition — 2026-10-14
+
+Native Windows regression composes fresh creation-time private ACL, fixed writer
+pin and relative scratch creation/write, then queries live root/lock/scratch
+security descriptors. Local suite: 79 cases, 76 pass, 3 platform skips. This does
+not establish effective access, hostile same-user writer exclusion, publication
+or production storage. Administrator reply relayed by the user is recorded as
+reported absence of the requested conversation feature; cancellation propagation
+remains ambiguous. Single shared session alpha scope is unchanged.
+
 ## Explicit relative native scratch candidate — 2026-10-14
 
 New explicit NtCreateFile root-handle/fixed-leaf candidate refuses absolute-create
