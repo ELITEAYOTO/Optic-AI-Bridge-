@@ -16,7 +16,7 @@ from project_results import structured
 from lifecycle_core import TOKENS
 
 
-async def exercise(url):
+async def exercise(url, node_mode=False):
     async with asyncio.timeout(20):
         async with httpx2.AsyncClient(timeout=2) as http:
             while True:
@@ -32,9 +32,39 @@ async def exercise(url):
         assert payload['ok']
         observed = structured(await session.call_tool('optic_fs_read', {'path': 'src/index.html'}))
         assert observed['upstream']['content_version'] == payload['upstream']['content_version']
+        if node_mode:
+            from node_http_smoke import finished
+            names = {tool.name for tool in (await session.list_tools()).tools}
+            from project_schema import TOOLS
+            from execution_gate import TASK_TOOLS
+            assert names == set(TOOLS + TASK_TOOLS)
+            snapshot = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
+            broken = structured(await session.call_tool('optic_fs_write', {
+                'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a-b;',
+                'expected_kind': 'content', 'expected_version': snapshot['upstream']['content_version']}))
+            assert broken['ok'], broken
+            started = structured(await session.call_tool('optic_task_start', {'profile': 'test'}))
+            assert started['ok'], started
+            job = started['upstream']['job_id']
+            failure = await finished(session, job)
+            assert failure['status'] == 'exited' and failure['exit_code'] != 0, failure
+            error = structured(await session.call_tool('optic_task_read', {'job_id': job, 'stream': 'stderr'}))
+            assert 'AssertionError' in error['upstream']['text'], error
+            fixed = structured(await session.call_tool('optic_fs_write', {
+                'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a+b;',
+                'expected_kind': 'content', 'expected_version': broken['upstream']['content_version']}))
+            assert fixed['ok'], fixed
+            for profile in ('check', 'test'):
+                started = structured(await session.call_tool('optic_task_start', {'profile': profile}))
+                assert started['ok'], started
+                job = started['upstream']['job_id']
+                result = await finished(session, job)
+                assert result['status'] == 'exited' and result['exit_code'] == 0, result
+                output = structured(await session.call_tool('optic_task_read', {'job_id': job}))
+                assert 'ALPHA_' + profile.upper() + '_PASS' in output['upstream']['text'], output
 
 
-def run(binary):
+def run(binary, node=None):
     if sys.platform != 'win32':
         print('RUNNER EDIT SKIP: Windows mutation runner only; platform refusal tested separately.')
         return
@@ -42,23 +72,26 @@ def run(binary):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             port = listener.getsockname()[1]
-        child = subprocess.Popen([sys.executable, str(HERE / 'project_runner.py'), '--binary',
+        arguments = [sys.executable, str(HERE / 'project_runner.py'), '--binary',
             str(Path(binary).resolve(strict=True)), '--output-root', directory,
-            '--port', str(port), '--lifetime', '30'], stdin=subprocess.PIPE,
+            '--port', str(port), '--lifetime', '90' if node else '30']
+        if node:
+            arguments.extend(['--node', str(Path(node).resolve(strict=True))])
+        child = subprocess.Popen(arguments, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         captured = []
         lock = threading.Lock()
         def collect(stream):
             for line in iter(lambda: stream.readline(4097), ''):
                 with lock:
-                    if len(captured) < 256:
+                    if len(captured) < 1024:
                         captured.append(line[:4096])
         readers = [threading.Thread(target=collect, args=(stream,), daemon=True)
                    for stream in (child.stdout, child.stderr)]
         for reader in readers:
             reader.start()
         try:
-            asyncio.run(exercise(f'http://127.0.0.1:{port}/mcp'))
+            asyncio.run(exercise(f'http://127.0.0.1:{port}/mcp', bool(node)))
             child.stdin.write('stop\n')
             child.stdin.flush()
             assert child.wait(timeout=20) == 0
@@ -69,6 +102,8 @@ def run(binary):
             assert all(token.decode() not in output for values in TOKENS.values() for token in values)
             files = list(Path(directory).glob('alpha-*/project/src/index.html'))
             assert len(files) == 1 and files[0].read_text() == '<h1>Saved public project</h1>'
+            if node:
+                assert (files[0].parent / 'model.js').read_text() == 'module.exports.add=(a,b)=>a+b;'
         finally:
             if child.poll() is None:
                 child.kill()
@@ -76,7 +111,9 @@ def run(binary):
             for stream in (child.stdin, child.stdout, child.stderr):
                 stream.close()
     print('ALPHA RUNNER PASS: actual child startup/write/versioned read/local stop; generated project survives stop, public auth values absent from logs.')
+    if node:
+        print('NODE RUNNER PASS: exact ten-tool startup, native relative module failing assertion -> versioned fix -> check/test success; no build/server/dependency claim.')
 
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None)

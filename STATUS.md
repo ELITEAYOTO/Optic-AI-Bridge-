@@ -1,5 +1,14 @@
 # Project Status
 
+## Generated Node runner integration — validation pending
+
+Optional locally selected Node mode now composes the ten-tool alpha with fixed
+check/test profiles and three exact generated source slots. Editing-only mode
+remains default. Matching helper packaged with SHA256; PowerShell verifies it
+before Node startup. All21 local tests and script parsing pass. Workflow adds
+actual owned-runner failing assertion -> versioned fix -> check/test -> stop
+and retained-source proof. No dependency/build/server or personal project claim.
+
 ## Node module metadata correction — native CI pending
 
 At3c0228, real-link26 passed on Windows, including actual relative Node module

@@ -22,6 +22,8 @@ from host_runner import console
 from proof_channel import ProofChannel
 from project_gate import ProjectGate
 from project_http import make_project_app
+from execution_gate import ExecutionGate
+from node_profiles import configure_node
 
 
 def prepare_project(output_root):
@@ -47,10 +49,19 @@ async def run(args):
     if not binary.is_file():
         raise ValueError('project.binary_missing')
     root, project, journal = prepare_project(args.output_root)
+    profiles, process_arguments = {}, []
+    if args.node:
+        if not (binary.parent / 'optic-bridge-isolation-launcher.exe').is_file():
+            raise ValueError('project.isolation_helper_required')
+        profiles, process_arguments = configure_node(project, args.node)
+        (project / 'src/README.txt').write_text(
+            'Generated Node alpha. Edit index.html/style.css and app.js for the browser.\n'
+            'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
+            'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
     channel = ProofChannel()
     try:
         params = StdioServerParameters(command=str(binary), args=[str(project),
-            '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal)])
+            '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal), *process_arguments])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as upstream:
                 async with asyncio.timeout(20):
@@ -68,8 +79,10 @@ async def run(args):
                 async def forward(name, arguments):
                     return structured(await upstream.call_tool(name, arguments))
                 gate = ProjectGate(state, identity, forward)
+                execution = ExecutionGate(state, identity, forward, profiles) if profiles else None
                 app = make_project_app(gate, state, emit=channel.emit,
-                    allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime)
+                    allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
+                    execution=execution, compact_results=bool(profiles))
                 service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                     log_config=None, access_log=False, limit_concurrency=32, timeout_keep_alive=5,
                     timeout_graceful_shutdown=5, h11_max_incomplete_event_size=16384))
@@ -92,7 +105,11 @@ async def run(args):
                     gate.stopped = True
                     service.should_exit = True
                 watcher = asyncio.create_task(watch())
-                channel.emit(f'GENERATED PROJECT ALPHA | http://127.0.0.1:{args.port}/mcp | file editing only')
+                mode = 'editing and isolated Node check/test' if profiles else 'file editing only'
+                channel.emit(f'GENERATED PROJECT ALPHA | http://127.0.0.1:{args.port}/mcp | {mode}')
+                if profiles:
+                    channel.emit('Local Node: ' + profiles['check']['executable'])
+                    channel.emit('Fixed profiles: check / test. Reads: model.js / app.js / tests.js. Network and process writes denied.')
                 channel.emit('Public dummy auth. Shared connection. Local: rotate-a / revoke-a / stop / proof-stats.')
                 channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
                 channel.emit('Project saved under output/' + root.name + '/project/src after stop. No existing project is accepted.')
@@ -109,6 +126,7 @@ async def run(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
+    parser.add_argument('--node', help='Locally selected installed node.exe; optional generated check/test mode')
     parser.add_argument('--output-root', required=True)
     parser.add_argument('--port', type=int, default=8009)
     parser.add_argument('--lifetime', type=int, default=1500)

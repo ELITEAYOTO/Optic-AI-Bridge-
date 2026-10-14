@@ -104,3 +104,19 @@ sans les modifier ; afficher l'erreur réelle avant tout nouveau lancement.
 Les commandes locales rotate-a/revoke-a/proof-stats existent pour les vérifications
 de cycle de vie. Leur test détaillé sera guidé après le premier mini-projet réussi.
 Un nouveau lancement crée un nouveau projet ; il ne reprend pas une session passée.
+# Optional generated Node check/test mode
+
+Use only a package whose native runner proof passed. Default startup still
+exposes six editing tools. Adding `-NodeExecutable 'C:\Program Files\nodejs\node.exe'`
+explicitly selects that installed executable and enables ten tools, including
+fixed `check` and `test` tasks. The package verifies both bridge and helper hashes.
+No Node installation is bundled or performed.
+
+Generated source slots model.js/app.js/tests.js are the only files Node can read.
+Create browser index.html/style.css separately; place pure application logic in
+model.js and assertions in tests.js. `check` validates source syntax; `test` runs
+tests.js. Node cannot create build files, install dependencies or start a network
+server in this mode. This is an execution milestone, not the complete app alpha.
+All existing stop/revoke and shared-session rules apply. Full end-to-end user
+instructions will be issued only after the matching package is validated.
+

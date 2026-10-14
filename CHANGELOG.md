@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Optional generated Node runner with explicit installed executable selection, fixed check/test profiles and three source-read slots; matching hashed helper package and native runner lifecycle proof added (21 local tests; native runner validation pending).
 - Native relative Node module proof passed at3c0228 with list/read/write denials. Outside-root helper regression now uses an owned test root rather than System32; execution adapter preserves native stopped status (19 local alpha tests pass; full corrected Windows CI pending).
 - Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).
 - Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.

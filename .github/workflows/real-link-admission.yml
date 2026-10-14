@@ -71,6 +71,8 @@ jobs:
             $Node = (Get-Command node.exe -ErrorAction Stop).Source
             python experiments/project-alpha/node_http_smoke.py $Binary $Node
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node task integration failed' }
+            python experiments/project-alpha/runner_edit_smoke.py $Binary $Node
+            if ($LASTEXITCODE -ne 0) { throw 'native alpha Node runner lifecycle failed' }
           }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }
@@ -118,7 +120,8 @@ jobs:
           $AlphaBin = Join-Path $AlphaStage 'packaging/project-alpha'
           New-Item -ItemType Directory -Path $AlphaBin | Out-Null
           Copy-Item -LiteralPath 'target/debug/optic-bridge.exe' -Destination (Join-Path $AlphaBin 'optic-bridge.exe')
-          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; scope='generated-project-editing-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
+          Copy-Item -LiteralPath 'target/debug/optic-bridge-isolation-launcher.exe' -Destination (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe')
+          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; helper_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe') -Algorithm SHA256).Hash; scope='generated-project-editing-optional-node-check-test'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
           $env:GITHUB_SHA | Set-Content -LiteralPath (Join-Path $AlphaStage 'SOURCE_COMMIT.txt') -Encoding ascii
           Copy-Item -LiteralPath 'experiments/project-alpha/HOST_TEST_STEPS.md' -Destination (Join-Path $AlphaStage 'COMMENCER_ICI.md')
           $AlphaPackage = Join-Path $env:RUNNER_TEMP 'Optic-Project-Alpha.zip'

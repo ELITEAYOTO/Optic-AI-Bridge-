@@ -26,6 +26,25 @@ and localhost preview need separate verified network/containment scopes.
 
 ## Implemented preparation
 
+Generated runner now has an explicit optional `--node` mode (native lifecycle
+validation pending). A locally selected installed node.exe receives three exact
+source slots: src/model.js, src/app.js and src/tests.js. Locally frozen `check`
+validates syntax; `test` runs tests.js and relative model.js imports. Ten MCP
+tools share admission and session cancellation; model callers select only a
+profile/job, never executable arguments or permission fields. The packaged
+helper has its own manifest digest. Default startup remains editing-only.
+No generated runner accepts an existing personal project, and Node receives
+no filesystem writes, dependencies or network/server permission.
+The21 local tests pass; CI must additionally exercise the actual new runner,
+failing assertion, source-version fix, passing check/test and retained output.
+
+At3c0228, native real-link26 passed normal relative module resolution after
+ADR0014's bounded source-directory metadata grants. Directory listing, sibling
+reading and file creation remain denied in the same native proof. Older CI767
+negative evidence below describes the old helper, not the corrected runtime.
+General Windows CI774 failed an outside-root test using System32; its owned-root
+correction and all native metadata primitive tests still need full validation.
+
 execution_gate.py forwards named frozen operator-owned profiles into existing
 Rust process_start/read/result/stop requests. Remote arguments cannot replace
 the executable/args/cwd/environment/network/budgets or grant authority. At most
