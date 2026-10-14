@@ -6,6 +6,14 @@ const FILES = Object.freeze(['index.html', 'style.css', 'app.js', 'model.js', 't
 const ASSETS = Object.freeze(FILES.filter(name => name !== 'tests.js'));
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'";
 
+function matchingOpenedFile(info, opened, platform = process.platform) {
+  // Native CI: Windows path-stat reports unavailable dev=0, while fstat has
+  // a real volume number. Never interpret zero as a conflicting volume.
+  const deviceKnown = platform !== 'win32' || info.dev !== 0n;
+  return opened.isFile() && (!deviceKnown || opened.dev === info.dev)
+    && opened.ino === info.ino && opened.size === info.size;
+}
+
 function directory(value) {
   const info = fs.lstatSync(value);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('viewer.invalid_directory');
@@ -18,7 +26,7 @@ function readBounded(file, limit) {
   const fd = fs.openSync(file, 'r');
   try {
     const opened = fs.fstatSync(fd, {bigint: true});
-    if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino || opened.size !== info.size) throw new Error('viewer.changed_file');
+    if (!matchingOpenedFile(info, opened)) throw new Error('viewer.changed_file');
     const bytes = Buffer.alloc(limit + 1);
     const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
     if (BigInt(length) !== info.size || length > limit) throw new Error('viewer.changed_file');
@@ -60,4 +68,4 @@ function exportAllowed(url, mime, bytes, count) {
     && Number.isSafeInteger(count) && count >= 0 && count < 8;
 }
 
-module.exports = Object.freeze({FILES, ASSETS, CSP, loadSnapshot, assetName, exportAllowed});
+module.exports = Object.freeze({FILES, ASSETS, CSP, loadSnapshot, assetName, exportAllowed, matchingOpenedFile});

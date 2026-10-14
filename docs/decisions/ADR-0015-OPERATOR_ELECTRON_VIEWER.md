@@ -20,6 +20,11 @@ or signature/authenticity. Viewer startup requires the marker and matching
 source hashes. Generated run/root checks, no final symlinks, bounded exact reads
 and in-memory copies avoid continued reads of mutable renderer sources.
 Same-user local malicious replacement is outside this operator-fixture claim.
+Native CI reported path-stat dev=0 (unavailable) and fstat dev=742408122 for the
+same file, with identical inode/size. Viewer allows only this Windows unknown-
+device case; known device/inode/size conflicts remain denied, exact bigint IDs
+and the full source hash still checked. This is content-bound operator rendering,
+not the core's native handle-derived volume/root identity proof.
 
 ## Viewer boundary
 

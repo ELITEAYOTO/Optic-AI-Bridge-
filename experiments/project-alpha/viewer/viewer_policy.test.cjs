@@ -19,6 +19,17 @@ test('exports have a finite bound and fixed blob origin and MIME', () => {
   assert.equal(policy.exportAllowed(url, 'text/html', 24, 0), false);
 });
 
+test('unknown Windows volume is explicit; known volume/inode/size conflicts still denied', () => {
+  const info = {dev: 0n, ino: 9007199254740995n, size: 6n};
+  const opened = {...info, dev: 742408122n, isFile: () => true};
+  assert.equal(policy.matchingOpenedFile(info, opened, 'win32'), true);
+  assert.equal(policy.matchingOpenedFile(info, opened, 'linux'), false);
+  assert.equal(policy.matchingOpenedFile({...info, dev: 42n}, opened, 'win32'), false);
+  assert.equal(policy.matchingOpenedFile(info, {...opened, ino: info.ino + 1n}, 'win32'), false);
+  assert.equal(policy.matchingOpenedFile(info, {...opened, size: 7n}, 'win32'), false);
+  assert.equal(policy.matchingOpenedFile(info, {...opened, isFile: () => false}, 'win32'), false);
+});
+
 test('snapshot is generated-root-only; content changes refused; held bytes are copies', () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'optic-viewer-policy-'));
   const root = path.join(parent, 'alpha-public-test'), src = path.join(root, 'project', 'src');
