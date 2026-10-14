@@ -5,6 +5,7 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Native negative replacement-gap characterization: actual read-pin sharing refusal, uncooperative write after release and protected dummy revocation overwritten after the precheck. Production replacement remains gated; no runtime API or replacement authority added.
 - Draft fresh public-marker initial publication fixture: explicit NT relative no-replace rename, fixed same-handle validation and close-before-success; eleven regressions including collision preservation, actual abrupt exits before/after ACK and post-rename uncertainty. No production registry initialization or replacement.
 - Native private-root/writer-pin/relative-scratch descriptor composition regression; administrator reply recorded with conversation identity and cancellation ambiguity kept separate. No published state or production storage change.
 - Draft explicit root-relative native public scratch candidate: fixed Unicode leaf under held directory handle, create-only NT completion checks, no path fallback and native/simulated regressions. No final replacement, Store integration or production persistence claim.
