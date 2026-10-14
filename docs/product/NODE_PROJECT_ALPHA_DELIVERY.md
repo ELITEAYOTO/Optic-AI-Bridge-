@@ -124,6 +124,15 @@ changes still require their own CI confirmation.
 
 ## Host evidence already collected
 
+2026-10-15 test11: Luna completed baseline Node test, then versioned temporary
+addition-to-subtraction edit, actual AssertionError/exit1, reread/restoration,
+check/exit0 and test/exit0. Same instance cdaecdde161c; TOOL requests16–20 and
+24–37 corroborate the reported order. Installed Node22.15.1, public generated
+project only. This accepts the FS check/test integration, not a built web app
+or dependencies/server. Sonnet's runtime custom-header omission is separate
+host evidence: configuration discovery included both headers, chat initialization
+did not; Luna's calls included them. No blanket model/SDK incompatibility claim.
+
 FS generated three task-list files, paged reads reached eof with stable versions
 (3003/6700/7342bytes). User confirmed add/check/delete, filter/counter, rename,
 Enter/Escape, empty-name refusal and localStorage persistence. UTC timestamps

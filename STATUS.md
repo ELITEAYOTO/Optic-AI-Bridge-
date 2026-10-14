@@ -1,5 +1,22 @@
 # Project Status
 
+## FS Node check/test host acceptance — 2026-10-15
+
+Luna completed test11 on server instance cdaecdde161c, installed Node22.15.1.
+Operator TOOL logs correlate baseline info/list/start/result/read (requests16–20)
+and the mutation/test sequence24–37. Model source changed from addition to
+subtraction using its observed version; actual test exited1 with AssertionError
+(-1 versus5). Reread observed the changed version, restoration recovered the
+original content version; syntax check and test then exited0 with their pass
+markers. This is actual FS source edit -> Node failure -> correction -> success.
+No browser app, build/dependency/server or live-job cancellation proof follows.
+
+On the same configuration, Sonnet chat requests omitted both custom headers
+while configuration-time discovery sent them and succeeded. Bearer was valid;
+401 was emitted at dummy_custom_headers before MCP dispatch. Luna forwarded
+the headers successfully. This locates a host-path difference without proving
+the responsible FS component or any model-wide behavior.
+
 ## Node check/test milestone accepted — 2026-10-14
 
 At4b5ca2e all nine workflows passed (CI779 / real-link31). Native metadata
