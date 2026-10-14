@@ -19,7 +19,7 @@ class Resume(unittest.TestCase):
             (root / 'project/src/model.js').write_text('module.exports.value = 42;\n')
             before = {p: (root / 'project' / p).read_bytes() for p in SOURCE_FILES}
             selected = select_run(output, root.name)
-            self.assertEqual(selected[0], root)
+            self.assertEqual(selected[0], root.resolve(strict=True))
             (root / 'viewer-ready.json').write_text('{}')
             with session_lock(root):
                 self.assertFalse((root / 'viewer-ready.json').exists())
