@@ -412,3 +412,12 @@ between link/unlink and before reply; no repair or invented ACK. Local Windows
 119 cases / 116 passed / 3 platform skips. Owned path-based fixtures only,
 hard-link support required; no durable/auth/native containment guarantee. See
 H02_CLOSED_STAGE_PUBLIC_SEAL.md for exact limits.
+# Explicit native public seal checkpoint — 2026-10-14
+
+Optional Windows x64 variant holds root/source through no-replace native link,
+then marks only its owned source for removal at close. The CRT I/O duplicate is
+owned separately from its borrowed FileIO view. No path unlink/fallback; live NT
+sharing prevents reader opens until close. Ten native regressions include actual
+exits after link/disposition. Latest local Windows129 cases /126 passed /3 platform
+skips. Entire fixture path containment, durable auth commit and antirollback remain
+gated; see H02_NATIVE_PUBLIC_SEAL.md. No production runtime/Store change.

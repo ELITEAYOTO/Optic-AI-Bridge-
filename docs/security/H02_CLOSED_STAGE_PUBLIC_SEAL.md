@@ -23,6 +23,11 @@ power-loss durability, antirollback and credential enrollment remain unproved.
 
 ## Evidence
 
+An [explicit Windows handle-relative variant](H02_NATIVE_PUBLIC_SEAL.md) now
+retains the NT source through relative link and source disposition/close, without
+Path.unlink. It is a separate selection; this portable path-based variant is
+unchanged and is never used as a native fallback.
+
 Eight new regressions cover reserved observation before publication/after close,
 failed stage metadata entry, failed close, failed flush, existing stage refusal,
 link collision, failed staged unlink and actual abrupt child exits at three
