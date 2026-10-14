@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -21,6 +22,11 @@ MAX_REQUESTS = 512
 MAX_LIFETIME = 25 * 60
 PROOF_VERSION = "fs-probe-v2"
 request_proof = ContextVar("request_proof", default=None)
+
+
+def timestamp_utc():
+    # Display/correlation only; authorization and durations remain monotonic.
+    return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 handles = Handles()
 mcp = MCPServer("Optic-FranceStudent-Dummy-Probe", instructions=(
     "Authority-free synthetic probe. Call probe_create_handle then pass the returned "
@@ -35,6 +41,7 @@ def result(tool, payload):
     invocation = {"tool": tool, "marker": secrets.token_hex(8),
                   "server_instance": proof["server_instance"], "request_sequence": proof["sequence"]}
     if proof.get('timed_diagnostics'):
+        invocation['timestamp_utc'] = timestamp_utc()
         now = proof['clock']()
         invocation['elapsed_ms'] = round(max(0, now - proof['started']) * 1000, 3)
         invocation['request_elapsed_ms'] = round(max(0, now - proof['admitted']) * 1000, 3)
@@ -125,6 +132,8 @@ class Guard:
                  "query_present": bool(scope.get("query_string")),
                  "elapsed_ms": round(max(0, self.clock() - self.started) * 1000, 3),
                  "observation": observation}
+        if self.timed_diagnostics:
+            proof['timestamp_utc'] = timestamp_utc()
         self.emit("[FS-PROBE] HTTP " + json.dumps(proof, sort_keys=True))
         original_send = send
         response_started = False
@@ -139,7 +148,8 @@ class Guard:
                     "server_instance": self.instance, "sequence": proof["sequence"],
                     "status": message["status"], "stage": stage,
                     "proof_version": self.proof_version,
-                    **({'elapsed_ms': round(max(0, self.clock() - self.started) * 1000, 3),
+                    **({'timestamp_utc': timestamp_utc(),
+                        'elapsed_ms': round(max(0, self.clock() - self.started) * 1000, 3),
                         'request_elapsed_ms': round(max(0, self.clock() - admitted) * 1000, 3)}
                        if self.timed_diagnostics else {})}, sort_keys=True))
             await original_send(message)
@@ -149,6 +159,7 @@ class Guard:
                 self.emit('[FS-PROBE] COMPLETE ' + json.dumps({
                     'server_instance': self.instance, 'sequence': proof['sequence'],
                     'proof_version': self.proof_version, 'status': response_status,
+                    'timestamp_utc': timestamp_utc(),
                     'elapsed_ms': round(max(0, now - self.started) * 1000, 3),
                     'request_elapsed_ms': round(max(0, now - admitted) * 1000, 3)}, sort_keys=True))
         send = safe_send

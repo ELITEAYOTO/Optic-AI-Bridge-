@@ -4,7 +4,7 @@ import base64
 
 from mcp.shared.exceptions import MCPError
 from forward_core import ForwardGate, ForwardError
-from project_schema import normalize, SchemaError, MAX_CONTENT
+from project_schema import normalize, SchemaError, MAX_CONTENT, version
 
 SAFE_UPSTREAM_ERRORS = {
     'optic.precondition_failed', 'optic.policy_denied', 'optic.session_inactive',
@@ -59,11 +59,41 @@ class ProjectGate(ForwardGate):
                 if not self._current(identity):
                     raise ForwardError('link.inactive')
             dispatched = True
-            response = await self.upstream(name, arguments)
+            read_arguments = ({'path': arguments['path'], 'offset': 0,
+                'max_bytes': MAX_CONTENT + 1} if tool == 'optic_fs_read' else arguments)
+            response = await self.upstream(name, read_arguments)
             if not self._current(identity):
                 raise ForwardError('project.outcome_unknown' if tool in MUTATIONS else 'link.inactive')
             if tool in ('optic_fs_read', 'optic_fs_search'):
                 raw = base64.b64decode(response['data'], validate=True)
+                if tool == 'optic_fs_read':
+                    if not response['eof'] or len(raw) > MAX_CONTENT:
+                        raise ForwardError('project.read_limit')
+                    observed_version = version(response.get('content_version'))
+                    offset = arguments['offset']
+                    end = min(len(raw), offset + min(arguments['max_bytes'], 1024))
+                    if offset > len(raw):
+                        raise ForwardError('project.invalid_read_offset')
+                    try:
+                        raw.decode('utf-8', errors='strict')
+                        # Keep byte offsets while avoiding split UTF-8 characters.
+                        raw[:offset].decode('utf-8', errors='strict')
+                        while end > offset:
+                            try:
+                                raw[offset:end].decode('utf-8', errors='strict')
+                                break
+                            except UnicodeError:
+                                end -= 1
+                        if end == offset and offset < len(raw):
+                            raise ForwardError('project.read_character_bound')
+                        page = {'text': raw[offset:end].decode('utf-8')}
+                    except UnicodeError:
+                        page = {'text': None, 'encoding': 'base64',
+                            'data': base64.b64encode(raw[offset:end]).decode('ascii')}
+                    return {'path': response['path'],
+                        'content_version': observed_version,
+                        'offset': offset, 'next_offset': end, 'eof': end == len(raw),
+                        'file_bytes': len(raw), **page}
                 try:
                     content = raw.decode('utf-8', errors='strict')
                 except UnicodeError:

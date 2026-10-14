@@ -6,6 +6,17 @@ Optic ou un dossier personnel. Pas encore de compilation, de serveur Minecraft,
 de commandes, de téléchargement ou d'exécution des tests. Ces étapes suivront.
 Tous les chats sur cette connexion partagent le même projet. Durée25minutes.
 
+## Lectures paginées corrigées
+
+Chaque appel optic_fs_read renvoie au plus1024octets, même si max_bytes=8192.
+Lire à offset=0 puis suivre next_offset jusqu'à eof=true. Chaque bloc contient
+content_version : exiger la même version sur tous les blocs avant de modifier.
+Si la version change, reprendre la lecture complète sans écrire. Les champs de
+suivi précèdent le texte ; aucun base64 dupliqué pour les blocs UTF-8 valides.
+La version vient d'une lecture Rust complète bornée, pas d'un hash inventé.
+Les logs HTTP/TOOL/STATUS/COMPLETE ont timestamp_utc à la milliseconde ; les
+durées elapsed_ms/request_elapsed_ms restent monotones.
+
 ## 1. Préparer et lancer
 
 Extraire Optic-Project-Alpha.zip dans un nouveau dossier, par exemple

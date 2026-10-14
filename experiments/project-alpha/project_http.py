@@ -39,8 +39,11 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False):
     mcp = MCPServer('Optic-Project-Alpha', instructions=(
         'Develop a public disposable project in src using real Rust file tools. '
         'All chats on this connection share one project and grants. No process, '
-        'network, delete, Git or project selection. Read returns UTF-8 text plus '
-        'base64; content_version is supplied only for full reads from offset0. '
+        'network, delete, Git or project selection. Read returns at most1024 bytes '
+        'of UTF-8 text, without duplicate base64 for text files. Follow next_offset '
+        'until eof. Every page includes the exact full-file content_version from '
+        'one bounded Rust read. Require the same version on all pages; restart '
+        'reading if it changes. Binary pages use base64 and text=null. '
         'Create with expected_kind=absent; replace with expected_kind=content '
         'and exact expected_version. Never retry an outcome_unknown write blindly. '
         'Send calls one at a time; link.busy means the request was not admitted. '
@@ -67,8 +70,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False):
         return await call('optic_fs_list', {'path': path, 'cursor': cursor, 'limit': limit})
 
     @mcp.tool()
-    async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = 8192) -> dict:
-        """Read up to8192 bytes. Full offset0 reads return the exact version for editing."""
+    async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = 1024) -> dict:
+        """Read <=1024 bytes per page; follow next_offset to eof. All pages must share content_version before editing. Files <=8192 bytes."""
         return await call('optic_fs_read', {'path': path, 'offset': offset, 'max_bytes': max_bytes})
 
     @mcp.tool()

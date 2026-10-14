@@ -95,7 +95,24 @@ async def run(binary):
                             assert not ambiguous['ok'] and ambiguous['code'] == 'optic.precondition_failed'
                             partial = structured(await session.call_tool('optic_fs_read', {
                                 'path': 'src/index.html', 'max_bytes': 2}))
-                            assert partial['upstream']['content_version'] is None
+                            assert partial['upstream']['content_version'] == patched['upstream']['content_version']
+                            assert partial['upstream']['next_offset'] == 2
+                            assert not partial['upstream']['eof']
+                            long_text = 'a' * 1023 + 'é' + 'b' * 1400
+                            long_write = structured(await session.call_tool('optic_fs_write', {
+                                'path': 'src/paged.txt', 'content': long_text, 'expected_kind': 'absent'}))
+                            assert long_write['ok']
+                            offset, chunks = 0, []
+                            while True:
+                                page = structured(await session.call_tool('optic_fs_read', {
+                                    'path': 'src/paged.txt', 'offset': offset, 'max_bytes': 8192}))['upstream']
+                                assert page['content_version'] == long_write['upstream']['content_version']
+                                assert 'data' not in page and len(page['text'].encode()) <= 1024
+                                chunks.append(page['text'])
+                                offset = page['next_offset']
+                                if page['eof']:
+                                    break
+                            assert ''.join(chunks) == long_text
                     await denied(url, TOKENS['B'][0])
                     await denied(url, TOKENS['A'][0], 400, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
                         'params': {'name': 'optic_fs_write', 'arguments': {'path': '../CANARY', 'content': 'x', 'expected_kind': 'absent'}}})

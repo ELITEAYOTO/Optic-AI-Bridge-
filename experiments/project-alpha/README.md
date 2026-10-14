@@ -26,11 +26,19 @@ on a generated retained project: info/list/read/write/patch/literal in-file sear
 Guard request budgets/headers/body/auth and exact schemas precede SDK dispatch.
 Core reads now include content_version only for complete offset0 reads, so edits
 use observed versions instead of guessed hashes. This is not a general user-project
-server or an already measured FS model-generated app.
+server. A manual FS model-generated task-list app was created and the user
+confirmed add/check/reload persistence/delete; later enhancement stopped after
+HTML-only modification because host-visible full CSS replies were truncated.
+
+Adapter reads return <=1024 bytes per page without duplicate base64 for UTF-8
+text. Each page derives a full-file version from one bounded Rust snapshot;
+follow next_offset until eof and require the same content_version on all pages.
+Metadata precedes text. Files over8192bytes are refused, not partially versioned.
+UTC millisecond timestamps supplement monotonic diagnostic durations.
 
 The project path is generated locally; write authority is prefix:src. File text
 and resulting patches are limited to8192UTF-8 bytes, paths are ASCII segments
-with no traversal/Windows reserved names, reads8192bytes, list pages32entries,
+with no traversal/Windows reserved names, read pages1024bytes, list pages32entries,
 literal searches16hits within one file prefix. Mutation forwarding is serialized
 and retains its slot after caller cancellation/timeout until actual completion.
 An uncertain write returns project.outcome_unknown; no rollback/retry is claimed.

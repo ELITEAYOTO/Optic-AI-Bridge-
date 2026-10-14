@@ -115,9 +115,35 @@ class Gate(unittest.IsolatedAsyncioTestCase):
         result = await gate.call(self.identity, 'optic_fs_search', {'path': 'src/x', 'text': 'a', 'limit': 2})
         self.assertEqual([hit['line'] for hit in result['matches']], [1, 2])
         async def binary(name, args):
-            return {'path': 'src/x', 'data': '/w==', 'eof': True}
+            return {'path': 'src/x', 'data': '/w==', 'eof': True, 'content_version': 'a' * 64}
         gate = ProjectGate(self.state, self.identity, binary)
         self.assertIsNone((await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x'}))['text'])
+
+    async def test_pages_have_full_snapshot_version_and_no_duplicate_text(self):
+        raw = ('a' * 1023 + 'é' + 'b' * 1100).encode()
+        async def read(name, args):
+            self.assertEqual(args, {'path': 'src/x', 'offset': 0, 'max_bytes': 8193})
+            return {'path': 'src/x', 'data': base64.b64encode(raw).decode(),
+                'eof': True, 'content_version': 'a' * 64}
+        gate = ProjectGate(self.state, self.identity, read)
+        offset, chunks = 0, []
+        while True:
+            value = await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x', 'offset': offset})
+            self.assertEqual(value['content_version'], 'a' * 64)
+            self.assertNotIn('data', value)
+            self.assertLessEqual(len(value['text'].encode()), 1024)
+            chunks.append(value['text'])
+            offset = value['next_offset']
+            if value['eof']:
+                break
+        self.assertEqual(''.join(chunks).encode(), raw)
+        with self.assertRaisesRegex(ForwardError, 'project.invalid_read_offset'):
+            await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x', 'offset': len(raw) + 1})
+        async def oversized(name, args):
+            return {'path': 'src/x', 'data': base64.b64encode(b'x' * 8193).decode(), 'eof': True}
+        gate = ProjectGate(self.state, self.identity, oversized)
+        with self.assertRaisesRegex(ForwardError, 'project.read_limit'):
+            await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x'})
 
     async def test_patch_growth_bound_and_revoke_after_preparatory_read(self):
         calls = []

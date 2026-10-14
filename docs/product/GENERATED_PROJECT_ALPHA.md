@@ -16,6 +16,22 @@ ceiling65536bytes (including worst-case escaped UTF-8 text); core upstream struc
 reads expose a BLAKE3 ContentVersion of observed bytes, not a credential or a
 promise that a later mutation will succeed. Partial/tail reads return null.
 
+The alpha adapter reads one complete bounded Rust snapshot per requested page
+(file <=8192 bytes) and returns at most1024 bytes with metadata before text.
+Each page carries that snapshot's full-file version, next_offset, eof and
+file_bytes. UTF-8 text has no duplicate base64; binary/split-character offsets
+fall back to base64. Clients must compare versions across pages and restart a
+read if they differ; no retained multi-page snapshot or atomic batch is claimed.
+Rust exact mutation preconditions remain the final stale-write guard.
+Timed diagnostics include ISO8601 UTC millisecond timestamps for correlation;
+monotonic clocks still own durations, expiry and authorization.
+
+Manual FS alpha evidence: user created a task-list HTML/CSS/JS project and
+confirmed add/check/reload persistence/delete. A subsequent edit changed HTML
+only before FS-visible CSS response truncation stopped work. The project is
+partially updated, not a completed feature enhancement. Paging correction has
+local proof; its FS host acceptance is pending.
+
 One mutation/read forward slot, no queue; caller timeout/disconnect does not free
 it until the underlying call ends. Authentication rechecks before dispatch and
 before results, including after patch's preparatory bounded read. A dispatched

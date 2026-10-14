@@ -54,7 +54,11 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(written['ok'])
                 escaped = structured(await session.call_tool('optic_fs_read', {'path': 'src/escaped'}))
                 self.assertTrue(escaped['ok'])
-                self.assertEqual(len(escaped['upstream']['text']), MAX_READ)
+                self.assertEqual(len(escaped['upstream']['text']), 1024)
+                self.assertEqual(escaped['upstream']['file_bytes'], MAX_READ)
+                self.assertFalse(escaped['upstream']['eof'])
+                self.assertNotIn('data', escaped['upstream'])
+                self.assertEqual(escaped['upstream']['content_version'], 'a' * 64)
             self.assertEqual(calls[1][0], 'fs_write')
             self.assertEqual(calls[1][1]['expected'], {'kind': 'absent'})
             before = len(calls)
@@ -80,6 +84,14 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await http.post(url, json={'method': 'ping'})).status_code, 401)
             self.assertNotIn('CANARY', '\n'.join(logs))
             self.assertNotIn('class Main', '\n'.join(logs))
+            from datetime import datetime
+            import json
+            timed = [json.loads(line.split(' ', 2)[2]) for line in logs
+                     if line.startswith(('[FS-PROBE] HTTP ', '[FS-PROBE] TOOL ',
+                                         '[FS-PROBE] STATUS ', '[FS-PROBE] COMPLETE '))]
+            self.assertTrue(timed)
+            for event in timed:
+                self.assertIsNotNone(datetime.fromisoformat(event['timestamp_utc']).tzinfo)
             self.assertTrue(await gate.stop())
         finally:
             service.should_exit = True
