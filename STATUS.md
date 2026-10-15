@@ -1,5 +1,26 @@
 # Project Status
 
+## Diagnostic comparison baseline ready for FS — 2026-10-15
+
+Generated local matrix48/48 and a separately owned Cloudflare matrix52/52 pass
+with verified complete payloads,128–8192bytes and0/1/3/10s delays. Cloudflare
+also passes after15/45/75/100s client idle gaps (same MCP client session, no
+fabricated heartbeat); post-gap client calls125–265ms. Both use the same diagnostic
+server build, separate ephemeral instances. This does not prove FS receipt or
+identify its model/provider stream failure. ngrok was not independently retested.
+Reports retained locally outside the repository, no credentials or raw payloads.
+
+Runtime b65002ffbd21892812ed43ca50d01f01974dec52 passed all nine workflows,
+including CI/run38752448985 and Read Link/run38752448899.29alpha and26session
+Python tests pass; actual Windows shutdown/Node/Electron smokes pass in CI.
+Verified artifact11981603327 merge sourcebd192afac57ce8f224a06f5827fa45a0468e6117;
+inner ZIP SHA256d37bc59481aacbd2f8597008fe9424daf7309268d3d9af5b29cbf03c99e1505e.
+Archive paths/bounds and all binary/viewer manifest hashes checked. User ZIP:
+outputs/Optic-Connection-Diagnostic.zip. Next manual gate: same harmless tool via
+FS on a separate8010diagnostic connector, without reopening the actual project.
+Persistent stop-controlled project mode and larger file/module tools are still
+planned; current50minute project authority is unchanged.
+
 ## First main integration and local diagnostic matrix accepted — 2026-10-15
 
 PR184 is squash-merged to main at18a8ec665907454863cb4e911d3a57baccca3416,
