@@ -34,6 +34,26 @@ async def exercise(url, node_mode=False):
         assert payload['ok']
         observed = structured(await session.call_tool('optic_fs_read', {'path': 'src/index.html'}))
         assert observed['upstream']['content_version'] == payload['upstream']['content_version']
+        found = structured(await session.call_tool('optic_fs_search', {
+            'path': 'src/index.html', 'text': 'Saved', 'limit': 1}))['upstream']
+        assert found['content_version'] == payload['upstream']['content_version']
+        assert found['eof'] and not found['more_matches']
+        assert found['matches'][0]['offset'] == 0
+        page_source = 'x' * 4095 + '\u00e9' + 'y' * 3000
+        created = structured(await session.call_tool('optic_fs_write', {
+            'path': 'src/read-page.txt', 'content': page_source, 'expected_kind': 'absent'}))
+        assert created['ok'], created
+        info = structured(await session.call_tool('optic_project_info', {}))
+        assert info['limits']['read_page_bytes'] == 4096, info
+        chunks, offset = [], 0
+        for _ in range(2):
+            page = structured(await session.call_tool('optic_fs_read',
+                {'path': 'src/read-page.txt', 'offset': offset}))['upstream']
+            assert page['content_version'] == created['upstream']['content_version']
+            assert len(page['text'].encode('utf-8')) <= 4096
+            chunks.append(page['text'])
+            offset = page['next_offset']
+        assert page['eof'] and ''.join(chunks) == page_source
         if node_mode:
             style = structured(await session.call_tool('optic_fs_write', {
                 'path': 'src/style.css', 'content': 'body{font-family:system-ui}', 'expected_kind': 'absent'}))
@@ -98,7 +118,8 @@ def run(binary, node=None):
             port = listener.getsockname()[1]
         arguments = [sys.executable, str(HERE / 'project_runner.py'), '--binary',
             str(Path(binary).resolve(strict=True)), '--output-root', directory,
-            '--port', str(port), '--lifetime', '90' if node else '30']
+            '--port', str(port), '--lifetime', '90' if node else '30',
+            '--read-page-bytes', '4096']
         if node:
             arguments.extend(['--node', str(Path(node).resolve(strict=True))])
         child = subprocess.Popen(arguments, stdin=subprocess.PIPE,

@@ -7,6 +7,23 @@ This is the active near-term execution plan. The broader scope roadmap remains
 canonical; this document orders delivery gates and explicitly replaces further
 ungated fixture proliferation with integration and user-visible increments.
 
+## Execution update — 2026-10-15
+
+R0: generated-data diagnostics completed locally and through Cloudflare. FS
+administrator reproduction was reported; backend cause/fix remains unconfirmed.
+R1: native Windows manual/expiry/blocked-output/broken-pipe shutdown cases passed;
+the default proof writer no longer uses Python buffered stdout. See the detailed
+diagnostic evidence ledger for limits. R2: PR184 merged to main as18a8ec6 and
+integrated into alpha; exact head8ecd2bb passed all nine workflows including
+CI38761152794 and Read Link38761152706. R3: optional operator4KiB pages remain
+experimental with1KiB default. Following source work exposes that cap in the MCP
+schema/project_info and adds versioned search with byte offsets/truncation flags.
+R4–R6 remain planned; no indefinitely available connection or arbitrary project
+build permissions have been delivered by these changes.
+
+The decisions below retain the initial planning evidence; later execution facts
+above and linked research reports supersede their pending-state descriptions.
+
 ## Decisions and current evidence
 
 - The user reports that Luna eventually completed the attempted corrections.

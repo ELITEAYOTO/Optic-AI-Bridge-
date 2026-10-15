@@ -110,7 +110,7 @@ class Gate(unittest.IsolatedAsyncioTestCase):
 
     async def test_literal_search_and_binary_read_are_bounded(self):
         async def read(name, args):
-            return {'path': 'src/x', 'data': base64.b64encode(b'a\na\na\n').decode(), 'eof': True}
+            return {'path': 'src/x', 'data': base64.b64encode(b'a\na\na\n').decode(), 'eof': True, 'content_version': 'a' * 64}
         gate = ProjectGate(self.state, self.identity, read)
         result = await gate.call(self.identity, 'optic_fs_search', {'path': 'src/x', 'text': 'a', 'limit': 2})
         self.assertEqual([hit['line'] for hit in result['matches']], [1, 2])
@@ -118,6 +118,27 @@ class Gate(unittest.IsolatedAsyncioTestCase):
             return {'path': 'src/x', 'data': '/w==', 'eof': True, 'content_version': 'a' * 64}
         gate = ProjectGate(self.state, self.identity, binary)
         self.assertIsNone((await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x'}))['text'])
+
+    async def test_search_offsets_version_and_truncation_are_truthful(self):
+        text = '\u00e9 prefix\r\n' + 'z' * 300 + ' target\n' + 'target\ntarget'
+        raw = text.encode('utf-8')
+        async def read(name, args):
+            return {'path': 'src/x', 'data': base64.b64encode(raw).decode(),
+                    'eof': True, 'content_version': 'b' * 64}
+        gate = ProjectGate(self.state, self.identity, read)
+        result = await gate.call(self.identity, 'optic_fs_search',
+                                 {'path': 'src/x', 'text': 'target', 'limit': 2})
+        self.assertEqual(result['content_version'], 'b' * 64)
+        self.assertTrue(result['more_matches'])
+        first, second = result['matches']
+        self.assertEqual(first['offset'], len('\u00e9 prefix\r\n'.encode('utf-8')))
+        self.assertEqual(raw[first['offset']:first['next_offset']].decode(), 'z' * 300 + ' target\n')
+        self.assertTrue(first['text_truncated'])
+        self.assertFalse(second['text_truncated'])
+        self.assertEqual(second['offset'], first['next_offset'])
+        result = await gate.call(self.identity, 'optic_fs_search',
+                                 {'path': 'src/x', 'text': 'target', 'limit': 3})
+        self.assertFalse(result['more_matches'])
 
     async def test_pages_have_full_snapshot_version_and_no_duplicate_text(self):
         raw = ('a' * 1023 + 'é' + 'b' * 1100).encode()
@@ -139,6 +160,11 @@ class Gate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(''.join(chunks).encode(), raw)
         with self.assertRaisesRegex(ForwardError, 'project.invalid_read_offset'):
             await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x', 'offset': len(raw) + 1})
+        with self.assertRaisesRegex(ForwardError, 'project.invalid_read_offset'):
+            await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x', 'offset': 1024})
+        with self.assertRaisesRegex(ForwardError, 'project.read_character_bound'):
+            await gate.call(self.identity, 'optic_fs_read',
+                            {'path': 'src/x', 'offset': 1023, 'max_bytes': 1})
         async def oversized(name, args):
             return {'path': 'src/x', 'data': base64.b64encode(b'x' * 8193).decode(), 'eof': True}
         gate = ProjectGate(self.state, self.identity, oversized)

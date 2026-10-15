@@ -47,3 +47,18 @@ Alpha contains main's184commit through merge85df742. The overlapping read path p
 
 Follow-up d8d739f adds operator-selected1024/4096-byte file-read pages. Default1024,8192-byte file limits and mutation authority stay unchanged.30alpha tests passed, including UTF-8 boundary and request-ceiling coverage. Exact-head CI is pending; this source is not yet a validated replacement ZIP.
 No claim that the current experimental ZIP is built from main or production-ready.
+
+
+## Exact alpha integration validation
+
+Head8ecd2bb24bd1afd8096bcb56f7b9bdfc30fed2ba passed all nine workflows,
+including CI38761152794 and Read Link38761152706. Artifact11986381235 has
+merge-source a1b7f34c2c242b7c79cfaec35b5c1de3e575915c. Outer digest
+2a0efc1af4ddd5c794d017c1943d2e0ce7922559d5352de765b9914da34255ae;
+inner ZIP SHA2566ee3c5fb5ec6b6b51a52c2534d23089243f84b476e698de0026887290c73715f.
+Archive path/count/expanded-size bounds and four manifest hashes verified.
+Real Windows Node runner passed write/versioned read/failing test/conditional
+fix/check/test/stop/resume against that binary. Following source improvements
+(default selected page cap, visible limits, versioned search offsets) passed
+32alpha tests and the4KiB UTF-8 two-page native runner proof; exact CI for those
+source changes is required before packaging a newer delivery.

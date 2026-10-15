@@ -11,7 +11,7 @@ from probe_core import observe_headers
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
-from project_schema import normalize, SchemaError
+from project_schema import normalize, SchemaError, MAX_CONTENT
 from execution_gate import TASK_TOOLS, validate_arguments, bind_admission
 
 
@@ -91,7 +91,9 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 raise ForwardError('project.output_bound')
             connection = ({'connection': {'shared': True,
                 'remaining_seconds': max(0, math.ceil(deadline - clock())),
-                'expires_soon': deadline - clock() <= 120}}
+                'expires_soon': deadline - clock() <= 120},
+                'limits': {'read_page_bytes': gate.read_page_bytes,
+                           'file_bytes': MAX_CONTENT}}
                 if name == 'optic_project_info' else {})
             return reply(name, {'ok': True, 'generated_project_only': True,
                 **connection, 'upstream': payload})
@@ -109,8 +111,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         return await call('optic_fs_list', {'path': path, 'cursor': cursor, 'limit': limit})
 
     @mcp.tool()
-    async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = 1024) -> dict:
-        """Read bounded pages (operator cap 1024 or 4096 bytes); request max_bytes explicitly and follow next_offset to eof. All pages must share content_version before editing. Files <=8192 bytes."""
+    async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = gate.read_page_bytes) -> dict:
+        """Read bounded pages (operator cap 1024 or 4096 bytes); defaults to the selected cap; follow next_offset to eof. All pages must share content_version before editing. Files <=8192 bytes."""
         return await call('optic_fs_read', {'path': path, 'offset': offset, 'max_bytes': max_bytes})
 
     @mcp.tool()
@@ -129,7 +131,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
 
     @mcp.tool()
     async def optic_fs_search(path: str, text: str, limit: int = 16) -> dict:
-        """Literal text search in the first8192bytes of one src file, max16 hits. No regex or tree scan."""
+        """Literal search in first8192bytes, max16 hits. Hits include UTF-8 line offsets and text_truncated. more_matches refers only to searched bytes; eof=false means incomplete file. content_version is present only at eof. No regex or tree scan."""
         return await call('optic_fs_search', {'path': path, 'text': text, 'limit': limit})
 
     if execution is not None:

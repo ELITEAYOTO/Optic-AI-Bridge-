@@ -15,6 +15,10 @@ from project_http import make_project_app
 
 
 class Http(unittest.IsolatedAsyncioTestCase):
+    async def test_larger_operator_profile(self):
+        self.page_bytes = 4096
+        await self.test_exact_surface_schemas_safe_logs_reconnect_and_revoke()
+
     async def test_exact_surface_schemas_safe_logs_reconnect_and_revoke(self):
         state = Registry()
         identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
@@ -26,7 +30,8 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 return {'path': args['path'], 'data': base64.b64encode(raw).decode(),
                         'encoding': 'base64', 'eof': True, 'content_version': 'a' * 64}
             return {'public': True}
-        gate = ProjectGate(state, identity, upstream)
+        page_bytes = getattr(self, "page_bytes", 1024)
+        gate = ProjectGate(state, identity, upstream, read_page_bytes=page_bytes)
         logs = []
         observed_clock = [0.0]
         app = make_project_app(gate, state, emit=logs.append, lifetime=3000, clock=lambda: observed_clock[0])
@@ -47,7 +52,10 @@ class Http(unittest.IsolatedAsyncioTestCase):
                         self.fail('startup failed')
                     await asyncio.sleep(.01)
             async with client(url, TOKENS['A'][0]) as session:
-                self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS))
+                surface = (await session.list_tools()).tools
+                self.assertEqual({tool.name for tool in surface}, set(TOOLS))
+                schema = next(tool.input_schema for tool in surface if tool.name == 'optic_fs_read')
+                self.assertEqual(schema['properties']['max_bytes']['default'], page_bytes)
                 value = structured(await session.call_tool('optic_fs_read', {'path': 'src/Main.java'}))
                 self.assertEqual(value['upstream']['text'], 'public line\n')
                 written = structured(await session.call_tool('optic_fs_write', {
@@ -55,7 +63,7 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(written['ok'])
                 escaped = structured(await session.call_tool('optic_fs_read', {'path': 'src/escaped'}))
                 self.assertTrue(escaped['ok'])
-                self.assertEqual(len(escaped['upstream']['text']), 1024)
+                self.assertEqual(len(escaped['upstream']['text']), page_bytes)
                 self.assertEqual(escaped['upstream']['file_bytes'], MAX_READ)
                 self.assertFalse(escaped['upstream']['eof'])
                 self.assertNotIn('data', escaped['upstream'])
@@ -82,6 +90,7 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 observed_clock[0] = 2990.0
                 info = structured(await session.call_tool('optic_project_info', {}))
                 self.assertTrue(info['ok'])
+                self.assertEqual(info['limits'], {'read_page_bytes': page_bytes, 'file_bytes': 8192})
                 self.assertEqual(info['connection']['remaining_seconds'], 10)
                 self.assertTrue(info['connection']['expires_soon'])
             state.control('revoke', 'A')

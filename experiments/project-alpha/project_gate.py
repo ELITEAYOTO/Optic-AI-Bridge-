@@ -79,8 +79,15 @@ class ProjectGate(ForwardGate):
                         raise ForwardError('project.invalid_read_offset')
                     try:
                         raw.decode('utf-8', errors='strict')
-                        # Keep byte offsets while avoiding split UTF-8 characters.
-                        raw[:offset].decode('utf-8', errors='strict')
+                    except UnicodeError:
+                        page = {'text': None, 'encoding': 'base64',
+                            'data': base64.b64encode(raw[offset:end]).decode('ascii')}
+                    else:
+                        # A bad text offset is not evidence of a binary file.
+                        try:
+                            raw[:offset].decode('utf-8', errors='strict')
+                        except UnicodeError:
+                            raise ForwardError('project.invalid_read_offset') from None
                         while end > offset:
                             try:
                                 raw[offset:end].decode('utf-8', errors='strict')
@@ -90,9 +97,6 @@ class ProjectGate(ForwardGate):
                         if end == offset and offset < len(raw):
                             raise ForwardError('project.read_character_bound')
                         page = {'text': raw[offset:end].decode('utf-8')}
-                    except UnicodeError:
-                        page = {'text': None, 'encoding': 'base64',
-                            'data': base64.b64encode(raw[offset:end]).decode('ascii')}
                     return {'path': response['path'],
                         'content_version': observed_version,
                         'offset': offset, 'next_offset': end, 'eof': end == len(raw),
@@ -105,13 +109,22 @@ class ProjectGate(ForwardGate):
                     return {**response, 'text': None}
                 if search:
                     needle, limit = search
-                    hits = []
-                    for index, line in enumerate(content.splitlines(), 1):
+                    hits, offset, more_matches = [], 0, False
+                    for index, full_line in enumerate(content.splitlines(keepends=True), 1):
+                        line = full_line.rstrip('\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
+                        next_offset = offset + len(full_line.encode('utf-8'))
                         if needle in line:
-                            hits.append({'line': index, 'text': line[:256]})
                             if len(hits) == limit:
+                                more_matches = True
                                 break
+                            hits.append({'line': index, 'text': line[:256],
+                                         'text_truncated': len(line) > 256,
+                                         'offset': offset, 'next_offset': next_offset})
+                        offset = next_offset
                     return {'path': response['path'], 'matches': hits,
+                            'content_version': (version(response.get('content_version'))
+                                                if response['eof'] else None),
+                            'more_matches': more_matches,
                             'searched_bytes': len(raw), 'eof': response['eof']}
                 return {**response, 'text': content}
             return response
