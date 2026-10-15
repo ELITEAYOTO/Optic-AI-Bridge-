@@ -4,6 +4,13 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Security hardening candidate — 2026-10-12 (unmerged)
+
+- #183: file read/list/Git read retain session admission and transport/I/O capacity inside their worker through the effect, including caller cancellation/timeout.
+- #181: observed native paths use lossless segment conversion for read/list/mutation observation; Unix literal backslashes cannot become different authority targets.
+- #176 (pagination only): oversized nonempty list pages fail instead of returning a non-progressing cursor; final cursor size is rechecked.
+- See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
+
 ### Added
 - B-02A direct `FixedTool` TCP/IPv4 loopback characterization (PR #109, merge `0d05959a`, exact green head `4a96ff09`, PR CI #426, post-merge CI #427): the existing zero-capability AppContainer Node regression still reaches its network attempt without any accepted loopback connection, while a direct `FixedTool` launched outside AppContainer with only server-allowlisted `SystemRoot` restored reaches `FIXED_TOOL_NETWORK_CONNECTED`, exits 0 and is accepted by the host listener. The earlier empty-environment Winsock 10106 result is explicitly not treated as containment evidence. No network capability, scope or enforcement changed; B-02B must add truthful direct-path containment.
 - Phase 3E3 bounded heavy-workload admission (PR #107, merge `826f8cb3`, final head `203d729c`, final-head CI #421, post-merge CI #422): `TaskLease` now carries application-owned `WorkloadClass::{Standard, Heavy}` metadata independent of caller budgets and `ProcessExecutionClass`. Production process leases are `Heavy`; mutation/Git-integration leases remain `Standard`. `HardLimits` defaults to 2 active heavy process jobs bridge-wide and 1 per session; `Running` / `TerminationUncertain` retain a slot and proven-terminal state releases it. MCP derives workload class from the active server-owned lease and cannot choose or downgrade it. Global/per-session heavy-capacity failures have distinct stable MCP codes. No filesystem/network authority, process eligibility, sandbox semantics or public MCP schema was widened.

@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 #[cfg(windows)]
@@ -177,6 +177,15 @@ impl BoundedFileSystem {
         if !resolved.is_dir() {
             return Err(FileSystemError::NotDirectory);
         }
+        // Even a representable caller alias must not hide an unrepresentable
+        // native directory identity. Canonical list authorization is a separate
+        // prepared-directory gate; this validates the representation only.
+        if resolved != self.root {
+            let relative = resolved
+                .strip_prefix(&self.root)
+                .map_err(|_| FileSystemError::OutsideWorkspace)?;
+            workspace_path_from_relative(relative)?;
+        }
 
         let mut entries = Vec::new();
         for result in fs::read_dir(&resolved).map_err(FileSystemError::Io)? {
@@ -189,10 +198,10 @@ impl BoundedFileSystem {
                 .into_string()
                 .map_err(|_| FileSystemError::NonUtf8Name)?;
             let relative = match path {
-                Some(parent) => format!("{}/{}", parent.as_str(), file_name),
-                None => file_name.clone(),
+                Some(parent) => Path::new(parent.as_str()).join(&file_name),
+                None => PathBuf::from(&file_name),
             };
-            let workspace_path = WorkspacePath::parse(&relative).map_err(FileSystemError::Path)?;
+            let workspace_path = workspace_path_from_relative(&relative)?;
             let file_type = entry.file_type().map_err(FileSystemError::Io)?;
             let kind = if file_type.is_file() {
                 EntryKind::File
@@ -371,42 +380,18 @@ impl BoundedFileSystem {
         let relative = path
             .strip_prefix(&self.root)
             .map_err(|_| MutationError::FileSystem(FileSystemError::OutsideWorkspace))?;
-        let mut segments = Vec::new();
-        for component in relative.components() {
-            match component {
-                Component::Normal(segment) => segments.push(
-                    segment
-                        .to_str()
-                        .ok_or(MutationError::NonUtf8Name)?
-                        .to_owned(),
-                ),
-                _ => return Err(MutationError::InvalidTarget),
-            }
-        }
-        if segments.is_empty() {
-            return Err(MutationError::InvalidTarget);
-        }
-        WorkspacePath::parse(&segments.join("/")).map_err(MutationError::Path)
+        WorkspacePath::from_native_relative(relative).map_err(|error| match error {
+            WorkspacePathError::NonUtf8NativeSegment => MutationError::NonUtf8Name,
+            other => MutationError::Path(other),
+        })
     }
 }
 
 fn workspace_path_from_relative(path: &Path) -> Result<WorkspacePath, FileSystemError> {
-    let mut segments = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(segment) => segments.push(
-                segment
-                    .to_str()
-                    .ok_or(FileSystemError::NonUtf8Name)?
-                    .to_owned(),
-            ),
-            _ => return Err(FileSystemError::OutsideWorkspace),
-        }
-    }
-    if segments.is_empty() {
-        return Err(FileSystemError::NotFile);
-    }
-    WorkspacePath::parse(&segments.join("/")).map_err(FileSystemError::Path)
+    WorkspacePath::from_native_relative(path).map_err(|error| match error {
+        WorkspacePathError::NonUtf8NativeSegment => FileSystemError::NonUtf8Name,
+        other => FileSystemError::Path(other),
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -728,6 +713,56 @@ mod tests {
         }
 
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_backslash_targets_fail_closed_for_read_list_and_mutation() {
+        use std::os::unix::fs::symlink;
+
+        let root = workspace("native-backslash");
+        fs::write(root.join(r"literal\file.txt"), b"secret").expect("literal filename");
+        symlink(root.join(r"literal\file.txt"), root.join("alias.txt")).expect("read alias");
+        fs::create_dir(root.join(r"literal\dir")).expect("literal directory");
+        fs::write(root.join(r"literal\dir").join("existing.txt"), b"secret")
+            .expect("existing target");
+        symlink(root.join(r"literal\dir"), root.join("alias-dir")).expect("parent alias");
+        let service = BoundedFileSystem::new(&root, 16, 8, 16).expect("service");
+        assert!(matches!(
+            service.prepare_read(
+                &WorkspacePath::parse("alias.txt").expect("path"),
+                0,
+                Some(16)
+            ),
+            Err(FileSystemError::Path(
+                WorkspacePathError::UnrepresentableNativeSegment
+            ))
+        ));
+        assert!(matches!(
+            service.list(None, 0, 8),
+            Err(FileSystemError::Path(
+                WorkspacePathError::UnrepresentableNativeSegment
+            ))
+        ));
+        assert!(matches!(
+            service.list(
+                Some(&WorkspacePath::parse("alias-dir").expect("path")),
+                0,
+                8
+            ),
+            Err(FileSystemError::Path(
+                WorkspacePathError::UnrepresentableNativeSegment
+            ))
+        ));
+        for path in ["alias-dir/new.txt", "alias-dir/existing.txt"] {
+            assert!(matches!(
+                service.observe_mutation_target(&WorkspacePath::parse(path).expect("path")),
+                Err(MutationError::Path(
+                    WorkspacePathError::UnrepresentableNativeSegment
+                ))
+            ));
+        }
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[cfg(unix)]
