@@ -1,5 +1,18 @@
 # Project Status
 
+## FS administrator reproduction reported; size ceiling unconfirmed — 2026-10-15
+
+User relays administrator Emmanuel has reproduced the generation problem and
+will investigate. This is not yet a timeout/root-cause/fix confirmation. Last
+isolated7168byte diagnostic request27 on1fa7b0483240 completed HTTP200 and its
+trailing markerfa8e900bbed57075 is visible to Luna, despite its simultaneous
+truncation claim. Thus no universal6656–7168byte limit is established. Raw FS
+tool-result data is unavailable; earlier truncation observations remain qualified
+model reports. Full correlated ledger and separate incident classes recorded in
+docs/research/FS_CONNECTION_DIAGNOSTIC_2026-10-15.md. Pause repetitive manual
+size tests; preserve reproduction for after admin change. Optic shutdown repair
+and main184integration remain independently verified, not explanations of FS cut.
+
 ## FS diagnostic size boundary observed — 2026-10-15
 
 Server66f4c64a7c56/run0a1c57367a670887: FS Luna128/0 success(request11,
