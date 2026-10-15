@@ -5,6 +5,8 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Generated-data-only connection diagnostic server/client with verified payload receipt, correlated markers, bounded reports and optional idle-gap tests; no project authority or claim of FS outage attribution.
+- Operator last-stop.json separates confirmed core revocation/drain from best-effort diagnostic delivery. Default native proof sink avoids Python BufferedWriter ownership during shutdown; actual Windows blocked/broken-output and expiry regression tests added.
 - Agenda/budget/subscription FS test kit and optional fixed operator Electron viewer after confirmed session stop, with source versions, immutable asset protocol, sandboxed no-Node renderer and bounded fixed-directory JSON export (ADR0015). Native local close/reopen/network/export proof and23 Python/3 policy tests pass; CI pending. No MCP GUI process, npm/build or installer grant.
 - FS Luna Node22 host acceptance: correlated source modification, real failing assertion, versioned restoration and successful check/test. Sonnet runtime custom-header omission recorded separately from successful configuration discovery and Luna transport; no general FS component diagnosis asserted.
 - Generated Node check/test milestone validated at4b5ca2e: all nine workflows, native metadata deny/revoke tests, pinned Node22.15.1 runner and matching downloaded package on the local installed Node pass. SYNCHRONIZE enables synchronous attribute handles without list/data/write rights. First FS process exercise pending; no dependencies/build/server or personal project enrollment claim.

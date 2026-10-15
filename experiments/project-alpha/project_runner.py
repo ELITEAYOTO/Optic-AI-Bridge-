@@ -26,6 +26,7 @@ from execution_gate import ExecutionGate
 from node_profiles import configure_node
 from viewer_snapshot import write_viewer_ready
 from project_resume import select_run, session_lock
+from stop_report import write_stop_report
 
 
 def prepare_project(output_root):
@@ -67,6 +68,8 @@ async def serve_project(args, root, project, journal):
             'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
             'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
     channel = ProofChannel()
+    outcome = {}
+    stop_reason = 'service_exit'
     try:
         params = StdioServerParameters(command=str(binary), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
@@ -99,6 +102,7 @@ async def serve_project(args, root, project, journal):
                 loop = asyncio.get_running_loop()
                 threading.Thread(target=console, args=(state, loop, stopped, channel), daemon=True).start()
                 async def watch():
+                    nonlocal stop_reason
                     if args.lifetime > 120:
                         try:
                             async with asyncio.timeout(args.lifetime - 120):
@@ -111,6 +115,7 @@ async def serve_project(args, root, project, journal):
                             await stopped.wait()
                     except TimeoutError:
                         pass
+                    stop_reason = 'operator' if stopped.is_set() else 'expiry'
                     gate.stopped = True
                     service.should_exit = True
                 watcher = asyncio.create_task(watch())
@@ -135,7 +140,13 @@ async def serve_project(args, root, project, journal):
                             ready = {'viewer_ready': False, 'code': 'viewer.sources_not_ready'}
                         channel.emit('[LOCAL] ' + json.dumps({'operation': 'viewer-snapshot', **ready}, sort_keys=True))
     finally:
-        channel.close()
+        diagnostics_drained = channel.close()
+        try:
+            write_stop_report(root, outcome, stop_reason, diagnostics_drained, channel.snapshot())
+        except (OSError, ValueError):
+            # No success claim if an independent operator report cannot be saved.
+            # Do not hide an earlier cleanup exception with diagnostic I/O.
+            pass
 
 
 def main():

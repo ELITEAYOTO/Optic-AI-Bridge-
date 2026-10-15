@@ -128,6 +128,9 @@ def run(binary, node=None):
             assert all(token.decode() not in output for values in TOKENS.values() for token in values)
             files = list(Path(directory).glob('alpha-*/project/src/index.html'))
             assert len(files) == 1 and files[0].read_text() == '<h1>Saved public project</h1>'
+            report = json.loads((files[0].parents[2] / 'last-stop.json').read_bytes())
+            assert report['revocation_confirmed'] and report['work_drained']
+            assert report['reason'] == 'operator'
             if node:
                 assert (files[0].parent / 'model.js').read_text() == 'module.exports.add=(a,b)=>a+b;'
                 ready = json.loads((files[0].parents[2] / 'viewer-ready.json').read_text())
@@ -148,6 +151,8 @@ def run(binary, node=None):
                     assert len(list(Path(directory).glob('alpha-*'))) == 1
                     assert saved == {name: (files[0].parent / name).read_bytes() for name in saved}
                     assert (files[0].parents[2] / 'viewer-ready.json').is_file()
+                    report = json.loads((files[0].parents[2] / 'last-stop.json').read_bytes())
+                    assert report['revocation_confirmed'] and report['reason'] == 'operator'
                 finally:
                     if resumed.poll() is None:
                         resumed.kill()

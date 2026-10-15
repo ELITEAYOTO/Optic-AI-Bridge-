@@ -80,6 +80,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node task integration failed' }
             python experiments/project-alpha/runner_edit_smoke.py $Binary $Node
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node runner lifecycle failed' }
+            python experiments/project-alpha/runner_shutdown_smoke.py $Binary
+            if ($LASTEXITCODE -ne 0) { throw 'native alpha blocked-output/expiry shutdown failed' }
             node --test experiments/project-alpha/viewer/viewer_policy.test.cjs
             if ($LASTEXITCODE -ne 0) { throw 'operator viewer policy failed' }
             $ElectronTools = Join-Path $env:RUNNER_TEMP 'optic-electron-viewer-tools'

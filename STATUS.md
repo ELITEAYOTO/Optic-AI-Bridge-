@@ -1,5 +1,26 @@
 # Project Status
 
+## Local shutdown reproduced; diagnostic baseline implemented — native CI pending
+
+Reproduced the user's _enter_buffered_busy stdout fatal in an owned Windows
+subprocess by leaving the former print/BufferedWriter proof sink pipe unread;
+exit3221226505. Default proof sink now owns a duplicated native descriptor and
+uses bounded-record os.write, never Python buffered stdout from its daemon.
+Queue/budget/admission and0.2s best-effort close stay bounded; blocked output may
+remain undelivered and is not claimed flushed. Custom test sinks are unchanged.
+Five actual Windows runner cases pass: manual stop, expiry, blocked-output stop,
+blocked-output expiry and broken-output stop. They confirm core revoke/drain and
+retained sources. last-stop.json separates core cleanup from diagnostic delivery.
+Native Node stop/restart smoke passes with unchanged sources and owned jobs.
+
+Generated-only diagnostic_host/client added on separate8010: fixed payloads128–
+8192bytes, delay0/1/3/10s,3repetitions and optional idle gaps. Client checks exact
+receipt/hash/build/run/marker and records UTC/monotonic/status evidence in bounded
+create-only reports. No project access, auth values, raw errors or URLs logged
+by the client CLI. Real HTTP quick samples and8192byte/10s test pass locally;
+full matrix, remote tunnels and FS-side evidence remain to collect. No claim
+that the host generation-stream timeout is fixed. See DIAGNOSTIC_TEST.md.
+
 ## User-directed reliability and integration plan — 2026-10-15
 
 User reports Luna eventually succeeded but recurring host errors remain. New
