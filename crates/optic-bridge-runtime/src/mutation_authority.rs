@@ -12,12 +12,14 @@ use crate::{TaskLeaseRegistry, TaskLeaseRegistryError};
 pub struct MutationAuthoritySpec {
     pub write_scopes: BTreeSet<LeaseScope>,
     pub delete_scopes: BTreeSet<LeaseScope>,
+    pub directory_scopes: BTreeSet<LeaseScope>,
 }
 
 impl MutationAuthoritySpec {
     pub fn validate(&self) -> Result<(), MutationAuthorityError> {
         validate_workspace_scopes(&self.write_scopes)?;
         validate_workspace_scopes(&self.delete_scopes)?;
+        validate_workspace_scopes(&self.directory_scopes)?;
         Ok(())
     }
 }
@@ -26,6 +28,7 @@ impl MutationAuthoritySpec {
 pub struct MutationAuthoritySet {
     write_lease: Option<TaskLeaseId>,
     delete_lease: Option<TaskLeaseId>,
+    directory_lease: Option<TaskLeaseId>,
 }
 
 impl MutationAuthoritySet {
@@ -69,9 +72,32 @@ impl MutationAuthoritySet {
             }
         };
 
+        let directory_lease = match provision_capability(
+            registry,
+            session,
+            Capability::DirectoryCreate,
+            &spec.directory_scopes,
+            resource_ceiling,
+            expires_at,
+            policy_epoch,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                for id in [write_lease.as_ref(), delete_lease.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    registry.revoke(id)?;
+                    registry.remove_revoked(id)?;
+                }
+                return Err(error);
+            }
+        };
+
         Ok(Self {
             write_lease,
             delete_lease,
+            directory_lease,
         })
     }
 
@@ -80,6 +106,7 @@ impl MutationAuthoritySet {
         match capability {
             Capability::FileWrite => self.write_lease.as_ref(),
             Capability::FileDelete => self.delete_lease.as_ref(),
+            Capability::DirectoryCreate => self.directory_lease.as_ref(),
             _ => None,
         }
     }
@@ -92,6 +119,11 @@ impl MutationAuthoritySet {
     #[must_use]
     pub const fn has_delete(&self) -> bool {
         self.delete_lease.is_some()
+    }
+
+    #[must_use]
+    pub const fn has_directory_create(&self) -> bool {
+        self.directory_lease.is_some()
     }
 }
 
@@ -205,6 +237,7 @@ mod tests {
         let spec = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([prefix("src")]),
             delete_scopes: BTreeSet::from([prefix("generated")]),
+            directory_scopes: BTreeSet::new(),
         };
         let expires_at = MonotonicTime::from_millis(100);
         let authority =
@@ -240,6 +273,7 @@ mod tests {
         let non_workspace = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([LeaseScope::Repository]),
             delete_scopes: BTreeSet::new(),
+            directory_scopes: BTreeSet::new(),
         };
         assert_eq!(
             non_workspace
@@ -251,6 +285,7 @@ mod tests {
         let redundant = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([LeaseScope::WorkspaceAll, prefix("src")]),
             delete_scopes: BTreeSet::new(),
+            directory_scopes: BTreeSet::new(),
         };
         assert_eq!(
             redundant
@@ -272,6 +307,7 @@ mod tests {
         let both = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([prefix("src")]),
             delete_scopes: BTreeSet::from([prefix("generated")]),
+            directory_scopes: BTreeSet::new(),
         };
         assert!(matches!(
             MutationAuthoritySet::provision(
@@ -290,6 +326,7 @@ mod tests {
         let write_only = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([prefix("src")]),
             delete_scopes: BTreeSet::new(),
+            directory_scopes: BTreeSet::new(),
         };
         MutationAuthoritySet::provision(
             &registry,
@@ -309,6 +346,7 @@ mod tests {
         let spec = MutationAuthoritySpec {
             write_scopes: BTreeSet::from([LeaseScope::WorkspaceAll]),
             delete_scopes: BTreeSet::new(),
+            directory_scopes: BTreeSet::new(),
         };
         let authority = MutationAuthoritySet::provision(
             &registry,

@@ -12,6 +12,7 @@ mod authorized_file_mutation;
 mod authorized_git_integration;
 mod blocking_io;
 mod clock;
+mod directory_create;
 mod filesystem;
 mod git_blob_batch;
 mod git_change_set;
@@ -52,6 +53,7 @@ pub use authorized_git_integration::{
 };
 pub use blocking_io::{BlockingIoError, BlockingIoGovernor};
 pub use clock::{Clock, StdClock};
+pub use directory_create::DirectoryCreateError;
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation, PreparedFileRead, ReadTargetObservation,

@@ -18,6 +18,58 @@ use crate::server::ReadonlyMcpServer;
 
 const MCP_MUTATION_REQUEST_RESERVE_BYTES: u64 = 64 * 1024;
 
+#[tool_router(router = directory_create_tool_router, vis = "pub")]
+impl ReadonlyMcpServer {
+    #[tool(
+        name = "fs_create_directory",
+        description = "Create one absent project-relative directory. Its parent must exist; existing files/directories are conflicts. No recursive creation, overwrite or caller-supplied authority. On uncertain completion inspect the parent before deciding what to do next."
+    )]
+    pub async fn fs_create_directory(
+        &self,
+        params: Parameters<FsCreateDirectoryRequest>,
+    ) -> Result<Json<FsCreateDirectoryResponse>, ErrorData> {
+        let FsCreateDirectoryRequest {
+            path,
+            expected: DirectoryExpectedState::Absent,
+        } = params.0;
+        let path = parse_workspace_path(&path)?;
+        let envelope = self.mutation_envelope(
+            Capability::DirectoryCreate,
+            Effect::DirectoryCreate { path: path.clone() },
+        )?;
+        let action_id = envelope.action_id.to_token();
+        self.run_mutation(move |service| service.create_directory(&envelope))
+            .await?;
+        let response = FsCreateDirectoryResponse {
+            action_id,
+            path: path.as_str().to_owned(),
+            created: true,
+        };
+        self.ensure_structured_payload_fits(&response)?;
+        Ok(Json(response))
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FsCreateDirectoryRequest {
+    pub path: String,
+    pub expected: DirectoryExpectedState,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectoryExpectedState {
+    Absent,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FsCreateDirectoryResponse {
+    pub action_id: String,
+    pub path: String,
+    pub created: bool,
+}
+
 #[tool_router(router = mutation_write_tool_router, vis = "pub")]
 impl ReadonlyMcpServer {
     #[tool(
@@ -295,6 +347,20 @@ fn delete_response(result: JournaledDeleteCommit) -> Result<FsDeleteResponse, Er
 
 fn map_authorized_mutation_error(error: AuthorizedFileMutationError) -> ErrorData {
     match error {
+        AuthorizedFileMutationError::Directory(error) => match error {
+            optic_bridge_runtime::DirectoryCreateError::Io(error)
+                if error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                ErrorData::invalid_request("optic.precondition_failed", None)
+            }
+            optic_bridge_runtime::DirectoryCreateError::DepthExceeded => {
+                ErrorData::invalid_params("optic.directory_depth_exceeded", None)
+            }
+            optic_bridge_runtime::DirectoryCreateError::UnsupportedPlatform => {
+                ErrorData::invalid_request("optic.unsupported_platform", None)
+            }
+            _ => ErrorData::internal_error("optic.directory_create_failed", None),
+        },
         AuthorizedFileMutationError::Session(_) => {
             ErrorData::invalid_request("optic.session_inactive", None)
         }

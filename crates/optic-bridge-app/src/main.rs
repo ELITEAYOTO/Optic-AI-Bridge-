@@ -132,6 +132,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
         delete_scopes: args.delete_scopes.clone(),
+        directory_scopes: args.directory_scopes.clone(),
     };
     mutation_spec.validate()?;
 
@@ -181,6 +182,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     if !mutation_spec.delete_scopes.is_empty() {
         capabilities.insert(Capability::FileDelete);
+    }
+    if !mutation_spec.directory_scopes.is_empty() {
+        capabilities.insert(Capability::DirectoryCreate);
     }
     if git_service.is_some() {
         capabilities.insert(Capability::GitRead);
@@ -695,6 +699,7 @@ struct AppArgs {
     environment_grants: Vec<EnvironmentGrant>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
+    directory_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
     git_executable: Option<PathBuf>,
     git_integration_executable: Option<PathBuf>,
@@ -729,6 +734,7 @@ impl AppArgs {
         let mut environment_grants = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
+        let mut directory_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
         let mut git_executable = None;
         let mut git_integration_executable = None;
@@ -856,6 +862,17 @@ impl AppArgs {
                     value,
                     "delete scope",
                 )?)?);
+            } else if arg == "--allow-directory-create-scope" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-directory-create-scope requires all or prefix:<workspace-path>",
+                    )
+                })?;
+                directory_scopes.insert(parse_mutation_scope(os_string_to_utf8(
+                    value,
+                    "directory scope",
+                )?)?);
             } else if arg == "--mutation-state-dir" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -933,6 +950,8 @@ impl AppArgs {
                 write_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-delete-scope=")? {
                 delete_scopes.insert(parse_mutation_scope(value)?);
+            } else if let Some(value) = option_value(&arg, "--allow-directory-create-scope=")? {
+                directory_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--mutation-state-dir=")? {
                 set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--git-executable=")? {
@@ -959,7 +978,9 @@ impl AppArgs {
             }
         }
 
-        if (!write_scopes.is_empty() || !delete_scopes.is_empty()) && mutation_state_dir.is_none() {
+        if (!write_scopes.is_empty() || !delete_scopes.is_empty() || !directory_scopes.is_empty())
+            && mutation_state_dir.is_none()
+        {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "mutation authority requires --mutation-state-dir",
@@ -1002,6 +1023,7 @@ impl AppArgs {
             environment_grants,
             write_scopes,
             delete_scopes,
+            directory_scopes,
             mutation_state_dir,
             git_executable,
             git_integration_executable,

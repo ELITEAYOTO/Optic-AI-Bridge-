@@ -1,5 +1,16 @@
 # Project Status
 
+## Development-environment transition — 2026-10-16
+
+The next accepted user target is a real Electron project, followed by Rust,
+with operator-selected project permissions, dependencies and resumable work.
+ADR0016 records the scope and remaining execution/private-enrollment gates.
+First increment adds separately granted typed single-directory creation in core,
+local CLI/JSON and MCP; native authorization/path regression validation pending.
+The delivered supervised ZIP remains5d58fb9, with all nine workflows and packaged
+Windows Node/stop/crash/resume proof passed. New development-environment features
+are not yet included in that delivered ZIP.
+
 ## Opt-in supervised alpha adapter — 2026-10-15
 
 Local Supervised selection connects the existing native lease supervisor to the

@@ -157,7 +157,9 @@ fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
     match effect {
         Effect::FileRead { path } => lease.covers_read_content(path),
         Effect::FileSearch { root } => lease.covers_search_metadata(root.as_ref()),
-        Effect::FileWrite { path, .. } | Effect::FileDelete { path, .. } => {
+        Effect::FileWrite { path, .. }
+        | Effect::FileDelete { path, .. }
+        | Effect::DirectoryCreate { path } => {
             lease.has_scope(&LeaseScope::WorkspaceAll)
                 || lease.scopes.iter().any(|scope| {
                     matches!(scope, LeaseScope::WorkspacePrefix(prefix) if path.is_within(prefix))

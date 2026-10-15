@@ -79,6 +79,8 @@ jobs:
           python experiments/project-alpha/runner_edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'alpha project runner failed' }
           if ($IsWindows) {
+            python experiments/project-alpha/directory_smoke.py $Binary
+            if ($LASTEXITCODE -ne 0) { throw 'native directory creation authorization failed' }
             $Node = (Get-Command node.exe -ErrorAction Stop).Source
             python experiments/project-alpha/node_http_smoke.py $Binary $Node
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node task integration failed' }
