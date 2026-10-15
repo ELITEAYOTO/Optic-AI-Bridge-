@@ -43,6 +43,7 @@ outer digest, archive paths/bounds and four binary/viewer manifest hashes verifi
 Later resume-report invalidation and evidence documentation are follow-up changes
 and must be validated separately before claiming them in an updated package.
 
-Important: alpha does not yet contain main's184commit. Incorporate and review the
-overlapping versioned-read/admission changes before final alpha main integration.
+Alpha contains main's184commit through merge85df742. The overlapping read path preserves effect-spanning admission and alpha full-read content versions. Local Python suites passed29alpha and26session tests after integration; Rust formatting passed. Local Cargo check is blocked by missing msvcrt.lib; native Windows/Linux integration validation remains assigned to GitHub CI.
+
+Follow-up d8d739f adds operator-selected1024/4096-byte file-read pages. Default1024,8192-byte file limits and mutation authority stay unchanged.30alpha tests passed, including UTF-8 boundary and request-ceiling coverage. Exact-head CI is pending; this source is not yet a validated replacement ZIP.
 No claim that the current experimental ZIP is built from main or production-ready.
