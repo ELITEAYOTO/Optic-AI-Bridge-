@@ -25,7 +25,7 @@ async def require_inactive(session, name, arguments):
 async def exercise(binary, supervised):
     with tempfile.TemporaryDirectory(prefix='optic-supervisor-proof-') as directory:
         root = Path(directory)
-        (root / 'public.txt').write_text('PUBLIC_SUPERVISION_FIXTURE\n', encoding='utf-8')
+        (root / 'public.txt').write_bytes(b'PUBLIC_SUPERVISION_FIXTURE\n')
         arguments = [str(root), '--session-lifetime-seconds', '5']
         if supervised:
             arguments.append('--supervise-session')
