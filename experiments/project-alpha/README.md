@@ -93,3 +93,29 @@ Local stop remains available after the16-command diagnostic/control budget is
 exhausted. Closing stdin or sending a malformed/oversized console line requests
 the same fail-closed stop path. This does not remove the current session timer;
 the separately planned supervised connection is not enabled.
+
+
+### Opt-in supervised connection
+
+`Start-ProjectAlpha.ps1 -Supervised` selects availability until local stop instead
+of the finite SessionMinutes mode. The package manifest must identify the matching
+supervision feature. The Rust core renews the same bounded leases; the adapter
+has no renewal/re-provisioning tool. Stop, stdin EOF and local revoke close the
+service; lost/expired core authority is not resurrected. The default timed mode
+is unchanged. See SUPERVISED_HOST_TEST.md for the complete retained-run flow.
+
+The long-lived adapter keeps fixed60-second ingress/start windows,128conservative
+source-file slots (8192bytes each),16retained job handles, bounded process/output
+history and the existing one retained effect slot. Terminal results are released
+explicitly with optic_task_forget; active/uncertain work is refused. optic_task_list
+recovers only handles already received by this bridge for the current credential
+epoch. It cannot establish that an unknown upstream start never executed. Source
+inventory is checked locally before remote admission; its metadata is not a new
+runtime file-access grant. Source creation by the bridge stays within that quota;
+out-of-band operator changes are outside the generated-source accounting model.
+
+Native runner proof includes real idle beyond a short lease, new transports,
+Node assertion failure/versioned correction/check/test, stop after command-budget
+exhaustion, same-run resume, EOF/revoke, pinned-owned runner death/core exit and
+crash recovery. This is public generated alpha evidence, not private enrollment,
+per-chat isolation, arbitrary dependencies or an unrestricted build environment.

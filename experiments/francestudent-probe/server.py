@@ -118,13 +118,18 @@ class Guard:
     def decode_request(self, body):
         return json.loads(body)
 
+    def admit_request(self, now):
+        if self.sequence >= MAX_REQUESTS or now - self.started >= self.lifetime:
+            return False
+        self.sequence += 1
+        return True
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         admitted = self.clock()
-        if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= self.lifetime:
+        if not self.admit_request(admitted):
             return await self.reject(send, 429)
-        self.sequence += 1
         owner, observation = self.header_observer(scope.get("headers", []))
         raw_method = scope.get("method")
         # Only predefined labels leave the process: never echo arbitrary verbs,

@@ -1,8 +1,9 @@
 # Core operator-supervision foundation
 
-This is an internal integration foundation, not the persistent HTTP alpha mode.
-Start-ProjectAlpha.ps1 still has its existing50-minute maximum,512-request
-ceiling and16-task lifetime budget. Do not instruct FS to enable renewal.
+The core foundation is now wired to an opt-in supervised HTTP adapter.
+Start-ProjectAlpha.ps1 -Supervised uses local renewal and bounded per-window
+admission/history; the default timed mode retains its prior limits. FS still
+has no authority-renewal tool. See SUPERVISED_HOST_TEST.md.
 
 An explicit local `--supervise-session` core CLI option renews the same active
 session and task leases using the existing lifecycle manager. Each individual
@@ -36,7 +37,7 @@ head1d82ea5). Binary SHA256ac20cce0daf5edad2db0b56f7fd686d281d08f473237fb3f7c20e
 The corrected fixture writes exact bytes rather than platform-dependent newlines.
 Full exact-head CI is required before publishing a replacement alpha package.
 
-Next adapter gates: bounded rolling HTTP admission instead of lifetime request
+Adapter implementation/acceptance scope: bounded rolling HTTP admission instead of lifetime request
 exhaustion; bounded terminal-task retirement instead of ever-growing job maps;
 project/journal/output budgets; truthful supervised-mode metadata; core failure,
 parent EOF, revoke, disconnect/reconnect and stop integration. These must not be

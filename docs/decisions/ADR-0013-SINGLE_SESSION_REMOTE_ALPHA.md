@@ -48,11 +48,47 @@ including any already-started renewal critical section. Stop/cancel closes
 admission before cleanup; renewal cannot undo that decision. This supervisor is
 the running trusted Rust service itself, not model activity or an HTTP heartbeat.
 It does not certify the responsiveness of a separate parent UI. Parent death
-must close its owned stdio pipes; native runner/parent-death integration remains
-a separate acceptance gate. The HTTP alpha is not yet wired to this foundation:
-its50-minute timer,512-request ceiling and task-history budgets remain until the
-supervised adapter and resource-retirement gates are implemented and tested.
+must close its owned stdio pipes. At the foundation milestone, native
+runner/parent-death integration and HTTP wiring were separate acceptance gates.
+The adapter amendment below implements those gates; default timed launches
+retain their50-minute timer,512-request ceiling and task-history budgets.
 No production credentials or private project enrollment are introduced.
+
+## Supervised HTTP alpha adapter — 2026-10-15
+
+The operator may explicitly select Supervised instead of SessionMinutes. The
+adapter uses short core leases (default60s) and the same native supervisor,
+not a remote renewal call or periodic re-provisioning. Its metadata reports
+mode=supervised and remaining_seconds=null. Timed launches retain their prior
+behavior. A local health check closes admission/service when core authority is
+lost. Local revoke also closes the service; credential rotation keeps its
+principal binding but does not expose prior-epoch jobs.
+
+Long-lived budgets:512HTTP requests and16starts per fixed60-second window,
+16retained wrapper job handles,128source-file slots of8192bytes, bounded initial
+source-directory inventory, unchanged request/body/concurrency/task-output/job
+limits and native recovery journal caps. Fixed windows permit boundary bursts;
+they are not sliding-window claims. Counters remain finite. Invalid/backward
+clock observations permanently deny further window admissions. Source slots
+are conservatively reserved before dispatch, including failed/uncertain attempts;
+only explicit operator restart recounts real retained files. The model cannot
+reset limits by reconnecting. No Node process write/network authority is added.
+
+Task inventory returns only handles already received for the current credential
+epoch; no empty-list non-execution proof is implied. Forget queries the real
+owner-scoped result and retires only completed/failed output history (never
+running/termination_uncertain). A Rust unknown-job denial may release its
+previously owned wrapper record because core eviction is terminal-only. This
+local bookkeeping effect grants no OS process-control or file-delete authority.
+After rotation, old-epoch records may require an explicit local resume to reclaim
+all capacity; no old output is exposed to the new epoch.
+
+Native Windows validation includes actual idle/renew/reconnect, Node workflows,
+stop after control-budget exhaustion, EOF/revoke, verified-owned actual Python
+runner death (including the Windows Store launcher chain), core EOF exit and
+same-run crash recovery. The test pins process handles and validates ancestry
+and exact core image; no caller PID-control tool is introduced. Source and
+journal retention are required; no stale viewer/stop success on a new run.
 
 ## Context
 

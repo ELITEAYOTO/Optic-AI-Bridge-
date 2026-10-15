@@ -1,5 +1,6 @@
-param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50, [ValidatePattern('^alpha-[a-z0-9_-]{1,64}$')][string]$ResumeRun, [ValidateSet(1024,4096)][int]$ReadPageBytes = 1024)
+param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50, [ValidatePattern('^alpha-[a-z0-9_-]{1,64}$')][string]$ResumeRun, [ValidateSet(1024,4096)][int]$ReadPageBytes = 1024, [switch]$Supervised)
 $ErrorActionPreference = 'Stop'
+if ($Supervised -and $PSBoundParameters.ContainsKey('SessionMinutes')) { throw 'Choose Supervised or SessionMinutes, not both.' }
 $Root = Split-Path -Parent $PSScriptRoot
 $Experiments = Split-Path -Parent $Root
 $Repository = Split-Path -Parent $Experiments
@@ -8,6 +9,7 @@ $Binary = Join-Path $Repository 'packaging\project-alpha\optic-bridge.exe'
 if (-not (Test-Path -LiteralPath $Python)) { throw 'Run Setup-ProjectAlpha.ps1 first.' }
 if (-not (Test-Path -LiteralPath $Binary)) { throw 'Use the matching verified project-alpha package.' }
 $Manifest = Get-Content -Raw -LiteralPath (Join-Path $Repository 'ALPHA_MANIFEST.json') | ConvertFrom-Json
+if ($Supervised -and $Manifest.supervision -ne 'bounded-operator-lease-v1') { throw 'Use the matching verified supervised alpha package.' }
 if ($Manifest.binary_sha256 -notmatch '^[0-9a-fA-F]{64}$' -or $Manifest.source_commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid alpha package manifest.' }
 $BinaryStream = [IO.File]::OpenRead($Binary)
 $BinaryHasher = $null
@@ -40,7 +42,8 @@ if ($NodeExecutable) {
 }
 $Output = Join-Path $Repository 'output'
 if (-not (Test-Path -LiteralPath $Output)) { New-Item -ItemType Directory -Path $Output | Out-Null }
-$RunnerArguments = @((Join-Path $Root 'project_runner.py'), '--binary', $Binary, '--output-root', $Output, '--port', "$Port", '--lifetime', "$($SessionMinutes * 60)")
+$RunnerArguments = @((Join-Path $Root 'project_runner.py'), '--binary', $Binary, '--output-root', $Output, '--port', "$Port")
+if ($Supervised) { $RunnerArguments += '--supervised' } else { $RunnerArguments += @('--lifetime', "$($SessionMinutes * 60)") }
 $RunnerArguments += @('--read-page-bytes', "$ReadPageBytes")
 if ($AllowRandomTunnelHost) { $RunnerArguments += '--allow-random-tunnel-host' }
 if ($NodeExecutable) { $RunnerArguments += @('--node', $NodeExecutable) }

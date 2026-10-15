@@ -17,10 +17,11 @@ MUTATIONS = {'optic_fs_write', 'optic_fs_patch'}
 
 
 class ProjectGate(ForwardGate):
-    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024):
+    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024, file_budget=None):
         if type(read_page_bytes) is not int or read_page_bytes not in (1024, 4096):
             raise ValueError("project.invalid_read_page_bytes")
         self.read_page_bytes = read_page_bytes
+        self.file_budget = file_budget
         super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
 
     async def call(self, identity, tool, arguments):
@@ -48,6 +49,11 @@ class ProjectGate(ForwardGate):
         try:
             if not self._current(identity):
                 raise ForwardError('link.inactive')
+            if tool in MUTATIONS and self.file_budget is not None:
+                try:
+                    self.file_budget.reserve(arguments['path'])
+                except ValueError:
+                    raise ForwardError('project.file_capacity') from None
             if tool == 'optic_fs_patch':
                 current = await self.upstream('fs_read', {'path': arguments['path'],
                     'offset': 0, 'max_bytes': MAX_CONTENT + 1})

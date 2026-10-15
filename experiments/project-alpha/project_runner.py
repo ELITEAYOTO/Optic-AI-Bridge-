@@ -27,6 +27,7 @@ from node_profiles import configure_node
 from viewer_snapshot import write_viewer_ready
 from project_resume import select_run, session_lock
 from stop_report import write_stop_report
+from supervision_limits import ProjectFiles
 
 
 def prepare_project(output_root):
@@ -67,13 +68,16 @@ async def serve_project(args, root, project, journal):
             'Generated Node alpha. Edit index.html/style.css and app.js for the browser.\n'
             'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
             'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
+    file_budget = ProjectFiles.inspect(project) if args.supervised else None
     channel = ProofChannel()
     outcome = {}
     stop_reason = 'service_exit'
     try:
+        core_lifetime = args.lease_seconds if args.supervised else args.lifetime
+        supervision_args = ['--supervise-session'] if args.supervised else []
         params = StdioServerParameters(command=str(binary), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
-            '--session-lifetime-seconds', str(args.lifetime), *process_arguments])
+            '--session-lifetime-seconds', str(core_lifetime), *supervision_args, *process_arguments])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as upstream:
                 async with asyncio.timeout(20):
@@ -90,11 +94,12 @@ async def serve_project(args, root, project, journal):
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, arguments):
                     return structured(await upstream.call_tool(name, arguments))
-                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes)
-                execution = ExecutionGate(state, identity, forward, profiles) if profiles else None
+                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes, file_budget=file_budget)
+                execution = ExecutionGate(state, identity, forward, profiles, supervised=args.supervised) if profiles else None
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
-                    execution=execution, compact_results=bool(profiles))
+                    execution=execution, compact_results=bool(profiles),
+                    supervised=args.supervised, lease_seconds=args.lease_seconds)
                 service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                     log_config=None, access_log=False, limit_concurrency=32, timeout_keep_alive=5,
                     timeout_graceful_shutdown=5, h11_max_incomplete_event_size=16384))
@@ -103,20 +108,45 @@ async def serve_project(args, root, project, journal):
                 threading.Thread(target=console, args=(state, loop, stopped, channel), daemon=True).start()
                 async def watch():
                     nonlocal stop_reason
-                    if args.lifetime > 120:
+                    if args.supervised:
+                        while not stopped.is_set():
+                            with state.lock:
+                                binding = state.states[gate.owner]
+                                active = binding['active'] and binding['principal'] == gate.principal
+                            if not active:
+                                stop_reason = 'revoked'
+                                break
+                            try:
+                                async with asyncio.timeout(min(5, args.lease_seconds / 3)):
+                                    await stopped.wait()
+                                break
+                            except TimeoutError:
+                                pass
+                            try:
+                                async with asyncio.timeout(5):
+                                    structured(await upstream.call_tool('session_info', {}))
+                            except Exception:
+                                stop_reason = 'service_exit'
+                                break
+                        if stopped.is_set():
+                            stop_reason = 'operator'
+                    else:
+                        if args.lifetime > 120:
+                            try:
+                                async with asyncio.timeout(args.lifetime - 120):
+                                    await stopped.wait()
+                            except TimeoutError:
+                                channel.emit('[LOCAL] ' + json.dumps({'operation': 'expiry-warning',
+                                    'remaining_seconds': 120, 'project_saved_after_stop': True}, sort_keys=True))
                         try:
-                            async with asyncio.timeout(args.lifetime - 120):
+                            async with asyncio.timeout(min(args.lifetime, 120)):
                                 await stopped.wait()
                         except TimeoutError:
-                            channel.emit('[LOCAL] ' + json.dumps({'operation': 'expiry-warning',
-                                'remaining_seconds': 120, 'project_saved_after_stop': True}, sort_keys=True))
-                    try:
-                        async with asyncio.timeout(min(args.lifetime, 120)):
-                            await stopped.wait()
-                    except TimeoutError:
-                        pass
-                    stop_reason = 'operator' if stopped.is_set() else 'expiry'
+                            pass
+                        stop_reason = 'operator' if stopped.is_set() else 'expiry'
                     gate.stopped = True
+                    if execution is not None:
+                        execution.stopped = True
                     service.should_exit = True
                 watcher = asyncio.create_task(watch())
                 mode = 'editing and isolated Node check/test' if profiles else 'file editing only'
@@ -125,7 +155,11 @@ async def serve_project(args, root, project, journal):
                     channel.emit('Local Node: ' + profiles['check']['executable'])
                     channel.emit('Fixed profiles: check / test. Reads: model.js / app.js / tests.js. Network and process writes denied.')
                 channel.emit('Public dummy auth. Shared connection. Local: rotate-a / revoke-a / stop / proof-stats.')
-                channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
+                if args.supervised:
+                    channel.emit('Operator-supervised until local stop. Core lease window: ' + str(args.lease_seconds) + ' seconds; renewal cannot revive expired/revoked authority.')
+                    channel.emit('Limits: 128 generated files / 8192 bytes each; HTTP512 per60s window; starts16 per60s window; retain16 jobs, forget terminal results to free slots.')
+                else:
+                    channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
                 channel.emit('Project saved under output/' + root.name + '/project/src after stop. Local alpha resume only.')
                 try:
                     await service.serve()
@@ -157,11 +191,16 @@ def main():
     parser.add_argument('--resume-run', help='Operator-selected alpha run name within this package output directory')
     parser.add_argument('--port', type=int, default=8009)
     parser.add_argument('--lifetime', type=int, default=3000)
+    parser.add_argument('--supervised', action='store_true')
+    parser.add_argument('--lease-seconds', type=int, default=60)
     parser.add_argument('--read-page-bytes', type=int, choices=(1024, 4096), default=1024)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 5 <= args.lifetime <= 3000:
         raise SystemExit('project.invalid_bounds')
+    if (not 5 <= args.lease_seconds <= 300
+            or args.supervised and any(arg == '--lifetime' or arg.startswith('--lifetime=') for arg in sys.argv[1:])):
+        raise SystemExit('project.invalid_supervision_bounds')
     logging.disable(logging.CRITICAL)
     try:
         asyncio.run(run(args))

@@ -18,7 +18,7 @@ from project_results import structured
 from lifecycle_core import TOKENS
 
 
-async def exercise(url, node_mode=False):
+async def exercise(url, node_mode=False, supervised=False):
     async with asyncio.timeout(20):
         async with httpx2.AsyncClient(timeout=2) as http:
             while True:
@@ -61,8 +61,8 @@ async def exercise(url, node_mode=False):
             from node_http_smoke import finished
             names = {tool.name for tool in (await session.list_tools()).tools}
             from project_schema import TOOLS
-            from execution_gate import TASK_TOOLS
-            assert names == set(TOOLS + TASK_TOOLS)
+            from execution_gate import TASK_TOOLS, SUPERVISED_TASK_TOOLS
+            assert names == set(TOOLS + TASK_TOOLS + (SUPERVISED_TASK_TOOLS if supervised else ()))
             snapshot = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
             broken = structured(await session.call_tool('optic_fs_write', {
                 'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a-b;',
@@ -75,6 +75,8 @@ async def exercise(url, node_mode=False):
             assert failure['status'] == 'exited' and failure['exit_code'] != 0, failure
             error = structured(await session.call_tool('optic_task_read', {'job_id': job, 'stream': 'stderr'}))
             assert 'AssertionError' in error['upstream']['text'], error
+            if supervised:
+                assert structured(await session.call_tool('optic_task_forget', {'job_id': job}))['ok']
             fixed = structured(await session.call_tool('optic_fs_write', {
                 'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a+b;',
                 'expected_kind': 'content', 'expected_version': broken['upstream']['content_version']}))
@@ -87,6 +89,8 @@ async def exercise(url, node_mode=False):
                 assert result['status'] == 'exited' and result['exit_code'] == 0, result
                 output = structured(await session.call_tool('optic_task_read', {'job_id': job}))
                 assert 'ALPHA_' + profile.upper() + '_PASS' in output['upstream']['text'], output
+                if supervised:
+                    assert structured(await session.call_tool('optic_task_forget', {'job_id': job}))['ok']
 
 
 async def exercise_resume(url):

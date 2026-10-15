@@ -1,4 +1,4 @@
-"""Experimental profile forwarding; NOT enabled by the editing HTTP runner.
+"""Bounded forwarding of operator-owned isolated task profiles.
 
 Profiles are operator-owned requests to existing Rust process tools. This layer
 cannot grant execution/isolation/network authority or approve a Rust elicitation.
@@ -7,6 +7,9 @@ import asyncio
 import base64
 import json
 import re
+import time
+
+from supervision_limits import WindowBudget, STARTS_PER_WINDOW, WINDOW_SECONDS, MAX_JOBS, MAX_SEQUENCE
 
 from mcp.shared.exceptions import MCPError
 from forward_core import ForwardGate, ForwardError
@@ -17,6 +20,9 @@ SAFE = {'optic.process_isolation_unavailable', 'optic.process_executable_not_all
         'optic.network_runtime_unavailable', 'optic.process_profile_changed',
         'optic.process_profile_not_found', 'optic.session_inactive', 'optic.policy_denied'}
 TASK_TOOLS = ('optic_task_start', 'optic_task_result', 'optic_task_read', 'optic_task_stop')
+FORGET_TOOL = 'optic_task_forget'
+LIST_TOOL = 'optic_task_list'
+SUPERVISED_TASK_TOOLS = (FORGET_TOOL, LIST_TOOL)
 
 
 def integer(value, low, high):
@@ -51,15 +57,19 @@ def freeze_profiles(profiles):
     return frozen
 
 
-def validate_arguments(tool, arguments, profiles):
+def validate_arguments(tool, arguments, profiles, supervised=False):
     if type(arguments) is not dict:
         raise ValueError()
+    if supervised and tool == LIST_TOOL:
+        if arguments:
+            raise ValueError()
+        return
     if tool == 'optic_task_start':
         if (set(arguments) != {'profile'} or type(arguments['profile']) is not str
                 or arguments['profile'] not in profiles):
             raise ValueError()
         return
-    if tool not in TASK_TOOLS:
+    if tool not in TASK_TOOLS and not (supervised and tool == FORGET_TOOL):
         raise ValueError()
     expected = {'job_id', 'stream', 'cursor', 'max_bytes'} if tool == 'optic_task_read' else {'job_id'}
     if (not {'job_id'} <= set(arguments) or not set(arguments) <= expected
@@ -85,8 +95,12 @@ def bind_admission(files, execution):
 
 
 class ExecutionGate(ForwardGate):
-    def __init__(self, registry, identity, upstream, profiles, deadline=15):
+    def __init__(self, registry, identity, upstream, profiles, deadline=15, supervised=False, clock=time.monotonic):
         super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
+        if type(supervised) is not bool:
+            raise ValueError('execution.invalid_mode')
+        self.supervised, self.clock = supervised, clock
+        self.start_budget = WindowBudget(STARTS_PER_WINDOW, WINDOW_SECONDS, clock()) if supervised else None
         self.profiles = freeze_profiles(profiles)
         self.jobs = {}
         self.starts = 0
@@ -106,11 +120,17 @@ class ExecutionGate(ForwardGate):
             raise ForwardError('execution.invalid_arguments') from None
         if self.pending:
             raise ForwardError('link.busy')
+        if name == '__list__':
+            return {'jobs': [{'job_id': job} for job, owner in self.jobs.items()
+                             if owner == (identity.principal, identity.epoch)], 'capacity': MAX_JOBS}
         if tool == 'optic_task_start':
-            if self.starts >= 16:
+            if self.supervised and len(self.jobs) >= MAX_JOBS:
+                raise ForwardError('execution.job_capacity')
+            if (self.start_budget is not None and not self.start_budget.take(self.clock())
+                    or self.start_budget is None and self.starts >= 16):
                 raise ForwardError('execution.start_budget')
-            self.starts += 1  # uncertainty/failure never replenishes the mint budget.
-        task = asyncio.create_task(self._run_task(identity, name, request))
+            self.starts = min(MAX_SEQUENCE, self.starts + 1)  # uncertainty/failure never replenishes the mint budget.
+        task = asyncio.create_task(self._run_task(identity, name, request, forget=tool == FORGET_TOOL))
         self.pending.add(task)
         task.add_done_callback(self._complete)
         try:
@@ -121,14 +141,16 @@ class ExecutionGate(ForwardGate):
                                else 'link.response_timeout') from None
 
     def normalize(self, identity, tool, arguments):
-        validate_arguments(tool, arguments, self.profiles)
+        validate_arguments(tool, arguments, self.profiles, supervised=self.supervised)
+        if self.supervised and tool == LIST_TOOL:
+            return '__list__', {}
         if tool == 'optic_task_start':
             if set(arguments) != {'profile'} or type(arguments['profile']) is not str:
                 raise ValueError()
             if arguments['profile'] not in self.profiles:
                 raise ValueError()
             return 'process_start', json.loads(self.profiles[arguments['profile']])
-        if tool not in ('optic_task_result', 'optic_task_read', 'optic_task_stop'):
+        if tool not in ('optic_task_result', 'optic_task_read', 'optic_task_stop') and not (self.supervised and tool == FORGET_TOOL):
             raise ValueError()
         job = arguments['job_id']
         if not JOB.fullmatch(job) or self.jobs.get(job) != (identity.principal, identity.epoch):
@@ -139,9 +161,9 @@ class ExecutionGate(ForwardGate):
                 cursor=integer(arguments.get('cursor', 0), 0, 65536),
                 max_bytes=integer(arguments.get('max_bytes', 1024), 1, 1024))
         return {'optic_task_result': 'process_result', 'optic_task_read': 'process_read',
-                'optic_task_stop': 'process_stop'}[tool], request
+                'optic_task_stop': 'process_stop', FORGET_TOOL: 'process_result'}[tool], request
 
-    async def _run_task(self, identity, name, arguments):
+    async def _run_task(self, identity, name, arguments, forget=False):
         dispatched = False
         try:
             if not self._current(identity):
@@ -183,10 +205,21 @@ class ExecutionGate(ForwardGate):
             if (response['status'] not in statuses or type(response['output_truncated']) is not bool
                     or response['exit_code'] is not None and type(response['exit_code']) is not int):
                 raise ValueError()
+            if forget:
+                if response['status'] in ('running', 'termination_uncertain'):
+                    raise ForwardError('execution.job_not_terminal')
+                del self.jobs[arguments['job_id']]
+                return {'forgotten': True}
             return {key: response[key] for key in ('status', 'exit_code', 'output_truncated')}
         except ForwardError:
             raise
         except MCPError as error:
+            if (forget and error.message == 'optic.process_job_not_found'
+                    and self._current(identity)):
+                # Rust only retires proven-terminal owner history. No output is
+                # exposed and no process/OS effect is performed by this release.
+                del self.jobs[arguments['job_id']]
+                return {'forgotten': True}
             if error.message in SAFE:
                 raise ForwardError(error.message) from None
             raise ForwardError('execution.outcome_unknown' if dispatched and name in ('process_start', 'process_stop')

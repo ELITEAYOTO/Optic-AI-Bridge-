@@ -12,7 +12,8 @@ from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
 from project_schema import normalize, SchemaError, MAX_CONTENT
-from execution_gate import TASK_TOOLS, validate_arguments, bind_admission
+from execution_gate import TASK_TOOLS, FORGET_TOOL, LIST_TOOL, SUPERVISED_TASK_TOOLS, validate_arguments, bind_admission
+from supervision_limits import WindowBudget, ProjectFiles, HTTP_PER_WINDOW, WINDOW_SECONDS, MAX_SEQUENCE, MAX_FILES, MAX_JOBS, STARTS_PER_WINDOW
 
 
 def exact_object(pairs):
@@ -25,6 +26,15 @@ def exact_object(pairs):
 
 
 class ProjectGuard(Guard):
+    def admit_request(self, now):
+        budget = getattr(self, 'request_budget', None)
+        if budget is None:
+            return super().admit_request(now)
+        if self.sequence >= MAX_SEQUENCE or not budget.take(now):
+            return False
+        self.sequence += 1
+        return True
+
     def decode_request(self, body):
         def invalid_constant(_):
             raise ValueError('nonfinite number')
@@ -39,7 +49,13 @@ class ProjectGuard(Guard):
 
 
 def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None,
-                     lifetime=3000, clock=time.monotonic, compact_results=False):
+                     lifetime=3000, clock=time.monotonic, compact_results=False, supervised=False, lease_seconds=60):
+    if type(supervised) is not bool or type(lease_seconds) is not int or not 5 <= lease_seconds <= 300:
+        raise ValueError('project.invalid_supervision')
+    if supervised and not isinstance(gate.file_budget, ProjectFiles):
+        raise ValueError('project.supervised_file_budget_required')
+    if execution is not None and execution.supervised != supervised:
+        raise ValueError('execution.mode_mismatch')
     if type(compact_results) is not bool:
         raise ValueError('project.invalid_result_mode')
     if type(lifetime) is not int or not 5 <= lifetime <= 3000:
@@ -47,7 +63,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     started = clock()
     if type(started) not in (int, float) or not math.isfinite(started):
         raise ValueError('project.invalid_clock')
-    deadline = started + lifetime
+    deadline = None if supervised else started + lifetime
     if execution is not None:
         bind_admission(gate, execution)
     mcp = MCPServer('Optic-Project-Alpha', instructions=(
@@ -60,13 +76,16 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         'reading if it changes. Binary pages use base64 and text=null. '
         'Create with expected_kind=absent; replace with expected_kind=content '
         'and exact expected_version. Never retry an outcome_unknown write blindly. '
-        'project_info reports connection.remaining_seconds and expires_soon; '
-        'when expiry is near, finish verification rather than begin a long edit. '
-        'Send calls one at a time; link.busy means the request was not admitted. '
+        + ('Operator-supervised connection until local stop; no remote renewal tool. '
+           'project_info reports mode and bounded file/request/job limits. '
+           if supervised else 'project_info reports connection.remaining_seconds and expires_soon; '
+           'when expiry is near, finish verification rather than begin a long edit. ')
+        + 'Send calls one at a time; link.busy means the request was not admitted. '
         'Patch offsets/removals count UTF-8 bytes, not characters. '
         + ('Named task profiles available: ' + ', '.join(execution.profiles)
            + '. Start returns an owned job. Poll result and read bounded output. '
            'Stop is a request, not confirmation. Never retry uncertain starts.'
+           + (' Use optic_task_list to recover owned job ids after a lost reply; never blindly start again. Use optic_task_forget after reading completed output to release one of16 retained job slots.' if supervised else '')
            if execution is not None else 'No process tools are enabled.')))
 
     def reply(name, payload):
@@ -80,25 +99,36 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         proof = request_proof.get()
         try:
             now = clock()
-            if not math.isfinite(now) or now < started or now >= deadline:
+            if not math.isfinite(now) or now < started or (deadline is not None and now >= deadline):
                 gate.stopped = True
                 if execution is not None:
                     execution.stopped = True
                 raise ForwardError('link.inactive')
-            selected = execution if execution is not None and name in TASK_TOOLS else gate
+            selected = execution if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS) else gate
             payload = await selected.call(proof['owner'] if proof else None, name, arguments)
             if len(json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()) > 65536:
                 raise ForwardError('project.output_bound')
             connection = ({'connection': {'shared': True,
-                'remaining_seconds': max(0, math.ceil(deadline - clock())),
-                'expires_soon': deadline - clock() <= 120},
+                'remaining_seconds': None if supervised else max(0, math.ceil(deadline - clock())),
+                'expires_soon': False if supervised else deadline - clock() <= 120,
+                **({'mode': 'supervised', 'lease_window_seconds': lease_seconds} if supervised else {})},
                 'limits': {'read_page_bytes': gate.read_page_bytes,
-                           'file_bytes': MAX_CONTENT}}
+                           'file_bytes': MAX_CONTENT,
+                           **({'generated_files': MAX_FILES, 'http_requests_per_window': HTTP_PER_WINDOW,
+                               'window_seconds': WINDOW_SECONDS, 'retained_jobs': MAX_JOBS,
+                               'task_starts_per_window': STARTS_PER_WINDOW} if supervised else {})}}
                 if name == 'optic_project_info' else {})
             return reply(name, {'ok': True, 'generated_project_only': True,
                 **connection, 'upstream': payload})
         except ForwardError as error:
-            return reply(name, {'ok': False, 'code': str(error)})
+            retry = {}
+            if (str(error) == 'execution.start_budget' and execution is not None
+                    and execution.start_budget is not None and not execution.start_budget.failed):
+                now = clock()
+                if type(now) in (int, float) and math.isfinite(now) and now >= execution.start_budget.last:
+                    retry['retry_after_seconds'] = max(1, min(WINDOW_SECONDS,
+                        math.ceil(execution.start_budget.started + WINDOW_SECONDS - now)))
+            return reply(name, {'ok': False, 'code': str(error), **retry})
 
     @mcp.tool()
     async def optic_project_info() -> dict:
@@ -156,6 +186,17 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
             """Request stop of an owned job. Check task_result for terminal status; no arbitrary PID."""
             return await call('optic_task_stop', {'job_id': job_id})
 
+        if supervised:
+            @mcp.tool()
+            async def optic_task_list() -> dict:
+                """List at most16 job ids owned by this connection/credential epoch, already received by the bridge, including a caller-lost reply. An empty list cannot rule out an uncertain upstream start. No restart or PID."""
+                return await call(LIST_TOOL, {})
+
+            @mcp.tool()
+            async def optic_task_forget(job_id: str) -> dict:
+                """Release a retained owned terminal job after reading output. Running/uncertain jobs are refused; no OS process effect or arbitrary PID."""
+                return await call(FORGET_TOOL, {'job_id': job_id})
+
     def observe(headers):
         _, safe = observe_headers(headers)
         values = [value for key, value in headers if key.lower() == b'authorization']
@@ -183,13 +224,17 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 allowed_origins=['http://127.0.0.1:*', 'http://localhost:*']))
     class CombinedGuard(ProjectGuard):
         def valid_arguments(self, name, args):
-            if execution is not None and name in TASK_TOOLS:
+            if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS):
                 try:
-                    validate_arguments(name, args, execution.profiles)
+                    validate_arguments(name, args, execution.profiles, supervised=supervised)
                     return True
                 except ValueError:
                     return False
             return super().valid_arguments(name, args)
 
-    return CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit, clock=clock,
+    guard = CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit, clock=clock,
                         zero_arg_tools=(), handle_tool=None, timed_diagnostics=True, lifetime=lifetime)
+
+    if supervised:
+        guard.request_budget = WindowBudget(HTTP_PER_WINDOW, WINDOW_SECONDS, guard.started)
+    return guard

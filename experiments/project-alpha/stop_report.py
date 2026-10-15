@@ -10,7 +10,7 @@ from project_resume import ordinary
 def write_stop_report(root, outcome, reason, diagnostics_drained, snapshot):
     root = Path(root)
     ordinary(root, directory=True)
-    if reason not in ('operator', 'expiry', 'service_exit'):
+    if reason not in ('operator', 'expiry', 'service_exit', 'revoked'):
         raise ValueError('project.stop_reason')
     report = {'version': 1, 'reason': reason,
               'revocation_confirmed': outcome.get('ok') is True

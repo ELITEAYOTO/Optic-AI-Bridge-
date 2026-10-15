@@ -12,6 +12,7 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Opt-in supervised generated alpha with locally renewed bounded core leases, fixed request/start windows, bounded source/job accounting and owned job list/terminal release. Native Windows idle/reconnect/stop/revoke/crash/resume proof added; exact-head CI and packaged acceptance pending. Default timed mode remains available; no remote permission renewal or general build environment.
 - Generated-data-only connection diagnostic server/client with verified payload receipt, correlated markers, bounded reports and optional idle-gap tests; no project authority or claim of FS outage attribution.
 - Operator last-stop.json separates confirmed core revocation/drain from best-effort diagnostic delivery. Default native proof sink avoids Python BufferedWriter ownership during shutdown; actual Windows blocked/broken-output and expiry regression tests added.
 - Agenda/budget/subscription FS test kit and optional fixed operator Electron viewer after confirmed session stop, with source versions, immutable asset protocol, sandboxed no-Node renderer and bounded fixed-directory JSON export (ADR0015). Native local close/reopen/network/export proof and23 Python/3 policy tests pass; CI pending. No MCP GUI process, npm/build or installer grant.

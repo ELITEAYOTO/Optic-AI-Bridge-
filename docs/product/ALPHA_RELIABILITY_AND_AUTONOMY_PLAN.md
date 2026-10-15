@@ -177,6 +177,15 @@ with equally bounded shell output, not a deliberately verbose shell baseline.
 
 ## R4 — Stop-controlled connection and resumable work
 
+Adapter increment implemented (exact-head CI pending): opt-in Supervised mode,
+fixed-window ingress/start budgets, bounded generated-source inventory and slots,
+explicit terminal-result release and current-epoch task inventory. Native Windows
+proof passed renew/reconnect, Node workflows, local stop/EOF/revoke, actual parent
+crash/core exit and same-run recovery. Default timed mode stays unchanged. See
+ADR0013 amendment and SUPERVISED_HOST_TEST.md. Private-project admission, broader
+Node modules/builds and host-specific FS acceptance remain separate gates.
+
+
 Core foundation implemented: opt-in local CLI supervision renews only existing
 bounded leases through SessionLifecycleManager, with no new MCP renewal tool.
 Native Windows proofs confirm default expiry, unattended renewal with unchanged

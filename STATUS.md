@@ -1,5 +1,19 @@
 # Project Status
 
+## Opt-in supervised alpha adapter — 2026-10-15
+
+Local Supervised selection connects the existing native lease supervisor to the
+HTTP runner. It preserves one generated project through reconnects and explicit
+local resume, with fixed request/start windows,128 source-file slots and16 owned
+job records. List recovers bridge-received job IDs; terminal forget releases a
+record without killing a process. No model-controlled renewal is exposed.
+44alpha and26session tests pass. Native Windows runner proof covers real idle
+renewal, Node failure/fix/check/test, manual stop beyond the console budget,
+EOF/revoke, same-project resume and actual runner crash/core exit/recovery.
+Exact-head CI and packaged-source acceptance remain pending. FS generation
+cutoffs, arbitrary build environments and private-project enrollment remain
+separate gates. Earlier status sections record their original milestone state.
+
 ## Validated main integration and alpha usability follow-up — 2026-10-15
 
 Alpha head8ecd2bb passed all nine workflows after integrating main PR184.
