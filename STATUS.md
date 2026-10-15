@@ -1,5 +1,17 @@
 # Project Status
 
+## First main integration and local diagnostic matrix accepted — 2026-10-15
+
+PR184 is squash-merged to main at18a8ec665907454863cb4e911d3a57baccca3416,
+with premerge CI680 and postmerge38751500494 successful. Read admission/native
+path/pagination scope remains distinct from deferred classification/enrollment.
+See docs/engineering/INTEGRATION_LEDGER_2026-10-15.md for remaining41PR inventory.
+Alpha ea23de4 passed all nine workflows; downloaded artifact11980608896 verified.
+Actual local diagnostic matrix:48/48verified payloads, sizes128–8192bytes and
+delays0/1/3/10s across3repeats. Cloudflare matrix/idle test in progress; no host
+generation attribution. Resume now invalidates last-stop.json with viewer-ready
+before admitting a new run, so a stale stop report is not current-session evidence.
+
 ## Local shutdown reproduced; diagnostic baseline implemented — native CI pending
 
 Reproduced the user's _enter_buffered_busy stdout fatal in an owned Windows

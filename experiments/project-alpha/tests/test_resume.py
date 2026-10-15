@@ -21,8 +21,10 @@ class Resume(unittest.TestCase):
             selected = select_run(output, root.name)
             self.assertEqual(selected[0], root.resolve(strict=True))
             (root / 'viewer-ready.json').write_text('{}')
+            (root / 'last-stop.json').write_text('{"old":true}')
             with session_lock(root):
                 self.assertFalse((root / 'viewer-ready.json').exists())
+                self.assertFalse((root / 'last-stop.json').exists())
                 with self.assertRaises(OSError):
                     with session_lock(root):
                         self.fail('second editor admitted')

@@ -45,10 +45,11 @@ def session_lock(root):
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         locked = True
         # An earlier viewer snapshot must not authorize an active editing run.
-        ready = root / 'viewer-ready.json'
-        if ready.exists():
-            ordinary(ready)
-            ready.unlink()
+        for name in ('viewer-ready.json', 'last-stop.json'):
+            ready = root / name
+            if ready.exists():
+                ordinary(ready)
+                ready.unlink()
         yield
     finally:
         if locked:
