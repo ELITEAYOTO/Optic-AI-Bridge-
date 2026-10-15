@@ -23,9 +23,9 @@ use optic_bridge_runtime::{
     EnvironmentGrant, EnvironmentVariableClass, GitIntegrationAuthoritySet,
     GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService, MutationAuthoritySet,
     MutationAuthoritySpec, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec, SessionGrantSpec,
-    SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
-    TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
-    read_authority_resource_budget,
+    SessionLifecycleError, SessionLifecycleManager, SessionRegistry, SessionRegistryError,
+    StdClock, TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
+    mutation_resource_budget, read_authority_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -209,6 +209,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         now,
     )?;
     let session = grant.handle;
+    let supervised_session = session.clone();
 
     let read_authorities = ReadAuthoritySet::provision(
         &task_leases,
@@ -351,29 +352,72 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service = server.serve(transport).await?;
-    tokio::select! {
-        result = service.waiting() => {
-            result?;
-        }
-        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock)) => {
-            result?;
-            return Err(std::io::Error::other(
+    let renewal = args
+        .supervise_session
+        .then_some((supervised_session.clone(), args.session_lifetime_ms));
+    if args.supervise_session {
+        eprintln!("Optic AI Bridge operator supervision enabled; bounded leases, unchanged scopes");
+    }
+    let service_result: Result<(), Box<dyn Error + Send + Sync>> = tokio::select! {
+        result = service.waiting() => result.map(|_| ()).map_err(Into::into),
+        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock), renewal) => {
+            result.and_then(|()| Err(std::io::Error::other(
                 "session expiry supervisor stopped unexpectedly",
-            )
-            .into());
+            ).into()))
+        }
+    };
+    if args.supervise_session {
+        // Dropping the supervisor future cannot cancel a started blocking renewal.
+        // Revoke closes admission and waits for that critical section: a renewal
+        // racing transport shutdown must never leave effective authority behind.
+        let cleanup =
+            tokio::task::spawn_blocking(move || lifecycle.revoke(&supervised_session)).await?;
+        match cleanup {
+            Ok(_)
+            | Err(SessionLifecycleError::SessionRegistry(SessionRegistryError::UnknownSession)) => {
+            }
+            Err(error) => return Err(error.into()),
         }
     }
-    Ok(())
+    service_result
 }
 
 async fn supervise_session_expiry(
     lifecycle: Arc<SessionLifecycleManager>,
     clock: Arc<dyn Clock>,
+    mut renewal: Option<(SessionHandle, u64)>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut interval = tokio::time::interval(Duration::from_millis(SESSION_REAP_INTERVAL_MS));
+    let interval_ms = renewal
+        .as_ref()
+        .map_or(SESSION_REAP_INTERVAL_MS, |(_, ttl)| {
+            SESSION_REAP_INTERVAL_MS.min(ttl / 3)
+        });
+    let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    if renewal.is_some() {
+        interval.tick().await; // Skip the immediate tick; renewal must extend expiry.
+    }
     loop {
         interval.tick().await;
+        if let Some((session, ttl)) = renewal.as_ref() {
+            let lifecycle = Arc::clone(&lifecycle);
+            let clock = Arc::clone(&clock);
+            let session = session.clone();
+            let ttl = *ttl;
+            let result = tokio::task::spawn_blocking(move || {
+                // Sample inside the worker, not before it waits for CPU capacity.
+                let now = clock.now();
+                lifecycle.renew(&session, now, now.saturating_add_millis(ttl))
+            })
+            .await?;
+            if result.is_err() {
+                // No retry/reprovision: expired/revoked/invalid leases stay denied.
+                renewal = None;
+                eprintln!(
+                    "Optic AI Bridge operator renewal disabled after inactive or invalid authority"
+                );
+            }
+        }
         let now = clock.now();
         let lifecycle = Arc::clone(&lifecycle);
         let removed_sessions = tokio::task::spawn_blocking(move || lifecycle.reap_inactive(now))
@@ -642,6 +686,7 @@ fn provision_process_leases(
 struct AppArgs {
     workspace: PathBuf,
     session_lifetime_ms: u64,
+    supervise_session: bool,
     policy_epoch: u64,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
@@ -676,6 +721,7 @@ impl AppArgs {
 
         let mut workspace = None;
         let mut session_lifetime_ms = None;
+        let mut supervise_session = false;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
@@ -692,7 +738,14 @@ impl AppArgs {
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
-            if arg == "--session-lifetime-seconds" {
+            if arg == "--supervise-session" {
+                if std::mem::replace(&mut supervise_session, true) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "operator supervision must be supplied once",
+                    ));
+                }
+            } else if arg == "--session-lifetime-seconds" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -928,9 +981,19 @@ impl AppArgs {
             ));
         }
 
+        let session_lifetime_ms = session_lifetime_ms.unwrap_or(INITIAL_SESSION_TTL_MS);
+        if supervise_session
+            && session_lifetime_ms > HardLimits::default().max_session_renewal_horizon_ms
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "supervised lease exceeds the configured renewal horizon",
+            ));
+        }
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
-            session_lifetime_ms: session_lifetime_ms.unwrap_or(INITIAL_SESSION_TTL_MS),
+            session_lifetime_ms,
+            supervise_session,
             policy_epoch: 1,
             allowed_executables,
             process_read_grants,
@@ -1224,6 +1287,41 @@ mod tests {
         );
         assert!(
             super::AppArgs::parse_from(args(&["workspace", "--session-lifetime-seconds"])).is_err()
+        );
+    }
+
+    #[test]
+    fn operator_supervision_is_local_explicit_and_horizon_bounded() {
+        assert!(
+            !super::AppArgs::parse_from(args(&["workspace"]))
+                .unwrap()
+                .supervise_session
+        );
+        let parsed = super::AppArgs::parse_from(args(&[
+            "workspace",
+            "--supervise-session",
+            "--session-lifetime-seconds",
+            "5",
+        ]))
+        .unwrap();
+        assert!(parsed.supervise_session);
+        assert_eq!(parsed.session_lifetime_ms, 5000);
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--supervise-session",
+                "--supervise-session"
+            ]))
+            .is_err()
+        );
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--supervise-session",
+                "--session-lifetime-seconds",
+                "3000"
+            ]))
+            .is_err()
         );
     }
 

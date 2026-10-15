@@ -31,3 +31,15 @@ Cross-platform support is intentionally secondary until the Windows security/run
 ## Product invariants
 
 Security-critical defaults cannot silently become unlimited through configuration. All long-lived collections have a bound or TTL. Every spawned process has an owner session. Every write is scoped and conflict-aware. Transport is replaceable without changing execution/security logic.
+
+
+## Explicit operator supervision
+
+A local operator may opt into a trusted supervisor which renews the same active
+session using finite monotonic lease windows. This is availability until local
+stop, not unlimited capabilities: each window remains bounded, revocation and
+policy epochs stay effective, and an expired grant cannot be resurrected. The
+model and ordinary MCP tools cannot enable renewal or widen its authority.
+Transport shutdown must revoke the supervised session and its owned work. This
+core foundation alone does not deliver a persistent remote alpha connection;
+its transport rate limits and retained-resource lifecycle require separate gates.

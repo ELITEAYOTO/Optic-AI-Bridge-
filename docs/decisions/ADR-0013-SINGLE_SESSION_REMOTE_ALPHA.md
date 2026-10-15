@@ -28,6 +28,31 @@ is already stopped and must not cause a background console traceback. Proof
 output retains its fixed queue/record limits. This is a shutdown correction,
 not automatic authorization renewal or the planned persistent connection mode.
 
+## Core operator supervision foundation — 2026-10-15
+
+An explicit local CLI `--supervise-session` enables a trusted core timer while
+its stdio service is alive. It renews only the same active session and existing
+leases through SessionLifecycleManager; no MCP renewal/provisioning tool is
+added. Each lease window remains bounded by the configured renewal horizon,
+policy epoch, capability set and scopes. Default launches still expire once.
+The initial window must be5..1800seconds; ordinary launches retain their
+existing5..3000second option. The timer samples monotonic time inside its worker,
+never replays missed ticks and permanently disables renewal on any failed
+renewal. Expired or revoked sessions cannot be recreated. Long OS/process stalls
+may therefore require an explicit local restart; automatic resurrection is not
+part of availability.
+
+Transport closure ends the supervisor and explicitly revokes the session,
+including any already-started renewal critical section. Stop/cancel closes
+admission before cleanup; renewal cannot undo that decision. This supervisor is
+the running trusted Rust service itself, not model activity or an HTTP heartbeat.
+It does not certify the responsiveness of a separate parent UI. Parent death
+must close its owned stdio pipes; native runner/parent-death integration remains
+a separate acceptance gate. The HTTP alpha is not yet wired to this foundation:
+its50-minute timer,512-request ceiling and task-history budgets remain until the
+supervised adapter and resource-retirement gates are implemented and tested.
+No production credentials or private project enrollment are introduced.
+
 ## Context
 
 The user explicitly accepts a single-session alpha while the FranceStudent
