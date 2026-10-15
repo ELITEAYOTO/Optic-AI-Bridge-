@@ -13,6 +13,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'real-link-admis
 from real_smoke import structured
 
 
+async def require_inactive(session, name, arguments):
+    try:
+        reply = await session.call_tool(name, arguments)
+    except MCPError as error:
+        assert error.message == 'optic.session_inactive', error.message
+    else:
+        assert reply.is_error, 'inactive authority was accepted'
+
+
 async def exercise(binary, supervised):
     with tempfile.TemporaryDirectory(prefix='optic-supervisor-proof-') as directory:
         root = Path(directory)
@@ -37,11 +46,10 @@ async def exercise(binary, supervised):
                         assert attempt.is_error
                     # No traffic/heartbeat is required for this operator-owned timer.
                     await asyncio.sleep(6.5)
-                    reply = await session.call_tool('session_info', {})
                     if not supervised:
-                        assert reply.is_error, 'ordinary session unexpectedly renewed'
+                        await require_inactive(session, 'session_info', {})
                         return
-                    after = structured(reply)
+                    after = structured(await session.call_tool('session_info', {}))
                     assert after['expires_at_monotonic_ms'] > before['expires_at_monotonic_ms']
                     assert {key: value for key, value in before.items() if key != 'expires_at_monotonic_ms'} == {
                         key: value for key, value in after.items() if key != 'expires_at_monotonic_ms'}
@@ -52,8 +60,7 @@ async def exercise(binary, supervised):
                     # Cross a further renewal tick: cancel cannot be undone.
                     await asyncio.sleep(2.1)
                     for name, args in (('session_info', {}), ('fs_read', {'path': 'public.txt'})):
-                        denied = await session.call_tool(name, args)
-                        assert denied.is_error, 'revoked authority resurrected'
+                        await require_inactive(session, name, args)
 
 
 async def main(binary):
