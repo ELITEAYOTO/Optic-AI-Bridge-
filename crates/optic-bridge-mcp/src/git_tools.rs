@@ -123,22 +123,15 @@ impl ReadonlyMcpServer {
         T: Send + 'static,
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
     {
-        let now = self.clock.now();
-        let permit = self
-            .transport_guard
-            .begin_execution(now)
-            .map_err(super::server::map_transport_error)?;
-        let grant = self.active_grant(now)?;
-        self.authorize_git_read(&grant, now)?;
-        let service = self.git_service.as_ref().cloned().ok_or_else(|| {
-            ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
-        })?;
-        let result = tokio::task::spawn_blocking(move || operation(service))
-            .await
-            .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
-            .map_err(map_git_read_error)?;
-        drop(permit);
-        Ok(result)
+        self.run_admitted_read(move |server, grant, permit| {
+            server.ensure_read_deadline(permit)?;
+            server.authorize_git_read(grant, server.clock.now())?;
+            let service = server.git_service.as_ref().cloned().ok_or_else(|| {
+                ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
+            })?;
+            operation(service).map_err(map_git_read_error)
+        })
+        .await
     }
 
     fn authorize_git_read(
@@ -486,5 +479,69 @@ mod tests {
         let fixture = RepoFixture::new("deny");
         let server = fixture.server(&[Capability::FileRead]);
         assert!(server.git_status().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_read_revoke_waits_for_the_authorized_worker() {
+        use std::{sync::mpsc, time::Duration};
+
+        let fixture = RepoFixture::new("read-drain");
+        let server = fixture.server(&[Capability::GitRead]);
+        let reader = server.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let request = tokio::spawn(async move {
+            reader
+                .run_git_read(move |service| {
+                    entered_tx
+                        .send(())
+                        .expect("entered authorized Git operation");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("release Git");
+                    service.status_with_max_bytes(4096)
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("start deadline")
+            .expect("start");
+        // Dropping the caller must not drop admission in a still-running Git worker.
+        request.abort();
+        assert!(request.await.expect_err("cancelled").is_cancelled());
+        let sessions = Arc::clone(&server.sessions);
+        let session = server.session.clone();
+        let revoke = tokio::task::spawn_blocking(move || sessions.revoke(&session));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server
+                .sessions
+                .get_active(&server.session, server.clock.now())
+                .is_ok()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("marked revoked");
+        assert!(
+            !revoke.is_finished(),
+            "Git worker participates in revoke quiescence"
+        );
+        release_tx.send(()).expect("release");
+        tokio::time::timeout(Duration::from_secs(5), revoke)
+            .await
+            .expect("revoke deadline")
+            .expect("revoke task")
+            .expect("revoke");
+        assert_eq!(
+            server
+                .git_status()
+                .await
+                .err()
+                .expect("subsequent Git read denied")
+                .message,
+            "optic.session_inactive"
+        );
     }
 }

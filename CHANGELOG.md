@@ -4,6 +4,13 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Security hardening candidate — 2026-10-12 (unmerged)
+
+- #183: file read/list/Git read retain session admission and transport/I/O capacity inside their worker through the effect, including caller cancellation/timeout.
+- #181: observed native paths use lossless segment conversion for read/list/mutation observation; Unix literal backslashes cannot become different authority targets.
+- #176 (pagination only): oversized nonempty list pages fail instead of returning a non-progressing cursor; final cursor size is rechecked.
+- See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
+
 ### Added
 - Generated-data-only connection diagnostic server/client with verified payload receipt, correlated markers, bounded reports and optional idle-gap tests; no project authority or claim of FS outage attribution.
 - Operator last-stop.json separates confirmed core revocation/drain from best-effort diagnostic delivery. Default native proof sink avoids Python BufferedWriter ownership during shutdown; actual Windows blocked/broken-output and expiry regression tests added.

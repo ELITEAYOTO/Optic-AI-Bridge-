@@ -1,3 +1,5 @@
+use std::path::{Component, Path};
+
 use thiserror::Error;
 
 const MAX_WORKSPACE_PATH_BYTES: usize = 4096;
@@ -19,9 +21,40 @@ pub enum WorkspacePathError {
     UnsafeSegment,
     #[error("workspace path contains a NUL byte")]
     Nul,
+    #[error("native path contains a non-UTF-8 segment")]
+    NonUtf8NativeSegment,
+    #[error("native path segment cannot be represented without changing its identity")]
+    UnrepresentableNativeSegment,
 }
 
 impl WorkspacePath {
+    /// Convert an OS-relative path without applying caller-input normalization
+    /// to a native filename. In particular, a Unix literal backslash must never
+    /// become a logical separator in an authorization target.
+    pub fn from_native_relative(path: &Path) -> Result<Self, WorkspacePathError> {
+        let mut value = String::new();
+        for component in path.components() {
+            let Component::Normal(segment) = component else {
+                return Err(WorkspacePathError::UnsafeSegment);
+            };
+            let segment = segment
+                .to_str()
+                .ok_or(WorkspacePathError::NonUtf8NativeSegment)?;
+            let parsed = Self::parse(segment)?;
+            if parsed.as_str() != segment || segment.contains('/') {
+                return Err(WorkspacePathError::UnrepresentableNativeSegment);
+            }
+            if !value.is_empty() {
+                value.push('/');
+            }
+            value.push_str(segment);
+            if value.len() > MAX_WORKSPACE_PATH_BYTES {
+                return Err(WorkspacePathError::TooLong);
+            }
+        }
+        Self::parse(&value)
+    }
+
     pub fn parse(input: &str) -> Result<Self, WorkspacePathError> {
         if input.is_empty() {
             return Err(WorkspacePathError::Empty);
@@ -100,5 +133,50 @@ mod tests {
         let sibling = WorkspacePath::parse("src2/lib.rs").expect("safe sibling path");
         assert!(nested.is_within(&prefix));
         assert!(!sibling.is_within(&prefix));
+    }
+
+    #[test]
+    fn native_relative_paths_preserve_normal_segments_and_bounds() {
+        let native = Path::new("src").join("core").join("lib.rs");
+        assert_eq!(
+            WorkspacePath::from_native_relative(&native)
+                .expect("native path")
+                .as_str(),
+            "src/core/lib.rs"
+        );
+        for path in [
+            Path::new(""),
+            Path::new("../escape"),
+            Path::new("src/../escape"),
+            Path::new("/absolute"),
+        ] {
+            assert!(WorkspacePath::from_native_relative(path).is_err());
+        }
+        let too_long = "x".repeat(MAX_WORKSPACE_PATH_BYTES + 1);
+        assert_eq!(
+            WorkspacePath::from_native_relative(Path::new(&too_long)),
+            Err(WorkspacePathError::TooLong)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_unix_names_are_never_normalized_into_other_authority() {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+        assert_eq!(
+            WorkspacePath::from_native_relative(Path::new(r"literal\name")),
+            Err(WorkspacePathError::UnrepresentableNativeSegment)
+        );
+        assert_eq!(
+            WorkspacePath::from_native_relative(Path::new(OsStr::from_bytes(b"bad\xff"))),
+            Err(WorkspacePathError::NonUtf8NativeSegment)
+        );
+        assert!(WorkspacePath::from_native_relative(Path::new("literal:name")).is_err());
+        assert_eq!(
+            WorkspacePath::parse(r"literal\name")
+                .expect("caller input remains compatible")
+                .as_str(),
+            "literal/name"
+        );
     }
 }

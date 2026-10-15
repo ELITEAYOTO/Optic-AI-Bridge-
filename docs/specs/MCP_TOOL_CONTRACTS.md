@@ -27,6 +27,7 @@ fs_read(path, offset?, max_bytes?)
 - Paths are project-relative and must remain inside the canonical workspace.
 - Listing is deterministic, paginated and scan-bounded.
 - Reads are byte-bounded and binary bytes are returned as base64.
+- Candidate hardening (#183/#181/#176 pagination): read/list/Git-read workers hold admission and transport/I/O capacity through their effect even after client cancellation/timeout. Timeout does not prove the effect stopped. Native observed paths must be losslessly representable. A nonempty listing page retaining no entry fails with `optic.response_too_large`; truncated success advances and fits with its final cursor. Canonical-list authorization and sensitive classification remain open. See `../security/READ_BOUNDARY_HARDENING_2026-10-12.md`.
 
 Reserved for later work:
 

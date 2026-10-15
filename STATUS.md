@@ -1,5 +1,9 @@
 # Project Status
 
+## Alpha integration of main read-boundary hardening — 2026-10-15
+
+Main commit `18a8ec6` (PR #184) is integrated into this alpha branch. Effect-spanning read admission and native path checks are retained alongside alpha content-version responses. Integration validation is pending; earlier binaries do not include this merge.
+
 ## FS administrator reproduction reported; size ceiling unconfirmed — 2026-10-15
 
 User relays administrator Emmanuel has reproduced the generation problem and
@@ -521,6 +525,9 @@ intentional non-Windows skip, including four simulated native error/cleanup
 cases. No production storage, credential enrollment or runtime authority is
 implemented. ACLs, recovery, rollback and real-secret lifecycle remain open.
 This draft evidence does not supersede merged production history below.
+## Historical read-boundary candidate — merged as PR #184 on 2026-10-15
+
+Branch `security/read-boundary-hardening`, based on main `156653a406f01383e2fc14cada513963453b04f3`, implements #183 effect-spanning admission, #181 native-path representation safety, and the #176 pagination-progress subfinding. This entry records proposed branch work, not a merged milestone. Validation and the deferred-decision register are in `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` and its PR. Historical entries below are preserved; #176 classifier/canonical-list, #180, #182 and H-02–H-05 remain open.
 
 **Last updated:** 2026-10-08
 **Lifecycle:** pre-alpha / Phase 3 multi-session runtime
