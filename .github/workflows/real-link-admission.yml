@@ -70,6 +70,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
           python experiments/project-alpha/supervision_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'native bounded operator supervision failed' }
+          python experiments/project-alpha/supervision_pause_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'paused supervisor must not resurrect expired authority' }
           python experiments/project-alpha/edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'generated alpha project editing failed' }
           python experiments/project-alpha/http_edit_smoke.py $Binary

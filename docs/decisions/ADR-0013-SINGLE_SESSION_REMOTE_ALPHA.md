@@ -40,7 +40,8 @@ existing5..3000second option. The timer samples monotonic time inside its worker
 never replays missed ticks and permanently disables renewal on any failed
 renewal. Expired or revoked sessions cannot be recreated. Long OS/process stalls
 may therefore require an explicit local restart; automatic resurrection is not
-part of availability.
+part of availability. Native pause/resume tests require exact inactive-session
+denials after suspension beyond a lease window and clean stdio EOF exit.
 
 Transport closure ends the supervisor and explicitly revokes the session,
 including any already-started renewal critical section. Stop/cancel closes

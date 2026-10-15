@@ -177,6 +177,15 @@ with equally bounded shell output, not a deliberately verbose shell baseline.
 
 ## R4 — Stop-controlled connection and resumable work
 
+Core foundation implemented: opt-in local CLI supervision renews only existing
+bounded leases through SessionLifecycleManager, with no new MCP renewal tool.
+Native Windows proofs confirm default expiry, unattended renewal with unchanged
+authority, terminal revoke, expiry across process suspension and clean EOF exit.
+See experiments/project-alpha/SUPERVISION_CORE.md. HTTP adapter/windowed ingress,
+long-lived job retention and final remote acceptance remain gated; the delivered
+alpha timer is not removed by the core foundation alone.
+
+
 Accepted user experience: Optic stays available until the operator stops it;
 ordinary host disconnect, one chat ending or elapsed50minutes must not discard
 the project or require restarting the whole setup. This is a proposed new local
