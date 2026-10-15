@@ -5,6 +5,7 @@ import re
 TOOLS = ('optic_project_info', 'optic_fs_list', 'optic_fs_read',
          'optic_fs_write', 'optic_fs_patch', 'optic_fs_search')
 MAX_CONTENT = 8192
+DIRECTORY_TOOL = 'optic_fs_mkdir'
 MAX_READ = 8192
 PATH = re.compile(r'src(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}){0,7}\Z', re.ASCII)
 VERSION = re.compile(r'[0-9a-f]{64}\Z', re.ASCII)
@@ -48,7 +49,7 @@ def version(value):
 
 
 def normalize(tool, args):
-    if type(tool) is not str or tool not in TOOLS or type(args) is not dict:
+    if type(tool) is not str or tool not in (*TOOLS, DIRECTORY_TOOL) or type(args) is not dict:
         raise SchemaError('project.invalid_arguments')
     required, optional = {
         'optic_project_info': (set(), set()),
@@ -57,11 +58,17 @@ def normalize(tool, args):
         'optic_fs_write': ({'path', 'content', 'expected_kind'}, {'expected_version'}),
         'optic_fs_patch': ({'path', 'expected_version', 'offset', 'remove_bytes', 'insert'}, set()),
         'optic_fs_search': ({'path', 'text'}, {'limit'}),
+        DIRECTORY_TOOL: ({'path', 'expected_kind'}, set()),
     }[tool]
     if not required <= set(args) or not set(args) <= required | optional:
         raise SchemaError('project.invalid_arguments')
     if tool == 'optic_project_info':
         return 'session_info', {}
+    if tool == DIRECTORY_TOOL:
+        target = path(args['path'])
+        if args['expected_kind'] != 'absent':
+            raise SchemaError('project.invalid_arguments')
+        return 'fs_create_directory', {'path': target, 'expected': 'absent'}
     if tool == 'optic_fs_list':
         return 'fs_list', {'path': path(args.get('path', 'src')),
             'cursor': integer(args.get('cursor', 0), 0, 4096),

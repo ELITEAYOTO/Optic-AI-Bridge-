@@ -41,10 +41,19 @@ class WindowBudget:
 
 
 class ProjectFiles:
-    def __init__(self, paths=()):
+    def __init__(self, paths=(), directories=()):
         self.paths = set()
+        self.directories = set()
         for path in paths:
             self.reserve(path)
+        for path in directories:
+            self.reserve_directory(path)
+
+    def reserve_directory(self, path):
+        key = source_path(path).lower()
+        if key not in self.directories and len(self.directories) >= MAX_DIRECTORIES:
+            raise ValueError('project.directory_capacity')
+        self.directories.add(key)
 
     def reserve(self, path):
         # Generated schema is ASCII; Windows aliases share a conservative slot.
@@ -57,7 +66,7 @@ class ProjectFiles:
     def inspect(cls, project):
         # Operator startup only, before remote admission. Do not read contents.
         root = Path(project) / 'src'
-        pending, paths, directories = [root], [], 0
+        pending, paths, directories, names = [root], [], 0, []
         while pending:
             directory = pending.pop()
             info = directory.lstat()
@@ -65,6 +74,7 @@ class ProjectFiles:
                     or getattr(info, 'st_file_attributes', 0) & 0x400):
                 raise ValueError('project.inventory_invalid')
             directories += 1
+            names.append(directory.relative_to(project).as_posix())
             if directories > MAX_DIRECTORIES:
                 raise ValueError('project.directory_capacity')
             with os.scandir(directory) as entries:
@@ -84,4 +94,4 @@ class ProjectFiles:
                         paths.append(source_path(relative, file=True))
                     else:
                         raise ValueError('project.inventory_invalid')
-        return cls(paths)
+        return cls(paths, names)

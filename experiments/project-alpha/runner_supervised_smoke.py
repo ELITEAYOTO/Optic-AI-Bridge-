@@ -30,7 +30,7 @@ async def observe(url, token):
 
 
 async def cycle(url):
-    await exercise(url, node_mode=True, supervised=True)
+    await exercise(url, node_mode=True, supervised=True, directories=True)
     before = await observe(url, TOKENS['A'][0])
     await asyncio.sleep(6.5)  # Real idle beyond the initial five-second core lease.
     after = await observe(url, TOKENS['A'][0])  # New SDK transport; same project/core.
@@ -51,7 +51,7 @@ def run(binary, node):
         url = f'http://127.0.0.1:{selected_port}/mcp'
         arguments = [sys.executable, str(HERE / 'project_runner.py'), '--binary',
             str(Path(binary).resolve(strict=True)), '--output-root', directory,
-            '--port', str(selected_port), '--supervised', '--lease-seconds', '5',
+            '--port', str(selected_port), '--supervised', '--lease-seconds', '5', '--allow-directories',
             '--read-page-bytes', '4096', '--node', str(Path(node).resolve(strict=True))]
         with tempfile.TemporaryFile() as diagnostics:
             child = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=diagnostics,
@@ -61,6 +61,7 @@ def run(binary, node):
                 roots = list(Path(directory).glob('alpha-*'))
                 assert len(roots) == 1
                 root = roots[0]
+                assert (root / 'project/src/components/note.txt').read_bytes() == b'retained nested source'
                 sources = {path.name: path.read_bytes() for path in (root / 'project/src').iterdir() if path.is_file()}
                 child.stdin.write('proof-stats\n' * 24 + 'stop\n')
                 child.stdin.flush()
@@ -77,6 +78,7 @@ def run(binary, node):
                                        stdout=diagnostics, stderr=diagnostics, text=True)
             try:
                 asyncio.run(exercise_resume(url))
+                assert (root / 'project/src/components/note.txt').read_bytes() == b'retained nested source'
                 assert not (root / 'viewer-ready.json').exists()
                 assert sources == {path.name: path.read_bytes() for path in (root / 'project/src').iterdir() if path.is_file()}
                 resumed.stdin.close()  # Closing local control is a fail-closed stop.

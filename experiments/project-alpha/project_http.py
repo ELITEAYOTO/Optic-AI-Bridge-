@@ -11,9 +11,9 @@ from probe_core import observe_headers
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
-from project_schema import normalize, SchemaError, MAX_CONTENT
+from project_schema import normalize, SchemaError, MAX_CONTENT, DIRECTORY_TOOL
 from execution_gate import TASK_TOOLS, FORGET_TOOL, LIST_TOOL, SUPERVISED_TASK_TOOLS, validate_arguments, bind_admission
-from supervision_limits import WindowBudget, ProjectFiles, HTTP_PER_WINDOW, WINDOW_SECONDS, MAX_SEQUENCE, MAX_FILES, MAX_JOBS, STARTS_PER_WINDOW
+from supervision_limits import WindowBudget, ProjectFiles, HTTP_PER_WINDOW, WINDOW_SECONDS, MAX_SEQUENCE, MAX_FILES, MAX_JOBS, STARTS_PER_WINDOW, MAX_DIRECTORIES
 
 
 def exact_object(pairs):
@@ -54,6 +54,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         raise ValueError('project.invalid_supervision')
     if supervised and not isinstance(gate.file_budget, ProjectFiles):
         raise ValueError('project.supervised_file_budget_required')
+    if gate.directory_create and not supervised:
+        raise ValueError('project.directories_require_supervision')
     if execution is not None and execution.supervised != supervised:
         raise ValueError('execution.mode_mismatch')
     if type(compact_results) is not bool:
@@ -81,7 +83,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
            if supervised else 'project_info reports connection.remaining_seconds and expires_soon; '
            'when expiry is near, finish verification rather than begin a long edit. ')
         + 'Send calls one at a time; link.busy means the request was not admitted. '
-        'Patch offsets/removals count UTF-8 bytes, not characters. '
+        + ('Directory creation is enabled: optic_fs_mkdir requires expected_kind=absent and an existing parent. Directory slots are bounded; inspect after an uncertain result. ' if gate.directory_create else '')
+        + 'Patch offsets/removals count UTF-8 bytes, not characters. '
         + ('Named task profiles available: ' + ', '.join(execution.profiles)
            + '. Start returns an owned job. Poll result and read bounded output. '
            'Stop is a request, not confirmation. Never retry uncertain starts.'
@@ -115,6 +118,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 'limits': {'read_page_bytes': gate.read_page_bytes,
                            'file_bytes': MAX_CONTENT,
                            **({'generated_files': MAX_FILES, 'http_requests_per_window': HTTP_PER_WINDOW,
+                               **({'generated_directories': MAX_DIRECTORIES} if gate.directory_create else {}),
                                'window_seconds': WINDOW_SECONDS, 'retained_jobs': MAX_JOBS,
                                'task_starts_per_window': STARTS_PER_WINDOW} if supervised else {})}}
                 if name == 'optic_project_info' else {})
@@ -134,6 +138,12 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     async def optic_project_info() -> dict:
         """Inspect the one shared generated project and locally granted capabilities."""
         return await call('optic_project_info', {})
+
+    if gate.directory_create:
+        @mcp.tool()
+        async def optic_fs_mkdir(path: str, expected_kind: str) -> dict:
+            """Create one absent src directory with expected_kind=absent. Parent must exist. Existing entries conflict. No recursive creation or overwrite; inspect parent after an uncertain outcome."""
+            return await call(DIRECTORY_TOOL, {'path': path, 'expected_kind': expected_kind})
 
     @mcp.tool()
     async def optic_fs_list(path: str = 'src', cursor: int = 0, limit: int = 32) -> dict:
@@ -224,6 +234,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 allowed_origins=['http://127.0.0.1:*', 'http://localhost:*']))
     class CombinedGuard(ProjectGuard):
         def valid_arguments(self, name, args):
+            if name == DIRECTORY_TOOL and not gate.directory_create:
+                return False
             if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS):
                 try:
                     validate_arguments(name, args, execution.profiles, supervised=supervised)

@@ -2,6 +2,12 @@
 
 ## Development-environment transition — 2026-10-16
 
+Core directory increment208fc61 passed native Windows/Linux read-link validation;
+the new HTTP adapter passed46 Python tests and the real Windows supervised
+runner proof, including nested source creation and retained-project resume.
+Follow-up operator JSON booleans reduce actual capabilities/scopes and protect
+policy/profile sources from the writable workspace; exact-head CI pending.
+
 The next accepted user target is a real Electron project, followed by Rust,
 with operator-selected project permissions, dependencies and resumable work.
 ADR0016 records the scope and remaining execution/private-enrollment gates.

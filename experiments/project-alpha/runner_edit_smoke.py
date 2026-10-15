@@ -18,7 +18,7 @@ from project_results import structured
 from lifecycle_core import TOKENS
 
 
-async def exercise(url, node_mode=False, supervised=False):
+async def exercise(url, node_mode=False, supervised=False, directories=False):
     async with asyncio.timeout(20):
         async with httpx2.AsyncClient(timeout=2) as http:
             while True:
@@ -29,6 +29,13 @@ async def exercise(url, node_mode=False, supervised=False):
                     pass
                 await asyncio.sleep(.1)
     async with client(url, TOKENS['A'][0]) as session:
+        if directories:
+            made = structured(await session.call_tool('optic_fs_mkdir', {'path': 'src/components', 'expected_kind': 'absent'}))
+            assert made['ok'] and made['upstream'] == {'path': 'src/components', 'created': True}, made
+            conflict = structured(await session.call_tool('optic_fs_mkdir', {'path': 'src/components', 'expected_kind': 'absent'}))
+            assert not conflict['ok'] and conflict['code'] == 'optic.precondition_failed', conflict
+            nested = structured(await session.call_tool('optic_fs_write', {'path': 'src/components/note.txt', 'content': 'retained nested source', 'expected_kind': 'absent'}))
+            assert nested['ok'], nested
         payload = structured(await session.call_tool('optic_fs_write', {
             'path': 'src/index.html', 'content': '<h1>Saved public project</h1>', 'expected_kind': 'absent'}))
         assert payload['ok']
@@ -62,7 +69,7 @@ async def exercise(url, node_mode=False, supervised=False):
             names = {tool.name for tool in (await session.list_tools()).tools}
             from project_schema import TOOLS
             from execution_gate import TASK_TOOLS, SUPERVISED_TASK_TOOLS
-            assert names == set(TOOLS + TASK_TOOLS + (SUPERVISED_TASK_TOOLS if supervised else ()))
+            assert names == set(TOOLS + TASK_TOOLS + (SUPERVISED_TASK_TOOLS if supervised else ()) + (('optic_fs_mkdir',) if directories else ()))
             snapshot = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
             broken = structured(await session.call_tool('optic_fs_write', {
                 'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a-b;',

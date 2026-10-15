@@ -4,7 +4,7 @@ import base64
 
 from mcp.shared.exceptions import MCPError
 from forward_core import ForwardGate, ForwardError
-from project_schema import normalize, SchemaError, MAX_CONTENT, version
+from project_schema import normalize, SchemaError, MAX_CONTENT, version, DIRECTORY_TOOL
 
 SAFE_UPSTREAM_ERRORS = {
     'optic.precondition_failed', 'optic.policy_denied', 'optic.session_inactive',
@@ -12,16 +12,20 @@ SAFE_UPSTREAM_ERRORS = {
     'optic.not_directory', 'optic.invalid_patch', 'optic.fs_read_limit_exceeded',
     'optic.fs_list_limit_exceeded', 'optic.fs_mutation_limit_exceeded',
     'optic.mutation_platform_unsupported', 'optic.invalid_mutation_target',
+    'optic.directory_depth_exceeded', 'optic.unsupported_platform',
 }
-MUTATIONS = {'optic_fs_write', 'optic_fs_patch'}
+MUTATIONS = {'optic_fs_write', 'optic_fs_patch', DIRECTORY_TOOL}
 
 
 class ProjectGate(ForwardGate):
-    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024, file_budget=None):
+    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024, file_budget=None, directory_create=False):
         if type(read_page_bytes) is not int or read_page_bytes not in (1024, 4096):
             raise ValueError("project.invalid_read_page_bytes")
         self.read_page_bytes = read_page_bytes
         self.file_budget = file_budget
+        if type(directory_create) is not bool or directory_create and file_budget is None:
+            raise ValueError('project.invalid_directory_mode')
+        self.directory_create = directory_create
         super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
 
     async def call(self, identity, tool, arguments):
@@ -34,6 +38,8 @@ class ProjectGate(ForwardGate):
             raise ForwardError('project.invalid_arguments') from None
         if self.pending:
             raise ForwardError('link.busy')
+        if tool == DIRECTORY_TOOL and not self.directory_create:
+            raise ForwardError('project.directory_authority_unavailable')
         search = (arguments['text'], arguments.get('limit', 16)) if tool == 'optic_fs_search' else None
         task = asyncio.create_task(self._run_project(identity, tool, name, args, search))
         self.pending.add(task)
@@ -49,7 +55,12 @@ class ProjectGate(ForwardGate):
         try:
             if not self._current(identity):
                 raise ForwardError('link.inactive')
-            if tool in MUTATIONS and self.file_budget is not None:
+            if tool == DIRECTORY_TOOL:
+                try:
+                    self.file_budget.reserve_directory(arguments['path'])
+                except ValueError:
+                    raise ForwardError('project.directory_capacity') from None
+            elif tool in MUTATIONS and self.file_budget is not None:
                 try:
                     self.file_budget.reserve(arguments['path'])
                 except ValueError:
@@ -73,6 +84,11 @@ class ProjectGate(ForwardGate):
             response = await self.upstream(name, read_arguments)
             if not self._current(identity):
                 raise ForwardError('project.outcome_unknown' if tool in MUTATIONS else 'link.inactive')
+            if tool == DIRECTORY_TOOL:
+                if (type(response) is not dict or response.get('created') is not True
+                        or response.get('path') != arguments['path']):
+                    raise ValueError('invalid directory acknowledgement')
+                return {'path': response['path'], 'created': True}
             if tool in ('optic_fs_read', 'optic_fs_search'):
                 raw = base64.b64decode(response['data'], validate=True)
                 if tool == 'optic_fs_read':

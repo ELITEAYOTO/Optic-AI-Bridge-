@@ -75,9 +75,10 @@ async def serve_project(args, root, project, journal):
     try:
         core_lifetime = args.lease_seconds if args.supervised else args.lifetime
         supervision_args = ['--supervise-session'] if args.supervised else []
+        directory_args = ['--allow-directory-create-scope', 'prefix:src'] if args.allow_directories else []
         params = StdioServerParameters(command=str(binary), args=[str(project),
             '--allow-write-scope', 'prefix:src', '--mutation-state-dir', str(journal),
-            '--session-lifetime-seconds', str(core_lifetime), *supervision_args, *process_arguments])
+            '--session-lifetime-seconds', str(core_lifetime), *supervision_args, *directory_args, *process_arguments])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as upstream:
                 async with asyncio.timeout(20):
@@ -94,7 +95,9 @@ async def serve_project(args, root, project, journal):
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, arguments):
                     return structured(await upstream.call_tool(name, arguments))
-                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes, file_budget=file_budget)
+                if args.allow_directories and 'fs_create_directory' not in names:
+                    raise ValueError('project.directory_binary_required')
+                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes, file_budget=file_budget, directory_create=args.allow_directories)
                 execution = ExecutionGate(state, identity, forward, profiles, supervised=args.supervised) if profiles else None
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
@@ -155,6 +158,8 @@ async def serve_project(args, root, project, journal):
                     channel.emit('Local Node: ' + profiles['check']['executable'])
                     channel.emit('Fixed profiles: check / test. Reads: model.js / app.js / tests.js. Network and process writes denied.')
                 channel.emit('Public dummy auth. Shared connection. Local: rotate-a / revoke-a / stop / proof-stats.')
+                if args.allow_directories:
+                    channel.emit('Local directory-create grant: src only; 128 retained directory slots, existing parent required.')
                 if args.supervised:
                     channel.emit('Operator-supervised until local stop. Core lease window: ' + str(args.lease_seconds) + ' seconds; renewal cannot revive expired/revoked authority.')
                     channel.emit('Limits: 128 generated files / 8192 bytes each; HTTP512 per60s window; starts16 per60s window; retain16 jobs, forget terminal results to free slots.')
@@ -192,10 +197,13 @@ def main():
     parser.add_argument('--port', type=int, default=8009)
     parser.add_argument('--lifetime', type=int, default=3000)
     parser.add_argument('--supervised', action='store_true')
+    parser.add_argument('--allow-directories', action='store_true')
     parser.add_argument('--lease-seconds', type=int, default=60)
     parser.add_argument('--read-page-bytes', type=int, choices=(1024, 4096), default=1024)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')
     args = parser.parse_args()
+    if args.allow_directories and not args.supervised:
+        raise SystemExit('project.directories_require_supervision')
     if not 1024 <= args.port <= 65535 or not 5 <= args.lifetime <= 3000:
         raise SystemExit('project.invalid_bounds')
     if (not 5 <= args.lease_seconds <= 300

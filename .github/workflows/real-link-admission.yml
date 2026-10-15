@@ -70,6 +70,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'real generated fixture proof failed' }
           python experiments/project-alpha/supervision_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'native bounded operator supervision failed' }
+          python experiments/project-alpha/permissions_smoke.py $Binary
+          if ($LASTEXITCODE -ne 0) { throw 'operator JSON permission switches failed' }
           python experiments/project-alpha/supervision_pause_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'paused supervisor must not resurrect expired authority' }
           python experiments/project-alpha/edit_smoke.py $Binary
@@ -147,7 +149,7 @@ jobs:
           New-Item -ItemType Directory -Path $AlphaBin | Out-Null
           Copy-Item -LiteralPath 'target/debug/optic-bridge.exe' -Destination (Join-Path $AlphaBin 'optic-bridge.exe')
           Copy-Item -LiteralPath 'target/debug/optic-bridge-isolation-launcher.exe' -Destination (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe')
-          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; helper_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe') -Algorithm SHA256).Hash; viewer_main_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/electron_main.cjs')).Hash; viewer_policy_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/viewer_policy.cjs')).Hash; supervision='bounded-operator-lease-v1'; scope='generated-project-node-check-test-operator-electron-viewer'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
+          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; helper_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe') -Algorithm SHA256).Hash; viewer_main_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/electron_main.cjs')).Hash; viewer_policy_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/viewer_policy.cjs')).Hash; supervision='bounded-operator-lease-v1'; directory_creation='typed-absent-v1'; scope='generated-project-node-check-test-operator-electron-viewer'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
           $env:GITHUB_SHA | Set-Content -LiteralPath (Join-Path $AlphaStage 'SOURCE_COMMIT.txt') -Encoding ascii
           Copy-Item -LiteralPath 'experiments/project-alpha/SUPERVISED_HOST_TEST.md' -Destination (Join-Path $AlphaStage 'COMMENCER_ICI.md')
           $AlphaPackage = Join-Path $env:RUNNER_TEMP 'Optic-Project-Alpha.zip'

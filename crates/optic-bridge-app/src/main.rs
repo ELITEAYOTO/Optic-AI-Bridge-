@@ -173,7 +173,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
-    let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
+    let mut capabilities = BTreeSet::new();
+    if args.file_read {
+        capabilities.insert(Capability::FileRead);
+    }
+    if args.file_search {
+        capabilities.insert(Capability::FileSearch);
+    }
     if !canonical_process_executables.is_empty() {
         capabilities.insert(Capability::ProcessRun);
     }
@@ -215,10 +221,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let session = grant.handle;
     let supervised_session = session.clone();
 
+    let mut read_spec = ReadAuthoritySpec::workspace_all_non_sensitive();
+    if !args.file_read {
+        read_spec.read_content.clear();
+        read_spec.read_sensitive.clear();
+    }
+    if !args.file_search {
+        read_spec.search_metadata.clear();
+    }
     let read_authorities = ReadAuthoritySet::provision(
         &task_leases,
         &session,
-        &ReadAuthoritySpec::workspace_all_non_sensitive(),
+        &read_spec,
         read_authority_resource_budget(limits),
         expires_at,
         args.policy_epoch,
@@ -689,6 +703,8 @@ fn provision_process_leases(
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
+    file_read: bool,
+    file_search: bool,
     session_lifetime_ms: u64,
     supervise_session: bool,
     policy_epoch: u64,
@@ -725,6 +741,8 @@ impl AppArgs {
         }
 
         let mut workspace = None;
+        let mut file_read = true;
+        let mut file_search = true;
         let mut session_lifetime_ms = None;
         let mut supervise_session = false;
         let mut allowed_executables = Vec::new();
@@ -744,7 +762,11 @@ impl AppArgs {
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
-            if arg == "--supervise-session" {
+            if arg == "--deny-file-read" {
+                file_read = false;
+            } else if arg == "--deny-file-search" {
+                file_search = false;
+            } else if arg == "--supervise-session" {
                 if std::mem::replace(&mut supervise_session, true) {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -1013,6 +1035,8 @@ impl AppArgs {
         }
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
+            file_read,
+            file_search,
             session_lifetime_ms,
             supervise_session,
             policy_epoch: 1,
@@ -2027,6 +2051,29 @@ mod tests {
             BTreeSet::from([LeaseScope::WorkspaceAll])
         );
         assert_eq!(parsed.mutation_state_dir, Some(state));
+    }
+
+    #[test]
+    fn local_read_denials_reduce_default_authority() {
+        let normal = AppArgs::parse_from([OsString::from("workspace")]).expect("default");
+        assert!(normal.file_read && normal.file_search);
+        let denied = AppArgs::parse_from([
+            OsString::from("--deny-file-read"),
+            OsString::from("--deny-file-search"),
+            OsString::from("workspace"),
+        ])
+        .expect("deny");
+        assert!(!denied.file_read && !denied.file_search);
+        let state = std::env::temp_dir().join("optic-directory-args-state");
+        let directories = AppArgs::parse_from([
+            OsString::from("--allow-directory-create-scope=prefix:src"),
+            OsString::from("--mutation-state-dir"),
+            state.into_os_string(),
+            OsString::from("workspace"),
+        ])
+        .expect("directory-only");
+        assert!(directories.write_scopes.is_empty() && directories.delete_scopes.is_empty());
+        assert_eq!(directories.directory_scopes.len(), 1);
     }
 
     #[test]

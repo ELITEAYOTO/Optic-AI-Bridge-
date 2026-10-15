@@ -7,7 +7,7 @@ import uvicorn
 from lifecycle_core import Registry, TOKENS
 from http_smoke import client
 from project_results import structured
-from project_schema import TOOLS
+from project_schema import TOOLS, DIRECTORY_TOOL
 from project_gate import ProjectGate
 from project_http import make_project_app
 from execution_gate import ExecutionGate, TASK_TOOLS, FORGET_TOOL, SUPERVISED_TASK_TOOLS
@@ -21,12 +21,14 @@ class Http(unittest.IsolatedAsyncioTestCase):
         owner = state.authenticate(b'Bearer ' + TOKENS['A'][0])
         now, status = [0.0], ['running']
         async def upstream(name, args):
+            if name == 'fs_create_directory':
+                return {'path': args['path'], 'created': True}
             if name == 'process_start':
                 return {'job_id': 'a' * 64}
             if name == 'process_result':
                 return {'status': status[0], 'exit_code': 0, 'output_truncated': False}
             return {'capabilities': ['file_read', 'file_write', 'process_run']}
-        files = ProjectGate(state, owner, upstream, file_budget=ProjectFiles())
+        files = ProjectGate(state, owner, upstream, file_budget=ProjectFiles(), directory_create=True)
         execution = ExecutionGate(state, owner, upstream, profiles(), supervised=True, clock=lambda: now[0])
         app = make_project_app(files, state, execution=execution, supervised=True, clock=lambda: now[0], emit=lambda _: None)
         listener = socket.socket()
@@ -44,10 +46,13 @@ class Http(unittest.IsolatedAsyncioTestCase):
                         await task
                     await asyncio.sleep(.01)
             async with client(url, TOKENS['A'][0]) as session:
-                self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS + TASK_TOOLS + SUPERVISED_TASK_TOOLS))
+                self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS + TASK_TOOLS + SUPERVISED_TASK_TOOLS + (DIRECTORY_TOOL,)))
                 info = structured(await session.call_tool('optic_project_info', {}))
                 self.assertEqual(info['connection']['mode'], 'supervised')
                 self.assertIsNone(info['connection']['remaining_seconds'])
+                self.assertEqual(info['limits']['generated_directories'], 128)
+                made = structured(await session.call_tool(DIRECTORY_TOOL, {'path': 'src/modules', 'expected_kind': 'absent'}))
+                self.assertEqual(made['upstream'], {'path': 'src/modules', 'created': True})
                 job = structured(await session.call_tool('optic_task_start', {'profile': 'check'}))['upstream']['job_id']
                 denied = structured(await session.call_tool(FORGET_TOOL, {'job_id': job}))
                 self.assertEqual(denied['code'], 'execution.job_not_terminal')

@@ -119,3 +119,15 @@ Node assertion failure/versioned correction/check/test, stop after command-budge
 exhaustion, same-run resume, EOF/revoke, pinned-owned runner death/core exit and
 crash recovery. This is public generated alpha evidence, not private enrollment,
 per-chat isolation, arbitrary dependencies or an unrestricted build environment.
+# Optional directory-creation increment
+
+An additional local AllowDirectories switch (Supervised required) enables
+optic_fs_mkdir for one absent src directory at a time. Its parent must exist;
+expected_kind=absent is mandatory and existing entries conflict. The matching
+package manifest must include directory_creation=typed-absent-v1. This is an
+explicit separate core capability, not an implication of file write. Default
+launches retain their previous tool surface. Generated directory slots are128
+including startup inventory; failures/uncertainty conservatively retain a slot.
+Native runner proof exercises a new nested source and same-run restart.
+This increment does not grant package installation, process writes or an
+AI-controlled Electron main process. See ADR0016 for the remaining gates.

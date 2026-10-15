@@ -25,6 +25,14 @@ affected leases/work and reconcile cleanup before any replacement authorization
 is published. File edits are not yet hot reload. Invalid/partially written policy
 must not retain silently broader grants or automatically reinstate revoked work.
 
+The first config increment implements optional files/processes/git booleans as
+reductions over explicitly selected scopes and tools. An absent section preserves
+legacy authority; a present section defaults missing booleans to false. Read
+denial removes core capabilities/leases and process file grants, not just tool
+visibility. Duplicated/unknown fields fail closed. Config and enabled tool-profile
+files loaded through config mode must be outside the writable workspace (opened
+file final paths on Windows). These are startup snapshots, not live reload.
+
 ## First implementation: typed directory creation
 
 DirectoryCreate is distinct from FileWrite, with its own capability and workspace
