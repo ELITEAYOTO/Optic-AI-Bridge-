@@ -9,6 +9,25 @@ ungated fixture proliferation with integration and user-visible increments.
 
 ## Execution update — 2026-10-15
 
+### Superseding update — 2026-10-16
+
+The user requests a genuine Electron project next, then Rust, rather than another
+agenda-only or fixed Node fixture acceptance loop. Core directory creation and
+operator JSON permission reductions passed all nine workflows at0f0c7ae.
+The HTTP directory adapter passed46tests and actual Windows nested-source
+stop/resume. Bounded diagnostics/previous-stop summaries subsequently passed
+48tests and the native crash/recovery proof; final follow-up CI is required.
+No new user action is needed for these foundation increments.
+
+Next execution gate: use ephemeral private staging for module inputs and build
+outputs instead of recursive write ACLs on real user sources. An explicit native
+Node experiment must prove relative module resolution, owned output creation
+and denial of external source writes. Success does not itself deliver bounded
+production snapshots, dependency egress/install, artifact publication, Rust
+toolchain access or Electron GUI containment. Implement those contracts before
+advertising a goal-only full-application test. Local Rust linking also needs the
+missing MSVC library; CI remains the current Windows/Linux build authority.
+
 R0: generated-data diagnostics completed locally and through Cloudflare. FS
 administrator reproduction was reported; backend cause/fix remains unconfirmed.
 R1: native Windows manual/expiry/blocked-output/broken-pipe shutdown cases passed;

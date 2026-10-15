@@ -29,6 +29,12 @@ async def observe(url, token):
         return info
 
 
+async def previous_state(url):
+    async with client(url, TOKENS['A'][0]) as session:
+        diagnostics = structured(await session.call_tool('optic_diagnostics', {}))['upstream']
+        return diagnostics['previous_session']
+
+
 async def cycle(url):
     await exercise(url, node_mode=True, supervised=True, directories=True)
     before = await observe(url, TOKENS['A'][0])
@@ -39,6 +45,8 @@ async def cycle(url):
     async with client(url, TOKENS['A'][0]) as session:
         listed = structured(await session.call_tool('optic_task_list', {}))
         assert listed['upstream']['jobs'] == [], listed
+        diagnostics = structured(await session.call_tool('optic_diagnostics', {}))['upstream']
+        assert diagnostics['recorded'] > 0 and not diagnostics['persisted'] and not diagnostics['pending_forwarding'], diagnostics
 
 
 def run(binary, node):
@@ -79,6 +87,7 @@ def run(binary, node):
             try:
                 asyncio.run(exercise_resume(url))
                 assert (root / 'project/src/components/note.txt').read_bytes() == b'retained nested source'
+                assert asyncio.run(previous_state(url))['revocation_confirmed'] is True
                 assert not (root / 'viewer-ready.json').exists()
                 assert sources == {path.name: path.read_bytes() for path in (root / 'project/src').iterdir() if path.is_file()}
                 resumed.stdin.close()  # Closing local control is a fail-closed stop.
@@ -127,6 +136,7 @@ def run(binary, node):
                                          stdout=diagnostics, stderr=diagnostics, text=True)
             try:
                 asyncio.run(exercise_resume(url))
+                assert asyncio.run(previous_state(url)) == {'state': 'previous_shutdown_unconfirmed'}
                 recovered.stdin.write('stop\n')
                 recovered.stdin.flush()
                 assert recovered.wait(timeout=20) == 0

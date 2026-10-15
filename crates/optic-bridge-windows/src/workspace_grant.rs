@@ -385,6 +385,15 @@ mod tests {
         args: Vec<OsString>,
     ) -> IsolatedOutput {
         let cwd = executable.parent().expect("isolated executable parent");
+        run_isolated_capture_at(profile, executable, args, cwd)
+    }
+
+    fn run_isolated_capture_at(
+        profile: &AppContainerProfile,
+        executable: &Path,
+        args: Vec<OsString>,
+        cwd: &Path,
+    ) -> IsolatedOutput {
         let stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
@@ -527,6 +536,78 @@ mod tests {
                     sentinel.parent().unwrap()
                 )
                 .is_err()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly selected installed Node; run the native development-stage gate"]
+    fn private_stage_node_modules_can_write_artifacts_but_not_user_sources() {
+        let selected = std::env::var_os("OPTIC_STAGE_NODE").expect("select Node explicitly");
+        let node = fs::canonicalize(selected).expect("installed Node");
+        assert!(node.is_file());
+        assert!(
+            node.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("node.exe")
+        );
+        let sentinel = unique_temp_file();
+        fs::write(&sentinel, PROBE_SENTINEL).expect("ungranted source sentinel");
+        let _sentinel_cleanup = Cleanup(sentinel.clone());
+        let profile = AppContainerProfile::create_ephemeral().expect("private staging profile");
+        let profile_dir = profile.profile_storage_path_for_tests();
+        let stage = profile_dir.join("bounded-build-stage");
+        assert!(!stage.exists());
+        fs::create_dir(&stage).expect("stage root");
+        fs::create_dir(stage.join("lib")).expect("staged module directory");
+        fs::write(stage.join("lib/math.cjs"), b"exports.add=(a,b)=>a+b;\n").expect("staged module");
+        fs::write(stage.join("package.json"), b"{\"type\":\"commonjs\"}").expect("staged package");
+        fs::write(
+            stage.join("main.cjs"),
+            br#"
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {add}=require('./lib/math.cjs');
+assert.equal(add(2,3),5);
+assert.equal(process.cwd(),__dirname);
+fs.mkdirSync(path.join(__dirname,'dist'));
+fs.writeFileSync(path.join(__dirname,'dist/result.json'),JSON.stringify({sum:add(2,3)}));
+let denied=false;
+try{fs.writeFileSync(process.argv[2],'MUST_NOT_REPLACE_USER_SOURCE');}
+catch(error){denied=error.code==='EACCES'||error.code==='EPERM';}
+assert.equal(denied,true);
+console.log('PRIVATE_STAGE_NODE_PASS');
+"#,
+        )
+        .expect("bounded build program");
+        let output = run_isolated_capture_at(
+            &profile,
+            &node,
+            vec![
+                OsString::from("--preserve-symlinks-main"),
+                OsString::from("--preserve-symlinks"),
+                stage.join("main.cjs").into_os_string(),
+                sentinel.clone().into_os_string(),
+            ],
+            &stage,
+        );
+        assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
+        assert!(output.stdout.contains("PRIVATE_STAGE_NODE_PASS"));
+        assert_eq!(
+            fs::read(stage.join("dist/result.json")).expect("artifact"),
+            b"{\"sum\":5}"
+        );
+        assert_eq!(
+            fs::read_to_string(&sentinel).expect("unchanged user source"),
+            PROBE_SENTINEL
+        );
+        assert!(
+            fs::canonicalize(&stage)
+                .expect("stage identity")
+                .starts_with(fs::canonicalize(&profile_dir).expect("profile root"))
+        );
+        fs::remove_dir_all(&stage).expect("remove test-owned staged inputs/artifact");
+        println!(
+            "PRIVATE_STAGE_NODE_PASS: staged relative modules, private build output, ungranted source writes denied; no new runtime grants"
         );
     }
 

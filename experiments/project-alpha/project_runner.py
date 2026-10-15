@@ -50,11 +50,11 @@ async def run(args):
     if sys.platform != 'win32':
         raise ValueError('project.windows_required')
     selected = select_run(args.output_root, args.resume_run) if args.resume_run else prepare_project(args.output_root)
-    with session_lock(selected[0]):
-        await serve_project(args, *selected)
+    with session_lock(selected[0]) as previous:
+        await serve_project(args, *selected, previous=previous)
 
 
-async def serve_project(args, root, project, journal):
+async def serve_project(args, root, project, journal, previous=None):
     binary = Path(args.binary).resolve(strict=True)
     if not binary.is_file():
         raise ValueError('project.binary_missing')
@@ -102,7 +102,7 @@ async def serve_project(args, root, project, journal):
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
                     execution=execution, compact_results=bool(profiles),
-                    supervised=args.supervised, lease_seconds=args.lease_seconds)
+                    supervised=args.supervised, lease_seconds=args.lease_seconds, previous=previous)
                 service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                     log_config=None, access_log=False, limit_concurrency=32, timeout_keep_alive=5,
                     timeout_graceful_shutdown=5, h11_max_incomplete_event_size=16384))

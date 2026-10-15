@@ -4,6 +4,29 @@ from pathlib import Path
 import os
 import re
 import stat
+import json
+
+
+def previous_session(root, fresh):
+    report = root / 'last-stop.json'
+    if not report.exists():
+        return {'state': 'no_previous_session' if fresh else 'previous_shutdown_unconfirmed'}
+    try:
+        ordinary(report)
+        with report.open('rb') as stream:
+            raw = stream.read(1025)
+        if len(raw) > 1024:
+            raise ValueError()
+        value = json.loads(raw)
+        if (type(value) is not dict or type(value.get('version')) is not int or value['version'] != 1
+                or value.get('reason') not in ('operator', 'expiry', 'service_exit', 'revoked')
+                or type(value.get('revocation_confirmed')) is not bool
+                or type(value.get('work_drained')) is not bool):
+            raise ValueError()
+        return {'state': 'previous_stop_report_available',
+                **{key: value[key] for key in ('reason', 'revocation_confirmed', 'work_drained')}}
+    except (OSError, ValueError, TypeError, RecursionError):
+        return {'state': 'previous_stop_report_invalid'}
 
 
 def ordinary(path, directory=False):
@@ -29,9 +52,11 @@ def session_lock(root):
     path = root / '.operator-session.lock'
     try:
         stream = path.open('x+b')
+        fresh = True
         stream.write(b'0')
         stream.flush()
     except FileExistsError:
+        fresh = False
         ordinary(path)
         stream = path.open('r+b')
     locked = False
@@ -44,13 +69,14 @@ def session_lock(root):
             import fcntl
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         locked = True
+        previous = previous_session(root, fresh)
         # An earlier viewer snapshot must not authorize an active editing run.
         for name in ('viewer-ready.json', 'last-stop.json'):
             ready = root / name
             if ready.exists():
                 ordinary(ready)
                 ready.unlink()
-        yield
+        yield previous
     finally:
         if locked:
             if os.name == 'nt':

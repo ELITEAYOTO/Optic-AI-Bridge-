@@ -12,6 +12,7 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
 - Explicit local JSON permission switches reduce file read/search/write/delete/directory, process and Git integration authority. Present sections default omitted booleans to denied; true requires preselected scopes/profiles. Duplicate/unknown/non-boolean fields fail closed; config/profile sources cannot reside in the writable workspace. Startup snapshot only; live reload and general dependency/build authority remain gated.
 - Opt-in generated HTTP directory creation with128 conservative directory slots, bounded startup inventory and exact absent intent. Real Windows supervised runner proves nested source creation and same-run resume;46 Python tests pass. Exact follow-up CI pending.
 - Separately authorized single absent-directory creation for Windows, with typed effect, scoped lease, explicit MCP precondition, pinned ancestors and native root identity. CLI/JSON selection defaults off; native validation pending. This is the first Electron/Rust development-environment increment, not general dependency/build/GUI authority.

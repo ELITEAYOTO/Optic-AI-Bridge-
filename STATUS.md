@@ -2,6 +2,15 @@
 
 ## Development-environment transition — 2026-10-16
 
+Permissions/directory head0f0c7ae passed all nine workflows, including native
+Windows/Linux JSON capability-denial and policy-source protection proofs.
+Follow-up adds bounded model-readable tool diagnostics and a filtered previous
+stop summary, with48alpha tests and real Windows crash/resume proof passed.
+A separately invoked native private Node staging experiment tests relative
+modules and artifact creation inside an ephemeral AppContainer while external
+source writes remain denied. This is an execution-design gate, not an exposed
+package manager/build/GUI grant; exact follow-up CI pending.
+
 Core directory increment208fc61 passed native Windows/Linux read-link validation;
 the new HTTP adapter passed46 Python tests and the real Windows supervised
 runner proof, including nested source creation and retained-project resume.

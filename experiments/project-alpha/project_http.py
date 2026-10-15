@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'francestudent-probe'))
 from server import Guard, request_proof, result, MAX_BODY
 from probe_core import observe_headers
+from diagnostics import ToolDiagnostics, DIAGNOSTIC_TOOL
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
@@ -49,7 +50,7 @@ class ProjectGuard(Guard):
 
 
 def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None,
-                     lifetime=3000, clock=time.monotonic, compact_results=False, supervised=False, lease_seconds=60):
+                     lifetime=3000, clock=time.monotonic, compact_results=False, supervised=False, lease_seconds=60, previous=None):
     if type(supervised) is not bool or type(lease_seconds) is not int or not 5 <= lease_seconds <= 300:
         raise ValueError('project.invalid_supervision')
     if supervised and not isinstance(gate.file_budget, ProjectFiles):
@@ -66,6 +67,15 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     if type(started) not in (int, float) or not math.isfinite(started):
         raise ValueError('project.invalid_clock')
     deadline = None if supervised else started + lifetime
+    diagnostics = ToolDiagnostics() if supervised else None
+    previous = dict(previous) if previous is not None else {'state': 'not_provided'}
+    previous_keys = {'state', 'reason', 'revocation_confirmed', 'work_drained'}
+    if (not set(previous) <= previous_keys or previous.get('state') not in (
+            'no_previous_session', 'previous_shutdown_unconfirmed', 'previous_stop_report_available',
+            'previous_stop_report_invalid', 'not_provided')
+            or 'reason' in previous and previous['reason'] not in ('operator', 'expiry', 'service_exit', 'revoked')
+            or any(type(previous[key]) is not bool for key in ('revocation_confirmed', 'work_drained') if key in previous)):
+        raise ValueError('project.invalid_previous_report')
     if execution is not None:
         bind_admission(gate, execution)
     mcp = MCPServer('Optic-Project-Alpha', instructions=(
@@ -92,6 +102,9 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
            if execution is not None else 'No process tools are enabled.')))
 
     def reply(name, payload):
+        proof = request_proof.get()
+        if diagnostics is not None and proof and proof.get('owner') is not None:
+            diagnostics.record(proof['owner'], name, payload, proof.get('sequence'), proof.get('admitted'), clock(), proof.get('timestamp_utc'))
         observed = result(name, payload)  # Keep operator proof logs in both modes.
         if compact_results:
             return {key: value for key, value in observed.items()
@@ -107,8 +120,14 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 if execution is not None:
                     execution.stopped = True
                 raise ForwardError('link.inactive')
-            selected = execution if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS) else gate
-            payload = await selected.call(proof['owner'] if proof else None, name, arguments)
+            if name == DIAGNOSTIC_TOOL and diagnostics is not None:
+                owner = proof['owner']
+                retained = sum(value == (owner.principal, owner.epoch) for value in execution.jobs.values()) if execution else 0
+                payload = diagnostics.snapshot(owner, gate.pending, retained)
+                payload['previous_session'] = dict(previous)
+            else:
+                selected = execution if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS) else gate
+                payload = await selected.call(proof['owner'] if proof else None, name, arguments)
             if len(json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()) > 65536:
                 raise ForwardError('project.output_bound')
             connection = ({'connection': {'shared': True,
@@ -144,6 +163,12 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         async def optic_fs_mkdir(path: str, expected_kind: str) -> dict:
             """Create one absent src directory with expected_kind=absent. Parent must exist. Existing entries conflict. No recursive creation or overwrite; inspect parent after an uncertain outcome."""
             return await call(DIRECTORY_TOOL, {'path': path, 'expected_kind': expected_kind})
+
+    if supervised:
+        @mcp.tool()
+        async def optic_diagnostics() -> dict:
+            """Inspect last8 safe tool outcomes of this bridge/credential epoch, timings, uncertainty, pending forwarding and owned job count. In-memory32-event ring; no request arguments, credentials, raw exceptions or FS backend logs. History resets on process restart/credential rotation; task outputs use optic_task_read."""
+            return await call(DIAGNOSTIC_TOOL, {})
 
     @mcp.tool()
     async def optic_fs_list(path: str = 'src', cursor: int = 0, limit: int = 32) -> dict:
@@ -234,6 +259,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 allowed_origins=['http://127.0.0.1:*', 'http://localhost:*']))
     class CombinedGuard(ProjectGuard):
         def valid_arguments(self, name, args):
+            if name == DIAGNOSTIC_TOOL:
+                return supervised and type(args) is dict and not args
             if name == DIRECTORY_TOOL and not gate.directory_create:
                 return False
             if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS):

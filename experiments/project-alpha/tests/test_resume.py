@@ -3,10 +3,26 @@ from pathlib import Path
 import unittest
 
 from node_profiles import configure_node, SOURCE_FILES
-from project_resume import select_run, session_lock
+from project_resume import select_run, session_lock, previous_session
 
 
 class Resume(unittest.TestCase):
+    def test_previous_stop_summary_is_bounded_filtered_and_never_claims_an_unobserved_crash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(previous_session(root, True), {'state': 'no_previous_session'})
+            self.assertEqual(previous_session(root, False), {'state': 'previous_shutdown_unconfirmed'})
+            report = root / 'last-stop.json'
+            report.write_text('{"version":1,"reason":"operator","revocation_confirmed":true,"work_drained":true,"raw":"secret"}')
+            with session_lock(root) as previous:
+                self.assertEqual(previous, {'state': 'previous_stop_report_available', 'reason': 'operator',
+                    'revocation_confirmed': True, 'work_drained': True})
+                self.assertFalse(report.exists())
+            with session_lock(root) as previous:
+                self.assertEqual(previous, {'state': 'previous_shutdown_unconfirmed'})
+            report.write_bytes(b'x' * 1025)
+            self.assertEqual(previous_session(root, False), {'state': 'previous_stop_report_invalid'})
+
     def test_sources_preserved_and_concurrent_session_denied(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

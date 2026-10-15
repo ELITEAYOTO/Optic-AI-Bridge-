@@ -69,7 +69,7 @@ async def exercise(url, node_mode=False, supervised=False, directories=False):
             names = {tool.name for tool in (await session.list_tools()).tools}
             from project_schema import TOOLS
             from execution_gate import TASK_TOOLS, SUPERVISED_TASK_TOOLS
-            assert names == set(TOOLS + TASK_TOOLS + (SUPERVISED_TASK_TOOLS if supervised else ()) + (('optic_fs_mkdir',) if directories else ()))
+            assert names == set(TOOLS + TASK_TOOLS + (SUPERVISED_TASK_TOOLS + ('optic_diagnostics',) if supervised else ()) + (('optic_fs_mkdir',) if directories else ()))
             snapshot = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
             broken = structured(await session.call_tool('optic_fs_write', {
                 'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a-b;',

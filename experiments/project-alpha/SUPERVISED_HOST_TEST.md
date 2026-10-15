@@ -69,7 +69,7 @@ fiable n'est fourni par FS ; ne pas présenter ce mode comme une isolation par c
 > et ne lance aucune tâche pour cette étape. En cas d'erreur, affiche le résultat réel.
 
 Attendu : mode=supervised, remaining_seconds=null, read_page_bytes=4096,
-12outils dans le mode Node, fichiers du run conservé et liste de tâches initiale
+13outils dans le mode Node supervisé (14avec l'option locale AllowDirectories), fichiers du run conservé et liste de tâches initiale
 vide. Null signifie que la connexion n'a pas d'échéance fixe ; ce n'est pas une
 autorisation illimitée ni une indication que le noyau ne contrôle plus les délais.
 
@@ -98,6 +98,15 @@ Les journaux de récupération et sorties gardent leurs limites natives. Les pre
 console restent best-effort et bornées, pas un historique infini des requêtes.
 
 ## 6. Arrêt et reprise
+
+L'outil optic_diagnostics affiche les8derniers résultats sûrs, leur réception et
+fin UTC en millisecondes, leur durée, les issues incertaines et le travail retenu.
+L'anneau est limité à32événements en mémoire et réinitialisé au redémarrage ou au
+changement de credential. Il ne contient ni arguments, ni sources, ni jetons, ni
+exceptions brutes. Les sorties d'un programme se lisent avec optic_task_read.
+À la reprise, un résumé filtré du précédent rapport d'arrêt est disponible ;
+previous_shutdown_unconfirmed signifie absence de preuve d'arrêt propre, pas
+preuve d'un crash. Aucun accès aux journaux internes FS n'est revendiqué.
 
 Dans la console du serveur : `stop`. L'arrêt demeure disponible après épuisement
 du budget des commandes de contrôle. EOF ferme aussi la connexion ; revoke-a

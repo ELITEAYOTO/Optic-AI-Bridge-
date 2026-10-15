@@ -13,6 +13,7 @@ from project_http import make_project_app
 from execution_gate import ExecutionGate, TASK_TOOLS, FORGET_TOOL, SUPERVISED_TASK_TOOLS
 from supervision_limits import ProjectFiles, MAX_SEQUENCE
 from test_execution import profiles
+from diagnostics import DIAGNOSTIC_TOOL
 
 
 class Http(unittest.IsolatedAsyncioTestCase):
@@ -46,7 +47,7 @@ class Http(unittest.IsolatedAsyncioTestCase):
                         await task
                     await asyncio.sleep(.01)
             async with client(url, TOKENS['A'][0]) as session:
-                self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS + TASK_TOOLS + SUPERVISED_TASK_TOOLS + (DIRECTORY_TOOL,)))
+                self.assertEqual({tool.name for tool in (await session.list_tools()).tools}, set(TOOLS + TASK_TOOLS + SUPERVISED_TASK_TOOLS + (DIRECTORY_TOOL, DIAGNOSTIC_TOOL)))
                 info = structured(await session.call_tool('optic_project_info', {}))
                 self.assertEqual(info['connection']['mode'], 'supervised')
                 self.assertIsNone(info['connection']['remaining_seconds'])
@@ -61,6 +62,10 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 status[0] = 'exited'
                 released = structured(await session.call_tool(FORGET_TOOL, {'job_id': job}))
                 self.assertTrue(released['upstream']['forgotten'])
+                diag = structured(await session.call_tool(DIAGNOSTIC_TOOL, {}))['upstream']
+                self.assertTrue(any(item['code'] == 'execution.job_not_terminal' for item in diag['events']))
+                self.assertFalse(diag['persisted'])
+                self.assertFalse(diag['fs_backend_visibility'])
             # Simulate a later fixed window, beyond the old lifetime and request cap.
             now[0] = 3601.0
             app.sequence = 512

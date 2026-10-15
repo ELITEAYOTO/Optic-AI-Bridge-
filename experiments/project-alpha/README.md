@@ -119,6 +119,7 @@ Node assertion failure/versioned correction/check/test, stop after command-budge
 exhaustion, same-run resume, EOF/revoke, pinned-owned runner death/core exit and
 crash recovery. This is public generated alpha evidence, not private enrollment,
 per-chat isolation, arbitrary dependencies or an unrestricted build environment.
+
 # Optional directory-creation increment
 
 An additional local AllowDirectories switch (Supervised required) enables
@@ -131,3 +132,15 @@ including startup inventory; failures/uncertainty conservatively retain a slot.
 Native runner proof exercises a new nested source and same-run restart.
 This increment does not grant package installation, process writes or an
 AI-controlled Electron main process. See ADR0016 for the remaining gates.
+
+## Model-readable diagnostics
+
+Supervised mode adds optic_diagnostics: last8 safe tool outcomes from an in-memory
+32-event ring for the current credential epoch, received/finished UTC milliseconds,
+monotonic duration and explicit uncertain outcomes/pending work. No argument,
+source, credential or raw exception text is retained. task_read remains the route
+for actual program output. Diagnostic polls do not evict useful tool events.
+Reconnect retains this ring, but restart/rotation does not. On local resume the
+operator stop report is captured under the run lock, filtered and invalidated
+before editing. Missing prior evidence is unconfirmed shutdown, not proven crash.
+Neither feature sees FS model-internal logs or restores hidden conversation state.
