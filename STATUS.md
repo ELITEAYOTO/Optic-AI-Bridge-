@@ -1,5 +1,23 @@
 # Project Status
 
+## FS diagnostic size boundary observed — 2026-10-15
+
+Server66f4c64a7c56/run0a1c57367a670887: FS Luna128/0 success(request11,
+markerd992c40951b58e1b),128/10 success(request15, actual10.016s),8192/0
+explicit truncation reported with missing trailing probe_invocation(request19,
+local markerb099656166f0ed67 and HTTP200 COMPLETE).4096/0 returned trailing
+markerfa04b4c9e0f444bc(request23); repeated calls27/28/29 returned exactly matching
+markers763d9d449fed284b/17bef52157966629/95c56391b6836696, no explicit truncation.
+All three repeat markers corroborated in supplied server log. This is evidence
+of host-visible truncation for this synthetic envelope, not a universal byte/token
+ceiling or proof that it caused earlier generation failures. Other connectors
+were removed for the successful baseline; their causal role is not established.
+
+Diagnostic sizes now include512byte steps4096–8192 without changing envelope
+order, authority or maximum response. Actual HTTP receipt/hash tests cover each
+intermediate size. Default client comparison matrix stays unchanged for baseline
+comparability. Narrow source-only patch prepared for further FS threshold tests.
+
 ## Diagnostic comparison baseline ready for FS — 2026-10-15
 
 Generated local matrix48/48 and a separately owned Cloudflare matrix52/52 pass

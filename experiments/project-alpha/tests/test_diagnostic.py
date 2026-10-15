@@ -45,8 +45,13 @@ class Diagnostic(unittest.IsolatedAsyncioTestCase):
                 self.assertGreaterEqual(row['client_elapsed_ms'], 9900)
                 self.assertIn(200, row['http_statuses'])
                 self.assertTrue(all(status in (200, 202) for status in row['http_statuses']))
+                for size in range(4608, 8192, 512):
+                    row = await sample(session, size, 0, 0, ids)
+                    self.assertTrue(row['ok'], row)
+                    self.assertEqual(row['verified_bytes'], size)
             async with httpx2.AsyncClient(headers=headers(TOKENS['A'][0]), timeout=3) as http:
-                for arguments in ({'size_bytes': True}, {'delay_seconds': 11}, {'path': 'src/SECRET'}):
+                for arguments in ({'size_bytes': True}, {'size_bytes': 4500},
+                                  {'size_bytes': 8193}, {'delay_seconds': 11}, {'path': 'src/SECRET'}):
                     response = await http.post(url, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
                         'params': {'name': 'diagnostic_sample', 'arguments': arguments}})
                     self.assertEqual(response.status_code, 400)

@@ -26,6 +26,13 @@ ajoute des silences de15/45/75/100secondes dans la même session, environ4minute
 Chaque rapport est créé sans écraser un fichier existant, limité à128KiB et64
 échantillons. Choisir un autre nom pour une nouvelle mesure.
 
+Le serveur accepte aussi4608/5120/5632/6144/6656/7168/7680octets, pour préciser
+le seuil observé côté FS entre4et8Kio. L'enveloppe et l'ordre des champs restent
+identiques ; size_bytes désigne le texte, pas toute la réponse JSON. Utiliser un
+seul appel par message pour le balayage, puis répéter les deux tailles de part et
+d'autre d'une troncature. La limite peut dépendre de la représentation/tokenisation
+du contenu et de l'hôte : ne pas convertir ce résultat en plafond universel.
+
 Pour Cloudflare ou ngrok, pointer un tunnel de diagnostic sur8010, puis reprendre
 exactement le même client avec l'URL publique suivie de/mcp et un nom de rapport
 différent. Ne pas publier d'URL avec jeton dans la query. Le client utilise déjà

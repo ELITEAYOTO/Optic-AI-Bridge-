@@ -17,7 +17,7 @@ from server import Guard, result, request_proof
 from proof_channel import ProofChannel
 import uvicorn
 
-SIZES = (128, 1024, 4096, 8192)
+SIZES = (128, 1024, *range(4096, 8193, 512))
 DELAYS = (0, 1, 3, 10)
 
 
@@ -27,7 +27,8 @@ def make_diagnostic_app(emit, allow_random_tunnel=False, lifetime=1200):
     mcp = MCPServer('Optic-Connection-Diagnostic', instructions=(
         'Synthetic public data only. Exactly one tool diagnostic_sample. '
         'No project, files, process, network effects or permission controls. '
-        'Use size_bytes128/1024/4096/8192 and delay_seconds0/1/3/10.'))
+        'Use size_bytes128/1024 or4096 through8192 in steps of512; '
+        'delay_seconds0/1/3/10.'))
 
     @mcp.tool()
     async def diagnostic_sample(size_bytes: int = 128, delay_seconds: int = 0) -> dict:
