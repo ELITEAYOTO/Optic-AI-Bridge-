@@ -6,6 +6,25 @@ from diagnostics import ToolDiagnostics, DIAGNOSTIC_TOOL, MAX_EVENTS, PAGE_EVENT
 
 
 class Diagnostics(unittest.TestCase):
+    def test_delayed_old_epoch_reply_cannot_reset_new_epoch_diagnostics(self):
+        from lifecycle_core import Registry, TOKENS
+        state = Registry()
+        first = state.authenticate(b'Bearer ' + TOKENS['A'][0])
+        gate = SimpleNamespace(registry=state, stopped=False, owner=first.owner, principal=first.principal)
+        log = ToolDiagnostics()
+        forged = SimpleNamespace(owner=first.owner, principal=first.principal, epoch=first.epoch)
+        self.assertIsNone(log.snapshot_current(gate, None, forged, False, 0))
+        log.record_current(gate, None, first, 'optic_fs_read', {'ok': True}, 1, 0, .1)
+        state.control('rotate', 'A')
+        second = state.authenticate(b'Bearer ' + TOKENS['A'][1])
+        log.record_current(gate, None, second, 'optic_fs_read', {'ok': True}, 2, 0, .1)
+        log.record_current(gate, None, first, 'optic_fs_read', {'ok': False, 'code': 'link.inactive'}, 3, 0, .1)
+        self.assertIsNone(log.snapshot_current(gate, None, first, False, 0))
+        result = log.snapshot_current(gate, None, second, False, 0)
+        self.assertEqual([event['sequence'] for event in result['events']], [2])
+        state.control('revoke', 'A')
+        self.assertIsNone(log.snapshot_current(gate, None, second, False, 0))
+
     def test_bounded_safe_outcomes_and_rotation_clears_history(self):
         owner = SimpleNamespace(principal='owner-a', epoch=1)
         log = ToolDiagnostics()

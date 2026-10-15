@@ -104,7 +104,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     def reply(name, payload):
         proof = request_proof.get()
         if diagnostics is not None and proof and proof.get('owner') is not None:
-            diagnostics.record(proof['owner'], name, payload, proof.get('sequence'), proof.get('admitted'), clock(), proof.get('timestamp_utc'))
+            diagnostics.record_current(gate, execution, proof['owner'], name, payload, proof.get('sequence'), proof.get('admitted'), clock(), proof.get('timestamp_utc'))
         observed = result(name, payload)  # Keep operator proof logs in both modes.
         if compact_results:
             return {key: value for key, value in observed.items()
@@ -123,7 +123,9 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
             if name == DIAGNOSTIC_TOOL and diagnostics is not None:
                 owner = proof['owner']
                 retained = sum(value == (owner.principal, owner.epoch) for value in execution.jobs.values()) if execution else 0
-                payload = diagnostics.snapshot(owner, gate.pending, retained)
+                payload = diagnostics.snapshot_current(gate, execution, owner, gate.pending, retained)
+                if payload is None:
+                    raise ForwardError('link.inactive')
                 payload['previous_session'] = dict(previous)
             else:
                 selected = execution if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS) else gate

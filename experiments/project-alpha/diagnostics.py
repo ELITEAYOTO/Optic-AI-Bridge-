@@ -3,6 +3,7 @@ from collections import deque
 from datetime import datetime, timezone
 import math
 import re
+from lifecycle_core import Identity
 
 DIAGNOSTIC_TOOL = 'optic_diagnostics'
 MAX_EVENTS = 32
@@ -17,6 +18,27 @@ class ToolDiagnostics:
         self.binding = None
         self.events = deque(maxlen=MAX_EVENTS)
         self.recorded = 0
+
+    @staticmethod
+    def _current_locked(gate, execution, identity):
+        # Caller owns the registry lock; never call Registry.current recursively.
+        if not isinstance(identity, Identity) or gate.stopped or execution is not None and execution.stopped:
+            return False
+        binding = gate.registry.states.get(identity.owner)
+        return (binding is not None and binding['active']
+                and identity.owner == gate.owner and identity.principal == gate.principal
+                and identity.principal == binding['principal'] and identity.epoch == binding['epoch'])
+
+    def record_current(self, gate, execution, identity, *arguments):
+        with gate.registry.lock:
+            if self._current_locked(gate, execution, identity):
+                self.record(identity, *arguments)
+
+    def snapshot_current(self, gate, execution, identity, pending, retained_jobs):
+        with gate.registry.lock:
+            if not self._current_locked(gate, execution, identity):
+                return None
+            return self.snapshot(identity, pending, retained_jobs)
 
     def _bind(self, identity):
         binding = (identity.principal, identity.epoch)
