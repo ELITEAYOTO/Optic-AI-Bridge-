@@ -70,3 +70,14 @@ user home/project selection, credentials or Git publishing in the first package.
 Broader real-project enrollment follows a successful disposable-project run.
 Storage research is parked as a separate track; it does not silently become the
 alpha authentication implementation. Existing auth/enrollment gates remain.
+
+### Operator-selected read page size
+
+`Start-ProjectAlpha.ps1 -ReadPageBytes 4096` selects a larger file-read page
+ceiling for this run; the default remains 1024. The model must explicitly request
+`max_bytes=4096` to use it; smaller requests remain smaller. UTF-8 characters are
+not split, full-file versions still govern edits, and the 8192-byte file limit
+and all write permissions are unchanged. This is an experimental throughput
+option, not a guarantee that every FS model receives every response untruncated.
+Escaped JSON and metadata also contribute to actual response size. Return to
+1024 if the host truncates results. This does not expand task output pages.

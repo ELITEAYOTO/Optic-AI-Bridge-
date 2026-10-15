@@ -17,7 +17,10 @@ MUTATIONS = {'optic_fs_write', 'optic_fs_patch'}
 
 
 class ProjectGate(ForwardGate):
-    def __init__(self, registry, identity, upstream, deadline=15):
+    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024):
+        if type(read_page_bytes) is not int or read_page_bytes not in (1024, 4096):
+            raise ValueError("project.invalid_read_page_bytes")
+        self.read_page_bytes = read_page_bytes
         super().__init__(registry, identity, upstream, capacity=1, deadline=deadline)
 
     async def call(self, identity, tool, arguments):
@@ -71,7 +74,7 @@ class ProjectGate(ForwardGate):
                         raise ForwardError('project.read_limit')
                     observed_version = version(response.get('content_version'))
                     offset = arguments['offset']
-                    end = min(len(raw), offset + min(arguments['max_bytes'], 1024))
+                    end = min(len(raw), offset + min(arguments['max_bytes'], self.read_page_bytes))
                     if offset > len(raw):
                         raise ForwardError('project.invalid_read_offset')
                     try:

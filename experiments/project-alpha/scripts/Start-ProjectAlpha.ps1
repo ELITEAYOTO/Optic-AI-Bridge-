@@ -1,4 +1,4 @@
-param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50, [ValidatePattern('^alpha-[a-z0-9_-]{1,64}$')][string]$ResumeRun)
+param([ValidateRange(1024,65535)][int]$Port = 8009, [switch]$AllowRandomTunnelHost, [string]$NodeExecutable, [ValidateRange(1,50)][int]$SessionMinutes = 50, [ValidatePattern('^alpha-[a-z0-9_-]{1,64}$')][string]$ResumeRun, [ValidateSet(1024,4096)][int]$ReadPageBytes = 1024)
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Experiments = Split-Path -Parent $Root
@@ -41,6 +41,7 @@ if ($NodeExecutable) {
 $Output = Join-Path $Repository 'output'
 if (-not (Test-Path -LiteralPath $Output)) { New-Item -ItemType Directory -Path $Output | Out-Null }
 $RunnerArguments = @((Join-Path $Root 'project_runner.py'), '--binary', $Binary, '--output-root', $Output, '--port', "$Port", '--lifetime', "$($SessionMinutes * 60)")
+$RunnerArguments += @('--read-page-bytes', "$ReadPageBytes")
 if ($AllowRandomTunnelHost) { $RunnerArguments += '--allow-random-tunnel-host' }
 if ($NodeExecutable) { $RunnerArguments += @('--node', $NodeExecutable) }
 if ($ResumeRun) { $RunnerArguments += @('--resume-run', $ResumeRun) }

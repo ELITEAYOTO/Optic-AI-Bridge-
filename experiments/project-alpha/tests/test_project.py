@@ -145,6 +145,27 @@ class Gate(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ForwardError, 'project.read_limit'):
             await gate.call(self.identity, 'optic_fs_read', {'path': 'src/x'})
 
+    async def test_operator_page_profile_preserves_utf8_and_request_ceiling(self):
+        raw = ('x' * 4095 + '\u00e9' + 'y' * 3000).encode()
+        async def read(name, args):
+            return {'path': 'src/x', 'data': base64.b64encode(raw).decode(),
+                    'eof': True, 'content_version': 'a' * 64}
+        gate = ProjectGate(self.state, self.identity, read, read_page_bytes=4096)
+        first = await gate.call(self.identity, 'optic_fs_read',
+                                {'path': 'src/x', 'max_bytes': 8192})
+        self.assertEqual(first['next_offset'], 4095)
+        self.assertFalse(first['eof'])
+        second = await gate.call(self.identity, 'optic_fs_read',
+                                 {'path': 'src/x', 'offset': first['next_offset'], 'max_bytes': 8192})
+        self.assertTrue(second['eof'])
+        self.assertEqual((first['text'] + second['text']).encode(), raw)
+        small = await gate.call(self.identity, 'optic_fs_read',
+                                {'path': 'src/x', 'max_bytes': 64})
+        self.assertEqual(small['next_offset'], 64)
+        for invalid in (True, 2048, 8192, '4096'):
+            with self.assertRaisesRegex(ValueError, 'project.invalid_read_page_bytes'):
+                ProjectGate(self.state, self.identity, read, read_page_bytes=invalid)
+
     async def test_patch_growth_bound_and_revoke_after_preparatory_read(self):
         calls = []
         async def full(name, args):

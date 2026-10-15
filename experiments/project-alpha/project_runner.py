@@ -90,7 +90,7 @@ async def serve_project(args, root, project, journal):
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, arguments):
                     return structured(await upstream.call_tool(name, arguments))
-                gate = ProjectGate(state, identity, forward)
+                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes)
                 execution = ExecutionGate(state, identity, forward, profiles) if profiles else None
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
@@ -157,6 +157,7 @@ def main():
     parser.add_argument('--resume-run', help='Operator-selected alpha run name within this package output directory')
     parser.add_argument('--port', type=int, default=8009)
     parser.add_argument('--lifetime', type=int, default=3000)
+    parser.add_argument('--read-page-bytes', type=int, choices=(1024, 4096), default=1024)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 5 <= args.lifetime <= 3000:
