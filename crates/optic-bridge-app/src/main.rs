@@ -1404,14 +1404,17 @@ mod tests {
     fn persistent_v1_config_reuses_cli_validation_and_sets_policy_epoch() {
         let token = SessionHandle::generate().expect("test entropy").to_token();
         let path = std::env::temp_dir().join(format!("optic-config-{token}.json"));
+        let workspace = std::env::temp_dir().join(format!("optic-config-workspace-{token}"));
+        std::fs::create_dir(&workspace).expect("workspace for source-boundary validation");
         std::fs::write(
             &path,
-            r#"{
+            serde_json::json!({
                 "version": 1,
                 "policy_epoch": 9,
-                "workspace": "workspace-from-config",
+                "workspace": workspace,
                 "environment_grants": [{"class":"benign","name":"PATH_HINT"}]
-            }"#,
+            })
+            .to_string(),
         )
         .expect("write config");
 
@@ -1421,12 +1424,13 @@ mod tests {
         ])
         .expect("persistent config");
         assert_eq!(parsed.policy_epoch, 9);
-        assert_eq!(parsed.workspace, PathBuf::from("workspace-from-config"));
+        assert_eq!(parsed.workspace, workspace);
         assert_eq!(
             parsed.environment_grants,
             vec![EnvironmentGrant::benign("PATH_HINT")]
         );
         std::fs::remove_file(path).expect("remove config");
+        std::fs::remove_dir(workspace).expect("remove workspace");
     }
 
     #[test]
