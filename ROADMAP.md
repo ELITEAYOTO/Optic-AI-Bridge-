@@ -1,5 +1,13 @@
 # Roadmap
 
+**Active near-term delivery plan (2026-10-15):**
+[Alpha reliability, autonomy and integration](docs/product/ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md).
+Order: correlated failure diagnosis and clean shutdown; reviewed main integration;
+efficient multi-file tools; operator-stop-controlled supervised connections;
+locally authorized Node/Electron/Rust project workflows. These are planned gates,
+not capabilities added by this documentation update. Earlier focus text below is
+retained as track history until its owning milestones are reconciled.
+
 The canonical roadmap lives in [docs/product/SCOPE_AND_ROADMAP.md](docs/product/SCOPE_AND_ROADMAP.md). The reusable-approval subtrack is recorded in [docs/product/A08_REUSABLE_APPROVAL_TRACK.md](docs/product/A08_REUSABLE_APPROVAL_TRACK.md). The active multi-host, zero-cost connectivity and session-autonomy research track is recorded in [docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md](docs/product/HOST_COMPATIBILITY_AND_AUTONOMY_TRACK.md) so the large canonical roadmap can be realigned surgically without rewriting unrelated history.
 
 **Last reviewed:** 2026-10-13 (draft H-track evidence; no production release)

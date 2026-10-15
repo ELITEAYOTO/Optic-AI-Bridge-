@@ -1,5 +1,19 @@
 # Project Status
 
+## User-directed reliability and integration plan — 2026-10-15
+
+User reports Luna eventually succeeded but recurring host errors remain. New
+active plan: docs/product/ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md. Priorities are
+correlated direct/tunnel/host diagnosis, native Python shutdown reproduction and
+repair, reviewed consolidation toward main, efficient bounded multi-file tools,
+operator-supervised persistent availability and installed Node/Electron/Rust
+development environments. Current1024-byte pages,8KiB source limit,50-minute
+session and fixed task profiles remain implemented; their replacements are not
+claimed delivered. Fatal daemon/stdout shutdown is a real unresolved local bug;
+the earlier generation-stream failures remain unlocalized. GitHub inventory
+found42 open PRs; alpha223 targets experimental222's branch, not main. No PR was
+merged during roadmap preparation. Work resumes with R0/R1 and integration audit.
+
 ## Fifty-minute retained alpha delivery accepted — 2026-10-15
 
 Runtime head e37c6a7c8ad8d19dd0636823081db79708a91dae passed all nine
