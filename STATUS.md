@@ -1,5 +1,20 @@
 # Project Status
 
+## Validated main integration and alpha usability follow-up — 2026-10-15
+
+Alpha head8ecd2bb passed all nine workflows after integrating main PR184.
+The verified package includes the read-admission/path fix; native Node editing,
+failing assertion, versioned correction, check/test and stop/resume passed.
+Follow-up257eb1b exposes operator read limits/schema defaults and versioned
+literal-search byte offsets with explicit shortened-line/more-match indicators;
+32alpha/26session Python tests and real4KiB UTF-8 paging/Node smoke passed.
+Further local stop correction keeps stop available beyond the16-command control
+budget and treats lost/malformed console input as stop.35alpha/7link tests and
+seven native shutdown cases passed, including budget exhaustion and stdin EOF.
+Exact-head CI/package validation is still required for these follow-up sources.
+No supervisor renewal, arbitrary build environment or private-project enrollment
+is delivered by these increments. FS generation diagnosis remains with FS.
+
 ## Alpha integration of main read-boundary hardening — 2026-10-15
 
 Main commit `18a8ec6` (PR #184) is integrated into this alpha branch. Effect-spanning read admission and native path checks are retained alongside alpha content-version responses. Integration validation is pending; earlier binaries do not include this merge.

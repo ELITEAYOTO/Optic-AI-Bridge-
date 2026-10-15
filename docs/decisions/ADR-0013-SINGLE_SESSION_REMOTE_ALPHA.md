@@ -16,6 +16,18 @@ snapshot while editing and regenerate after confirmed stop; close the prior view
 before reopening. This is local generated-run selection, not private project
 enrollment, per-chat routing, or automatic session renewal.
 
+## Local stop availability amendment — 2026-10-15
+
+The existing16-command console budget applies to diagnostic/control actions,
+not to the ability to stop. After exhaustion, further ordinary commands are
+refused but `stop` stays available. No new epochs or mutable control histories
+are created beyond that budget. EOF or malformed/oversized console input closes
+the service through the same stop path; losing the operator input cannot leave
+an apparently controllable alpha running until its timer. A closed event loop
+is already stopped and must not cause a background console traceback. Proof
+output retains its fixed queue/record limits. This is a shutdown correction,
+not automatic authorization renewal or the planned persistent connection mode.
+
 ## Context
 
 The user explicitly accepts a single-session alpha while the FranceStudent

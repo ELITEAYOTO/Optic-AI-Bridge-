@@ -50,7 +50,11 @@ def exercise(binary, mode):
                             assert error.code == 401
                 if mode == 'broken-stop':
                     child.stdout.close()
-                if mode.endswith('stop'):
+                if mode == 'eof-stop':
+                    child.stdin.close()
+                elif mode.endswith('stop'):
+                    if mode == 'budget-stop':
+                        child.stdin.write(b'proof-stats\n' * 24)
                     child.stdin.write(b'stop\n')
                     child.stdin.flush()
                 rc = child.wait(timeout=20)
@@ -79,6 +83,6 @@ if __name__ == '__main__':
     if os.name != 'nt':
         print('SHUTDOWN SKIP: native Windows runner proof.')
     else:
-        for case in ('normal-stop', 'normal-expiry', 'blocked-stop', 'blocked-expiry', 'broken-stop'):
+        for case in ('normal-stop', 'normal-expiry', 'blocked-stop', 'blocked-expiry', 'broken-stop', 'budget-stop', 'eof-stop'):
             exercise(Path(sys.argv[1]).resolve(strict=True), case)
             print('SHUTDOWN PASS:', case)

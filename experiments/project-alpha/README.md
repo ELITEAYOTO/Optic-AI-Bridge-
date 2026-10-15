@@ -88,3 +88,8 @@ line previews. `more_matches` means additional hits exist in the searched prefix
 when `eof=false`, the remainder is unknown and `content_version=null`. Use these
 offsets for focused reads before a version-conditional edit. Search does not
 increase file access authority or read outside its existing bounded prefix.
+
+Local stop remains available after the16-command diagnostic/control budget is
+exhausted. Closing stdin or sending a malformed/oversized console line requests
+the same fail-closed stop path. This does not remove the current session timer;
+the separately planned supervised connection is not enabled.
