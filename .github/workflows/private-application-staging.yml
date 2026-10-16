@@ -1,0 +1,69 @@
+name: Private Application Staging
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-windows/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/private-application-staging.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-application-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-compatibility:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.15.1'
+          package-manager-cache: false
+      - name: Build exact native compatibility probe
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-windows --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'native probe build failed' }
+          $Probe = @(Get-ChildItem -LiteralPath 'target/debug/deps' -Filter 'optic_bridge_windows-*.exe' -File)
+          if ($Probe.Count -ne 1) { throw 'ambiguous native probe identity' }
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-private-application-probe'
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          $Target = Join-Path $Stage 'optic-private-application-probe.exe'
+          Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-private-stage-probes-only'; electron_version='44.7.2'; node_version='22.15.1'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Optic-Private-Application-Probe-${{ github.sha }}
+          path: ${{ runner.temp }}/optic-private-application-probe
+          retention-days: 7
+          if-no-files-found: error
+      - name: Prove private Node staging
+        shell: pwsh
+        run: |
+          $env:OPTIC_STAGE_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-application-probe/optic-private-application-probe.exe') --exact workspace_grant::tests::private_stage_node_modules_can_write_artifacts_but_not_user_sources --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native private Node stage failed' }
+      - name: Select optional pinned Electron runtime
+        shell: pwsh
+        run: |
+          $Tools = Join-Path $env:RUNNER_TEMP 'optic-private-electron-tools'
+          npm.cmd install --prefix $Tools --save-dev --ignore-scripts --no-audit --no-fund electron@44.7.2
+          if ($LASTEXITCODE -ne 0) { throw 'optional runtime package install failed' }
+          node (Join-Path $Tools 'node_modules/electron/install.js')
+          if ($LASTEXITCODE -ne 0) { throw 'optional Electron runtime download failed' }
+      - name: Prove private Electron window compatibility
+        shell: pwsh
+        run: |
+          $env:OPTIC_STAGE_ELECTRON = Join-Path $env:RUNNER_TEMP 'optic-private-electron-tools/node_modules/electron/dist/electron.exe'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-application-probe/optic-private-application-probe.exe') --exact workspace_grant::tests::private_stage_electron_window_preserves_outer_appcontainer_boundary --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'private Electron compatibility remains unproven; inspect bounded startup diagnostics' }
