@@ -11,6 +11,7 @@ mod approval;
 mod ids;
 mod limits;
 mod path;
+mod project_inputs;
 mod read_scope;
 mod session;
 mod tool_profile;
@@ -27,6 +28,9 @@ pub use ids::{
 };
 pub use limits::{HardLimits, LimitError, ResourceBudget};
 pub use path::{WorkspacePath, WorkspacePathError};
+pub use project_inputs::{
+    ProjectInputError, ProjectInputManifest, ProjectInputSnapshot, ProjectInputSpec,
+};
 pub use read_scope::{
     ReadContentScope, ReadSensitiveScope, SearchMetadataScope, WorkspaceAuthorityScope,
 };
