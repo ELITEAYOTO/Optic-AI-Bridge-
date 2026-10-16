@@ -1,4 +1,11 @@
-use std::{collections::HashMap, path::Path, sync::Mutex};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use optic_bridge_core::{
     HardLimits, LeaseScope, LimitError, MonotonicTime, SessionHandle, TaskLease, TaskLeaseId,
@@ -29,6 +36,7 @@ impl Default for TaskLeaseRegistry {
 struct LeaseRecord {
     lease: TaskLease,
     revoked: bool,
+    revocation_signal: Arc<AtomicBool>,
     process_authorities: HashMap<String, ProcessAuthority>,
 }
 
@@ -75,6 +83,7 @@ impl TaskLeaseRegistry {
             LeaseRecord {
                 lease,
                 revoked: false,
+                revocation_signal: Arc::new(AtomicBool::new(false)),
                 process_authorities,
             },
         );
@@ -149,6 +158,7 @@ impl TaskLeaseRegistry {
         };
         let changed = !record.revoked;
         record.revoked = true;
+        record.revocation_signal.store(true, Ordering::Release);
         Ok(changed)
     }
 
@@ -161,10 +171,29 @@ impl TaskLeaseRegistry {
         for record in leases.values_mut() {
             if &record.lease.session == session && !record.revoked {
                 record.revoked = true;
+                record.revocation_signal.store(true, Ordering::Release);
                 changed += 1;
             }
         }
         Ok(changed)
+    }
+
+    /// Cheap lifetime observation only. Callers must already have verified and
+    /// pinned executable authority before launch; this never replaces admission.
+    #[cfg(windows)]
+    pub(crate) fn watch_active(
+        &self,
+        id: &TaskLeaseId,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<(Arc<AtomicBool>, TaskLease), TaskLeaseRegistryError> {
+        let leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
+        validate_active_record(record, session, now)?;
+        Ok((Arc::clone(&record.revocation_signal), record.lease.clone()))
     }
 
     pub(crate) fn remove_revoked(&self, id: &TaskLeaseId) -> Result<bool, TaskLeaseRegistryError> {

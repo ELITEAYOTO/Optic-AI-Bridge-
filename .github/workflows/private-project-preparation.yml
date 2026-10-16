@@ -50,3 +50,25 @@ jobs:
         run: |
           & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') project_inputs::tests::private_preparation --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'private preparation regression failed' }
+      - name: Prove bounded crash journal and exclusive owner recovery
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') private_task_journal::tests::private_journal --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'private task recovery journal proof failed' }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.15.1'
+          package-manager-cache: false
+      - name: Prove read-only private Node uses shared managed job records
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') project_inputs::tests::private_preparation_node_task_ --ignored --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'managed private Node roundtrip failed' }
+      - name: Quarantine an actual interrupted native owner without replay
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          $env:OPTIC_PRIVATE_NATIVE_CRASH_PROOF = '1'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') --exact project_inputs::tests::private_preparation_abrupt_native_owner_exit_is_quarantined --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native owner crash quarantine proof failed' }

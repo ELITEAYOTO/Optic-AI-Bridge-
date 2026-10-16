@@ -31,6 +31,47 @@ pub struct ProjectInputCaptureService {
 }
 
 impl ProjectInputCaptureService {
+    #[cfg(windows)]
+    pub(crate) fn cancellation_watch(
+        &self,
+        process: &ActionEnvelope,
+        read: &ActionEnvelope,
+    ) -> Result<(Vec<Arc<std::sync::atomic::AtomicBool>>, u64), ProjectInputCaptureError> {
+        if process.session != read.session || process.policy_epoch != read.policy_epoch {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        let now = self.clock.now();
+        let (session_signal, session) = self.sessions.watch_active(&process.session, now)?;
+        let mut flags = vec![session_signal];
+        let mut expiry = session.expires_at;
+        if session.policy_epoch != process.policy_epoch {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        for action in [process, read] {
+            let id = action
+                .task_lease
+                .as_ref()
+                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+            let (signal, lease) = self.leases.watch_active(id, &process.session, now)?;
+            if lease.policy_epoch != process.policy_epoch {
+                return Err(ProjectInputCaptureError::EffectMismatch);
+            }
+            expiry = expiry.min(lease.expires_at);
+            flags.push(signal);
+        }
+        Ok((
+            flags,
+            expiry
+                .as_millis()
+                .checked_sub(now.as_millis())
+                .filter(|v| *v > 0)
+                .ok_or(ProjectInputCaptureError::Deadline)?,
+        ))
+    }
+    #[cfg(windows)]
+    pub(crate) fn workspace_root(&self) -> &Path {
+        self.filesystem.root()
+    }
     pub fn new(
         root: impl AsRef<Path>,
         limits: HardLimits,
@@ -173,6 +214,22 @@ impl ProjectInputCaptureService {
         {
             return Err(ProjectInputCaptureError::Deadline);
         }
+        self.authorize_at(action, now).map(|_| ())
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn live_lease(
+        &self,
+        action: &ActionEnvelope,
+    ) -> Result<optic_bridge_core::TaskLease, ProjectInputCaptureError> {
+        self.authorize_at(action, self.clock.now())
+    }
+
+    fn authorize_at(
+        &self,
+        action: &ActionEnvelope,
+        now: MonotonicTime,
+    ) -> Result<optic_bridge_core::TaskLease, ProjectInputCaptureError> {
         let session = self.sessions.get_active(&action.session, now)?;
         let id = action
             .task_lease
@@ -180,7 +237,7 @@ impl ProjectInputCaptureService {
             .ok_or(ProjectInputCaptureError::EffectMismatch)?;
         let lease = self.leases.get_active(id, &action.session, now)?;
         match PolicyEngine.evaluate(action, &session, Some(&lease), now) {
-            PolicyDecision::Allow => Ok(()),
+            PolicyDecision::Allow => Ok(lease),
             PolicyDecision::Deny(reason) | PolicyDecision::RequireApproval(reason) => {
                 Err(ProjectInputCaptureError::PolicyDenied(reason))
             }
@@ -235,6 +292,7 @@ mod tests {
         leases: Arc<TaskLeaseRegistry>,
         session: SessionGrant,
         task: TaskLease,
+        state_root: Option<PathBuf>,
     }
     impl Fixture {
         fn new(capability: Capability, scope: ReadContentScope) -> Self {
@@ -272,6 +330,7 @@ mod tests {
                 leases,
                 session,
                 task,
+                state_root: None,
             }
         }
         fn service(&self) -> ProjectInputCaptureService {
@@ -307,6 +366,25 @@ mod tests {
             }];
             (manifest, actions)
         }
+
+        #[cfg(windows)]
+        fn journaled_service(
+            &mut self,
+        ) -> (
+            Arc<crate::PrivateProjectStageService>,
+            Arc<crate::PrivateTaskJournal>,
+        ) {
+            assert!(self.state_root.is_none());
+            let state_root = self.root.with_extension("private-state");
+            fs::create_dir(&state_root).unwrap();
+            self.state_root = Some(state_root.clone());
+            let journal = crate::PrivateTaskJournal::open(&state_root, &self.root).unwrap();
+            let service = Arc::new(
+                crate::PrivateProjectStageService::with_journal(self.service(), journal.clone())
+                    .unwrap(),
+            );
+            (service, journal)
+        }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -320,6 +398,24 @@ mod tests {
                 std::env::temp_dir().canonicalize().unwrap()
             );
             fs::remove_dir_all(&self.root).unwrap();
+            if let Some(state) = &self.state_root {
+                assert_eq!(state, &self.root.with_extension("private-state"));
+                assert_eq!(
+                    state.canonicalize().unwrap().parent().unwrap(),
+                    std::env::temp_dir().canonicalize().unwrap()
+                );
+                let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                loop {
+                    match fs::remove_dir_all(state) {
+                        Ok(()) => break,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                        Err(_) if std::time::Instant::now() < until => {
+                            std::thread::sleep(std::time::Duration::from_millis(10))
+                        }
+                        Err(error) => panic!("owned test journal cleanup failed: {error}"),
+                    }
+                }
+            }
         }
     }
     fn budget() -> ResourceBudget {
@@ -701,6 +797,578 @@ mod tests {
                 FileSystemError::ReadLimitExceeded
             ))
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_expiry_after_allocation_closes_profile_and_intent() {
+        struct AfterAllocation(Arc<crate::PrivateTaskJournal>);
+        impl Clock for AfterAllocation {
+            fn now(&self) -> MonotonicTime {
+                let allocated = self
+                    .0
+                    .recovery_report()
+                    .unwrap()
+                    .iter()
+                    .any(|record| record.phase == crate::PrivateTaskRecoveryPhase::Allocating);
+                MonotonicTime::from_millis(if allocated { 100_000 } else { 100 })
+            }
+        }
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let state_root = fixture.root.with_extension("private-state");
+        fs::create_dir(&state_root).unwrap();
+        fixture.state_root = Some(state_root.clone());
+        let journal = crate::PrivateTaskJournal::open(&state_root, &fixture.root).unwrap();
+        let mut capture = fixture.service();
+        capture.clock = Arc::new(AfterAllocation(journal.clone()));
+        let service =
+            crate::PrivateProjectStageService::with_journal(capture, journal.clone()).unwrap();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        assert!(service.prepare(manifest, &actions).is_err());
+        assert_eq!(service.occupied_slots(), 0);
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            report[0].outcome,
+            Some(crate::PrivateTaskOutcome::NoProcess)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_journal_capacity_precedes_missing_source_io() {
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        let (service, journal) = fixture.journaled_service();
+        for _ in 0..4 {
+            let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
+            let _ticket = journal
+                .begin(
+                    &manifest,
+                    &actions[0],
+                    &optic_bridge_windows::EphemeralAppContainerPlan::generate().unwrap(),
+                )
+                .unwrap();
+        }
+        let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
+        assert!(matches!(
+            service.prepare(manifest, &actions),
+            Err(crate::PrivateProjectStageError::Journal(
+                crate::PrivateTaskJournalError::Capacity
+            ))
+        ));
+        assert_eq!(service.occupied_slots(), 0);
+        assert!(!fixture.root.join("src/missing.cjs").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_stale_capture_closes_only_the_pre_native_intent() {
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"changed").unwrap();
+        let (service, journal) = fixture.journaled_service();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"old");
+        assert!(service.prepare(manifest, &actions).is_err());
+        let records = journal.recovery_report().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            records[0].outcome,
+            Some(crate::PrivateTaskOutcome::NoProcess)
+        );
+        assert_eq!(service.occupied_slots(), 0);
+        assert_eq!(
+            fs::read(fixture.root.join("src/main.cjs")).unwrap(),
+            b"changed"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_corrupt_finalization_does_not_release_accounting() {
+        use std::io::Write;
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let (service, journal) = fixture.journaled_service();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let prepared = service.prepare(manifest, &actions).unwrap();
+        let record = journal.recovery_report().unwrap().remove(0);
+        let path = fixture
+            .state_root
+            .as_ref()
+            .unwrap()
+            .join("private-tasks-v1")
+            .join(format!("{}.tasklog", record.run_id));
+        fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(b"{interrupted")
+            .unwrap();
+        assert!(prepared.discard().is_err());
+        assert_eq!(service.occupied_slots(), 1);
+        assert!(journal.recovery_report().is_err());
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), b"x");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_roundtrip() {
+        private_node_task_case("roundtrip").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_stop() {
+        private_node_task_case("stop").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_output_bound() {
+        private_node_task_case("output").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_revocation() {
+        private_node_task_case("revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_timeout() {
+        private_node_task_case("timeout").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_read_lease_revocation() {
+        private_node_task_case("read-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_process_lease_revocation() {
+        private_node_task_case("process-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_authorization_expiry() {
+        private_node_task_case("authority-expiry").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_revoke_while_owner_journal_is_blocked() {
+        private_node_task_case("blocked-owner-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn private_task_crash_child() {
+        if std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").is_none() {
+            return;
+        }
+        assert_eq!(
+            std::env::var("OPTIC_PRIVATE_NATIVE_CRASH_PROOF").as_deref(),
+            Ok("1")
+        );
+        private_node_task_case("host-crash").await;
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "CI-only deliberate host exit retains one quarantined native profile"]
+    fn private_preparation_abrupt_native_owner_exit_is_quarantined() {
+        use std::io::Read;
+        assert_eq!(
+            std::env::var("OPTIC_PRIVATE_NATIVE_CRASH_PROOF").as_deref(),
+            Ok("1")
+        );
+        let control = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        let handoff = control.root.join("handoff.txt");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "project_inputs::tests::private_task_crash_child",
+                "--nocapture",
+            ])
+            .env("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF", &handoff)
+            .spawn()
+            .unwrap();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if std::time::Instant::now() >= until {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("owned crash fixture exceeded deadline");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(status.code(), Some(72));
+        let mut bytes = Vec::new();
+        fs::File::open(&handoff)
+            .unwrap()
+            .take(8193)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert!(bytes.len() <= 8192);
+        let text = String::from_utf8(bytes).unwrap();
+        let paths = text.lines().map(PathBuf::from).collect::<Vec<_>>();
+        assert_eq!(paths.len(), 2);
+        let project = &paths[0];
+        let state = &paths[1];
+        assert_eq!(
+            project.canonicalize().unwrap().parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        assert!(
+            project
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("optic-project-inputs-")
+        );
+        assert_eq!(state, &project.with_extension("private-state"));
+        let journal = crate::PrivateTaskJournal::open(state, project).unwrap();
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Running);
+        assert!(report[0].outcome.is_none());
+        // No PID reopening, task replay or profile cleanup is attempted. The
+        // disposable CI runner retains this small owned quarantine as evidence.
+        assert!(project.join("src/main.cjs").exists());
+    }
+
+    #[cfg(windows)]
+    async fn private_node_task_case(case: &str) {
+        use crate::{ProcessAuthority, ProcessManager, ProcessStatus, ProcessStream};
+        let selected = std::env::var("OPTIC_PRIVATE_TASK_NODE").expect("select Node explicitly");
+        let selected = fs::canonicalize(selected)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fixture.session.capabilities.insert(Capability::ProcessRun);
+        fixture.sessions = Arc::new(SessionRegistry::new());
+        fixture.sessions.register(fixture.session.clone()).unwrap();
+        let class = optic_bridge_core::ProcessExecutionClass::RepositoryCode;
+        let process_task = TaskLease {
+            id: TaskLeaseId::generate().unwrap(),
+            session: fixture.session.handle.clone(),
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
+            scopes: BTreeSet::from([
+                LeaseScope::ProcessExecutable {
+                    executable: selected.clone(),
+                    class,
+                },
+                LeaseScope::ProcessIsolationEligible {
+                    executable: selected.clone(),
+                    class,
+                },
+            ]),
+            resource_ceiling: ResourceBudget {
+                timeout_ms: if case == "timeout" { 1000 } else { 10000 },
+                output_bytes: 4096,
+                memory_bytes: 512 * 1024 * 1024,
+                process_count: 4,
+            },
+            workload_class: WorkloadClass::Standard,
+            expires_at: if case == "authority-expiry" {
+                MonotonicTime::from_millis(500)
+            } else {
+                fixture.session.expires_at
+            },
+            policy_epoch: 1,
+        };
+        fixture.leases.register(process_task.clone()).unwrap();
+        let roundtrip = br#"const fs=require('node:fs'),assert=require('node:assert/strict');
+assert.equal(require('./math.cjs').add(20,22),42);
+let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){denied=['ERR_ACCESS_DENIED','EACCES','EPERM'].includes(e.code);}
+assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
+        let main: &[u8] = match case {
+            "roundtrip" => roundtrip,
+            "blocked-owner-revoke" => b"console.log('PRIVATE_NODE_READY');setTimeout(()=>console.log('SURVIVED_BLOCKED_OWNER'),1000);setInterval(()=>{},1000);",
+            "stop" | "revoke" | "timeout" | "host-crash" | "read-revoke" | "process-revoke"
+            | "authority-expiry" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
+            "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
+            _ => panic!("unknown test case"),
+        };
+        let math = b"exports.add=(a,b)=>a+b;";
+        fs::write(fixture.root.join("src/main.cjs"), main).unwrap();
+        fs::write(fixture.root.join("src/math.cjs"), math).unwrap();
+        let mut actions = fixture.inputs("src/main.cjs", main).1;
+        actions.extend(fixture.inputs("src/math.cjs", math).1);
+        let manifest = ProjectInputManifest::new(
+            fixture.session.handle.clone(),
+            fixture.task.id.clone(),
+            1,
+            [("src/main.cjs", main), ("src/math.cjs", math.as_slice())]
+                .into_iter()
+                .map(|(path, bytes)| ProjectInputSpec {
+                    path: WorkspacePath::parse(path).unwrap(),
+                    version: ContentVersion::from_bytes(bytes),
+                    size_bytes: bytes.len() as u64,
+                }),
+        )
+        .unwrap();
+        let state_root = fixture.root.with_extension("private-state");
+        let (service, journal) = fixture.journaled_service();
+        let transport = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
+        let io = crate::BlockingIoGovernor::new(2).unwrap();
+        let prepared = service
+            .clone()
+            .prepare_background(
+                manifest,
+                actions,
+                transport
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+                io,
+            )
+            .await
+            .unwrap();
+        let root = prepared.input_root().to_path_buf();
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.root, HardLimits::default(), Vec::new()).unwrap(),
+        );
+        let authority =
+            Arc::new(ProcessAuthority::capture(process_task.id.clone(), &selected, class).unwrap());
+        let action = ActionEnvelope {
+            action_id: ActionId::generate().unwrap(),
+            session: fixture.session.handle.clone(),
+            task_lease: Some(process_task.id.clone()),
+            policy_epoch: 1,
+            effect: Effect::ProcessRun {
+                executable: selected,
+                class,
+                network: optic_bridge_core::NetworkAccess::Denied,
+            },
+            resources: process_task.resource_ceiling,
+        };
+        let action_id = action.action_id.clone();
+        let replay_spec = crate::ProcessStartSpec {
+            session: action.session.clone(),
+            class,
+            workload_class: process_task.workload_class,
+            network: optic_bridge_core::NetworkAccess::Denied,
+            executable: authority.canonical_path().to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: action.resources,
+        };
+        let pause = (case == "blocked-owner-revoke").then(|| journal.pause_next_running_for_test());
+        let starting = prepared.start_node(
+            crate::PrivateNodeTaskStart {
+                action,
+                runtime: authority,
+                processes: processes.clone(),
+                entry: WorkspacePath::parse("src/main.cjs").unwrap(),
+            },
+            transport
+                .begin_execution(MonotonicTime::from_millis(100))
+                .unwrap(),
+        );
+        let job = if let Some((entered, release)) = pause {
+            let blocked_owner = async {
+                entered
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+                assert_eq!(
+                    journal.recovery_report().unwrap()[0].phase,
+                    crate::PrivateTaskRecoveryPhase::Starting
+                );
+                assert_eq!(service.occupied_slots(), 1);
+                assert_eq!(transport.active_requests(), 1);
+                let sessions = fixture.sessions.clone();
+                let session = fixture.session.handle.clone();
+                let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                let revoker =
+                    std::thread::spawn(move || done_tx.send(sessions.revoke(&session)).unwrap());
+                // Must return without unblocking the owner or its post-resume I/O.
+                assert!(
+                    done_rx
+                        .recv_timeout(std::time::Duration::from_secs(1))
+                        .unwrap()
+                        .unwrap()
+                );
+                revoker.join().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1600));
+                assert_eq!(service.occupied_slots(), 1);
+                assert_eq!(transport.active_requests(), 1);
+                release.send(()).unwrap();
+            };
+            let (result, ()) = tokio::join!(starting, blocked_owner);
+            result.unwrap()
+        } else {
+            starting.await.unwrap()
+        };
+        assert_eq!(
+            processes
+                .find_recorded_private_action(&fixture.session.handle, &action_id)
+                .unwrap(),
+            Some(job.clone())
+        );
+        assert!(
+            processes
+                .find_recorded_private_action(&SessionHandle::generate().unwrap(), &action_id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(matches!(
+            processes.reserve_native_private(&replay_spec, &action_id),
+            Err(crate::ProcessError::PrivateActionAlreadyRecorded)
+        ));
+        if matches!(
+            case,
+            "stop" | "revoke" | "host-crash" | "read-revoke" | "process-revoke"
+        ) {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let output = processes
+                        .read(
+                            &fixture.session.handle,
+                            &job,
+                            ProcessStream::Stdout,
+                            0,
+                            4096,
+                        )
+                        .unwrap();
+                    if output.bytes.starts_with(b"PRIVATE_NODE_READY") {
+                        break;
+                    }
+                    assert_eq!(
+                        processes
+                            .result(&fixture.session.handle, &job)
+                            .unwrap()
+                            .status,
+                        ProcessStatus::Running
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            if case == "stop" {
+                assert!(processes.stop(&fixture.session.handle, &job).unwrap());
+            } else if case == "revoke" {
+                assert!(fixture.sessions.revoke(&fixture.session.handle).unwrap());
+            } else if case == "read-revoke" {
+                assert!(fixture.leases.revoke(&fixture.task.id).unwrap());
+            } else if case == "process-revoke" {
+                assert!(fixture.leases.revoke(&process_task.id).unwrap());
+            } else {
+                let handoff = std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").unwrap();
+                fs::write(
+                    handoff,
+                    format!("{}\n{}\n", fixture.root.display(), state_root.display()),
+                )
+                .unwrap();
+                std::process::exit(72);
+            }
+        }
+        let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let result = processes.result(&fixture.session.handle, &job).unwrap();
+                if result.status != ProcessStatus::Running {
+                    break result;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let stderr = processes
+            .read(
+                &fixture.session.handle,
+                &job,
+                ProcessStream::Stderr,
+                0,
+                4096,
+            )
+            .unwrap();
+        assert_eq!(
+            result.status,
+            match case {
+                "stop"
+                | "revoke"
+                | "read-revoke"
+                | "process-revoke"
+                | "authority-expiry"
+                | "blocked-owner-revoke" => ProcessStatus::Stopped,
+                "timeout" => ProcessStatus::TimedOut,
+                "output" => ProcessStatus::OutputLimitExceeded,
+                _ => ProcessStatus::Exited,
+            },
+            "stderr={}",
+            String::from_utf8_lossy(&stderr.bytes)
+        );
+        assert_eq!(
+            result.exit_code,
+            if case == "roundtrip" { Some(0) } else { None },
+            "stderr={}",
+            String::from_utf8_lossy(&stderr.bytes)
+        );
+        let stdout = processes
+            .read(
+                &fixture.session.handle,
+                &job,
+                ProcessStream::Stdout,
+                0,
+                4096,
+            )
+            .unwrap();
+        assert!(stdout.eof);
+        if case == "blocked-owner-revoke" {
+            assert!(!String::from_utf8_lossy(&stdout.bytes).contains("SURVIVED_BLOCKED_OWNER"));
+        }
+        if case == "roundtrip" {
+            assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
+        }
+        if case == "output" {
+            assert!(stdout.truncated);
+            assert!(stdout.bytes.len() <= 4096);
+        }
+        assert_eq!(service.occupied_slots(), 0);
+        assert_eq!(transport.active_requests(), 0);
+        assert!(!root.exists());
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), main);
+        assert!(!fixture.root.join("src/forbidden.txt").exists());
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            report[0].outcome,
+            Some(match case {
+                "stop"
+                | "revoke"
+                | "read-revoke"
+                | "process-revoke"
+                | "authority-expiry"
+                | "blocked-owner-revoke" => crate::PrivateTaskOutcome::Stopped,
+                "timeout" => crate::PrivateTaskOutcome::TimedOut,
+                "output" => crate::PrivateTaskOutcome::OutputLimitExceeded,
+                _ => crate::PrivateTaskOutcome::Exited { code: 0 },
+            })
+        );
     }
 
     #[cfg(windows)]

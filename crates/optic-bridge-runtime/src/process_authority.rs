@@ -128,6 +128,11 @@ impl ProcessAuthority {
         self.class
     }
 
+    #[must_use]
+    pub const fn content_version(&self) -> ContentVersion {
+        self.identity.version
+    }
+
     pub fn verify(&self) -> Result<(), ProcessAuthorityError> {
         self.identity.verify()
     }
