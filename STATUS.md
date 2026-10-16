@@ -1,5 +1,10 @@
 # Project Status
 
+## 2026-10-16 authorized private input preparation — candidate
+
+Private input preparation composes the merged PR224 capture with fresh SID-derived storage, four retained live/uncertain slots and recorded-only cleanup. No process or MCP authority is added. Exact-head Windows/Linux validation pending; see ADR-0018. PR224 pre/post-merge CI passed (38836808832/38837205821); earlier candidate descriptions below are historical.
+
+
 ## 2026-10-16 bounded project input capture — candidate
 
 Independent main-based increment adds immutable versioned input manifests and an authorized Windows capture service. Existing typed read rights, native root identity, lease revocation and read limits remain mandatory. No new MCP build/GUI/dependency tool is exposed. Exact branch CI is pending; see ADR-0012. Historical entries below describe earlier milestones.

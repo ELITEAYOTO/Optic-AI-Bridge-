@@ -70,28 +70,7 @@ impl ProjectInputCaptureService {
             .ok_or(ProjectInputCaptureError::EffectMismatch)?;
         let started = self.clock.now();
         let admission = self.sessions.begin_admission(&first.session, started)?;
-        // All declared ownership/effects/policy must pass before any source is
-        // opened. A manifest does not convert process authority into read rights.
-        for (input, action) in manifest.files().iter().zip(actions) {
-            if manifest.total_bytes() > action.resources.memory_bytes {
-                return Err(ProjectInputCaptureError::PolicyDenied(
-                    PolicyReason::ResourceBudgetExceeded,
-                ));
-            }
-            let task = action
-                .task_lease
-                .as_ref()
-                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
-            manifest.require_binding(&action.session, task, action.policy_epoch)?;
-            if action.effect
-                != (Effect::FileRead {
-                    path: input.path.clone(),
-                })
-            {
-                return Err(ProjectInputCaptureError::EffectMismatch);
-            }
-            self.authorize(action, started)?;
-        }
+        self.preflight(&manifest, actions, started)?;
         #[cfg(not(windows))]
         {
             drop(admission);
@@ -137,7 +116,52 @@ impl ProjectInputCaptureService {
         }
     }
 
-    fn authorize(
+    pub(crate) fn preflight(
+        &self,
+        manifest: &ProjectInputManifest,
+        actions: &[ActionEnvelope],
+        started: MonotonicTime,
+    ) -> Result<(), ProjectInputCaptureError> {
+        if actions.len() != manifest.files().len() {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        // All declared ownership/effects/policy must pass before any source is
+        // opened. A manifest does not convert process authority into read rights.
+        for (input, action) in manifest.files().iter().zip(actions) {
+            if manifest.total_bytes() > action.resources.memory_bytes {
+                return Err(ProjectInputCaptureError::PolicyDenied(
+                    PolicyReason::ResourceBudgetExceeded,
+                ));
+            }
+            let task = action
+                .task_lease
+                .as_ref()
+                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+            manifest.require_binding(&action.session, task, action.policy_epoch)?;
+            if action.effect
+                != (Effect::FileRead {
+                    path: input.path.clone(),
+                })
+            {
+                return Err(ProjectInputCaptureError::EffectMismatch);
+            }
+            self.authorize(action, started)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn capture_admission(
+        &self,
+        action: &ActionEnvelope,
+    ) -> Result<(crate::SessionAdmissionPermit<'_>, MonotonicTime), ProjectInputCaptureError> {
+        let started = self.clock.now();
+        Ok((
+            self.sessions.begin_admission(&action.session, started)?,
+            started,
+        ))
+    }
+
+    pub(crate) fn authorize(
         &self,
         action: &ActionEnvelope,
         started: MonotonicTime,
@@ -390,6 +414,98 @@ mod tests {
         fs::write(fixture.root.join("src/empty"), b"").unwrap();
         let (manifest, actions) = fixture.inputs("src/empty", b"");
         assert!(service.capture(manifest, &actions).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_copies_sealed_bytes_and_releases_only_owned_inputs() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"module.exports=42;").unwrap();
+        let service = crate::PrivateProjectStageService::new(fixture.service());
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"module.exports=42;");
+        let stage = service.prepare(manifest, &actions).unwrap();
+        assert!(
+            stage
+                .require_binding(&fixture.session.handle, &fixture.task.id, 1)
+                .is_ok()
+        );
+        assert!(
+            stage
+                .require_binding(&SessionHandle::generate().unwrap(), &fixture.task.id, 1)
+                .is_err()
+        );
+        let private_root = stage.input_root().to_path_buf();
+        assert_ne!(private_root, fixture.root);
+        assert_eq!(service.occupied_slots(), 1);
+        fs::write(fixture.root.join("src/main.cjs"), b"changed").unwrap();
+        assert_eq!(
+            fs::read(private_root.join("src/main.cjs")).unwrap(),
+            b"module.exports=42;"
+        );
+        assert!(!format!("{stage:?}").contains("module.exports"));
+        stage.discard().unwrap();
+        assert_eq!(service.occupied_slots(), 0);
+        assert!(!private_root.exists());
+        assert_eq!(
+            fs::read(fixture.root.join("src/main.cjs")).unwrap(),
+            b"changed"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_is_bounded_and_rejects_stale_inputs_without_a_slot_leak() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let service = crate::PrivateProjectStageService::new(fixture.service());
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"stale");
+        assert!(service.prepare(manifest, &actions).is_err());
+        assert_eq!(service.occupied_slots(), 0);
+        let mut stages = Vec::new();
+        for _ in 0..4 {
+            let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+            stages.push(service.prepare(manifest, &actions).unwrap());
+        }
+        // The fifth source deliberately does not exist: capacity must be
+        // decided before opening it, without evicting a prepared input set.
+        let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
+        assert!(matches!(
+            service.prepare(manifest, &actions),
+            Err(crate::PrivateProjectStageError::Capacity)
+        ));
+        assert_eq!(service.occupied_slots(), 4);
+        drop(stages);
+        assert_eq!(service.occupied_slots(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_uncertain_cleanup_retains_accounting_without_recursive_delete() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let service = crate::PrivateProjectStageService::new(fixture.service());
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let stage = service.prepare(manifest, &actions).unwrap();
+        let root = stage.input_root().to_path_buf();
+        let identity = inspect_directory_no_reparse(&root).unwrap().identity;
+        fs::write(root.join("untracked.txt"), b"not declared").unwrap();
+        assert!(stage.discard().is_err());
+        assert_eq!(service.occupied_slots(), 1);
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), b"x");
+        // Host cleans only this test-created extra file, after checking identity.
+        // The library intentionally refuses recursive removal of unknown data.
+        if root.try_exists().unwrap() {
+            assert_eq!(
+                inspect_directory_no_reparse(&root).unwrap().identity,
+                identity
+            );
+            assert_eq!(
+                fs::read(root.join("untracked.txt")).unwrap(),
+                b"not declared"
+            );
+            fs::remove_file(root.join("untracked.txt")).unwrap();
+            fs::remove_dir(root).unwrap();
+        }
     }
 
     #[cfg(windows)]
