@@ -221,3 +221,5 @@ All notable project changes are recorded here.
 - Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.
 
 - Add an owned-job watchdog armed before resume, with a nonrenewable deadline and bounded atomic stop observation independent of owner-worker I/O. No new MCP authority.
+
+- Add a bounded explicit Unicode environment for suspended native children, with no implicit inheritance on an empty list and no mutation of the parent's environment.
