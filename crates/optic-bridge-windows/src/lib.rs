@@ -30,7 +30,7 @@ mod workspace_grant;
 #[cfg(windows)]
 pub use appcontainer::{
     AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
-    SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+    EphemeralAppContainerPlan, SuspendedAppContainerProcess, spawn_appcontainer_suspended,
     spawn_appcontainer_with_environment_suspended,
 };
 #[cfg(windows)]
@@ -40,8 +40,8 @@ pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
 pub use file::{
     OpenedWindowsDeleteFile, OpenedWindowsFile, WindowsFileError, WindowsFileIdentity,
-    WindowsPathIdentity, inspect_directory_no_reparse, open_file_for_delete_no_reparse,
-    open_file_no_reparse, replace_file_atomically,
+    WindowsPathIdentity, inspect_directory_no_reparse, open_exclusive_state_file,
+    open_file_for_delete_no_reparse, open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
 pub use job::{ContainedAppContainerProcess, LimitedJobObject};

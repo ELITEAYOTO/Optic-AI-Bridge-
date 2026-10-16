@@ -280,3 +280,5 @@ Exact merge-head validation remains required; prior CI is not its validation.
 - Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.
 
 - Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
+
+- Prototype bounded private-task crash evidence using an exclusive workspace-bound state journal, strict pre-effect transitions and retained unresolved capacity after restart. No task replay or new MCP authority.

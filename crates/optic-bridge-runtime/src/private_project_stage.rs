@@ -5,7 +5,8 @@ use optic_bridge_core::{ActionEnvelope, ProjectInputError, ProjectInputManifest}
 use optic_bridge_core::{SessionHandle, TaskLeaseId};
 #[cfg(windows)]
 use optic_bridge_windows::{
-    AppContainerProfile, WindowsFileIdentity, inspect_directory_no_reparse, pin_directory_chain,
+    AppContainerProfile, EphemeralAppContainerPlan, WindowsFileIdentity,
+    inspect_directory_no_reparse, pin_directory_chain,
 };
 use std::sync::{
     Arc,
@@ -28,6 +29,8 @@ const MAX_PREPARED_STAGES: usize = 4;
 pub struct PrivateProjectStageService {
     capture: ProjectInputCaptureService,
     slots: Arc<AtomicUsize>,
+    #[cfg(windows)]
+    journal: Option<Arc<crate::PrivateTaskJournal>>,
 }
 
 impl PrivateProjectStageService {
@@ -36,7 +39,20 @@ impl PrivateProjectStageService {
         Self {
             capture,
             slots: Arc::new(AtomicUsize::new(0)),
+            #[cfg(windows)]
+            journal: None,
         }
+    }
+
+    #[cfg(windows)]
+    pub fn with_journal(
+        capture: ProjectInputCaptureService,
+        journal: Arc<crate::PrivateTaskJournal>,
+    ) -> Result<Self, PrivateProjectStageError> {
+        journal.require_workspace(capture.workspace_root())?;
+        let mut service = Self::new(capture);
+        service.journal = Some(journal);
+        Ok(service)
     }
 
     #[must_use]
@@ -201,9 +217,29 @@ impl PrivateProjectStageService {
         // Reserve before opening sources, limiting simultaneous captured
         // bytes as well as prepared disk inputs. Pure capture failure frees
         // its slot; once native allocation begins, uncertainty retains it.
-        let snapshot = self.capture.capture(manifest, actions)?;
+        let plan = EphemeralAppContainerPlan::generate()?;
+        let journal = self
+            .journal
+            .as_ref()
+            .map(|journal| journal.begin(&manifest, &actions[0], &plan))
+            .transpose()?;
+        let snapshot = match self.capture.capture(manifest, actions) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                if let Some(ticket) = &journal {
+                    if let Err(journal_error) = ticket.closed() {
+                        slot.retain_on_drop = true;
+                        return Err(journal_error.into());
+                    }
+                }
+                return Err(error.into());
+            }
+        };
         slot.retain_on_drop = true;
-        let profile = AppContainerProfile::create_ephemeral()?;
+        if let Some(ticket) = &journal {
+            ticket.allocating()?;
+        }
+        let profile = plan.create()?;
         let private = profile.private_storage_root()?;
         let _private_pin = pin_directory_chain(&private, None)
             .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
@@ -220,6 +256,9 @@ impl PrivateProjectStageService {
             _profile: Some(profile),
             slot: Some(slot),
             manifest: None,
+            journal,
+            journal_finalizing: false,
+            outcome: crate::PrivateTaskOutcome::NoProcess,
         };
         let _root_pin = pin_directory_chain(&stage.root, None)
             .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
@@ -249,6 +288,9 @@ impl PrivateProjectStageService {
             self.capture.authorize(action, started)?;
         }
         stage.manifest = Some(snapshot.into_manifest());
+        if let Some(ticket) = &stage.journal {
+            ticket.prepared()?;
+        }
         Ok(stage)
     }
 }
@@ -256,6 +298,12 @@ impl PrivateProjectStageService {
 /// The profile is deliberately private and there is no execution API. Dropping
 /// this value cannot race an owned child: this tranche never starts one.
 pub struct PreparedPrivateProject {
+    #[cfg(windows)]
+    journal: Option<crate::private_task_journal::PrivateTaskJournalTicket>,
+    #[cfg(windows)]
+    journal_finalizing: bool,
+    #[cfg(windows)]
+    outcome: crate::PrivateTaskOutcome,
     #[cfg(windows)]
     manifest: Option<ProjectInputManifest>,
     #[cfg(windows)]
@@ -369,6 +417,28 @@ impl std::fmt::Debug for PreparedPrivateProject {
 
 #[cfg(windows)]
 impl PreparedPrivateProject {
+    pub(crate) fn journal_starting(
+        &self,
+        action: &ActionEnvelope,
+        runtime: optic_bridge_core::ContentVersion,
+        job: &optic_bridge_core::JobId,
+    ) -> Result<(), PrivateProjectStageError> {
+        if let Some(ticket) = &self.journal {
+            ticket.starting(action, runtime, job)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn journal_running(&self) -> Result<(), PrivateProjectStageError> {
+        if let Some(ticket) = &self.journal {
+            ticket.running()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn confirmed_outcome(&mut self, outcome: crate::PrivateTaskOutcome) {
+        self.outcome = outcome;
+    }
     pub(crate) fn manifest(&self) -> &ProjectInputManifest {
         self.manifest.as_ref().expect("returned stage manifest")
     }
@@ -481,6 +551,12 @@ impl PreparedPrivateProject {
             return Err(PrivateProjectStageError::NativeBoundary);
         }
         // Never enumerate or recursively delete a caller-controlled tree.
+        if !self.journal_finalizing {
+            if let Some(ticket) = &self.journal {
+                ticket.finalizing(self.outcome)?;
+            }
+            self.journal_finalizing = true;
+        }
         while let Some(relative) = self.files.last() {
             let _parent = pin_directory_chain(&self.root, relative.parent())
                 .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
@@ -508,6 +584,9 @@ impl PreparedPrivateProject {
             .take()
             .expect("owned cleanup profile")
             .close()?;
+        if let Some(ticket) = &self.journal {
+            ticket.closed()?;
+        }
         if let Some(mut slot) = self.slot.take() {
             slot.release();
         }
@@ -550,6 +629,9 @@ impl Drop for StageSlot {
 
 #[derive(Debug, Error)]
 pub enum PrivateProjectStageError {
+    #[cfg(windows)]
+    #[error("private task recovery state failed: {0}")]
+    Journal(#[from] crate::PrivateTaskJournalError),
     #[error("private task shape or prepared input version is invalid")]
     InvalidPrivateTask,
     #[error("private task binding mismatch: {0}")]

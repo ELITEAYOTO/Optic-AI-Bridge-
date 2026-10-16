@@ -166,6 +166,16 @@ pub(crate) fn execute(
         for read in reads {
             capture.live_lease(read)?;
         }
+        stage.journal_starting(
+            &start.action,
+            start.runtime.content_version(),
+            &record.as_ref().unwrap().id(),
+        )?;
+        let (_launch_admission, now) = capture.capture_admission(&start.action)?;
+        if request.is_expired_at(now) {
+            return Err(Error::WorkerUnavailable);
+        }
+        capture.live_lease(&start.action)?;
         let child = spawn_appcontainer_with_environment_suspended(
             stage.execution_profile(),
             Path::new(executable),
@@ -187,6 +197,7 @@ pub(crate) fn execute(
         stdout.as_mut().unwrap().close_parent_writer();
         stderr.as_mut().unwrap().close_parent_writer();
         native.as_ref().unwrap().resume()?;
+        stage.journal_running()?;
         Ok(())
     })();
     // The start effect has a definite outcome or an owned record now. A lost
@@ -199,6 +210,11 @@ pub(crate) fn execute(
         drop(native);
         drop(root_pin);
         if known_empty {
+            stage.confirmed_outcome(if native_created {
+                crate::PrivateTaskOutcome::Failed
+            } else {
+                crate::PrivateTaskOutcome::NoProcess
+            });
             // Release only after the attempted native effect is known empty;
             // cleanup then acquires its own slot in the same I/O governor.
             drop(start_io);
@@ -306,6 +322,15 @@ pub(crate) fn execute(
     drop(stdout);
     drop(stderr);
     drop(root_pin);
+    stage.confirmed_outcome(match status {
+        ProcessStatus::Exited => exit_code
+            .map(|code| crate::PrivateTaskOutcome::Exited { code })
+            .unwrap_or(crate::PrivateTaskOutcome::Failed),
+        ProcessStatus::Stopped => crate::PrivateTaskOutcome::Stopped,
+        ProcessStatus::TimedOut => crate::PrivateTaskOutcome::TimedOut,
+        ProcessStatus::OutputLimitExceeded => crate::PrivateTaskOutcome::OutputLimitExceeded,
+        _ => crate::PrivateTaskOutcome::Failed,
+    });
     let cleanup = cleanup_stage(std::mem::ManuallyDrop::into_inner(stage), io, runtime);
     if cleanup.is_err() {
         record.append(

@@ -31,6 +31,10 @@ pub struct ProjectInputCaptureService {
 }
 
 impl ProjectInputCaptureService {
+    #[cfg(windows)]
+    pub(crate) fn workspace_root(&self) -> &Path {
+        self.filesystem.root()
+    }
     pub fn new(
         root: impl AsRef<Path>,
         limits: HardLimits,
@@ -251,6 +255,7 @@ mod tests {
         leases: Arc<TaskLeaseRegistry>,
         session: SessionGrant,
         task: TaskLease,
+        state_root: Option<PathBuf>,
     }
     impl Fixture {
         fn new(capability: Capability, scope: ReadContentScope) -> Self {
@@ -288,6 +293,7 @@ mod tests {
                 leases,
                 session,
                 task,
+                state_root: None,
             }
         }
         fn service(&self) -> ProjectInputCaptureService {
@@ -336,6 +342,24 @@ mod tests {
                 std::env::temp_dir().canonicalize().unwrap()
             );
             fs::remove_dir_all(&self.root).unwrap();
+            if let Some(state) = &self.state_root {
+                assert_eq!(state, &self.root.with_extension("private-state"));
+                assert_eq!(
+                    state.canonicalize().unwrap().parent().unwrap(),
+                    std::env::temp_dir().canonicalize().unwrap()
+                );
+                let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                loop {
+                    match fs::remove_dir_all(state) {
+                        Ok(()) => break,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                        Err(_) if std::time::Instant::now() < until => {
+                            std::thread::sleep(std::time::Duration::from_millis(10))
+                        }
+                        Err(error) => panic!("owned test journal cleanup failed: {error}"),
+                    }
+                }
+            }
         }
     }
     fn budget() -> ResourceBudget {
@@ -823,7 +847,14 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
                 }),
         )
         .unwrap();
-        let service = Arc::new(crate::PrivateProjectStageService::new(fixture.service()));
+        let state_root = fixture.root.with_extension("private-state");
+        fs::create_dir(&state_root).unwrap();
+        fixture.state_root = Some(state_root.clone());
+        let journal = crate::PrivateTaskJournal::open(&state_root, &fixture.root).unwrap();
+        let service = Arc::new(
+            crate::PrivateProjectStageService::with_journal(fixture.service(), journal.clone())
+                .unwrap(),
+        );
         let transport = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
         let io = crate::BlockingIoGovernor::new(2).unwrap();
         let prepared = service
@@ -991,6 +1022,18 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert!(!root.exists());
         assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), main);
         assert!(!fixture.root.join("src/forbidden.txt").exists());
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            report[0].outcome,
+            Some(match case {
+                "stop" | "revoke" => crate::PrivateTaskOutcome::Stopped,
+                "timeout" => crate::PrivateTaskOutcome::TimedOut,
+                "output" => crate::PrivateTaskOutcome::OutputLimitExceeded,
+                _ => crate::PrivateTaskOutcome::Exited { code: 0 },
+            })
+        );
     }
 
     #[cfg(windows)]

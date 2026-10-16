@@ -54,6 +54,39 @@ pub struct AppContainerProfile {
     delete_on_drop: bool,
 }
 
+/// Fresh identity allocated in memory before any native profile effect. It can
+/// be recorded durably, but cannot be reconstructed from a journal/model name.
+pub struct EphemeralAppContainerPlan(String);
+
+impl std::fmt::Debug for EphemeralAppContainerPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EphemeralAppContainerPlan(REDACTED)")
+    }
+}
+
+impl EphemeralAppContainerPlan {
+    pub fn generate() -> Result<Self> {
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
+        let mut name = String::from("Optic.Isolation.");
+        for byte in random {
+            write!(&mut name, "{byte:02x}")
+                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
+        }
+        Ok(Self(name))
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+
+    pub fn create(self) -> Result<AppContainerProfile> {
+        AppContainerProfile::create_inner(&self.0, true)
+    }
+}
+
 /// Borrowed AppContainer process-creation capabilities.
 ///
 /// The lifetime keeps the underlying profile SID alive for every safe use of
@@ -85,15 +118,7 @@ impl AppContainerProfile {
     /// A stale ACE left behind by abrupt process termination cannot be reused by a later
     /// Optic profile because the Package SID is derived from a fresh 128-bit random name.
     pub fn create_ephemeral() -> Result<Self> {
-        let mut random = [0u8; 16];
-        getrandom::fill(&mut random)
-            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
-        let mut name = String::from("Optic.Isolation.");
-        for byte in random {
-            write!(&mut name, "{byte:02x}")
-                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
-        }
-        Self::create_inner(&name, true)
+        EphemeralAppContainerPlan::generate()?.create()
     }
 
     fn create_inner(name: &str, external_acl_grants_allowed: bool) -> Result<Self> {
@@ -697,6 +722,19 @@ mod tests {
 
     static PROFILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
     const PROCESS_WAIT_MS: u32 = 10_000;
+
+    #[test]
+    fn ephemeral_plan_is_fresh_and_can_be_recorded_before_creation() {
+        let first = EphemeralAppContainerPlan::generate().unwrap();
+        let other = EphemeralAppContainerPlan::generate().unwrap();
+        assert_ne!(first.name(), other.name());
+        assert!(!format!("{first:?}").contains(first.name()));
+        let expected = first.name().to_owned();
+        let profile = first.create().unwrap();
+        assert!(profile.private_storage_root().unwrap().is_dir());
+        assert_eq!(profile.name.to_string(), expected);
+        profile.close().unwrap();
+    }
 
     #[test]
     fn explicit_environment_is_bounded_sorted_and_never_implicitly_inherited() {
