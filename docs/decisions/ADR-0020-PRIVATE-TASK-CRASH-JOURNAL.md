@@ -41,6 +41,28 @@ FS model memory or runtime authorization after restart.
 
 Validation requires native lock/nontruncation/hardlink tests, journal transitions,
 capacity/corruption/reopen tests, abrupt owner exit before allocation, and five
-actual isolated Node lifecycle cases each ending in a closed record. A crash
-inside native allocation/execution still needs separate evidence; pre-allocation
-crash tests must not be advertised as proof of native cleanup.
+actual isolated Node lifecycle cases each ending in a closed record. Exact head
+3c5611dc34b8f83bfc95d3a43fbfc5e373eca70b passed native workflow38954900323:
+ten preparation, eight journal and eight isolated Node cases. The same bounded
+cases passed locally from the verified CI artifact (Node4.52seconds). A separate
+CI-only test exits the actual owner after native resume and synced Running; the
+replacement owner reports Running with no outcome, retains capacity and does not
+replay or reopen a PID. It deliberately retains a small quarantine on a disposable
+runner. This proves interrupted-owner evidence, not recovered native cleanup.
+
+A native owned-job watchdog is armed while suspended, before resume and before
+any post-resume journal I/O. Its deadline is the minimum of the task budget and
+the initially observed session/read/process authority TTLs. Renewal never extends
+an already armed job. At most four atomic stop signals cover those authorities
+and the managed job's operator stop. The watchdog checks at bounded20ms intervals,
+holds only a duplicate of the exact owned Job handle, and performs no registry,
+filesystem or profile operation. Four admitted stages bound worker count.
+
+Revocation publishes its atomic signal before waiting for admission drainage.
+The launch admission fence ends after successful native resume, before syncing
+Running. A blocked journal write therefore cannot hold revocation behind disk I/O
+or prevent the watchdog requesting owned-tree termination. Cleanup still requires
+positive empty-tree confirmation; timer firing is not cleanup acknowledgement.
+Running monitors use immutable, already verified authority plus atomic revocation
+and the initial TTL, avoiding repeated executable hashing every polling interval.
+This observation path cannot authorize a launch or replace executable pinning.

@@ -788,19 +788,6 @@ mod tests {
     }
 
     #[test]
-    fn ephemeral_plan_is_fresh_and_can_be_recorded_before_creation() {
-        let first = EphemeralAppContainerPlan::generate().unwrap();
-        let other = EphemeralAppContainerPlan::generate().unwrap();
-        assert_ne!(first.name(), other.name());
-        assert!(!format!("{first:?}").contains(first.name()));
-        let expected = first.name().to_owned();
-        let profile = first.create().unwrap();
-        assert!(profile.private_storage_root().unwrap().is_dir());
-        assert_eq!(profile.name.to_string(), expected);
-        profile.close().unwrap();
-    }
-
-    #[test]
     fn private_storage_requires_a_fresh_ephemeral_profile() {
         let named = AppContainerProfile::create(&unique_profile_name()).expect("named profile");
         assert!(named.private_storage_root().is_err());

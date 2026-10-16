@@ -462,6 +462,8 @@ mod tests {
         let grant = grant(1_000);
         registry.register(grant.clone()).expect("register session");
         let now = MonotonicTime::from_millis(1);
+        #[cfg(windows)]
+        let (stop_signal, _) = registry.watch_active(&grant.handle, now).unwrap();
         let permit = registry
             .begin_admission(&grant.handle, now)
             .expect("admit effect");
@@ -494,6 +496,10 @@ mod tests {
             Err(SessionRegistryError::Revoked)
         ));
         assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        // Running jobs observe revocation before the synchronous admission
+        // fence has drained, without taking this registry's mutex themselves.
+        #[cfg(windows)]
+        assert!(stop_signal.load(Ordering::Acquire));
 
         drop(permit);
         assert!(
