@@ -213,3 +213,5 @@ All notable project changes are recorded here.
 - Git read and Git integration startup authority use distinct executable options: `--git-executable` alone provisions `GitRead`, while `--git-integration-executable` participates only in integration recovery/authority setup; neither silently grants the other.
 - Git integration recovery executes before MCP serve when the complete integration runtime configuration is present; `--allow-git-integrate` is separately required before a `GitIntegrate` capability/lease exists, and the MCP server rejects runtime/authority mismatch.
 - Git integration MCP execution retains its transport permit until a started blocking integration reaches a known outcome; stale target and non-fast-forward failures are explicit, while a successful ref update followed by unverifiable post-update state is reported as `optic.git_integration_outcome_uncertain` rather than a safe retry.
+
+- Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.

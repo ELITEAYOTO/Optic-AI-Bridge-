@@ -51,3 +51,25 @@ when an untracked file prevents cleanup. A focused native workflow publishes a
 hashed exact test harness for local reproduction. Windows/Linux/dependency CI
 must pass on this main-based branch. Local Rust linking currently lacks the
 host's msvcrt.lib; formatting remains locally checkable.
+## Bounded owner worker and cancellation (2026-10-16)
+
+The optional async preparation API reserves one of the same four stage slots
+before waiting for shared blocking-I/O capacity. The creating native worker owns
+the profile throughout copying and cleanup; no unsafe Send/Sync assertion is
+added for SID pointers. Transport and I/O permits remain held until preparation
+has actually ended even when the awaiting caller is cancelled. The returned
+host lease contains a bounded one-command control channel and a cleanup receipt.
+Explicit discard waits for cleanup; dropping a delivered or undelivered lease
+wakes its owner for cleanup. Idle preparations retain stage capacity, not request
+capacity. Cleanup reacquires the same I/O governor; unavailable cleanup retains
+accounting instead of silently releasing it. One service belongs to one bridge.
+
+This main increment still cannot start any process. The worker is not a durable
+restart journal and must not be presented as crash recovery or task replay.
+Native tests cover acknowledged discard, an abandoned delivered lease and an
+abandoned in-flight request retaining its effect permits until actual completion.
+
+Optic itself removes recorded inputs without recursively traversing unexpected
+contents. Windows may independently reclaim its fresh profile storage during
+profile deletion; retained accounting is not a backup guarantee for unexpected
+data inside that owned storage. External user source paths receive no grants.
