@@ -237,3 +237,27 @@ Main PR224 and post-merge main CI38837205821 passed. Next implement the owned
 bounded production stage lifecycle and separately authorized artifact publication;
 then explicit dependency/network restore and local GUI permission, followed by
 an end-to-end goal-only FS test. Current private probe has no model authority.
+## Authorized private input preparation (unwired runtime increment)
+
+PrivateProjectStageService composes existing versioned capture with internal
+copying into a freshly created ephemeral AppContainer's inputs directory. The
+outer session admission spans capture, materialization and final live checks;
+source files are never reopened after sealing. Exact manifest session/task/epoch
+binding remains attached while the temporary in-memory source bytes are released.
+No process profile/SID is exposed, and this API cannot start a process.
+
+Each service instance has four occupied preparation slots, including uncertain
+setup/cleanup failures. Each stage inherits the256-file/8MiB source bounds and
+at most4096 implied directory records. The caller must own one shared service,
+retain transport/I/O permits and preserve live checks when execution is added.
+Native root identity and pinned parent chains fence preparation and cleanup.
+Cleanup deletes only recorded regular files and directories, without recursive
+walking of a mutable tree. Unknown cleanup retains accounting rather than freeing
+a slot. Explicit discard reports failure; Drop is best effort. This is not a
+hard disk quota for running code, durable crash recovery or a process grant.
+
+Native regression tests cover exact copies after original source edits, bound
+ownership, successful explicit/drop cleanup, finite capacity and stale input
+rejection. This new head requires native Windows/Linux CI; local linking still
+lacks msvcrt.lib. No public MCP tool or stable ZIP changes yet. Execution handoff,
+owned-task recovery, artifacts and dependency authority remain separate gates.

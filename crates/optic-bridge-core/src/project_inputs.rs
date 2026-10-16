@@ -143,6 +143,12 @@ pub struct ProjectInputSnapshot {
 }
 
 impl ProjectInputSnapshot {
+    /// Retain ownership/version expectations while releasing captured bytes.
+    #[must_use]
+    pub fn into_manifest(self) -> ProjectInputManifest {
+        self.manifest
+    }
+
     #[must_use]
     pub fn manifest(&self) -> &ProjectInputManifest {
         &self.manifest

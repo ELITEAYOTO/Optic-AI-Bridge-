@@ -28,6 +28,7 @@ mod hardened_command;
 mod journaled_mutation;
 mod mutation;
 mod mutation_authority;
+mod private_project_stage;
 mod process;
 mod process_authority;
 mod project_inputs;
@@ -95,6 +96,9 @@ pub use mutation::{
 };
 pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
+};
+pub use private_project_stage::{
+    PreparedPrivateProject, PrivateProjectStageError, PrivateProjectStageService,
 };
 pub use process::{
     EnvironmentGrant, EnvironmentVariableClass, ProcessError, ProcessManager, ProcessReadChunk,

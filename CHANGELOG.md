@@ -5,6 +5,8 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
+
 - Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
 
 
@@ -19,6 +21,8 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
+
 - Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
 
 - Follow-up validation: native project input capture and explicit child environment pass Windows/Linux Rust CI at5ac8cbd. Normal private Electron startup remains incompatible (0x80000003), reproduced locally without FS/tunnel. Bounded diagnostic tail fix623e003 is under CI; optional GUI/build authority remains gated. Main-based capture candidate is PR224.
