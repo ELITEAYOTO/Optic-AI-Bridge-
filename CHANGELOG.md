@@ -277,3 +277,6 @@ worker/cancellation controller; main's SID-query negative test and ADR0018 remai
 Equivalent native storage helpers/imports were deduplicated during integration.
 Exact merge-head validation remains required; prior CI is not its validation.
 - Prototype host-only managed private Node tasks with sealed multi-module inputs, shared bounded output/job admission, stop/revocation/deadline handling and retained-action lookup for lost start replies. No public MCP mode or durable task recovery is claimed.
+- Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.
+
+- Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.

@@ -108,3 +108,5 @@ binary956fd34df9730f32fe3b538090c56e4ebbda2f38de2ee2ffbf1337fb1fdaf23d.
 Initial extended-Windows-path Node permission failure is corrected with matching
 local-drive spelling; UNC/device paths are refused. The native Node API remains
 unwired. Normal Electron inner-sandbox startup remains a separately failing probe.
+
+PR227 exacthead4121515 passed CI38906725340, native process/pipe38906725527 and preparation38906725329; both platform tests reproduced locally from verified artifact12048850903. Nine-file diff reviewed, no change requests or unresolved threads. Squash abff6389af2fb082972dcef18a80092e8df5fcbd merged. Alpha integration preserves its newer Node controller, native profile close and experimental-only helpers; main ADR0018/0019 and focused native workflow retained. Exact integration checks pending.

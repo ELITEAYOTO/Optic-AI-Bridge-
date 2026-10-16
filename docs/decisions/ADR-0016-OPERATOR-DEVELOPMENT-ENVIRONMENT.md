@@ -315,8 +315,10 @@ contents; Windows may reclaim storage belonging to its fresh AppContainer profil
 This is not a backup/preservation promise for unexpected data inside that profile.
 No user source directory receives recursive write grants.
 
-Validation pending: a focused opt-in native Node test checks two-module execution,
-write denial, shared job output and cleanup. Core has no mandatory Node dependency.
+Exact head5406a4f passed CI38906210858 and native38906210466: two-module
+execution/write denial, owned stop, output overflow, session revocation and task
+deadline. Earlier exact c7436b4 also passed three Node and six preparation cases
+locally with installed Node22.15.1. Core has no mandatory Node dependency.
 
 A retained private job record now correlates its original ActionId and session.
 The host can recover its JobId after a lost start reply; admission rejects a
