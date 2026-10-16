@@ -73,3 +73,5 @@ Optic itself removes recorded inputs without recursively traversing unexpected
 contents. Windows may independently reclaim its fresh profile storage during
 profile deletion; retained accounting is not a backup guarantee for unexpected
 data inside that owned storage. External user source paths receive no grants.
+
+Native profile close is now acknowledged before stage accounting is released. On copy/authorization failure, the preparation's own storage pins are dropped before cleanup, so they cannot prevent its native profile close. Native close errors retain accounting; best-effort Drop is not confirmation.

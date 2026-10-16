@@ -217,3 +217,5 @@ All notable project changes are recorded here.
 - Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.
 
 - Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
+
+- Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.

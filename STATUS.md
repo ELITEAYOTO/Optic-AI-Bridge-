@@ -289,3 +289,5 @@ This file describes reality. A design document alone never makes a feature “im
 Private preparation now has an optional bounded native owner worker: caller cancellation retains effect permits until real completion, and explicit discard waits for owned cleanup. Process launch and durable restart recovery remain outside this increment. Exact candidate CI pending.
 
 Owned Windows AppContainer tree and bounded pipe primitives prepared independently of experimental adapters. Native assignment-before-resume and confirmed tree completion do not grant process/MCP/GUI authority. Exact candidate checks pending.
+
+Private-state preparation primitives: deterministic input fingerprints, preallocated fresh profile plans, exclusive nontruncating state handles with hard-link/reparse refusal, and acknowledged profile cleanup. No journal, replay or new model authority is exposed by this main increment. Exact candidate checks pending.

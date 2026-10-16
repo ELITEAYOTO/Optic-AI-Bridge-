@@ -48,6 +48,36 @@ pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
     external_acl_grants_allowed: bool,
+    delete_on_drop: bool,
+}
+
+/// Fresh identity generated before native allocation, never reconstructed from
+/// a persisted/model-supplied profile name. It grants no execution permission.
+pub struct EphemeralAppContainerPlan(String);
+impl std::fmt::Debug for EphemeralAppContainerPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EphemeralAppContainerPlan(REDACTED)")
+    }
+}
+impl EphemeralAppContainerPlan {
+    pub fn generate() -> Result<Self> {
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
+        let mut name = String::from("Optic.Isolation.");
+        for byte in random {
+            write!(&mut name, "{byte:02x}")
+                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
+        }
+        Ok(Self(name))
+    }
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+    pub fn create(self) -> Result<AppContainerProfile> {
+        AppContainerProfile::create_inner(&self.0, true)
+    }
 }
 
 /// Borrowed AppContainer process-creation capabilities.
@@ -81,15 +111,7 @@ impl AppContainerProfile {
     /// A stale ACE left behind by abrupt process termination cannot be reused by a later
     /// Optic profile because the Package SID is derived from a fresh 128-bit random name.
     pub fn create_ephemeral() -> Result<Self> {
-        let mut random = [0u8; 16];
-        getrandom::fill(&mut random)
-            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
-        let mut name = String::from("Optic.Isolation.");
-        for byte in random {
-            write!(&mut name, "{byte:02x}")
-                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
-        }
-        Self::create_inner(&name, true)
+        EphemeralAppContainerPlan::generate()?.create()
     }
 
     fn create_inner(name: &str, external_acl_grants_allowed: bool) -> Result<Self> {
@@ -111,11 +133,21 @@ impl AppContainerProfile {
             name,
             sid,
             external_acl_grants_allowed,
+            delete_on_drop: true,
         })
     }
 
     pub(crate) const fn package_sid(&self) -> PSID {
         self.sid
+    }
+
+    /// Caller first confirms its owned tree is empty and releases storage pins.
+    /// Success acknowledges profile cleanup; Drop remains best-effort on failure.
+    pub fn close(mut self) -> Result<()> {
+        // SAFETY: this value uniquely owns its live profile name and SID.
+        unsafe { DeleteAppContainerProfile(&self.name) }.map_err(Error::other)?;
+        self.delete_on_drop = false;
+        Ok(())
     }
 
     pub(crate) const fn external_acl_grants_allowed(&self) -> bool {
@@ -206,7 +238,9 @@ impl Drop for AppContainerProfile {
         // Profile cleanup is best-effort in Drop and cannot weaken a running child.
         unsafe {
             let _ = FreeSid(self.sid);
-            let _ = DeleteAppContainerProfile(&self.name);
+            if self.delete_on_drop {
+                let _ = DeleteAppContainerProfile(&self.name);
+            }
         }
     }
 }
@@ -573,6 +607,19 @@ mod tests {
     fn system32_executable(name: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot").expect("SystemRoot");
         PathBuf::from(root).join("System32").join(name)
+    }
+
+    #[test]
+    fn ephemeral_plan_is_fresh_and_can_be_recorded_before_creation() {
+        let first = EphemeralAppContainerPlan::generate().unwrap();
+        let other = EphemeralAppContainerPlan::generate().unwrap();
+        assert_ne!(first.name(), other.name());
+        assert!(!format!("{first:?}").contains(first.name()));
+        let expected = first.name().to_owned();
+        let profile = first.create().unwrap();
+        assert!(profile.private_storage_root().unwrap().is_dir());
+        assert_eq!(profile.name.to_string(), expected);
+        profile.close().unwrap();
     }
 
     #[test]
