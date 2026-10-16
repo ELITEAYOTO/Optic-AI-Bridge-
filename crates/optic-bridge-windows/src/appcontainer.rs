@@ -28,12 +28,13 @@ use windows::{
             PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
         System::Threading::{
-            CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-            PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-            TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
+            DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
+            GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+            OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, ResumeThread,
+            STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+            WaitForSingleObject,
         },
     },
     core::{HSTRING, PCWSTR, PWSTR},
@@ -448,16 +449,86 @@ impl Drop for HandleGuard {
     }
 }
 
-/// Create an AppContainer child suspended, with only the supplied stdio handles inherited.
-///
-/// The caller can verify `TokenIsAppContainer` before calling `resume`. Dropping the returned
-/// value before a successful bounded `wait_exit` terminates the child fail-closed.
+fn explicit_environment_block(values: &[(OsString, OsString)]) -> Result<Vec<u16>> {
+    const MAX_UNITS: usize = 32_767;
+    if values.len() > 64 {
+        return Err(Error::other("too many explicit environment variables"));
+    }
+    let mut sorted = std::collections::BTreeMap::new();
+    for (name, value) in values {
+        let key = name
+            .to_str()
+            .ok_or_else(|| Error::other("environment key must be ASCII"))?;
+        if key.is_empty()
+            || key.len() > 128
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            return Err(Error::other("invalid explicit environment key"));
+        }
+        if sorted
+            .insert(key.to_ascii_uppercase(), (name, value))
+            .is_some()
+        {
+            return Err(Error::other("duplicate case-insensitive environment key"));
+        }
+    }
+    let mut block = Vec::new();
+    for (_, (name, value)) in sorted {
+        let value = value.encode_wide().take(MAX_UNITS + 1).collect::<Vec<_>>();
+        if value.contains(&0) || block.len() + name.len() + value.len() + 3 > MAX_UNITS {
+            return Err(Error::other(
+                "explicit environment exceeds bounded UTF-16 block",
+            ));
+        }
+        block.extend(name.encode_wide());
+        block.push(u16::from(b'='));
+        block.extend(value);
+        block.push(0);
+    }
+    if block.is_empty() {
+        block.push(0);
+    }
+    block.push(0);
+    Ok(block)
+}
+
+/// Create a suspended child with only the supplied stdio handles inherited.
+/// This compatibility entry point inherits the caller's environment. Private
+/// runtime controllers must use the explicit-environment entry point instead.
 pub fn spawn_appcontainer_suspended(
     profile: &AppContainerProfile,
     executable: &Path,
     args: &[OsString],
     cwd: &Path,
     stdio: AppContainerStdio<'_>,
+) -> Result<SuspendedAppContainerProcess> {
+    spawn_appcontainer_inner(profile, executable, args, cwd, stdio, None)
+}
+
+/// Suspended child with a complete bounded explicit environment. An empty slice
+/// means an empty block; it never falls back to the caller's ambient environment.
+/// The caller still authorizes executable, arguments and each environment value.
+pub fn spawn_appcontainer_with_environment_suspended(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: &[(OsString, OsString)],
+) -> Result<SuspendedAppContainerProcess> {
+    let block = explicit_environment_block(environment)?;
+    spawn_appcontainer_inner(profile, executable, args, cwd, stdio, Some(&block))
+}
+
+fn spawn_appcontainer_inner(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: Option<&[u16]>,
 ) -> Result<SuspendedAppContainerProcess> {
     let executable_wide = wide_null(executable.as_os_str());
     let cwd_wide = wide_null(cwd.as_os_str());
@@ -517,8 +588,11 @@ pub fn spawn_appcontainer_suspended(
             None,
             None,
             true,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
-            None,
+            EXTENDED_STARTUPINFO_PRESENT
+                | CREATE_SUSPENDED
+                | CREATE_NO_WINDOW
+                | CREATE_UNICODE_ENVIRONMENT,
+            environment.map(|block| block.as_ptr().cast()),
             PCWSTR(cwd_wide.as_ptr()),
             &startup.StartupInfo,
             &mut info,
@@ -607,6 +681,110 @@ mod tests {
     fn system32_executable(name: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot").expect("SystemRoot");
         PathBuf::from(root).join("System32").join(name)
+    }
+
+    #[test]
+    fn explicit_environment_is_bounded_sorted_and_never_implicitly_inherited() {
+        assert_eq!(explicit_environment_block(&[]).unwrap(), [0, 0]);
+        let block = explicit_environment_block(&[
+            (OsString::from("z"), OsString::from("a=b")),
+            (OsString::from("A"), OsString::from("1")),
+        ])
+        .unwrap();
+        assert_eq!(String::from_utf16(&block).unwrap(), "A=1\0z=a=b\0\0");
+        for key in ["", "a=b", "with space", "a\0", "é"] {
+            assert!(
+                explicit_environment_block(&[(OsString::from(key), OsString::from("x"))]).is_err()
+            );
+        }
+        assert!(
+            explicit_environment_block(&[
+                (OsString::from("PATH"), OsString::from("a")),
+                (OsString::from("Path"), OsString::from("b"))
+            ])
+            .is_err()
+        );
+        assert!(
+            explicit_environment_block(&[(OsString::from("a"), OsString::from("x\0y"))]).is_err()
+        );
+        assert!(
+            explicit_environment_block(&[(OsString::from("a"), OsString::from("x".repeat(32767)))])
+                .is_err()
+        );
+        assert!(
+            explicit_environment_block(
+                &(0..65)
+                    .map(|i| (OsString::from(format!("v{i}")), OsString::from("x")))
+                    .collect::<Vec<_>>()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn explicit_environment_reaches_owned_child_without_ambient_path() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let command = system32_executable("cmd.exe");
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let mut output = crate::CapturedOutputPipe::new().unwrap();
+        let child = spawn_appcontainer_with_environment_suspended(
+            &profile,
+            &command,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("set"),
+            ],
+            command.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.writer_handle().unwrap(),
+                stderr: output.writer_handle().unwrap(),
+            },
+            &[
+                (
+                    OsString::from("OPTIC_EXPLICIT_ENV"),
+                    OsString::from("present"),
+                ),
+                (
+                    OsString::from("PATH"),
+                    OsString::from("controlled-test-path"),
+                ),
+            ],
+        )
+        .unwrap();
+        let mut owned = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        output.close_parent_writer();
+        owned.arm_deadline(3000).unwrap();
+        owned.resume().unwrap();
+        let mut bytes = Vec::new();
+        let mut eof = false;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !eof {
+            let chunk = output.try_read(1024).unwrap();
+            bytes.extend_from_slice(&chunk.bytes);
+            assert!(bytes.len() <= 4096);
+            eof = chunk.eof;
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(owned.try_wait().unwrap(), Some(0));
+        let text = String::from_utf8(bytes).unwrap().to_ascii_lowercase();
+        assert!(
+            text.lines()
+                .any(|line| line == "optic_explicit_env=present")
+        );
+        assert!(text.lines().any(|line| line == "path=controlled-test-path"));
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.starts_with("userprofile=") || line.starts_with("node_options="))
+        );
+        owned.terminate_and_confirm_empty(1000).unwrap();
     }
 
     #[test]
