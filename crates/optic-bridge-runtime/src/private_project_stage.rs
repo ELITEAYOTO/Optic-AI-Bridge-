@@ -205,37 +205,48 @@ impl PrivateProjectStageService {
             identity,
             files: Vec::new(),
             directories: BTreeSet::new(),
-            _profile: profile,
+            _profile: Some(profile),
             slot: Some(slot),
             manifest: None,
         };
-        let _root_pin = pin_directory_chain(&stage.root, None)
-            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-        for (input, action) in snapshot.manifest().files().iter().zip(actions) {
-            self.capture.authorize(action, started)?;
-            let relative = Path::new(input.path.as_str());
-            let mut parent = PathBuf::new();
-            for part in relative.parent().unwrap_or(Path::new("")).components() {
-                let _pin = pin_directory_chain(&stage.root, Some(&parent))
-                    .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-                parent.push(part);
-                if !stage.directories.contains(&parent) {
-                    fs::create_dir(stage.root.join(&parent))?;
-                    stage.directories.insert(parent.clone());
-                }
+        let root_pin = match pin_directory_chain(&stage.root, None) {
+            Ok(pin) => pin,
+            Err(_) => {
+                drop(_private_pin);
+                return Err(PrivateProjectStageError::NativeBoundary);
             }
-            let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
-                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(stage.root.join(relative))?;
-            stage.files.push(relative.to_path_buf());
-            file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
-        }
-        for action in actions {
-            self.capture.authorize(action, started)?;
-        }
+        };
+        let copying = (|| -> Result<(), PrivateProjectStageError> {
+            for (input, action) in snapshot.manifest().files().iter().zip(actions) {
+                self.capture.authorize(action, started)?;
+                let relative = Path::new(input.path.as_str());
+                let mut parent = PathBuf::new();
+                for part in relative.parent().unwrap_or(Path::new("")).components() {
+                    let _pin = pin_directory_chain(&stage.root, Some(&parent))
+                        .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+                    parent.push(part);
+                    if !stage.directories.contains(&parent) {
+                        fs::create_dir(stage.root.join(&parent))?;
+                        stage.directories.insert(parent.clone());
+                    }
+                }
+                let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
+                    .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(stage.root.join(relative))?;
+                stage.files.push(relative.to_path_buf());
+                file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
+            }
+            for action in actions {
+                self.capture.authorize(action, started)?;
+            }
+            Ok(())
+        })();
+        drop(root_pin);
+        drop(_private_pin);
+        copying?;
         stage.manifest = Some(snapshot.into_manifest());
         Ok(stage)
     }
@@ -255,7 +266,7 @@ pub struct PreparedPrivateProject {
     #[cfg(windows)]
     directories: BTreeSet<PathBuf>,
     #[cfg(windows)]
-    _profile: AppContainerProfile,
+    _profile: Option<AppContainerProfile>,
     #[cfg(windows)]
     slot: Option<StageSlot>,
 }
@@ -381,6 +392,10 @@ impl PreparedPrivateProject {
         }
         drop(pin);
         fs::remove_dir(&self.root)?;
+        self._profile
+            .take()
+            .expect("owned cleanup profile")
+            .close()?;
         if let Some(mut slot) = self.slot.take() {
             slot.release();
         }

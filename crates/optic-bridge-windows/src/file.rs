@@ -18,9 +18,10 @@ use windows::{
         Storage::FileSystem::{
             DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_DISPOSITION_INFO,
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-            FILE_ID_INFO, FILE_SHARE_READ, FileAttributeTagInfo, FileDispositionInfo, FileIdInfo,
-            GetFileInformationByHandleEx, GetFinalPathNameByHandleW, REPLACE_FILE_FLAGS,
-            ReplaceFileW, SetFileInformationByHandle, VOLUME_NAME_DOS,
+            FILE_ID_INFO, FILE_SHARE_READ, FILE_STANDARD_INFO, FileAttributeTagInfo,
+            FileDispositionInfo, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx,
+            GetFinalPathNameByHandleW, REPLACE_FILE_FLAGS, ReplaceFileW,
+            SetFileInformationByHandle, VOLUME_NAME_DOS,
         },
     },
     core::{Error as WindowsError, PCWSTR},
@@ -37,6 +38,45 @@ pub struct OpenedWindowsFile {
     file: File,
     identity: WindowsFileIdentity,
     final_path: PathBuf,
+}
+
+/// Host-owned state only: exclusive read/write handle, no final reparse target,
+/// no truncation. Caller pins its parent and compares the returned final path.
+pub fn open_exclusive_state_file(
+    path: &Path,
+    create_new: bool,
+) -> Result<OpenedWindowsFile, WindowsFileError> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(create_new)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(path)?;
+    reject_reparse(&file)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::other("state target must be a file").into());
+    }
+    let mut standard = FILE_STANDARD_INFO::default();
+    // SAFETY: exclusive live file and an exact native writable output buffer.
+    unsafe {
+        GetFileInformationByHandleEx(
+            file_handle(&file),
+            FileStandardInfo,
+            (&mut standard as *mut FILE_STANDARD_INFO).cast(),
+            size_of::<FILE_STANDARD_INFO>() as u32,
+        )?;
+    }
+    if standard.NumberOfLinks != 1 {
+        return Err(io::Error::other("state file must not have hard-link aliases").into());
+    }
+    let identity = query_identity(&file)?;
+    let final_path = query_final_path(&file)?;
+    Ok(OpenedWindowsFile {
+        file,
+        identity,
+        final_path,
+    })
 }
 
 impl OpenedWindowsFile {
@@ -261,6 +301,26 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture");
         root
+    }
+
+    #[test]
+    fn exclusive_state_file_never_truncates_and_rejects_aliases() {
+        use std::io::{Read, Write};
+        let root = workspace("state-lock");
+        let path = root.join("state");
+        let mut first = open_exclusive_state_file(&path, true).unwrap();
+        first.file_mut().write_all(b"persisted").unwrap();
+        first.file_mut().sync_all().unwrap();
+        assert!(open_exclusive_state_file(&path, false).is_err());
+        drop(first);
+        let mut reopened = open_exclusive_state_file(&path, false).unwrap();
+        let mut bytes = Vec::new();
+        reopened.file_mut().read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"persisted");
+        drop(reopened);
+        fs::hard_link(&path, root.join("alias")).unwrap();
+        assert!(open_exclusive_state_file(&path, false).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

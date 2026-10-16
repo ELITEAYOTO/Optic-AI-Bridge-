@@ -103,6 +103,21 @@ impl ProjectInputManifest {
         self.total_bytes
     }
 
+    /// Deterministic version of the sorted path/size/content expectations.
+    /// Excludes source contents and authorization tokens; grants no authority.
+    #[must_use]
+    pub fn fingerprint(&self) -> ContentVersion {
+        let mut bytes = b"optic.project-inputs.v1\0".to_vec();
+        for input in &self.files {
+            let path = input.path.as_str().as_bytes();
+            bytes.extend_from_slice(&(path.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(path);
+            bytes.extend_from_slice(&input.size_bytes.to_le_bytes());
+            bytes.extend_from_slice(input.version.to_hex().as_bytes());
+        }
+        ContentVersion::from_bytes(&bytes)
+    }
+
     /// Consumes already-authorized complete reads. No live paths are opened and
     /// no serialized/model-supplied snapshot can bypass this verification.
     pub fn seal(
@@ -236,6 +251,24 @@ mod tests {
     }
     fn manifest(inputs: Vec<ProjectInputSpec>) -> Result<ProjectInputManifest, ProjectInputError> {
         ProjectInputManifest::new(session(), task(), 1, inputs)
+    }
+
+    #[test]
+    fn fingerprint_binds_sorted_paths_sizes_and_versions_without_authority() {
+        let a = manifest(vec![spec("b.cjs", b"b"), spec("a.cjs", b"a")]).unwrap();
+        let b = manifest(vec![spec("a.cjs", b"a"), spec("b.cjs", b"b")]).unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+        let changed = manifest(vec![spec("a.cjs", b"A"), spec("b.cjs", b"b")]).unwrap();
+        assert_ne!(a.fingerprint(), changed.fingerprint());
+        let other_owner = ProjectInputManifest::new(
+            SessionHandle::generate().unwrap(),
+            TaskLeaseId::generate().unwrap(),
+            9,
+            b.files().iter().cloned(),
+        )
+        .unwrap();
+        assert_eq!(a.fingerprint(), other_owner.fingerprint());
+        assert!(other_owner.require_binding(&session(), &task(), 1).is_err());
     }
 
     #[test]
