@@ -337,7 +337,9 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use crate::{AppContainerProfile, AppContainerStdio, spawn_appcontainer_suspended};
+    use crate::{
+        AppContainerProfile, AppContainerStdio, spawn_appcontainer_with_environment_suspended,
+    };
     use windows::Win32::Storage::FileSystem::{
         FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
     };
@@ -422,7 +424,35 @@ mod tests {
             .write(true)
             .open(&stderr_path)
             .expect("capture stderr");
-        let mut child = spawn_appcontainer_suspended(
+        let private = profile
+            .private_storage_root()
+            .expect("native private environment root");
+        for name in ["tmp", "local", "roaming"] {
+            let folder = private.join(name);
+            if !folder.exists() {
+                fs::create_dir(&folder).expect("private environment directory");
+            }
+            crate::inspect_directory_no_reparse(&folder)
+                .expect("ordinary private environment directory");
+        }
+        let environment = vec![
+            (
+                OsString::from("SystemRoot"),
+                std::env::var_os("SystemRoot").expect("SystemRoot"),
+            ),
+            (
+                OsString::from("LOCALAPPDATA"),
+                private.join("local").into_os_string(),
+            ),
+            (
+                OsString::from("APPDATA"),
+                private.join("roaming").into_os_string(),
+            ),
+            (OsString::from("TEMP"), private.join("tmp").into_os_string()),
+            (OsString::from("TMP"), private.join("tmp").into_os_string()),
+            (OsString::from("OPTIC_PRIVATE_ENV"), OsString::from("1")),
+        ];
+        let mut child = spawn_appcontainer_with_environment_suspended(
             profile,
             executable,
             &args,
@@ -432,6 +462,7 @@ mod tests {
                 stdout: stdout.as_handle(),
                 stderr: stderr.as_handle(),
             },
+            &environment,
         )
         .expect("spawn AppContainer");
         assert!(child.is_appcontainer().expect("query AppContainer token"));
@@ -597,6 +628,8 @@ mod tests {
             br#"
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {add}=require('./lib/math.cjs');
+assert.equal(process.env.OPTIC_PRIVATE_ENV,'1');
+assert.equal(process.env.USERPROFILE,undefined);assert.equal(process.env.HOME,undefined);
 assert.equal(add(2,3),5);
 assert.equal(process.cwd(),__dirname);
 fs.mkdirSync(path.join(__dirname,'dist'));
@@ -676,6 +709,8 @@ console.log('PRIVATE_STAGE_NODE_PASS');
 'use strict';
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+assert.equal(process.env.OPTIC_PRIVATE_ENV,'1');
+assert.equal(process.env.USERPROFILE,undefined);assert.equal(process.env.HOME,undefined);
 app.disableHardwareAcceleration();
 app.setPath('userData',path.join(__dirname,'state'));
 app.setPath('logs',path.join(__dirname,'logs'));
@@ -695,19 +730,29 @@ app.whenReady().then(async()=>{
   clearTimeout(timer);window.destroy();app.quit();
 }).catch(error=>{console.error(String(error));app.exit(2);});
 "#).expect("fixed compatibility application");
+        let mut arguments = vec![
+            OsString::from("--enable-logging=file"),
+            OsString::from(format!(
+                "--log-file={}",
+                application.join("startup.log").display()
+            )),
+            OsString::from(format!(
+                "--user-data-dir={}",
+                application.join("state").display()
+            )),
+            OsString::from("--v=1"),
+        ];
+        match std::env::var("OPTIC_PRIVATE_ELECTRON_VARIANT").as_deref() {
+            Ok("no-stdio-init") => arguments.push(OsString::from("--no-stdio-init")),
+            Ok("default") | Err(_) => {}
+            _ => panic!("unsupported fixed compatibility variant"),
+        }
+        arguments.push(application.clone().into_os_string());
+        arguments.push(sentinel.clone().into_os_string());
         let output = run_isolated_capture_with_budget(
             &profile,
             &runtime.join("electron.exe"),
-            vec![
-                OsString::from("--enable-logging=file"),
-                OsString::from(format!(
-                    "--log-file={}",
-                    application.join("startup.log").display()
-                )),
-                OsString::from("--v=1"),
-                application.clone().into_os_string(),
-                sentinel.clone().into_os_string(),
-            ],
+            arguments,
             &application,
             30_000,
         );

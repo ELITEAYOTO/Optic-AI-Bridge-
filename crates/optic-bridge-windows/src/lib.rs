@@ -27,6 +27,7 @@ mod workspace_grant;
 pub use appcontainer::{
     AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
     SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+    spawn_appcontainer_with_environment_suspended,
 };
 #[cfg(windows)]
 pub use directory::{PinnedDirectoryChain, PinnedDirectoryError, pin_directory_chain};

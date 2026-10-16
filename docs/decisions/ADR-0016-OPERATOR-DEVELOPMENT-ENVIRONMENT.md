@@ -139,3 +139,19 @@ The profile storage accessor now queries the fresh profile SID through
 instead of constructing a path from inherited LOCALAPPDATA. Windows allocation
 ownership uses LocalFree/CoTaskMemFree as specified by the native APIs; named
 profiles are refused. Native validation is required before using this accessor.
+
+Native Node staging passed with the SID-derived root at03fe060. Electron still
+failed identically on CI and on the user's Windows machine, before a startup log
+was created. Therefore this is reproducible below FS/tunnel transport; its exact
+native startup cause remains unknown. The optional probe artifact records both
+head/merge source identity and binary SHA256 and is not an alpha release.
+
+The next probe uses a complete explicit child environment: only SystemRoot and
+private profile-local APPDATA/LOCALAPPDATA/TEMP/TMP plus a public test marker.
+The Windows primitive validates at most64 ASCII variable names, case-insensitive
+uniqueness, no NULs and a32767-unit UTF-16 block; an empty environment is an
+explicit double NUL. No process-global environment mutation is used. Node and
+Electron programs assert that HOME/USERPROFILE were not inherited. The legacy
+launcher retains its existing curated-parent environment until separately wired.
+One fixed diagnostic variant tests Electron's documented --no-stdio-init flag;
+it does not disable Chromium/AppContainer isolation or admit arbitrary switches.
