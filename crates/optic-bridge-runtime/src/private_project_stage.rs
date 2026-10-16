@@ -260,43 +260,59 @@ impl PrivateProjectStageService {
             journal_finalizing: false,
             outcome: crate::PrivateTaskOutcome::NoProcess,
         };
-        let _root_pin = pin_directory_chain(&stage.root, None)
-            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-        for (input, action) in snapshot.manifest().files().iter().zip(actions) {
-            self.capture.authorize(action, started)?;
-            let relative = Path::new(input.path.as_str());
-            let mut parent = PathBuf::new();
-            for part in relative.parent().unwrap_or(Path::new("")).components() {
-                let _pin = pin_directory_chain(&stage.root, Some(&parent))
-                    .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-                parent.push(part);
-                if !stage.directories.contains(&parent) {
-                    fs::create_dir(stage.root.join(&parent))?;
-                    stage.directories.insert(parent.clone());
-                }
+        let root_pin = match pin_directory_chain(&stage.root, None) {
+            Ok(pin) => pin,
+            Err(_) => {
+                drop(_private_pin);
+                return Err(PrivateProjectStageError::NativeBoundary);
             }
-            let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
-                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(stage.root.join(relative))?;
-            stage.files.push(relative.to_path_buf());
-            file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
-        }
-        for action in actions {
-            self.capture.authorize(action, started)?;
-        }
+        };
+        let copying = (|| -> Result<(), PrivateProjectStageError> {
+            for (input, action) in snapshot.manifest().files().iter().zip(actions) {
+                self.capture.authorize(action, started)?;
+                let relative = Path::new(input.path.as_str());
+                let mut parent = PathBuf::new();
+                for part in relative.parent().unwrap_or(Path::new("")).components() {
+                    let _pin = pin_directory_chain(&stage.root, Some(&parent))
+                        .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+                    parent.push(part);
+                    if !stage.directories.contains(&parent) {
+                        fs::create_dir(stage.root.join(&parent))?;
+                        stage.directories.insert(parent.clone());
+                    }
+                }
+                let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
+                    .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(stage.root.join(relative))?;
+                stage.files.push(relative.to_path_buf());
+                file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
+            }
+            for action in actions {
+                self.capture.authorize(action, started)?;
+            }
+            Ok(())
+        })();
+        // On copy/authorization failure, release our own storage pins before
+        // stage Drop attempts acknowledged native profile cleanup.
+        drop(root_pin);
+        drop(_private_pin);
+        copying?;
         stage.manifest = Some(snapshot.into_manifest());
         if let Some(ticket) = &stage.journal {
             ticket.prepared()?;
+        }
+        for action in actions {
+            self.capture.authorize(action, started)?;
         }
         Ok(stage)
     }
 }
 
-/// The profile is deliberately private and there is no execution API. Dropping
-/// this value cannot race an owned child: this tranche never starts one.
+/// The profile stays private. An executing owner worker retains this value
+/// until its owned tree is confirmed empty; uncertain workers do not run Drop.
 pub struct PreparedPrivateProject {
     #[cfg(windows)]
     journal: Option<crate::private_task_journal::PrivateTaskJournalTicket>,

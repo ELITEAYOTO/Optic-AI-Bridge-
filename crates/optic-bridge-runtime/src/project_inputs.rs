@@ -764,6 +764,43 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn private_preparation_expiry_after_allocation_closes_profile_and_intent() {
+        struct AfterAllocation(Arc<crate::PrivateTaskJournal>);
+        impl Clock for AfterAllocation {
+            fn now(&self) -> MonotonicTime {
+                let allocated = self
+                    .0
+                    .recovery_report()
+                    .unwrap()
+                    .iter()
+                    .any(|record| record.phase == crate::PrivateTaskRecoveryPhase::Allocating);
+                MonotonicTime::from_millis(if allocated { 100_000 } else { 100 })
+            }
+        }
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let state_root = fixture.root.with_extension("private-state");
+        fs::create_dir(&state_root).unwrap();
+        fixture.state_root = Some(state_root.clone());
+        let journal = crate::PrivateTaskJournal::open(&state_root, &fixture.root).unwrap();
+        let mut capture = fixture.service();
+        capture.clock = Arc::new(AfterAllocation(journal.clone()));
+        let service =
+            crate::PrivateProjectStageService::with_journal(capture, journal.clone()).unwrap();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        assert!(service.prepare(manifest, &actions).is_err());
+        assert_eq!(service.occupied_slots(), 0);
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            report[0].outcome,
+            Some(crate::PrivateTaskOutcome::NoProcess)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn private_preparation_journal_capacity_precedes_missing_source_io() {
         let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
         let (service, journal) = fixture.journaled_service();
