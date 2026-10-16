@@ -977,6 +977,13 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_lost_start_reply_keeps_exact_owned_record() {
+        private_node_task_case("lost-start-reply").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
     async fn private_task_crash_child() {
         if std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").is_none() {
             return;
@@ -1103,7 +1110,7 @@ assert.equal(require('./math.cjs').add(20,22),42);
 let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){denied=['ERR_ACCESS_DENIED','EACCES','EPERM'].includes(e.code);}
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         let main: &[u8] = match case {
-            "roundtrip" => roundtrip,
+            "roundtrip" | "lost-start-reply" => roundtrip,
             "blocked-owner-revoke" => b"console.log('PRIVATE_NODE_READY');setTimeout(()=>console.log('SURVIVED_BLOCKED_OWNER'),1000);setInterval(()=>{},1000);",
             "stop" | "revoke" | "timeout" | "host-crash" | "read-revoke" | "process-revoke"
             | "authority-expiry" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
@@ -1175,7 +1182,8 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             env_allowlist: Vec::new(),
             resources: action.resources,
         };
-        let pause = (case == "blocked-owner-revoke").then(|| journal.pause_next_running_for_test());
+        let pause = matches!(case, "blocked-owner-revoke" | "lost-start-reply")
+            .then(|| journal.pause_next_running_for_test());
         let starting = prepared.start_node(
             crate::PrivateNodeTaskStart {
                 action,
@@ -1187,7 +1195,27 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
                 .begin_execution(MonotonicTime::from_millis(100))
                 .unwrap(),
         );
-        let job = if let Some((entered, release)) = pause {
+        let job = if case == "lost-start-reply" {
+            let (entered, release) = pause.unwrap();
+            let mut starting = Box::pin(starting);
+            tokio::select! {
+                biased;
+                result = &mut starting => panic!("reply must wait for journal barrier: {result:?}"),
+                () = async {
+                    entered.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+                } => (),
+            }
+            assert_eq!(transport.active_requests(), 1);
+            let job = processes
+                .find_recorded_private_action(&fixture.session.handle, &action_id)
+                .unwrap()
+                .expect("native start already has an owned record");
+            drop(starting); // Simulate a lost transport reply after native resume.
+            assert_eq!(transport.active_requests(), 1);
+            assert_eq!(service.occupied_slots(), 1);
+            release.send(()).unwrap();
+            job
+        } else if let Some((entered, release)) = pause {
             let blocked_owner = async {
                 entered
                     .recv_timeout(std::time::Duration::from_secs(5))
@@ -1323,7 +1351,11 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         );
         assert_eq!(
             result.exit_code,
-            if case == "roundtrip" { Some(0) } else { None },
+            if matches!(case, "roundtrip" | "lost-start-reply") {
+                Some(0)
+            } else {
+                None
+            },
             "stderr={}",
             String::from_utf8_lossy(&stderr.bytes)
         );
@@ -1340,7 +1372,7 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         if case == "blocked-owner-revoke" {
             assert!(!String::from_utf8_lossy(&stdout.bytes).contains("SURVIVED_BLOCKED_OWNER"));
         }
-        if case == "roundtrip" {
+        if matches!(case, "roundtrip" | "lost-start-reply") {
             assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
         }
         if case == "output" {
