@@ -81,3 +81,13 @@ about a later merge head.
 Main post-merge CI38837205821 passed forbcd26aa. The alpha provider boundary
 ADR is renumbered0017 to avoid collision with main's input capture ADR0012;
 its contents/authority are unchanged. External source classification remains open.
+
+## Main private-preparation integration — 2026-10-16
+
+PR225 exacthead78a45aa passed CI38899856537, preparation38899856368 and local
+three-test native reproduction. Squash merge3a89f4060fb9ba2512db211e9922e28654980924
+confirmed. Sourcecapture/readpolicy remains mandatory; no public process, GUI,
+dependency or artifact permission is added. This alpha retains its newer owner
+worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
+Equivalent native storage helpers/imports were deduplicated during integration.
+Exact merge-head validation remains required; prior CI is not its validation.

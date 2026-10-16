@@ -714,6 +714,23 @@ mod tests {
     }
 
     #[test]
+    fn private_storage_requires_a_fresh_ephemeral_profile() {
+        let named = AppContainerProfile::create(&unique_profile_name()).expect("named profile");
+        assert!(named.private_storage_root().is_err());
+        let ephemeral = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let root = ephemeral
+            .private_storage_root()
+            .expect("SID-derived native storage");
+        assert!(root.is_absolute());
+        assert_eq!(
+            crate::inspect_directory_no_reparse(&root)
+                .unwrap()
+                .final_path,
+            root
+        );
+    }
+
+    #[test]
     fn appcontainer_token_denies_ungranted_user_file_read() {
         let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
         {
