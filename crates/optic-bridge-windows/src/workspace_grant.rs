@@ -838,7 +838,7 @@ app.whenReady().then(async()=>{
         // Helper has confirmed zero owned descendants even when the root
         // crashed. Remove the known private stage before success assertions so
         // a failed compatibility experiment does not retain a runtime copy.
-        fs::remove_dir_all(&stage).expect("remove owned private compatibility stage");
+        remove_drained_probe_stage(&stage, &profile_dir);
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
         assert!(
             std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1")
@@ -871,6 +871,33 @@ app.whenReady().then(async()=>{
         }
     }
 
+    fn remove_drained_probe_stage(stage: &Path, profile_dir: &Path) {
+        let parent = fs::canonicalize(profile_dir).expect("owned profile root");
+        assert!(stage.is_absolute());
+        assert_eq!(stage.parent().unwrap(), profile_dir);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if !stage.exists() {
+                return;
+            }
+            let observed = crate::inspect_directory_no_reparse(stage)
+                .expect("ordinary owned stage before recursive cleanup");
+            assert_eq!(observed.final_path.parent().unwrap(), parent);
+            match fs::remove_dir_all(stage) {
+                Ok(()) => return,
+                // Confirmed-empty job can leave a transient scanner/OS file
+                // mapping. Retry only sharing/lock violations in this known
+                // test-owned directory; never terminate an unrelated process.
+                Err(error)
+                    if matches!(error.raw_os_error(), Some(32 | 33))
+                        && std::time::Instant::now() < until =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => panic!("owned private stage cleanup failed: {error}"),
+            }
+        }
+    }
     fn copy_electron_runtime_for_probe(source: &Path, destination: &Path) {
         let mut pending = vec![(source.to_path_buf(), destination.to_path_buf(), 0_usize)];
         let mut files = 0_usize;
