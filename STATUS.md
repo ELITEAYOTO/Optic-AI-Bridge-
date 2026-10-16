@@ -923,3 +923,4 @@ Private preparation now has an optional bounded native owner worker: caller canc
 Owned Windows AppContainer tree and bounded pipe primitives prepared independently of experimental adapters. Native assignment-before-resume and confirmed tree completion do not grant process/MCP/GUI authority. Exact candidate checks pending.
 
 Experimental private-task crash journal added behind an explicit host-only constructor. Intent precedes allocation/start; unresolved records retain capacity across restart. No restored authorization or automatic replay. Native validation pending; durable output logs/operator reconciliation remain open.
+Private-state preparation primitives: deterministic input fingerprints, preallocated fresh profile plans, exclusive nontruncating state handles with hard-link/reparse refusal, and acknowledged profile cleanup. No journal, replay or new model authority is exposed by this main increment. Exact candidate checks pending.

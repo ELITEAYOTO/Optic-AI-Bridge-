@@ -282,3 +282,4 @@ Exact merge-head validation remains required; prior CI is not its validation.
 - Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
 
 - Prototype bounded private-task crash evidence using an exclusive workspace-bound state journal, strict pre-effect transitions and retained unresolved capacity after restart. No task replay or new MCP authority.
+- Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.

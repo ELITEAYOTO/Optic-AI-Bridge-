@@ -49,3 +49,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'bounded native pipe proof failed' }
           & $Probe --exact appcontainer::tests::contained_deadline_terminates_without_owner_polling --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'independent owned deadline proof failed' }
+          & $Probe --exact file::tests::exclusive_state_file_never_truncates_and_rejects_aliases --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'exclusive native state file proof failed' }
+          & $Probe --exact appcontainer::tests::ephemeral_plan_is_fresh_and_can_be_recorded_before_creation --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'fresh profile plan proof failed' }
