@@ -317,3 +317,11 @@ No user source directory receives recursive write grants.
 
 Validation pending: a focused opt-in native Node test checks two-module execution,
 write denial, shared job output and cleanup. Core has no mandatory Node dependency.
+
+A retained private job record now correlates its original ActionId and session.
+The host can recover its JobId after a lost start reply; admission rejects a
+second start using that same retained action. This shares the existing bounded
+job history, introduces no extra unbounded registry, and exposes nothing to MCP.
+It is not durable exactly-once behavior: terminal history can be evicted and host
+restart loses these in-memory records. Never automatically replay an unknown
+start after restart. Exact candidate d64cf2e validation is pending.

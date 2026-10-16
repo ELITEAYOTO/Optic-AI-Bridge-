@@ -92,3 +92,19 @@ worker/cancellation controller; main's SID-query negative test and ADR0018 remai
 Equivalent native storage helpers/imports were deduplicated during integration.
 Exact merge-head validation remains required; prior CI is not its validation.
 Main post-merge CI38900962379 passed for3a89f40. Experimental managed Node first proof compiled and passed six preparation tests, then failed with Node FileSystemRead denial on an extended Windows input path; corrected path spelling and lifecycle checks require their own native result.
+
+## Owner worker and managed Node proof — 2026-10-16
+
+PR226 head2baa138 passed CI38905910740, native38905910736 and six local tests
+from verified artifact12047922027 (outerb33d67521d588df4a67d21f1d5f475efa3834569205929d2507aaaf40edb84f9).
+Seven-file diff reviewed, no change requests or unresolved threads. Squash
+fab63d9f85a3d3730b4f822d1ca565831f290871 merged; mainCI38906519699 passed.
+
+Alpha5406a4f passed CI38906210858 and native38906210466 with five managed Node
+cases plus six preparation cases. Earlierc7436b4 three-node/six-preparation
+cases reproduced locally, verified artifact12047926705, outer
+f841317266a5c41366edc81b026d9aba82ca0a39e6dc948bb365fe3c83342092,
+binary956fd34df9730f32fe3b538090c56e4ebbda2f38de2ee2ffbf1337fb1fdaf23d.
+Initial extended-Windows-path Node permission failure is corrected with matching
+local-drive spelling; UNC/device paths are refused. The native Node API remains
+unwired. Normal Electron inner-sandbox startup remains a separately failing probe.
