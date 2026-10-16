@@ -55,13 +55,16 @@ fn drain_once(
 }
 
 pub(crate) fn execute(
-    mut stage: PreparedPrivateProject,
+    stage: PreparedPrivateProject,
     capture: &ProjectInputCaptureService,
     reads: &[ActionEnvelope],
     command: PrivateNodeTaskCommand,
     io: &BlockingIoGovernor,
     runtime: &tokio::runtime::Handle,
 ) -> Result<(), Error> {
+    // An unwinding worker must never reclaim a profile while its tree may live.
+    // Only the explicit known-empty paths recover ownership for cleanup.
+    let mut stage = std::mem::ManuallyDrop::new(stage);
     let PrivateNodeTaskCommand {
         start,
         request,
@@ -203,7 +206,7 @@ pub(crate) fn execute(
         drop(native);
         drop(root_pin);
         if known_empty {
-            let cleanup = cleanup_stage(stage, io, runtime);
+            let cleanup = cleanup_stage(std::mem::ManuallyDrop::into_inner(stage), io, runtime);
             if let Some(record) = record.as_mut() {
                 record.finish(ProcessStatus::Failed, None);
             }
@@ -302,7 +305,7 @@ pub(crate) fn execute(
     drop(stdout);
     drop(stderr);
     drop(root_pin);
-    let cleanup = cleanup_stage(stage, io, runtime);
+    let cleanup = cleanup_stage(std::mem::ManuallyDrop::into_inner(stage), io, runtime);
     if cleanup.is_err() {
         record.append(
             ProcessStream::Stderr,
