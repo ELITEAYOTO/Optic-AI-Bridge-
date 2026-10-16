@@ -924,3 +924,7 @@ Owned Windows AppContainer tree and bounded pipe primitives prepared independent
 
 Experimental private-task crash journal added behind an explicit host-only constructor. Intent precedes allocation/start; unresolved records retain capacity across restart. No restored authorization or automatic replay. Native validation pending; durable output logs/operator reconciliation remain open.
 Private-state preparation primitives: deterministic input fingerprints, preallocated fresh profile plans, exclusive nontruncating state handles with hard-link/reparse refusal, and acknowledged profile cleanup. No journal, replay or new model authority is exposed by this main increment. Exact candidate checks pending.
+
+Owned native watchdog candidate: one deadline and at most four atomic stop flags,
+armed before resume, independent of filesystem/registry activity. Owned-tree empty
+confirmation remains mandatory. Focused native tests and exact CI pending.
