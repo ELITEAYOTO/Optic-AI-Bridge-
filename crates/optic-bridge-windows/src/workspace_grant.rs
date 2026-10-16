@@ -752,9 +752,15 @@ app.whenReady().then(async()=>{
             )),
             OsString::from("--v=1"),
         ];
-        match std::env::var("OPTIC_PRIVATE_ELECTRON_VARIANT").as_deref() {
-            Ok("no-stdio-init") => arguments.push(OsString::from("--no-stdio-init")),
-            Ok("default") | Err(_) => {}
+        let variant = std::env::var("OPTIC_PRIVATE_ELECTRON_VARIANT")
+            .unwrap_or_else(|_| "default".to_owned());
+        match variant.as_str() {
+            "no-stdio-init" => arguments.push(OsString::from("--no-stdio-init")),
+            // Explicit compatibility comparison only: the fresh root token
+            // remains AppContainer and its whole tree stays in the owned Job.
+            // This is not a production fallback or descendant-token proof.
+            "outer-appcontainer" => arguments.push(OsString::from("--no-sandbox")),
+            "default" => {}
             _ => panic!("unsupported fixed compatibility variant"),
         }
         arguments.push(application.clone().into_os_string());
@@ -773,6 +779,17 @@ app.whenReady().then(async()=>{
                 read_probe_output(&startup_log)
             );
         }
+        let result = fs::read(application.join("result.json")).ok();
+        let source_after = fs::read_to_string(&sentinel).expect("source sentinel");
+        assert!(
+            fs::canonicalize(&stage)
+                .unwrap()
+                .starts_with(fs::canonicalize(&profile_dir).unwrap())
+        );
+        // Helper has confirmed zero owned descendants even when the root
+        // crashed. Remove the known private stage before success assertions so
+        // a failed compatibility experiment does not retain a runtime copy.
+        fs::remove_dir_all(&stage).expect("remove owned private compatibility stage");
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
         assert!(
             output.stdout.contains("PRIVATE_STAGE_ELECTRON_PASS"),
@@ -780,23 +797,19 @@ app.whenReady().then(async()=>{
             output.diagnostic()
         );
         assert_eq!(
-            fs::read(application.join("result.json")).expect("private result"),
+            result.expect("private result"),
             b"{\"renderer\":42,\"sourceReadDenied\":true,\"sourceWriteDenied\":true}"
         );
-        assert_eq!(
-            fs::read_to_string(&sentinel).expect("unchanged user source"),
-            PROBE_SENTINEL
-        );
-        assert!(
-            fs::canonicalize(&stage)
-                .unwrap()
-                .starts_with(fs::canonicalize(&profile_dir).unwrap())
-        );
-        // Helper confirms zero owned descendants before returning the result.
-        fs::remove_dir_all(&stage).expect("remove owned private compatibility stage");
-        println!(
-            "PRIVATE_STAGE_ELECTRON_PASS: real hidden renderer, sandbox/Node restrictions intact, private output, external source read/write denied, owned process tree drained; not a general GUI grant"
-        );
+        assert_eq!(source_after, PROBE_SENTINEL);
+        if variant == "outer-appcontainer" {
+            println!(
+                "PRIVATE_ELECTRON_OUTER_ONLY_COMPATIBILITY: hidden renderer, root AppContainer verified, inner Chromium sandbox disabled, no renderer Node, external root source access denied and owned tree drained; descendant tokens/network require separate proof; not a GUI grant"
+            );
+        } else {
+            println!(
+                "PRIVATE_STAGE_ELECTRON_PASS: real hidden renderer, sandbox/Node restrictions intact, private output, external source read/write denied, owned process tree drained; not a general GUI grant"
+            );
+        }
     }
 
     fn copy_electron_runtime_for_probe(source: &Path, destination: &Path) {

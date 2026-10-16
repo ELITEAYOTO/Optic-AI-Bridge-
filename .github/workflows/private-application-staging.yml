@@ -76,3 +76,11 @@ jobs:
           $env:OPTIC_PRIVATE_ELECTRON_DEBUG = '1'
           & (Join-Path $env:RUNNER_TEMP 'optic-private-application-probe/optic-private-application-probe.exe') --exact workspace_grant::tests::private_stage_electron_window_preserves_outer_appcontainer_boundary --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'native compatibility failure retained; bounded owned debug evidence collected' }
+      - name: Compare explicit outer-AppContainer-only compatibility
+        if: failure() && steps.electron.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $env:OPTIC_STAGE_ELECTRON = Join-Path $env:RUNNER_TEMP 'optic-private-electron-tools/node_modules/electron/dist/electron.exe'
+          $env:OPTIC_PRIVATE_ELECTRON_VARIANT = 'outer-appcontainer'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-application-probe/optic-private-application-probe.exe') --exact workspace_grant::tests::private_stage_electron_window_preserves_outer_appcontainer_boundary --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'outer-only compatibility comparison failed; no production fallback' }

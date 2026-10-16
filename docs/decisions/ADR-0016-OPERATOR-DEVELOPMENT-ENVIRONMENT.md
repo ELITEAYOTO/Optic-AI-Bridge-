@@ -165,3 +165,15 @@ later exceptions back to Windows. There is no arbitrary attach/PID or memory
 inspection tool. Debugger detach and owned Job Object drain cover error paths.
 Debug-mode success would not certify normal launch; the normal gate stays red
 until normal-mode containment and renderer checks pass.
+
+At33b0327 the owned debugger confirms the same fatal breakpoint at Electron
+image offset0x332579e, with no debug strings. Read-only inspection of the selected
+44.7.2 executable shows a no-sandbox branch immediately before a failing broker
+virtual call. Chromium's public BrokerServices layout suggests alternate-desktop
+creation; this is a supported inference, not a symbolized causal proof. No
+installed executable or ACL was edited. A fixed outer-appcontainer comparison
+adds --no-sandbox only inside the verified fresh AppContainer/owned Job. It is
+explicitly labelled preliminary compatibility with the inner Chromium sandbox
+disabled; it is not an automatic fallback, normal-gate pass, descendant token/
+network proof or production GUI authorization. Native layered-isolation and
+all-child containment must be proven before adopting an execution mode.
