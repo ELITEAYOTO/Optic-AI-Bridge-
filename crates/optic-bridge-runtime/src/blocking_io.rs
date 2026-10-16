@@ -9,6 +9,15 @@ pub struct BlockingIoGovernor {
 }
 
 impl BlockingIoGovernor {
+    pub(crate) async fn acquire_owned(
+        &self,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, BlockingIoError> {
+        Arc::clone(&self.permits)
+            .acquire_owned()
+            .await
+            .map_err(|_| BlockingIoError::Closed)
+    }
+
     pub fn new(max_operations: u32) -> Result<Self, BlockingIoError> {
         let permits = usize::try_from(max_operations).map_err(|_| BlockingIoError::InvalidLimit)?;
         if permits == 0 {
@@ -24,10 +33,7 @@ impl BlockingIoGovernor {
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        let permit = Arc::clone(&self.permits)
-            .acquire_owned()
-            .await
-            .map_err(|_| BlockingIoError::Closed)?;
+        let permit = self.acquire_owned().await?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             operation()

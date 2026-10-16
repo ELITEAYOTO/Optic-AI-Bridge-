@@ -285,3 +285,5 @@ PR #47 merged to `main` as `1e42b1ff`; exact final head `4ff720b2` passed depend
 ## Health rule
 
 This file describes reality. A design document alone never makes a feature “implemented”.
+
+Private preparation now has an optional bounded native owner worker: caller cancellation retains effect permits until real completion, and explicit discard waits for owned cleanup. Process launch and durable restart recovery remain outside this increment. Exact candidate CI pending.

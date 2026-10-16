@@ -62,69 +62,182 @@ impl PrivateProjectStageService {
         }
         #[cfg(windows)]
         {
-            self.slots
-                .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                    (used < MAX_PREPARED_STAGES).then_some(used + 1)
-                })
-                .map_err(|_| PrivateProjectStageError::Capacity)?;
-            let mut slot = StageSlot {
-                slots: self.slots.clone(),
-                released: false,
-                retain_on_drop: false,
-            };
-            // Reserve before opening sources, limiting simultaneous captured
-            // bytes as well as prepared disk inputs. Pure capture failure frees
-            // its slot; once native allocation begins, uncertainty retains it.
-            let snapshot = self.capture.capture(manifest, actions)?;
-            slot.retain_on_drop = true;
-            let profile = AppContainerProfile::create_ephemeral()?;
-            let private = profile.private_storage_root()?;
-            let _private_pin = pin_directory_chain(&private, None)
-                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-            let root = private.join("inputs");
-            fs::create_dir(&root)?;
-            let identity = inspect_directory_no_reparse(&root)
-                .map_err(|_| PrivateProjectStageError::NativeBoundary)?
-                .identity;
-            let mut stage = PreparedPrivateProject {
-                root,
-                identity,
-                files: Vec::new(),
-                directories: BTreeSet::new(),
-                _profile: profile,
-                slot: Some(slot),
-                manifest: None,
-            };
-            let _root_pin = pin_directory_chain(&stage.root, None)
-                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-            for (input, action) in snapshot.manifest().files().iter().zip(actions) {
-                self.capture.authorize(action, started)?;
-                let relative = Path::new(input.path.as_str());
-                let mut parent = PathBuf::new();
-                for part in relative.parent().unwrap_or(Path::new("")).components() {
-                    let _pin = pin_directory_chain(&stage.root, Some(&parent))
-                        .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-                    parent.push(part);
-                    if !stage.directories.contains(&parent) {
-                        fs::create_dir(stage.root.join(&parent))?;
-                        stage.directories.insert(parent.clone());
+            let slot = self.reserve_slot()?;
+            self.materialize(manifest, actions, slot, started)
+        }
+    }
+    #[cfg(windows)]
+    fn reserve_slot(&self) -> Result<StageSlot, PrivateProjectStageError> {
+        self.slots
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                (used < MAX_PREPARED_STAGES).then_some(used + 1)
+            })
+            .map_err(|_| PrivateProjectStageError::Capacity)?;
+        Ok(StageSlot {
+            slots: self.slots.clone(),
+            released: false,
+            retain_on_drop: false,
+        })
+    }
+
+    /// Keeps the native profile on its creating worker rather than declaring
+    /// native SID pointers Send/Sync. Cancellation closes the result channel;
+    /// the worker still owns effect permits through copying and then cleans up.
+    #[cfg(windows)]
+    pub async fn prepare_background(
+        self: Arc<Self>,
+        manifest: ProjectInputManifest,
+        actions: Vec<ActionEnvelope>,
+        request: crate::RequestPermit,
+        io: crate::BlockingIoGovernor,
+    ) -> Result<PreparedPrivateProjectLease, PrivateProjectStageError> {
+        let first = actions
+            .first()
+            .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+        let (admission, started) = self.capture.capture_admission(first)?;
+        self.capture.preflight(&manifest, &actions, started)?;
+        if request.is_expired_at(started) {
+            return Err(ProjectInputCaptureError::Deadline.into());
+        }
+        let session = first.session.clone();
+        let task = first
+            .task_lease
+            .clone()
+            .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+        let epoch = first.policy_epoch;
+        let slot = self.reserve_slot()?;
+        let runtime = tokio::runtime::Handle::try_current()
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?;
+        // Reserve before awaiting I/O capacity; cancellation here has no native
+        // allocation and StageSlot returns the reservation automatically.
+        let io_permit = io.acquire_owned().await?;
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = std::sync::mpsc::sync_channel(1);
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let service = Arc::clone(&self);
+        std::thread::Builder::new()
+            .name("optic-private-inputs".into())
+            .spawn(move || {
+                let result = (|| {
+                    if ready_tx.is_closed() {
+                        return Err(PrivateProjectStageError::WorkerUnavailable);
+                    }
+                    let (_admission, now) = service.capture.capture_admission(&actions[0])?;
+                    if ready_tx.is_closed() {
+                        return Err(PrivateProjectStageError::WorkerUnavailable);
+                    }
+                    if request.is_expired_at(now) {
+                        return Err(ProjectInputCaptureError::Deadline.into());
+                    }
+                    service.capture.preflight(&manifest, &actions, now)?;
+                    let stage = service.materialize(manifest, &actions, slot, now)?;
+                    let (_final_admission, finished) =
+                        service.capture.capture_admission(&actions[0])?;
+                    if request.is_expired_at(finished) {
+                        return Err(ProjectInputCaptureError::Deadline.into());
+                    }
+                    Ok(stage)
+                })();
+                // Result delivery never frees capacity before the synchronous effect
+                // has ended. The idle prepared lease holds only its stage slot.
+                drop(request);
+                drop(io_permit);
+                match result {
+                    Ok(stage) => {
+                        let lease = PreparedPrivateProjectLease {
+                            root: stage.input_root().to_path_buf(),
+                            session,
+                            task,
+                            epoch,
+                            control: Some(control_tx),
+                            done: Some(done_rx),
+                        };
+                        // An abandoned reply drops its lease/sender. recv then wakes
+                        // disconnected, just as it does on ordinary lease Drop.
+                        let _ = ready_tx.send(Ok(lease));
+                        let _ = control_rx.recv();
+                        let outcome = match runtime.block_on(io.acquire_owned()) {
+                            Ok(_cleanup_permit) => stage.discard(),
+                            Err(error) => {
+                                // No ungoverned cleanup when the owner is unavailable.
+                                // The four-slot reservation remains retained.
+                                std::mem::forget(stage);
+                                Err(error.into())
+                            }
+                        };
+                        let _ = done_tx.send(outcome);
+                    }
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error));
                     }
                 }
-                let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
+            })?;
+        drop(admission);
+        ready_rx
+            .await
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?
+    }
+
+    #[cfg(windows)]
+    fn materialize(
+        &self,
+        manifest: ProjectInputManifest,
+        actions: &[ActionEnvelope],
+        mut slot: StageSlot,
+        started: optic_bridge_core::MonotonicTime,
+    ) -> Result<PreparedPrivateProject, PrivateProjectStageError> {
+        // Reserve before opening sources, limiting simultaneous captured
+        // bytes as well as prepared disk inputs. Pure capture failure frees
+        // its slot; once native allocation begins, uncertainty retains it.
+        let snapshot = self.capture.capture(manifest, actions)?;
+        slot.retain_on_drop = true;
+        let profile = AppContainerProfile::create_ephemeral()?;
+        let private = profile.private_storage_root()?;
+        let _private_pin = pin_directory_chain(&private, None)
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+        let root = private.join("inputs");
+        fs::create_dir(&root)?;
+        let identity = inspect_directory_no_reparse(&root)
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?
+            .identity;
+        let mut stage = PreparedPrivateProject {
+            root,
+            identity,
+            files: Vec::new(),
+            directories: BTreeSet::new(),
+            _profile: profile,
+            slot: Some(slot),
+            manifest: None,
+        };
+        let _root_pin = pin_directory_chain(&stage.root, None)
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+        for (input, action) in snapshot.manifest().files().iter().zip(actions) {
+            self.capture.authorize(action, started)?;
+            let relative = Path::new(input.path.as_str());
+            let mut parent = PathBuf::new();
+            for part in relative.parent().unwrap_or(Path::new("")).components() {
+                let _pin = pin_directory_chain(&stage.root, Some(&parent))
                     .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(stage.root.join(relative))?;
-                stage.files.push(relative.to_path_buf());
-                file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
+                parent.push(part);
+                if !stage.directories.contains(&parent) {
+                    fs::create_dir(stage.root.join(&parent))?;
+                    stage.directories.insert(parent.clone());
+                }
             }
-            for action in actions {
-                self.capture.authorize(action, started)?;
-            }
-            stage.manifest = Some(snapshot.into_manifest());
-            Ok(stage)
+            let _parent_pin = pin_directory_chain(&stage.root, relative.parent())
+                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(stage.root.join(relative))?;
+            stage.files.push(relative.to_path_buf());
+            file.write_all(snapshot.content(&input.path).expect("sealed input"))?;
         }
+        for action in actions {
+            self.capture.authorize(action, started)?;
+        }
+        stage.manifest = Some(snapshot.into_manifest());
+        Ok(stage)
     }
 }
 
@@ -145,6 +258,59 @@ pub struct PreparedPrivateProject {
     _profile: AppContainerProfile,
     #[cfg(windows)]
     slot: Option<StageSlot>,
+}
+
+/// Sendable host lease; its native profile remains on a bounded owner worker.
+/// There is intentionally no process-start command or profile accessor.
+#[cfg(windows)]
+pub struct PreparedPrivateProjectLease {
+    root: PathBuf,
+    session: SessionHandle,
+    task: TaskLeaseId,
+    epoch: u64,
+    control: Option<std::sync::mpsc::SyncSender<()>>,
+    done: Option<tokio::sync::oneshot::Receiver<Result<(), PrivateProjectStageError>>>,
+}
+
+#[cfg(windows)]
+impl std::fmt::Debug for PreparedPrivateProjectLease {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedPrivateProjectLease")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(windows)]
+impl PreparedPrivateProjectLease {
+    #[must_use]
+    pub fn input_root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn require_binding(
+        &self,
+        session: &SessionHandle,
+        task: &TaskLeaseId,
+        epoch: u64,
+    ) -> Result<(), ProjectInputError> {
+        if session != &self.session || task != &self.task || epoch != self.epoch {
+            return Err(ProjectInputError::Binding);
+        }
+        Ok(())
+    }
+
+    pub async fn discard(mut self) -> Result<(), PrivateProjectStageError> {
+        self.control
+            .take()
+            .expect("live lease control")
+            .try_send(())
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?;
+        self.done
+            .take()
+            .expect("live lease completion")
+            .await
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?
+    }
 }
 
 impl std::fmt::Debug for PreparedPrivateProject {
@@ -257,6 +423,10 @@ impl Drop for StageSlot {
 
 #[derive(Debug, Error)]
 pub enum PrivateProjectStageError {
+    #[error("private preparation owner worker is unavailable")]
+    WorkerUnavailable,
+    #[error("private preparation I/O capacity unavailable: {0}")]
+    BlockingIo(#[from] crate::BlockingIoError),
     #[error("private project stage requires the validated Windows boundary")]
     UnsupportedPlatform,
     #[error("private project stage capacity includes live or uncertain preparations")]
