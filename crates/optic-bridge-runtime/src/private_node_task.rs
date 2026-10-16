@@ -335,3 +335,25 @@ fn node_local_path(path: &Path) -> Result<String, Error> {
     }
     Ok(local.to_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_paths_reject_remote_and_device_namespaces() {
+        assert_eq!(
+            node_local_path(Path::new(r"\\?\C:\private\src\main.cjs")).unwrap(),
+            r"C:\private\src\main.cjs"
+        );
+        for denied in [
+            r"\\server\share\main.cjs",
+            r"\\?\UNC\server\share\main.cjs",
+            r"\\.\pipe\x",
+            r"C:relative.cjs",
+            "relative.cjs",
+        ] {
+            assert!(node_local_path(Path::new(denied)).is_err());
+        }
+    }
+}
