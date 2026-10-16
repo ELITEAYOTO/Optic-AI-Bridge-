@@ -230,6 +230,140 @@ pub(crate) struct AppContainerProbeJob(OwnedJob);
 
 #[cfg(test)]
 impl AppContainerProbeJob {
+    /// Inspect only live members of this owned kernel job. PID membership is
+    /// rechecked on the opened handle before token access to fence PID reuse.
+    pub(crate) fn verify_active_tokens(&self, profile: &crate::AppContainerProfile) -> Result<u32> {
+        use std::mem::size_of_val;
+        use windows::Win32::{
+            Security::{
+                EqualSid, GetTokenInformation, TOKEN_APPCONTAINER_INFORMATION, TOKEN_QUERY,
+                TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer,
+            },
+            System::{
+                JobObjects::{IsProcessInJob, JobObjectBasicProcessIdList},
+                Threading::{
+                    GetExitCodeProcess, OpenProcess, OpenProcessToken,
+                    PROCESS_QUERY_LIMITED_INFORMATION,
+                },
+            },
+        };
+        #[repr(C)]
+        struct ProcessIds {
+            assigned: u32,
+            listed: u32,
+            ids: [usize; 16],
+        }
+        struct ProbeHandle(HANDLE);
+        impl Drop for ProbeHandle {
+            fn drop(&mut self) {
+                // SAFETY: each successful open creates one uniquely owned handle.
+                let _ = unsafe { CloseHandle(self.0) };
+            }
+        }
+        let mut ids = ProcessIds {
+            assigned: 0,
+            listed: 0,
+            ids: [0; 16],
+        };
+        // SAFETY: exact native layout, fixed capacity equals the configured job
+        // process ceiling; Windows refuses a snapshot larger than this buffer.
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.0.raw()),
+                JobObjectBasicProcessIdList,
+                (&mut ids as *mut ProcessIds).cast(),
+                size_of::<ProcessIds>() as u32,
+                None,
+            )
+        }
+        .map_err(Error::other)?;
+        if ids.assigned > 16 || ids.listed > 16 {
+            return Err(Error::other("owned probe process ceiling"));
+        }
+        let mut verified = 0;
+        for value in &ids.ids[..ids.listed as usize] {
+            let pid = u32::try_from(*value)
+                .map_err(|_| Error::other("invalid owned process identity"))?;
+            // SAFETY: PID comes only from this owned job snapshot. No memory or
+            // token is read until current handle membership is confirmed below.
+            let process = match unsafe {
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+            } {
+                Ok(handle) => ProbeHandle(handle),
+                Err(error) if error.code() == windows::core::HRESULT::from_win32(87) => continue,
+                Err(error) => return Err(Error::other(error)),
+            };
+            let mut member = windows::core::BOOL::default();
+            // SAFETY: opened process, owned job and exact BOOL output.
+            unsafe { IsProcessInJob(process.0, Some(self.0.raw()), &mut member) }
+                .map_err(Error::other)?;
+            if !member.as_bool() {
+                continue;
+            }
+            let mut exit = 0;
+            // SAFETY: owned job member handle has query rights and valid output.
+            unsafe { GetExitCodeProcess(process.0, &mut exit) }.map_err(Error::other)?;
+            if exit != 259 {
+                continue;
+            }
+            let mut token = HANDLE::default();
+            // SAFETY: current member process and writable handle output.
+            if let Err(error) = unsafe { OpenProcessToken(process.0, TOKEN_QUERY, &mut token) } {
+                // A short-lived member may exit between the liveness check
+                // and opening its token. Do not mistake that for a live escape.
+                unsafe { GetExitCodeProcess(process.0, &mut exit) }.map_err(Error::other)?;
+                if exit != 259 {
+                    continue;
+                }
+                return Err(Error::other(error));
+            }
+            let token = ProbeHandle(token);
+            let mut is_container = 0_u32;
+            let mut returned = 0_u32;
+            // SAFETY: each information class matches a fixed, aligned bounded
+            // output buffer that stays live through all pointer/SID use.
+            unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIsAppContainer,
+                    Some((&mut is_container as *mut u32).cast()),
+                    4,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                if is_container == 0 {
+                    return Err(Error::other("owned descendant lost AppContainer isolation"));
+                }
+                let mut sid_buffer = [0_usize; 16];
+                GetTokenInformation(
+                    token.0,
+                    TokenAppContainerSid,
+                    Some(sid_buffer.as_mut_ptr().cast()),
+                    size_of_val(&sid_buffer) as u32,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                let info = &*sid_buffer.as_ptr().cast::<TOKEN_APPCONTAINER_INFORMATION>();
+                EqualSid(info.TokenAppContainer, profile.package_sid())
+                    .map_err(|_| Error::other("owned descendant changed container identity"))?;
+                let mut caps = [0_u64; 64];
+                GetTokenInformation(
+                    token.0,
+                    TokenCapabilities,
+                    Some(caps.as_mut_ptr().cast()),
+                    size_of_val(&caps) as u32,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                if *caps.as_ptr().cast::<u32>() != 0 {
+                    return Err(Error::other("owned descendant gained capability SIDs"));
+                }
+            }
+            verified += 1;
+        }
+        Ok(verified)
+    }
+
     pub(crate) fn assign(process: BorrowedHandle<'_>) -> Result<Self> {
         let job = OwnedJob::create(16, 1024 * 1024 * 1024, 50)?;
         // SAFETY: process is borrowed from the owned, still-suspended test child;

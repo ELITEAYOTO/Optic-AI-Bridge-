@@ -229,6 +229,24 @@ pub struct SuspendedAppContainerProcess {
 
 impl SuspendedAppContainerProcess {
     #[cfg(test)]
+    pub(crate) fn try_wait_probe_exit(&mut self) -> Result<Option<u32>> {
+        // SAFETY: uniquely owned live process handle; polling never terminates
+        // a running process or infers completion from an exit-code sentinel.
+        let state = unsafe { WaitForSingleObject(self.process, 0) };
+        if state == windows::Win32::Foundation::WAIT_TIMEOUT {
+            return Ok(None);
+        }
+        if state != WAIT_OBJECT_0 {
+            return Err(Error::other("owned probe wait failed"));
+        }
+        let mut code = 0;
+        // SAFETY: signaled owned process and exact writable DWORD output.
+        unsafe { GetExitCodeProcess(self.process, &mut code) }.map_err(Error::other)?;
+        self.completed = true;
+        Ok(Some(code))
+    }
+
+    #[cfg(test)]
     pub(crate) fn borrowed_process_for_tests(&self) -> BorrowedHandle<'_> {
         // SAFETY: this borrow cannot outlive the uniquely owned process handle.
         unsafe { BorrowedHandle::borrow_raw(self.process.0) }

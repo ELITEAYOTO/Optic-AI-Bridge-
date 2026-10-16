@@ -184,3 +184,16 @@ NUL needed for Node initialization was refused, recommending --no-stdio-init.
 The explicit outer-only comparison therefore also selects that documented
 initialization flag. The normal layered gate remains unchanged. This measured
 second failure is distinct from the earlier broker breakpoint and FS errors.
+
+At63a08fc core CI38835636525 passed Windows/Linux checks. The combined outer-only
+comparison progressed again but exited1 before the fixed application marker.
+Follow-up selects fixed NODE_OPTIONS preserve-symlinks/preserve-symlinks-main
+(the same resolution behavior already needed by private Node staging), with
+trace-exit diagnostics. No parent metadata ACLs or runtime installation ACLs are
+widened. Before a GUI comparison can pass, the test samples only members of its
+owned kernel job, rechecks handle membership against PID reuse, and requires
+exact profile SID, TokenIsAppContainer and zero capability SIDs on every live
+sample. At least two simultaneous processes must be observed for a normal GUI
+success. Snapshots are capped at16 members; sampling is not a universal proof
+about every possible short-lived child. Network and production staging/lifecycle
+still require their own gates. Debug-only success is labelled separately.

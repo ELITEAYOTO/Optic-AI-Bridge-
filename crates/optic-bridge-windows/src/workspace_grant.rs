@@ -368,6 +368,7 @@ mod tests {
     #[derive(Debug)]
     struct IsolatedOutput {
         exit_code: u32,
+        max_verified_processes: u32,
         stdout: String,
         stderr: String,
     }
@@ -375,8 +376,8 @@ mod tests {
     impl IsolatedOutput {
         fn diagnostic(&self) -> String {
             format!(
-                "exit={} stdout={:?} stderr={:?}",
-                self.exit_code, self.stdout, self.stderr
+                "exit={} max_verified_processes={} stdout={:?} stderr={:?}",
+                self.exit_code, self.max_verified_processes, self.stdout, self.stderr
             )
         }
     }
@@ -435,7 +436,7 @@ mod tests {
             crate::inspect_directory_no_reparse(&folder)
                 .expect("ordinary private environment directory");
         }
-        let environment = vec![
+        let mut environment = vec![
             (
                 OsString::from("SystemRoot"),
                 std::env::var_os("SystemRoot").expect("SystemRoot"),
@@ -452,6 +453,19 @@ mod tests {
             (OsString::from("TMP"), private.join("tmp").into_os_string()),
             (OsString::from("OPTIC_PRIVATE_ENV"), OsString::from("1")),
         ];
+        if executable
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("electron.exe"))
+            && std::env::var("OPTIC_PRIVATE_ELECTRON_VARIANT").as_deref()
+                == Ok("outer-appcontainer")
+        {
+            // Fixed module-resolution behavior, not new filesystem authority.
+            // The existing Node staging gate selects the same two flags.
+            environment.push((
+                OsString::from("NODE_OPTIONS"),
+                OsString::from("--preserve-symlinks --preserve-symlinks-main --trace-exit"),
+            ));
+        }
         let debugging = std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1");
         let spawn = if debugging {
             crate::appcontainer::spawn_appcontainer_debug_probe
@@ -475,20 +489,39 @@ mod tests {
         let job = crate::job::AppContainerProbeJob::assign(child.borrowed_process_for_tests())
             .expect("contain owned suspended probe and descendants");
         child.resume().expect("resume AppContainer");
+        let mut max_verified_processes = 0;
         let exit_code = if debugging {
             crate::debug_probe::wait_owned_debug_probe(&mut child, timeout_ms)
         } else {
-            child.wait_exit(timeout_ms)
+            (|| -> std::io::Result<u32> {
+                let until = std::time::Instant::now()
+                    + std::time::Duration::from_millis(u64::from(timeout_ms));
+                loop {
+                    max_verified_processes =
+                        max_verified_processes.max(job.verify_active_tokens(profile)?);
+                    if let Some(code) = child.try_wait_probe_exit()? {
+                        return Ok(code);
+                    }
+                    if std::time::Instant::now() >= until {
+                        return Err(std::io::Error::other("owned probe deadline"));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            })()
         };
         // Confirm the entire tree is gone before reading outputs or deleting
         // private stage files; a completed root alone is insufficient.
         job.terminate_and_confirm_empty()
             .expect("empty owned probe tree");
+        if let Err(error) = &exit_code {
+            eprintln!("PRIVATE_OWNED_PROBE_ERROR: {error}");
+        }
         let exit_code = exit_code.unwrap_or(125);
         drop(stdout);
         drop(stderr);
         IsolatedOutput {
             exit_code,
+            max_verified_processes,
             stdout: read_probe_output(&stdout_path),
             stderr: read_probe_output(&stderr_path),
         }
@@ -736,6 +769,7 @@ app.whenReady().then(async()=>{
   try{fs.writeFileSync(process.argv.at(-1),'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
   assert.equal(readDenied,true);assert.equal(writeDenied,true);
   fs.writeFileSync(path.join(__dirname,'result.json'),JSON.stringify({renderer:42,sourceReadDenied:readDenied,sourceWriteDenied:writeDenied}));
+  await new Promise(resolve=>setTimeout(resolve,200));
   console.log('PRIVATE_STAGE_ELECTRON_PASS');
   clearTimeout(timer);window.destroy();app.quit();
 }).catch(error=>{console.error(String(error));app.exit(2);});
@@ -795,6 +829,12 @@ app.whenReady().then(async()=>{
         fs::remove_dir_all(&stage).expect("remove owned private compatibility stage");
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
         assert!(
+            std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1")
+                || output.max_verified_processes >= 2,
+            "real renderer tree must be observed: {}",
+            output.diagnostic()
+        );
+        assert!(
             output.stdout.contains("PRIVATE_STAGE_ELECTRON_PASS"),
             "{}",
             output.diagnostic()
@@ -804,9 +844,13 @@ app.whenReady().then(async()=>{
             b"{\"renderer\":42,\"sourceReadDenied\":true,\"sourceWriteDenied\":true}"
         );
         assert_eq!(source_after, PROBE_SENTINEL);
-        if variant == "outer-appcontainer" {
+        if std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1") {
             println!(
-                "PRIVATE_ELECTRON_OUTER_ONLY_COMPATIBILITY: hidden renderer, root AppContainer verified, inner Chromium sandbox disabled, no renderer Node, external root source access denied and owned tree drained; descendant tokens/network require separate proof; not a GUI grant"
+                "PRIVATE_ELECTRON_DEBUG_COMPATIBILITY_ONLY: debugger changes startup; normal mode remains uncertified"
+            );
+        } else if variant == "outer-appcontainer" {
+            println!(
+                "PRIVATE_ELECTRON_OUTER_ONLY_COMPATIBILITY: hidden renderer, sampled owned tokens retain exact AppContainer SID and zero capabilities, inner Chromium sandbox disabled, no renderer Node, external root source access denied and owned tree drained; network and production lifecycle require separate proof; not a GUI grant"
             );
         } else {
             println!(
