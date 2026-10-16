@@ -3,9 +3,14 @@ use std::{
     future::Future,
     io::{Error, ErrorKind, Result},
     mem::size_of,
-    os::windows::io::{AsRawHandle, BorrowedHandle},
+    os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle},
     pin::Pin,
     process::ExitStatus,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -13,7 +18,9 @@ use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper};
 use tokio::process::Command;
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_NO_MORE_FILES, HANDLE,
+        },
         System::{
             Diagnostics::ToolHelp::{
                 CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First,
@@ -29,8 +36,8 @@ use windows::{
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
-                CREATE_SUSPENDED, GetProcessId, OpenThread, PROCESS_CREATION_FLAGS, ResumeThread,
-                THREAD_SUSPEND_RESUME,
+                CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
+                PROCESS_CREATION_FLAGS, ResumeThread, THREAD_SUSPEND_RESUME,
             },
         },
     },
@@ -226,6 +233,8 @@ impl Drop for OwnedJob {
 /// Owns one AppContainer root and its bounded kernel process tree. Policy and
 /// resource admission remain the caller's responsibility. No PID is accepted.
 pub struct ContainedAppContainerProcess {
+    // Disarm/join before the final owning job handle is closed.
+    deadline: Option<NativeJobDeadline>,
     job: OwnedJob,
     child: crate::SuspendedAppContainerProcess,
 }
@@ -251,7 +260,32 @@ impl ContainedAppContainerProcess {
             AssignProcessToJobObject(job.raw(), HANDLE(child.borrowed_process().as_raw_handle()))
         }
         .map_err(Error::other)?;
-        Ok(Self { job, child })
+        Ok(Self {
+            deadline: None,
+            job,
+            child,
+        })
+    }
+
+    /// One nonrenewable deadline, armed while suspended. It requests termination
+    /// independently of the owner worker's polling or filesystem operations.
+    /// Managed admission must bound the number of simultaneously armed jobs.
+    pub fn arm_deadline(&mut self, timeout_ms: u32) -> Result<()> {
+        if timeout_ms == 0 || self.child.has_resumed() || self.deadline.is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "deadline requires one positive suspended-job budget",
+            ));
+        }
+        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms)?);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn deadline_expired(&self) -> bool {
+        self.deadline
+            .as_ref()
+            .is_some_and(|deadline| deadline.expired.load(Ordering::Acquire))
     }
 
     pub fn resume(&self) -> Result<()> {
@@ -287,6 +321,64 @@ impl ContainedAppContainerProcess {
                 ));
             }
             std::thread::sleep(JOB_EMPTY_POLL);
+        }
+    }
+}
+
+struct NativeJobDeadline {
+    cancel: Option<mpsc::SyncSender<()>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    expired: Arc<AtomicBool>,
+}
+impl NativeJobDeadline {
+    fn new(job: &OwnedJob, timeout_ms: u32) -> Result<Self> {
+        let mut duplicate = HANDLE::default();
+        // SAFETY: duplicate a live owned job into this process only. It is never
+        // inheritable or exposed; OwnedHandle provides thread-safe ownership.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                job.raw(),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: successful duplication transfers exactly one unique handle.
+        let handle = unsafe { OwnedHandle::from_raw_handle(duplicate.0) };
+        let (cancel, receive) = mpsc::sync_channel(1);
+        let expired = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&expired);
+        let worker = std::thread::Builder::new()
+            .name("optic-job-deadline".into())
+            .spawn(move || {
+                if matches!(
+                    receive.recv_timeout(Duration::from_millis(u64::from(timeout_ms))),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    observed.store(true, Ordering::Release);
+                    // SAFETY: this thread owns the duplicate of this exact kernel
+                    // job. It takes no PID and performs no file/profile cleanup.
+                    let _ = unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) };
+                }
+            })?;
+        Ok(Self {
+            cancel: Some(cancel),
+            worker: Some(worker),
+            expired,
+        })
+    }
+}
+impl Drop for NativeJobDeadline {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.try_send(());
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
         }
     }
 }

@@ -196,6 +196,14 @@ pub(crate) fn execute(
         )?);
         stdout.as_mut().unwrap().close_parent_writer();
         stderr.as_mut().unwrap().close_parent_writer();
+        native.as_mut().unwrap().arm_deadline(
+            start
+                .action
+                .resources
+                .timeout_ms
+                .try_into()
+                .map_err(|_| Error::InvalidPrivateTask)?,
+        )?;
         native.as_ref().unwrap().resume()?;
         stage.journal_running()?;
         Ok(())
@@ -255,7 +263,7 @@ pub(crate) fn execute(
             Some(ProcessStatus::Stopped)
         } else if running.record.overflowed() {
             Some(ProcessStatus::OutputLimitExceeded)
-        } else if Instant::now() >= deadline {
+        } else if running.process.deadline_expired() || Instant::now() >= deadline {
             Some(ProcessStatus::TimedOut)
         } else if capture.live_lease(&start.action).is_err()
             || reads.iter().any(|read| capture.live_lease(read).is_err())
@@ -287,6 +295,10 @@ pub(crate) fn execute(
         running.record.finish(status, None);
         // ManuallyDrop retains the native profile and its occupied slot.
         return Err(Error::WorkerUnavailable);
+    }
+    if status == ProcessStatus::Exited && running.process.deadline_expired() {
+        status = ProcessStatus::TimedOut;
+        exit_code = None;
     }
     // Bound final draining even if an unexpected foreign handle retained a pipe.
     let mut eof = false;

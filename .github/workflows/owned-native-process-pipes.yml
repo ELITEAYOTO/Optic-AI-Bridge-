@@ -47,3 +47,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'owned native tree proof failed' }
           & $Probe --exact output_pipe::tests::bounded_pipe_distinguishes_idle_data_and_confirmed_eof --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'bounded native pipe proof failed' }
+          & $Probe --exact appcontainer::tests::contained_deadline_terminates_without_owner_polling --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'independent owned deadline proof failed' }
