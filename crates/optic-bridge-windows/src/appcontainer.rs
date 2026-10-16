@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     ffi::{OsStr, OsString, c_void},
     fmt::Write as _,
     io::{Error, Result},
@@ -225,11 +226,11 @@ pub struct SuspendedAppContainerProcess {
     process: HANDLE,
     thread: HANDLE,
     completed: bool,
+    resumed: Cell<bool>,
 }
 
 impl SuspendedAppContainerProcess {
-    #[cfg(test)]
-    pub(crate) fn try_wait_probe_exit(&mut self) -> Result<Option<u32>> {
+    pub fn try_wait_exit(&mut self) -> Result<Option<u32>> {
         // SAFETY: uniquely owned live process handle; polling never terminates
         // a running process or infers completion from an exit-code sentinel.
         let state = unsafe { WaitForSingleObject(self.process, 0) };
@@ -237,13 +238,27 @@ impl SuspendedAppContainerProcess {
             return Ok(None);
         }
         if state != WAIT_OBJECT_0 {
-            return Err(Error::other("owned probe wait failed"));
+            return Err(Error::other("AppContainer process wait failed"));
         }
         let mut code = 0;
         // SAFETY: signaled owned process and exact writable DWORD output.
         unsafe { GetExitCodeProcess(self.process, &mut code) }.map_err(Error::other)?;
         self.completed = true;
         Ok(Some(code))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn try_wait_probe_exit(&mut self) -> Result<Option<u32>> {
+        self.try_wait_exit()
+    }
+
+    pub(crate) fn has_resumed(&self) -> bool {
+        self.resumed.get()
+    }
+
+    pub(crate) fn borrowed_process(&self) -> BorrowedHandle<'_> {
+        // SAFETY: the borrow cannot outlive this uniquely owned process handle.
+        unsafe { BorrowedHandle::borrow_raw(self.process.0) }
     }
 
     #[cfg(test)]
@@ -275,11 +290,17 @@ impl SuspendedAppContainerProcess {
     }
 
     pub fn resume(&self) -> Result<()> {
+        if self.resumed.get() {
+            return Err(Error::other(
+                "owned AppContainer process was already resumed",
+            ));
+        }
         // SAFETY: thread is the primary thread created suspended by CreateProcessW.
         let previous = unsafe { ResumeThread(self.thread) };
         if previous == u32::MAX {
             return Err(Error::last_os_error());
         }
+        self.resumed.set(true);
         Ok(())
     }
 
@@ -597,6 +618,7 @@ fn spawn_appcontainer_inner(
         process: info.hProcess,
         thread: info.hThread,
         completed: false,
+        resumed: Cell::new(false),
     })
 }
 
@@ -728,6 +750,48 @@ mod tests {
                 .final_path,
             root
         );
+    }
+
+    #[test]
+    fn contained_appcontainer_binds_before_resume_and_confirms_its_tree() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let make_child = || {
+            let findstr = system32_executable("findstr.exe");
+            let input = OpenOptions::new().read(true).open("NUL").unwrap();
+            let output = OpenOptions::new().write(true).open("NUL").unwrap();
+            spawn_appcontainer_suspended(
+                &profile,
+                &findstr,
+                &[OsString::from("/c:optic-contained-absent")],
+                findstr.parent().unwrap(),
+                AppContainerStdio {
+                    stdin: input.as_handle(),
+                    stdout: output.as_handle(),
+                    stderr: output.as_handle(),
+                },
+            )
+            .unwrap()
+        };
+        let limits = crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap();
+        let mut contained =
+            crate::ContainedAppContainerProcess::contain(make_child(), limits).unwrap();
+        assert!(contained.try_wait().unwrap().is_none());
+        assert!(contained.terminate_and_confirm_empty(0).is_err());
+        contained.resume().unwrap();
+        assert!(contained.resume().is_err());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while contained.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        contained.terminate_and_confirm_empty(1000).unwrap();
+        let mut suspended =
+            crate::ContainedAppContainerProcess::contain(make_child(), limits).unwrap();
+        suspended.terminate_and_confirm_empty(1000).unwrap();
+        assert!(suspended.try_wait().unwrap().is_some());
+        let resumed = make_child();
+        resumed.resume().unwrap();
+        assert!(crate::ContainedAppContainerProcess::contain(resumed, limits).is_err());
     }
 
     #[test]

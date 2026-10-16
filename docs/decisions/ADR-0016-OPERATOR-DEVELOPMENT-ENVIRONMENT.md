@@ -281,3 +281,18 @@ cancelled caller while its worker is deliberately blocked: transport/I/O/stage
 capacity must remain occupied until the worker finishes. No native profile is
 moved between threads and no process starts. Native exact-head validation is
 required. Durable recovery and future execution handoff remain separate gates.
+## Owned native execution building blocks
+
+ContainedAppContainerProcess consumes an owned suspended AppContainer child and
+binds it to configured kill-on-close Job Object limits before its only resume.
+A resumed root is refused; a second resume is refused. Polling completion requires
+both observed root exit and zero owned descendants. Explicit termination attempts
+are followed by bounded kernel confirmation (1..5000ms); a request alone is not
+proof. The API accepts no PID, grants no policy and is not itself a full sandbox.
+
+CapturedOutputPipe owns its sole reader, exposes only its writer for explicit
+child stdio inheritance, and polls at most64KiB per chunk. Idle is distinct from
+EOF; broken-pipe means confirmed EOF after buffered bytes are drained. No output
+spool file is created. The future runtime controller must enforce aggregate
+output/job/memory/CPU admission and retain stage ownership on uncertain termination.
+These primitives add no MCP execution mode. Windows native tests are required.
