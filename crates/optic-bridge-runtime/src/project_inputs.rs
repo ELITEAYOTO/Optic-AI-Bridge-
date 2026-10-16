@@ -70,28 +70,7 @@ impl ProjectInputCaptureService {
             .ok_or(ProjectInputCaptureError::EffectMismatch)?;
         let started = self.clock.now();
         let admission = self.sessions.begin_admission(&first.session, started)?;
-        // All declared ownership/effects/policy must pass before any source is
-        // opened. A manifest does not convert process authority into read rights.
-        for (input, action) in manifest.files().iter().zip(actions) {
-            if manifest.total_bytes() > action.resources.memory_bytes {
-                return Err(ProjectInputCaptureError::PolicyDenied(
-                    PolicyReason::ResourceBudgetExceeded,
-                ));
-            }
-            let task = action
-                .task_lease
-                .as_ref()
-                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
-            manifest.require_binding(&action.session, task, action.policy_epoch)?;
-            if action.effect
-                != (Effect::FileRead {
-                    path: input.path.clone(),
-                })
-            {
-                return Err(ProjectInputCaptureError::EffectMismatch);
-            }
-            self.authorize(action, started)?;
-        }
+        self.preflight(&manifest, actions, started)?;
         #[cfg(not(windows))]
         {
             drop(admission);
@@ -135,6 +114,40 @@ impl ProjectInputCaptureService {
             drop(admission);
             Ok(snapshot)
         }
+    }
+
+    pub(crate) fn preflight(
+        &self,
+        manifest: &ProjectInputManifest,
+        actions: &[ActionEnvelope],
+        started: MonotonicTime,
+    ) -> Result<(), ProjectInputCaptureError> {
+        if actions.len() != manifest.files().len() {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        // All declared ownership/effects/policy must pass before any source is
+        // opened. A manifest does not convert process authority into read rights.
+        for (input, action) in manifest.files().iter().zip(actions) {
+            if manifest.total_bytes() > action.resources.memory_bytes {
+                return Err(ProjectInputCaptureError::PolicyDenied(
+                    PolicyReason::ResourceBudgetExceeded,
+                ));
+            }
+            let task = action
+                .task_lease
+                .as_ref()
+                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+            manifest.require_binding(&action.session, task, action.policy_epoch)?;
+            if action.effect
+                != (Effect::FileRead {
+                    path: input.path.clone(),
+                })
+            {
+                return Err(ProjectInputCaptureError::EffectMismatch);
+            }
+            self.authorize(action, started)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn capture_admission(
@@ -453,7 +466,9 @@ mod tests {
             let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
             stages.push(service.prepare(manifest, &actions).unwrap());
         }
-        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        // The fifth source deliberately does not exist: capacity must be
+        // decided before opening it, without evicting a prepared input set.
+        let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
         assert!(matches!(
             service.prepare(manifest, &actions),
             Err(crate::PrivateProjectStageError::Capacity)

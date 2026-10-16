@@ -55,10 +55,9 @@ impl PrivateProjectStageService {
         // Outer admission remains live after capture returns, through private
         // copying and the final authorization check. No source is reopened.
         let (_admission, started) = self.capture.capture_admission(first)?;
-        let snapshot = self.capture.capture(manifest, actions)?;
+        self.capture.preflight(&manifest, actions, started)?;
         #[cfg(not(windows))]
         {
-            let _ = (snapshot, started);
             Err(PrivateProjectStageError::UnsupportedPlatform)
         }
         #[cfg(windows)]
@@ -68,10 +67,16 @@ impl PrivateProjectStageService {
                     (used < MAX_PREPARED_STAGES).then_some(used + 1)
                 })
                 .map_err(|_| PrivateProjectStageError::Capacity)?;
-            let slot = StageSlot {
+            let mut slot = StageSlot {
                 slots: self.slots.clone(),
                 released: false,
+                retain_on_drop: false,
             };
+            // Reserve before opening sources, limiting simultaneous captured
+            // bytes as well as prepared disk inputs. Pure capture failure frees
+            // its slot; once native allocation begins, uncertainty retains it.
+            let snapshot = self.capture.capture(manifest, actions)?;
+            slot.retain_on_drop = true;
             let profile = AppContainerProfile::create_ephemeral()?;
             let private = profile.private_storage_root()?;
             let _private_pin = pin_directory_chain(&private, None)
@@ -228,6 +233,7 @@ impl Drop for PreparedPrivateProject {
 struct StageSlot {
     slots: Arc<AtomicUsize>,
     released: bool,
+    retain_on_drop: bool,
 }
 #[cfg(windows)]
 impl StageSlot {
@@ -235,6 +241,14 @@ impl StageSlot {
         if !self.released {
             self.slots.fetch_sub(1, Ordering::AcqRel);
             self.released = true;
+        }
+    }
+}
+#[cfg(windows)]
+impl Drop for StageSlot {
+    fn drop(&mut self) {
+        if !self.retain_on_drop {
+            self.release();
         }
     }
 }
