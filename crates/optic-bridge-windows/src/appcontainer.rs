@@ -5,18 +5,25 @@ use std::{
     marker::PhantomData,
     mem::{size_of, size_of_val},
     os::windows::{
-        ffi::OsStrExt,
+        ffi::{OsStrExt, OsStringExt},
         io::{AsRawHandle, BorrowedHandle},
     },
-    path::Path,
+    path::{Path, PathBuf},
 };
 
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, HLOCAL, LocalFree,
+            WAIT_OBJECT_0,
+        },
         Security::{
+            Authorization::ConvertSidToStringSidW,
             FreeSid, GetTokenInformation,
-            Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
+            Isolation::{
+                CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
+            },
             PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
         System::Threading::{
@@ -124,6 +131,36 @@ impl AppContainerProfile {
             .join("AC")
     }
 
+    /// Query Windows for this fresh profile's private storage identity. This is
+    /// not an external ACL grant or process authorization, and accepts no path.
+    /// Predictably named profiles cannot be used as reusable staging authority.
+    pub fn private_storage_root(&self) -> Result<PathBuf> {
+        if !self.external_acl_grants_allowed {
+            return Err(Error::other(
+                "private staging requires a fresh ephemeral profile",
+            ));
+        }
+        let mut sid_text = PWSTR::null();
+        // SAFETY: profile owns a valid live SID and sid_text is writable output.
+        unsafe { ConvertSidToStringSidW(self.sid, &mut sid_text) }.map_err(Error::other)?;
+        let _sid_allocation = ProfilePathAllocation::Local(sid_text);
+        // SAFETY: Windows returned a NUL-terminated SID string kept live above.
+        let folder =
+            unsafe { GetAppContainerFolderPath(PCWSTR(sid_text.0)) }.map_err(Error::other)?;
+        let _folder_allocation = ProfilePathAllocation::Com(folder);
+        if folder.is_null() {
+            return Err(Error::other("Windows returned no private profile path"));
+        }
+        // SAFETY: GetAppContainerFolderPath returned a live NUL-terminated UTF-16
+        // string. Preserve native Windows path identity without lossy Unicode.
+        let root = PathBuf::from(OsString::from_wide(unsafe { folder.as_wide() }));
+        if !root.is_absolute() {
+            return Err(Error::other("private profile path is not absolute"));
+        }
+        let observed = crate::file::inspect_directory_no_reparse(&root).map_err(Error::other)?;
+        Ok(observed.final_path)
+    }
+
     /// Borrow security capabilities for process creation in this profile.
     ///
     /// No capability SID is attached; in particular no network capability is granted.
@@ -138,6 +175,26 @@ impl AppContainerProfile {
                 Reserved: 0,
             },
             _profile: PhantomData,
+        }
+    }
+}
+
+enum ProfilePathAllocation {
+    Local(PWSTR),
+    Com(PWSTR),
+}
+
+impl Drop for ProfilePathAllocation {
+    fn drop(&mut self) {
+        // SAFETY: each pointer is returned by the corresponding Windows
+        // allocation API, kept uniquely owned, and freed once on every path.
+        unsafe {
+            match self {
+                Self::Local(pointer) => {
+                    let _ = LocalFree(Some(HLOCAL(pointer.0.cast())));
+                }
+                Self::Com(pointer) => CoTaskMemFree(Some(pointer.0.cast())),
+            }
         }
     }
 }
@@ -481,6 +538,23 @@ mod tests {
     fn system32_executable(name: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot").expect("SystemRoot");
         PathBuf::from(root).join("System32").join(name)
+    }
+
+    #[test]
+    fn private_storage_requires_a_fresh_ephemeral_profile() {
+        let named = AppContainerProfile::create(&unique_profile_name()).expect("named profile");
+        assert!(named.private_storage_root().is_err());
+        let ephemeral = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let root = ephemeral
+            .private_storage_root()
+            .expect("SID-derived native storage");
+        assert!(root.is_absolute());
+        assert_eq!(
+            crate::inspect_directory_no_reparse(&root)
+                .unwrap()
+                .final_path,
+            root
+        );
     }
 
     #[test]
