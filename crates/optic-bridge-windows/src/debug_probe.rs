@@ -104,7 +104,9 @@ pub(crate) fn wait_owned_debug_probe(
                             } else {
                                 String::from_utf16_lossy(
                                     &bytes
-                                        .chunks_exact(2)
+                                        .as_chunks::<2>()
+                                        .0
+                                        .iter()
                                         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                                         .collect::<Vec<_>>(),
                                 )
