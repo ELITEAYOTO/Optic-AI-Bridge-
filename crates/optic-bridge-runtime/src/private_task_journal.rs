@@ -21,6 +21,12 @@ const MAX_UNRESOLVED: usize = 4;
 const MAX_BYTES: u64 = 16 * 1024;
 const MAX_EVENTS: usize = 8;
 
+#[cfg(test)]
+struct RunningPause {
+    entered: std::sync::mpsc::SyncSender<()>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
 /// One operator-owned journal per selected workspace. Its exclusive native lock
 /// and pinned directory live as long as any worker ticket. No source/output text,
 /// credentials, raw session/task/job handles, PID or command line is persisted.
@@ -29,6 +35,8 @@ pub struct PrivateTaskJournal {
     workspace: WindowsFileIdentity,
     workspace_digest: String,
     gate: Mutex<()>,
+    #[cfg(test)]
+    running_pause: Mutex<Option<RunningPause>>,
     _directory: PinnedDirectoryChain,
     _lock: OpenedWindowsFile,
 }
@@ -167,6 +175,8 @@ impl PrivateTaskJournal {
             workspace,
             workspace_digest,
             gate: Mutex::new(()),
+            #[cfg(test)]
+            running_pause: Mutex::new(None),
             _directory: directory,
             _lock: lock,
         });
@@ -179,6 +189,28 @@ impl PrivateTaskJournal {
             return Err(PrivateTaskJournalError::WorkspaceMismatch);
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pause_next_running_for_test(
+        &self,
+    ) -> (
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::SyncSender<()>,
+    ) {
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        assert!(
+            self.running_pause
+                .lock()
+                .unwrap()
+                .replace(RunningPause {
+                    entered: entered_tx,
+                    release: release_rx
+                })
+                .is_none()
+        );
+        (entered_rx, release_tx)
     }
 
     /// Diagnostic snapshot only. Incomplete entries remain unresolved; no native
@@ -332,6 +364,19 @@ impl PrivateTaskJournalTicket {
         })
     }
     pub(crate) fn running(&self) -> Result<(), PrivateTaskJournalError> {
+        // Native regression only: suspend the owner after resume, immediately
+        // before post-resume journal I/O. No environment-controlled production hook.
+        #[cfg(test)]
+        if let Some(RunningPause { entered, release }) =
+            self.journal.running_pause.lock().unwrap().take()
+        {
+            entered
+                .send(())
+                .map_err(|_| PrivateTaskJournalError::Unavailable)?;
+            release
+                .recv_timeout(std::time::Duration::from_secs(8))
+                .map_err(|_| PrivateTaskJournalError::Unavailable)?;
+        }
         self.event(Event::Running)
     }
     pub(crate) fn finalizing(

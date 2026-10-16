@@ -970,6 +970,13 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_revoke_while_owner_journal_is_blocked() {
+        private_node_task_case("blocked-owner-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
     async fn private_task_crash_child() {
         if std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").is_none() {
             return;
@@ -1097,6 +1104,7 @@ let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         let main: &[u8] = match case {
             "roundtrip" => roundtrip,
+            "blocked-owner-revoke" => b"console.log('PRIVATE_NODE_READY');setTimeout(()=>console.log('SURVIVED_BLOCKED_OWNER'),1000);setInterval(()=>{},1000);",
             "stop" | "revoke" | "timeout" | "host-crash" | "read-revoke" | "process-revoke"
             | "authority-expiry" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
             "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
@@ -1167,20 +1175,52 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             env_allowlist: Vec::new(),
             resources: action.resources,
         };
-        let job = prepared
-            .start_node(
-                crate::PrivateNodeTaskStart {
-                    action,
-                    runtime: authority,
-                    processes: processes.clone(),
-                    entry: WorkspacePath::parse("src/main.cjs").unwrap(),
-                },
-                transport
-                    .begin_execution(MonotonicTime::from_millis(100))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let pause = (case == "blocked-owner-revoke").then(|| journal.pause_next_running_for_test());
+        let starting = prepared.start_node(
+            crate::PrivateNodeTaskStart {
+                action,
+                runtime: authority,
+                processes: processes.clone(),
+                entry: WorkspacePath::parse("src/main.cjs").unwrap(),
+            },
+            transport
+                .begin_execution(MonotonicTime::from_millis(100))
+                .unwrap(),
+        );
+        let job = if let Some((entered, release)) = pause {
+            let blocked_owner = async {
+                entered
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+                assert_eq!(
+                    journal.recovery_report().unwrap()[0].phase,
+                    crate::PrivateTaskRecoveryPhase::Starting
+                );
+                assert_eq!(service.occupied_slots(), 1);
+                assert_eq!(transport.active_requests(), 1);
+                let sessions = fixture.sessions.clone();
+                let session = fixture.session.handle.clone();
+                let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                let revoker =
+                    std::thread::spawn(move || done_tx.send(sessions.revoke(&session)).unwrap());
+                // Must return without unblocking the owner or its post-resume I/O.
+                assert!(
+                    done_rx
+                        .recv_timeout(std::time::Duration::from_secs(1))
+                        .unwrap()
+                        .unwrap()
+                );
+                revoker.join().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1600));
+                assert_eq!(service.occupied_slots(), 1);
+                assert_eq!(transport.active_requests(), 1);
+                release.send(()).unwrap();
+            };
+            let (result, ()) = tokio::join!(starting, blocked_owner);
+            result.unwrap()
+        } else {
+            starting.await.unwrap()
+        };
         assert_eq!(
             processes
                 .find_recorded_private_action(&fixture.session.handle, &action_id)
@@ -1268,8 +1308,12 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert_eq!(
             result.status,
             match case {
-                "stop" | "revoke" | "read-revoke" | "process-revoke" | "authority-expiry" =>
-                    ProcessStatus::Stopped,
+                "stop"
+                | "revoke"
+                | "read-revoke"
+                | "process-revoke"
+                | "authority-expiry"
+                | "blocked-owner-revoke" => ProcessStatus::Stopped,
                 "timeout" => ProcessStatus::TimedOut,
                 "output" => ProcessStatus::OutputLimitExceeded,
                 _ => ProcessStatus::Exited,
@@ -1293,6 +1337,9 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             )
             .unwrap();
         assert!(stdout.eof);
+        if case == "blocked-owner-revoke" {
+            assert!(!String::from_utf8_lossy(&stdout.bytes).contains("SURVIVED_BLOCKED_OWNER"));
+        }
         if case == "roundtrip" {
             assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
         }
@@ -1311,8 +1358,12 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert_eq!(
             report[0].outcome,
             Some(match case {
-                "stop" | "revoke" | "read-revoke" | "process-revoke" | "authority-expiry" =>
-                    crate::PrivateTaskOutcome::Stopped,
+                "stop"
+                | "revoke"
+                | "read-revoke"
+                | "process-revoke"
+                | "authority-expiry"
+                | "blocked-owner-revoke" => crate::PrivateTaskOutcome::Stopped,
                 "timeout" => crate::PrivateTaskOutcome::TimedOut,
                 "output" => crate::PrivateTaskOutcome::OutputLimitExceeded,
                 _ => crate::PrivateTaskOutcome::Exited { code: 0 },
