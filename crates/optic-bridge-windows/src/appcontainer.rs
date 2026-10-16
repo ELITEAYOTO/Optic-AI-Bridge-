@@ -790,7 +790,16 @@ mod tests {
             assert!(std::time::Instant::now() < until);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(owned.try_wait().unwrap(), Some(0));
+        // A process can close its stdio before its root/tree actually exits.
+        // EOF is output evidence, not kernel completion acknowledgement.
+        let exit = loop {
+            if let Some(code) = owned.try_wait().unwrap() {
+                break code;
+            }
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(exit, 0);
         let text = String::from_utf8(bytes).unwrap().to_ascii_lowercase();
         assert!(
             text.lines()
