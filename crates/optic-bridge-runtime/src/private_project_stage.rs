@@ -161,7 +161,7 @@ impl PrivateProjectStageService {
                                 stage,
                                 &service.capture,
                                 &actions,
-                                command,
+                                *command,
                                 &io,
                                 &runtime,
                             );
@@ -288,7 +288,7 @@ pub struct PreparedPrivateProjectLease {
 #[cfg(windows)]
 enum PrivateStageCommand {
     Discard,
-    RunNode(crate::private_node_task::PrivateNodeTaskCommand),
+    RunNode(Box<crate::private_node_task::PrivateNodeTaskCommand>),
 }
 
 #[cfg(windows)]
@@ -322,7 +322,7 @@ impl PreparedPrivateProjectLease {
         self.control
             .take()
             .expect("live lease control")
-            .try_send(PrivateStageCommand::RunNode(command))
+            .try_send(PrivateStageCommand::RunNode(Box::new(command)))
             .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?;
         response
             .await

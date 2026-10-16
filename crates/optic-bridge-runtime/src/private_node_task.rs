@@ -204,7 +204,7 @@ pub(crate) fn execute(
             let _ = reply.take().unwrap().send(Err(error));
             return cleanup;
         }
-        std::mem::forget(stage);
+        // ManuallyDrop retains the native profile and its occupied slot.
         if let Some(record) = record.as_mut() {
             record.finish(ProcessStatus::TerminationUncertain, None);
         }
@@ -259,7 +259,7 @@ pub(crate) fn execute(
     if status == ProcessStatus::TerminationUncertain {
         running.record.truncate_output();
         running.record.finish(status, None);
-        std::mem::forget(stage);
+        // ManuallyDrop retains the native profile and its occupied slot.
         return Err(Error::WorkerUnavailable);
     }
     // Bound final draining even if an unexpected foreign handle retained a pipe.
