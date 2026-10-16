@@ -928,3 +928,8 @@ Private-state preparation primitives: deterministic input fingerprints, prealloc
 Owned native watchdog candidate: one deadline and at most four atomic stop flags,
 armed before resume, independent of filesystem/registry activity. Owned-tree empty
 confirmation remains mandatory. Focused native tests and exact CI pending.
+
+Explicit native environment candidate: bounded keys/values, no case-insensitive
+duplicates or NUL, complete Unicode block including explicit empty environment.
+Private task callers must choose this API; compatibility inheritance is unchanged.
+No new process permission is exposed. Exact CI/native validation pending.

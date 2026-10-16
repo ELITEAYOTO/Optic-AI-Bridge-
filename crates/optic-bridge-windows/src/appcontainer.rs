@@ -463,7 +463,9 @@ impl Drop for HandleGuard {
     }
 }
 
-/// Create an AppContainer child suspended, with only the supplied stdio handles inherited.
+/// Create a suspended child with only supplied stdio handles inherited.
+/// Compatibility API inherits the parent environment; private task callers use
+/// spawn_appcontainer_with_environment_suspended instead.
 ///
 /// The caller can verify `TokenIsAppContainer` before calling `resume`. Dropping the returned
 /// value before a successful bounded `wait_exit` terminates the child fail-closed.
@@ -734,6 +736,99 @@ mod tests {
         assert!(profile.private_storage_root().unwrap().is_dir());
         assert_eq!(profile.name.to_string(), expected);
         profile.close().unwrap();
+    }
+
+    #[test]
+    fn explicit_environment_reaches_owned_child_without_ambient_path() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let command = system32_executable("cmd.exe");
+        let private = profile.private_storage_root().unwrap();
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let mut output = crate::CapturedOutputPipe::new().unwrap();
+        let child = spawn_appcontainer_with_environment_suspended(
+            &profile,
+            &command,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("set"),
+            ],
+            command.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.writer_handle().unwrap(),
+                stderr: output.writer_handle().unwrap(),
+            },
+            &[
+                (OsString::from("TEMP"), private.as_os_str().to_owned()),
+                (OsString::from("TMP"), private.as_os_str().to_owned()),
+                (
+                    OsString::from("LOCALAPPDATA"),
+                    private.as_os_str().to_owned(),
+                ),
+                (OsString::from("APPDATA"), private.as_os_str().to_owned()),
+                (
+                    OsString::from("SystemRoot"),
+                    command
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .as_os_str()
+                        .to_owned(),
+                ),
+                (
+                    OsString::from("OPTIC_EXPLICIT_ENV"),
+                    OsString::from("present"),
+                ),
+                (
+                    OsString::from("PATH"),
+                    OsString::from("controlled-test-path"),
+                ),
+            ],
+        )
+        .unwrap();
+        let mut owned = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        output.close_parent_writer();
+        owned.arm_deadline(3000).unwrap();
+        owned.resume().unwrap();
+        let mut bytes = Vec::new();
+        let mut eof = false;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !eof {
+            let chunk = output.try_read(1024).unwrap();
+            bytes.extend_from_slice(&chunk.bytes);
+            assert!(bytes.len() <= 4096);
+            eof = chunk.eof;
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // A process can close its stdio before its root/tree actually exits.
+        // EOF is output evidence, not kernel completion acknowledgement.
+        let exit = loop {
+            if let Some(code) = owned.try_wait().unwrap() {
+                break code;
+            }
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(exit, 0);
+        let text = String::from_utf8(bytes).unwrap().to_ascii_lowercase();
+        assert!(
+            text.lines()
+                .any(|line| line == "optic_explicit_env=present")
+        );
+        assert!(text.lines().any(|line| line == "path=controlled-test-path"));
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.starts_with("userprofile=") || line.starts_with("node_options="))
+        );
+        owned.terminate_and_confirm_empty(1000).unwrap();
     }
 
     #[test]

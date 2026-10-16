@@ -46,3 +46,21 @@ detach the job, recover a process after host death, or restore authorization.
 The native regression keeps findstr waiting on an inherited input pipe while
 deliberately doing no owner polling: both expiry and an atomic stop terminate the
 owned tree. Zero, excess flags, rearming and arming after resume are refused.
+
+## Explicit native environment — 2026-10-16
+
+An additional suspended-child entry point accepts the entire environment as at
+most64 key/value pairs and32767 UTF-16 units including terminators. ASCII variable
+names are nonempty, at most128 bytes and contain only letters/digits/underscore;
+case-insensitive duplicates, embedded NUL and oversize blocks are refused before
+native creation. Values may contain equals signs. Windows receives a sorted,
+double-NUL-terminated Unicode block; an empty list produces an empty block rather
+than a null pointer that would inherit the parent. No process-wide environment is
+modified. Caller admission still authorizes every supplied value and executable.
+
+The compatibility entry point retains its previous ambient-inheritance behavior;
+it is documented accordingly and must not be selected by private task controllers.
+This increment does not wire a model task controller or authorize arbitrary env
+values. Native tests check malformed/bounded input and launch an owned cmd fixture
+with a controlled PATH and marker, verifying no inherited USERPROFILE/NODE_OPTIONS
+and confirmed tree completion. The fixed test command is not a new shell API.
