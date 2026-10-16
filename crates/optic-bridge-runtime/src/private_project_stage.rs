@@ -64,7 +64,7 @@ impl PrivateProjectStageService {
         #[cfg(windows)]
         {
             self.slots
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                     (used < MAX_PREPARED_STAGES).then_some(used + 1)
                 })
                 .map_err(|_| PrivateProjectStageError::Capacity)?;
