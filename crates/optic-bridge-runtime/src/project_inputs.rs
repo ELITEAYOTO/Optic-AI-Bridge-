@@ -779,6 +779,86 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[tokio::test]
+    async fn private_task_crash_child() {
+        if std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").is_none() {
+            return;
+        }
+        assert_eq!(
+            std::env::var("OPTIC_PRIVATE_NATIVE_CRASH_PROOF").as_deref(),
+            Ok("1")
+        );
+        private_node_task_case("host-crash").await;
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "CI-only deliberate host exit retains one quarantined native profile"]
+    fn private_preparation_abrupt_native_owner_exit_is_quarantined() {
+        use std::io::Read;
+        assert_eq!(
+            std::env::var("OPTIC_PRIVATE_NATIVE_CRASH_PROOF").as_deref(),
+            Ok("1")
+        );
+        let control = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        let handoff = control.root.join("handoff.txt");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "project_inputs::tests::private_task_crash_child",
+                "--nocapture",
+            ])
+            .env("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF", &handoff)
+            .spawn()
+            .unwrap();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if std::time::Instant::now() >= until {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("owned crash fixture exceeded deadline");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(status.code(), Some(72));
+        let mut bytes = Vec::new();
+        fs::File::open(&handoff)
+            .unwrap()
+            .take(8193)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert!(bytes.len() <= 8192);
+        let text = String::from_utf8(bytes).unwrap();
+        let paths = text.lines().map(PathBuf::from).collect::<Vec<_>>();
+        assert_eq!(paths.len(), 2);
+        let project = &paths[0];
+        let state = &paths[1];
+        assert_eq!(
+            project.canonicalize().unwrap().parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        assert!(
+            project
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("optic-project-inputs-")
+        );
+        assert_eq!(state, &project.with_extension("private-state"));
+        let journal = crate::PrivateTaskJournal::open(state, project).unwrap();
+        let report = journal.recovery_report().unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, crate::PrivateTaskRecoveryPhase::Running);
+        assert!(report[0].outcome.is_none());
+        // No PID reopening, task replay or profile cleanup is attempted. The
+        // disposable CI runner retains this small owned quarantine as evidence.
+        assert!(project.join("src/main.cjs").exists());
+    }
+
+    #[cfg(windows)]
     async fn private_node_task_case(case: &str) {
         use crate::{ProcessAuthority, ProcessManager, ProcessStatus, ProcessStream};
         let selected = std::env::var("OPTIC_PRIVATE_TASK_NODE").expect("select Node explicitly");
@@ -823,7 +903,7 @@ let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         let main: &[u8] = match case {
             "roundtrip" => roundtrip,
-            "stop" | "revoke" | "timeout" => {
+            "stop" | "revoke" | "timeout" | "host-crash" => {
                 b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);"
             }
             "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
@@ -930,7 +1010,7 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             processes.reserve_native_private(&replay_spec, &action_id),
             Err(crate::ProcessError::PrivateActionAlreadyRecorded)
         ));
-        if matches!(case, "stop" | "revoke") {
+        if matches!(case, "stop" | "revoke" | "host-crash") {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
                     let output = processes
@@ -959,8 +1039,16 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             .unwrap();
             if case == "stop" {
                 assert!(processes.stop(&fixture.session.handle, &job).unwrap());
-            } else {
+            } else if case == "revoke" {
                 assert!(fixture.sessions.revoke(&fixture.session.handle).unwrap());
+            } else {
+                let handoff = std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").unwrap();
+                fs::write(
+                    handoff,
+                    format!("{}\n{}\n", fixture.root.display(), state_root.display()),
+                )
+                .unwrap();
+                std::process::exit(72);
             }
         }
         let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {

@@ -65,3 +65,10 @@ jobs:
           $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
           & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') project_inputs::tests::private_preparation_node_task_ --ignored --test-threads=1 --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'managed private Node roundtrip failed' }
+      - name: Quarantine an actual interrupted native owner without replay
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          $env:OPTIC_PRIVATE_NATIVE_CRASH_PROOF = '1'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') --exact project_inputs::tests::private_preparation_abrupt_native_owner_exit_is_quarantined --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native owner crash quarantine proof failed' }
