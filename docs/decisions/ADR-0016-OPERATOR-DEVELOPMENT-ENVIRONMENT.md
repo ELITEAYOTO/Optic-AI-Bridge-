@@ -77,6 +77,23 @@ retain admission while reading each native observed target and check the live
 binding again before execution. Source edits after capture must never alter the
 sealed bytes, and output publication remains a separately authorized mutation.
 
+ProjectInputCaptureService implements this read-side boundary on Windows: one
+explicit FileRead ActionEnvelope per sorted manifest entry, full-list policy
+preflight before any source open, session admission retained through capture,
+live task/session/epoch checks before reads and before returning sealed bytes.
+It pins the selected native root, compares its original file identity, and
+requires each opened no-reparse file's canonical path to match the manifest.
+Existing filesystem read ceilings still apply. Snapshot data must fit each
+action's memory budget and the capture's monotonic deadline is capped by both
+the action and hard request limit. Other platforms fail closed after policy
+preflight. Transport/I/O permits remain the caller's responsibility.
+
+This service is not yet wired into MCP or the isolated launcher. Tests cover
+scope/capability denial before I/O, revoked leases, immutable captured contents,
+version mismatch, empty files, read ceiling preservation, root replacement,
+reparse ancestors, and revocation/deadline after copying. No new process writes
+or dependency authority are minted by a successful capture.
+
 ## Remaining delivery gates
 
 1. Map these primitives into a generated full-project HTTP tool surface with
