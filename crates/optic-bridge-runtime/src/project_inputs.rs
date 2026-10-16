@@ -329,6 +329,25 @@ mod tests {
             }];
             (manifest, actions)
         }
+
+        #[cfg(windows)]
+        fn journaled_service(
+            &mut self,
+        ) -> (
+            Arc<crate::PrivateProjectStageService>,
+            Arc<crate::PrivateTaskJournal>,
+        ) {
+            assert!(self.state_root.is_none());
+            let state_root = self.root.with_extension("private-state");
+            fs::create_dir(&state_root).unwrap();
+            self.state_root = Some(state_root.clone());
+            let journal = crate::PrivateTaskJournal::open(&state_root, &self.root).unwrap();
+            let service = Arc::new(
+                crate::PrivateProjectStageService::with_journal(self.service(), journal.clone())
+                    .unwrap(),
+            );
+            (service, journal)
+        }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -744,6 +763,82 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[test]
+    fn private_preparation_journal_capacity_precedes_missing_source_io() {
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        let (service, journal) = fixture.journaled_service();
+        for _ in 0..4 {
+            let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
+            let _ticket = journal
+                .begin(
+                    &manifest,
+                    &actions[0],
+                    &optic_bridge_windows::EphemeralAppContainerPlan::generate().unwrap(),
+                )
+                .unwrap();
+        }
+        let (manifest, actions) = fixture.inputs("src/missing.cjs", b"x");
+        assert!(matches!(
+            service.prepare(manifest, &actions),
+            Err(crate::PrivateProjectStageError::Journal(
+                crate::PrivateTaskJournalError::Capacity
+            ))
+        ));
+        assert_eq!(service.occupied_slots(), 0);
+        assert!(!fixture.root.join("src/missing.cjs").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_stale_capture_closes_only_the_pre_native_intent() {
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"changed").unwrap();
+        let (service, journal) = fixture.journaled_service();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"old");
+        assert!(service.prepare(manifest, &actions).is_err());
+        let records = journal.recovery_report().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].phase, crate::PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(
+            records[0].outcome,
+            Some(crate::PrivateTaskOutcome::NoProcess)
+        );
+        assert_eq!(service.occupied_slots(), 0);
+        assert_eq!(
+            fs::read(fixture.root.join("src/main.cjs")).unwrap(),
+            b"changed"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_preparation_corrupt_finalization_does_not_release_accounting() {
+        use std::io::Write;
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let (service, journal) = fixture.journaled_service();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let prepared = service.prepare(manifest, &actions).unwrap();
+        let record = journal.recovery_report().unwrap().remove(0);
+        let path = fixture
+            .state_root
+            .as_ref()
+            .unwrap()
+            .join("private-tasks-v1")
+            .join(format!("{}.tasklog", record.run_id));
+        fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(b"{interrupted")
+            .unwrap();
+        assert!(prepared.discard().is_err());
+        assert_eq!(service.occupied_slots(), 1);
+        assert!(journal.recovery_report().is_err());
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), b"x");
+    }
+
+    #[cfg(windows)]
     #[tokio::test]
     #[ignore = "requires an explicitly selected installed Node runtime"]
     async fn private_preparation_node_task_roundtrip() {
@@ -928,13 +1023,7 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         )
         .unwrap();
         let state_root = fixture.root.with_extension("private-state");
-        fs::create_dir(&state_root).unwrap();
-        fixture.state_root = Some(state_root.clone());
-        let journal = crate::PrivateTaskJournal::open(&state_root, &fixture.root).unwrap();
-        let service = Arc::new(
-            crate::PrivateProjectStageService::with_journal(fixture.service(), journal.clone())
-                .unwrap(),
-        );
+        let (service, journal) = fixture.journaled_service();
         let transport = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
         let io = crate::BlockingIoGovernor::new(2).unwrap();
         let prepared = service
