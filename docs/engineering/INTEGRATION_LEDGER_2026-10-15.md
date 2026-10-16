@@ -110,3 +110,25 @@ local-drive spelling; UNC/device paths are refused. The native Node API remains
 unwired. Normal Electron inner-sandbox startup remains a separately failing probe.
 
 PR227 exacthead4121515 passed CI38906725340, native process/pipe38906725527 and preparation38906725329; both platform tests reproduced locally from verified artifact12048850903. Nine-file diff reviewed, no change requests or unresolved threads. Squash abff6389af2fb082972dcef18a80092e8df5fcbd merged. Alpha integration preserves its newer Node controller, native profile close and experimental-only helpers; main ADR0018/0019 and focused native workflow retained. Exact integration checks pending.
+
+## Private state and independent stop integration — 2026-10-16
+
+PR228 exactdc0bc181d43d743818bf8b5c8473259d4367448f passed CI38953227075,
+native38953227163 and preparation38953227214. Both new platform cases reproduced
+locally from verified artifact12069975356. Squash07efdf5afb6cc9818f2c008a9aa0dcc91f623a18
+merged. Its postmerge CI38955478146 failed the existing Node loopback proof:
+TimedOut, no stdout/stderr, no listener accept. This is not network-denial evidence
+and no cause is assigned. The subsequent main head below passed the full suite.
+
+PR229 exact017242ea96574ef3882effe9ed9e1f2aa898fc71 passed CI38955900602,
+native38955900228 and preparation38955900348. The watchdog regression reproduced
+locally0.63s from verified artifact12070108340. Six-file diff reviewed; no pending
+change requests or unresolved threads. Squashbcd0bcc9293c782441ff792c5173f53fae66e58d
+merged; postmerge CI38956441204 passed Windows/Linux/dependency jobs and smokes.
+
+Alpha integration3b1457c preserves the journal/Node controller and test-only
+compatibility probes. Focused38956512499 passed10 preparation,8 journal,9 Node
+cases plus the CI-only actual native-owner abrupt exit/quarantine. The local
+blocked-owner proof1.95s and revocation-before-admission-drain0.01s passed from
+verified artifact12070842559. No local native crash was induced. Exact complete
+alpha CI is tracked separately; these facts do not validate a later merge head.
