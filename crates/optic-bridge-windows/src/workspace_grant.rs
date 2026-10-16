@@ -759,6 +759,11 @@ console.log('PRIVATE_STAGE_NODE_PASS');
         // from a closed port or an unreachable external service.
         let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .expect("owned loopback destination");
+        let control = std::net::TcpStream::connect(listener.local_addr().unwrap())
+            .expect("parent can reach controlled destination");
+        let (accepted_control, _) = listener.accept().expect("parent control accepted");
+        drop(accepted_control);
+        drop(control);
         listener
             .set_nonblocking(true)
             .expect("nonblocking observer");
@@ -791,7 +796,11 @@ app.whenReady().then(async()=>{
     socket.once('connect',()=>{clearTimeout(deadline);socket.destroy();reject(new Error('main process reached ungranted network'));});
     socket.once('error',error=>{clearTimeout(deadline);socket.destroy();resolve(error.code);});
   });
-  assert.ok(networkError==='EACCES'||networkError==='EPERM',`main socket denial code: ${networkError}`);
+  // Windows may silently drop an ungranted AppContainer connection rather
+  // than returning access denied. The native observer independently proves
+  // parent reachability and absence of any child connection at that endpoint.
+  assert.ok(['EACCES','EPERM','ETIMEDOUT'].includes(networkError),`main socket denial code: ${networkError}`);
+  console.log(`PRIVATE_LOOPBACK_OBSERVATION: main=${networkError}`);
   const rendererDenied=await window.webContents.executeJavaScript(`fetch('http://127.0.0.1:${port}/probe',{signal:AbortSignal.timeout(1500)}).then(()=>false,()=>true)`);
   assert.equal(rendererDenied,true,'renderer reached ungranted network');
   let readDenied=false,writeDenied=false;

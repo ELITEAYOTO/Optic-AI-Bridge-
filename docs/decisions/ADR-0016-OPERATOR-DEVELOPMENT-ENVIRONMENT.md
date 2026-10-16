@@ -214,3 +214,10 @@ EACCES/EPERM; the native listener must observe no accepted connection. This
 separates a denied network path from a closed remote port. Its native validation
 is pending. It is a loopback regression, not a proof of every Windows broker,
 network protocol or GUI capability. No production fallback or new tool is added.
+Loopback characterization8dea8e0: Electron main reports ETIMEDOUT rather than
+EACCES/EPERM. This is not by itself an access-denied proof. The next probe adds
+a successful parent TCP control connection, then checks the same live listener
+observes no child connection. Only EACCES/EPERM/ETIMEDOUT are recognized main
+outcomes, reported explicitly; an application-side deadline or arbitrary socket
+error fails. Renderer failure plus no accepted TCP remains the independent
+endpoint observation. Claims stay limited to this controlled loopback path.
