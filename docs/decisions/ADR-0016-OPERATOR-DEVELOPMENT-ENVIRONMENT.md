@@ -296,3 +296,24 @@ EOF; broken-pipe means confirmed EOF after buffered bytes are drained. No output
 spool file is created. The future runtime controller must enforce aggregate
 output/job/memory/CPU admission and retain stage ownership on uncertain termination.
 These primitives add no MCP execution mode. Windows native tests are required.
+### Experimental managed private Node controller (2026-10-16)
+
+A host-only, unwired controller now consumes one prepared input lease to run an
+explicitly authorized installed Node executable. It accepts an entry in the
+sealed manifest, fixes argv/environment, denies Node writes/child processes and
+uses a zero-capability AppContainer assigned to a limited Job before resume.
+The existing ProcessManager owns admission, owner-scoped job IDs and bounded
+stdout/stderr; the private worker retains the native tree independently of the
+start response. Stop, deadline, output overflow and revoked authorization require
+confirmed tree termination. Uncertain termination retains stage accounting.
+Terminal job state follows owned cleanup; no MCP exposure or restart recovery is
+claimed. Dependency installation, builds, artifacts and Electron remain separate.
+
+Windows profile deletion is explicitly acknowledged before freeing a known-clean
+stage slot. Optic removes recorded inputs without recursively walking unknown
+contents; Windows may reclaim storage belonging to its fresh AppContainer profile.
+This is not a backup/preservation promise for unexpected data inside that profile.
+No user source directory receives recursive write grants.
+
+Validation pending: a focused opt-in native Node test checks two-module execution,
+write denial, shared job output and cleanup. Core has no mandatory Node dependency.

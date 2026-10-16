@@ -173,6 +173,22 @@ impl ProjectInputCaptureService {
         {
             return Err(ProjectInputCaptureError::Deadline);
         }
+        self.authorize_at(action, now).map(|_| ())
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn live_lease(
+        &self,
+        action: &ActionEnvelope,
+    ) -> Result<optic_bridge_core::TaskLease, ProjectInputCaptureError> {
+        self.authorize_at(action, self.clock.now())
+    }
+
+    fn authorize_at(
+        &self,
+        action: &ActionEnvelope,
+        now: MonotonicTime,
+    ) -> Result<optic_bridge_core::TaskLease, ProjectInputCaptureError> {
         let session = self.sessions.get_active(&action.session, now)?;
         let id = action
             .task_lease
@@ -180,7 +196,7 @@ impl ProjectInputCaptureService {
             .ok_or(ProjectInputCaptureError::EffectMismatch)?;
         let lease = self.leases.get_active(id, &action.session, now)?;
         match PolicyEngine.evaluate(action, &session, Some(&lease), now) {
-            PolicyDecision::Allow => Ok(()),
+            PolicyDecision::Allow => Ok(lease),
             PolicyDecision::Deny(reason) | PolicyDecision::RequireApproval(reason) => {
                 Err(ProjectInputCaptureError::PolicyDenied(reason))
             }
@@ -701,6 +717,168 @@ mod tests {
                 FileSystemError::ReadLimitExceeded
             ))
         ));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_roundtrip() {
+        use crate::{ProcessAuthority, ProcessManager, ProcessStatus, ProcessStream};
+        let selected = std::env::var("OPTIC_PRIVATE_TASK_NODE").expect("select Node explicitly");
+        let selected = fs::canonicalize(selected)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let mut fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fixture.session.capabilities.insert(Capability::ProcessRun);
+        fixture.sessions = Arc::new(SessionRegistry::new());
+        fixture.sessions.register(fixture.session.clone()).unwrap();
+        let class = optic_bridge_core::ProcessExecutionClass::RepositoryCode;
+        let process_task = TaskLease {
+            id: TaskLeaseId::generate().unwrap(),
+            session: fixture.session.handle.clone(),
+            capabilities: BTreeSet::from([Capability::ProcessRun]),
+            scopes: BTreeSet::from([
+                LeaseScope::ProcessExecutable {
+                    executable: selected.clone(),
+                    class,
+                },
+                LeaseScope::ProcessIsolationEligible {
+                    executable: selected.clone(),
+                    class,
+                },
+            ]),
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 10000,
+                output_bytes: 4096,
+                memory_bytes: 512 * 1024 * 1024,
+                process_count: 4,
+            },
+            workload_class: WorkloadClass::Standard,
+            expires_at: fixture.session.expires_at,
+            policy_epoch: 1,
+        };
+        fixture.leases.register(process_task.clone()).unwrap();
+        let main = br#"const fs=require('node:fs'),assert=require('node:assert/strict');
+assert.equal(require('./math.cjs').add(20,22),42);
+let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){denied=['ERR_ACCESS_DENIED','EACCES','EPERM'].includes(e.code);}
+assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
+        let math = b"exports.add=(a,b)=>a+b;";
+        fs::write(fixture.root.join("src/main.cjs"), main).unwrap();
+        fs::write(fixture.root.join("src/math.cjs"), math).unwrap();
+        let mut actions = fixture.inputs("src/main.cjs", main).1;
+        actions.extend(fixture.inputs("src/math.cjs", math).1);
+        let manifest = ProjectInputManifest::new(
+            fixture.session.handle.clone(),
+            fixture.task.id.clone(),
+            1,
+            [
+                ("src/main.cjs", main.as_slice()),
+                ("src/math.cjs", math.as_slice()),
+            ]
+            .into_iter()
+            .map(|(path, bytes)| ProjectInputSpec {
+                path: WorkspacePath::parse(path).unwrap(),
+                version: ContentVersion::from_bytes(bytes),
+                size_bytes: bytes.len() as u64,
+            }),
+        )
+        .unwrap();
+        let service = Arc::new(crate::PrivateProjectStageService::new(fixture.service()));
+        let transport = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
+        let io = crate::BlockingIoGovernor::new(2).unwrap();
+        let prepared = service
+            .clone()
+            .prepare_background(
+                manifest,
+                actions,
+                transport
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+                io,
+            )
+            .await
+            .unwrap();
+        let root = prepared.input_root().to_path_buf();
+        let processes = Arc::new(
+            ProcessManager::new(&fixture.root, HardLimits::default(), Vec::new()).unwrap(),
+        );
+        let authority =
+            Arc::new(ProcessAuthority::capture(process_task.id.clone(), &selected, class).unwrap());
+        let action = ActionEnvelope {
+            action_id: ActionId::generate().unwrap(),
+            session: fixture.session.handle.clone(),
+            task_lease: Some(process_task.id.clone()),
+            policy_epoch: 1,
+            effect: Effect::ProcessRun {
+                executable: selected,
+                class,
+                network: optic_bridge_core::NetworkAccess::Denied,
+            },
+            resources: process_task.resource_ceiling,
+        };
+        let job = prepared
+            .start_node(
+                crate::PrivateNodeTaskStart {
+                    action,
+                    runtime: authority,
+                    processes: processes.clone(),
+                    entry: WorkspacePath::parse("src/main.cjs").unwrap(),
+                },
+                transport
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let result = processes.result(&fixture.session.handle, &job).unwrap();
+                if result.status != ProcessStatus::Running {
+                    break result;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let stderr = processes
+            .read(
+                &fixture.session.handle,
+                &job,
+                ProcessStream::Stderr,
+                0,
+                4096,
+            )
+            .unwrap();
+        assert_eq!(
+            result.status,
+            ProcessStatus::Exited,
+            "stderr={}",
+            String::from_utf8_lossy(&stderr.bytes)
+        );
+        assert_eq!(
+            result.exit_code,
+            Some(0),
+            "stderr={}",
+            String::from_utf8_lossy(&stderr.bytes)
+        );
+        let stdout = processes
+            .read(
+                &fixture.session.handle,
+                &job,
+                ProcessStream::Stdout,
+                0,
+                4096,
+            )
+            .unwrap();
+        assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
+        assert_eq!(service.occupied_slots(), 0);
+        assert_eq!(transport.active_requests(), 0);
+        assert!(!root.exists());
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), main);
+        assert!(!fixture.root.join("src/forbidden.txt").exists());
     }
 
     #[cfg(windows)]

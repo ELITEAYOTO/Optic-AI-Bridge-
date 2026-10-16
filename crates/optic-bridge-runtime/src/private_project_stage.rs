@@ -1,8 +1,8 @@
-//! Authorized preparation only. No process can be launched by this API.
+//! Authorized private inputs and a host-only experimental Node task controller.
 use crate::{ProjectInputCaptureError, ProjectInputCaptureService};
-use optic_bridge_core::{ActionEnvelope, ProjectInputManifest};
+use optic_bridge_core::{ActionEnvelope, ProjectInputError, ProjectInputManifest};
 #[cfg(windows)]
-use optic_bridge_core::{ProjectInputError, SessionHandle, TaskLeaseId};
+use optic_bridge_core::{SessionHandle, TaskLeaseId};
 #[cfg(windows)]
 use optic_bridge_windows::{
     AppContainerProfile, WindowsFileIdentity, inspect_directory_no_reparse, pin_directory_chain,
@@ -149,13 +149,25 @@ impl PrivateProjectStageService {
                             session,
                             task,
                             epoch,
+                            io: io.clone(),
                             control: Some(control_tx),
                             done: Some(done_rx),
                         };
                         // An abandoned reply drops its lease/sender. recv then wakes
                         // disconnected, just as it does on ordinary lease Drop.
                         let _ = ready_tx.send(Ok(lease));
-                        let _ = control_rx.recv();
+                        if let Ok(PrivateStageCommand::RunNode(command)) = control_rx.recv() {
+                            let outcome = crate::private_node_task::execute(
+                                stage,
+                                &service.capture,
+                                &actions,
+                                command,
+                                &io,
+                                &runtime,
+                            );
+                            let _ = done_tx.send(outcome);
+                            return;
+                        }
                         let outcome = match runtime.block_on(io.acquire_owned()) {
                             Ok(_cleanup_permit) => stage.discard(),
                             Err(error) => {
@@ -205,7 +217,7 @@ impl PrivateProjectStageService {
             identity,
             files: Vec::new(),
             directories: BTreeSet::new(),
-            _profile: profile,
+            _profile: Some(profile),
             slot: Some(slot),
             manifest: None,
         };
@@ -255,21 +267,28 @@ pub struct PreparedPrivateProject {
     #[cfg(windows)]
     directories: BTreeSet<PathBuf>,
     #[cfg(windows)]
-    _profile: AppContainerProfile,
+    _profile: Option<AppContainerProfile>,
     #[cfg(windows)]
     slot: Option<StageSlot>,
 }
 
 /// Sendable host lease; its native profile remains on a bounded owner worker.
-/// There is intentionally no process-start command or profile accessor.
+/// A single host-only Node command consumes the lease; no profile is exposed.
 #[cfg(windows)]
 pub struct PreparedPrivateProjectLease {
     root: PathBuf,
     session: SessionHandle,
     task: TaskLeaseId,
     epoch: u64,
-    control: Option<std::sync::mpsc::SyncSender<()>>,
+    io: crate::BlockingIoGovernor,
+    control: Option<std::sync::mpsc::SyncSender<PrivateStageCommand>>,
     done: Option<tokio::sync::oneshot::Receiver<Result<(), PrivateProjectStageError>>>,
+}
+
+#[cfg(windows)]
+enum PrivateStageCommand {
+    Discard,
+    RunNode(crate::private_node_task::PrivateNodeTaskCommand),
 }
 
 #[cfg(windows)]
@@ -282,6 +301,34 @@ impl std::fmt::Debug for PreparedPrivateProjectLease {
 
 #[cfg(windows)]
 impl PreparedPrivateProjectLease {
+    /// Consumes this preparation once. A lost reply must be reconciled through
+    /// the shared process manager; this lease cannot blindly start it again.
+    pub async fn start_node(
+        mut self,
+        start: crate::PrivateNodeTaskStart,
+        request: crate::RequestPermit,
+    ) -> Result<optic_bridge_core::JobId, PrivateProjectStageError> {
+        if start.action.session != self.session || start.action.policy_epoch != self.epoch {
+            return Err(ProjectInputError::Binding.into());
+        }
+        let io = self.io.acquire_owned().await?;
+        let (reply, response) = tokio::sync::oneshot::channel();
+        let command = crate::private_node_task::PrivateNodeTaskCommand {
+            start,
+            request,
+            io,
+            reply,
+        };
+        self.control
+            .take()
+            .expect("live lease control")
+            .try_send(PrivateStageCommand::RunNode(command))
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?;
+        response
+            .await
+            .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?
+    }
+
     #[must_use]
     pub fn input_root(&self) -> &Path {
         &self.root
@@ -303,7 +350,7 @@ impl PreparedPrivateProjectLease {
         self.control
             .take()
             .expect("live lease control")
-            .try_send(())
+            .try_send(PrivateStageCommand::Discard)
             .map_err(|_| PrivateProjectStageError::WorkerUnavailable)?;
         self.done
             .take()
@@ -322,6 +369,82 @@ impl std::fmt::Debug for PreparedPrivateProject {
 
 #[cfg(windows)]
 impl PreparedPrivateProject {
+    pub(crate) fn manifest(&self) -> &ProjectInputManifest {
+        self.manifest.as_ref().expect("returned stage manifest")
+    }
+
+    pub(crate) fn execution_profile(&self) -> &AppContainerProfile {
+        self._profile.as_ref().expect("live execution profile")
+    }
+
+    pub(crate) fn verify_inputs_and_pin(
+        &self,
+    ) -> Result<optic_bridge_windows::PinnedDirectoryChain, PrivateProjectStageError> {
+        let pin = pin_directory_chain(&self.root, None)
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+        if inspect_directory_no_reparse(&self.root)
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?
+            .identity
+            != self.identity
+        {
+            return Err(PrivateProjectStageError::NativeBoundary);
+        }
+        for input in self.manifest().files() {
+            let relative = Path::new(input.path.as_str());
+            let _parent = pin_directory_chain(&self.root, relative.parent())
+                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+            let mut file = optic_bridge_windows::open_file_no_reparse(&self.root.join(relative))
+                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+            let observed = optic_bridge_core::ContentVersion::from_reader_bounded(
+                file.file_mut(),
+                input.size_bytes.max(1),
+            )
+            .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+            if observed != input.version {
+                return Err(PrivateProjectStageError::InvalidPrivateTask);
+            }
+        }
+        Ok(pin)
+    }
+
+    pub(crate) fn node_environment(
+        &mut self,
+    ) -> Result<Vec<(std::ffi::OsString, std::ffi::OsString)>, PrivateProjectStageError> {
+        use std::ffi::OsString;
+        // .optic is forbidden in input manifests, so this cannot replace input
+        // files. No inherited HOME/PATH/NODE_OPTIONS/credentials are forwarded.
+        for relative in [".optic", ".optic/tmp", ".optic/local", ".optic/roaming"] {
+            let path = PathBuf::from(relative);
+            let _parent = pin_directory_chain(&self.root, path.parent())
+                .map_err(|_| PrivateProjectStageError::NativeBoundary)?;
+            fs::create_dir(self.root.join(&path))?;
+            self.directories.insert(path);
+        }
+        Ok(vec![
+            (
+                OsString::from("SystemRoot"),
+                std::env::var_os("SystemRoot")
+                    .ok_or(PrivateProjectStageError::InvalidPrivateTask)?,
+            ),
+            (
+                OsString::from("TEMP"),
+                self.root.join(".optic/tmp").into_os_string(),
+            ),
+            (
+                OsString::from("TMP"),
+                self.root.join(".optic/tmp").into_os_string(),
+            ),
+            (
+                OsString::from("LOCALAPPDATA"),
+                self.root.join(".optic/local").into_os_string(),
+            ),
+            (
+                OsString::from("APPDATA"),
+                self.root.join(".optic/roaming").into_os_string(),
+            ),
+        ])
+    }
+
     pub fn require_binding(
         &self,
         session: &SessionHandle,
@@ -381,6 +504,10 @@ impl PreparedPrivateProject {
         }
         drop(pin);
         fs::remove_dir(&self.root)?;
+        self._profile
+            .take()
+            .expect("owned cleanup profile")
+            .close()?;
         if let Some(mut slot) = self.slot.take() {
             slot.release();
         }
@@ -423,6 +550,14 @@ impl Drop for StageSlot {
 
 #[derive(Debug, Error)]
 pub enum PrivateProjectStageError {
+    #[error("private task shape or prepared input version is invalid")]
+    InvalidPrivateTask,
+    #[error("private task binding mismatch: {0}")]
+    Input(#[from] ProjectInputError),
+    #[error("private process admission failed: {0}")]
+    Process(#[from] crate::ProcessError),
+    #[error("private runtime identity failed: {0}")]
+    RuntimeIdentity(#[from] crate::ProcessAuthorityError),
     #[error("private preparation owner worker is unavailable")]
     WorkerUnavailable,
     #[error("private preparation I/O capacity unavailable: {0}")]

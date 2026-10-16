@@ -917,3 +917,4 @@ dependency or artifact permission is added. This alpha retains its newer owner
 worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
 Equivalent native storage helpers/imports were deduplicated during integration.
 Exact merge-head validation remains required; prior CI is not its validation.
+Experimental private Node task controller: implemented behind the host API, not exposed to MCP; native CI validation pending. Uses existing job admission/output and confirmed tree cleanup. General build/dependency/GUI/restart support is not delivered by this increment.

@@ -51,6 +51,7 @@ pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
     external_acl_grants_allowed: bool,
+    delete_on_drop: bool,
 }
 
 /// Borrowed AppContainer process-creation capabilities.
@@ -114,11 +115,22 @@ impl AppContainerProfile {
             name,
             sid,
             external_acl_grants_allowed,
+            delete_on_drop: true,
         })
     }
 
     pub(crate) const fn package_sid(&self) -> PSID {
         self.sid
+    }
+
+    /// Explicitly remove this owned profile, reporting failure instead of only
+    /// relying on Drop. Callers must first confirm/drain their owned process tree.
+    pub fn close(mut self) -> Result<()> {
+        // SAFETY: uniquely owned live profile name. No raw SID is released until
+        // this method and every lifetime-bound security/grant borrow have ended.
+        unsafe { DeleteAppContainerProfile(&self.name) }.map_err(Error::other)?;
+        self.delete_on_drop = false;
+        Ok(())
     }
 
     pub(crate) const fn external_acl_grants_allowed(&self) -> bool {
@@ -205,7 +217,9 @@ impl Drop for AppContainerProfile {
         // Profile cleanup is best-effort in Drop and cannot weaken a running child.
         unsafe {
             let _ = FreeSid(self.sid);
-            let _ = DeleteAppContainerProfile(&self.name);
+            if self.delete_on_drop {
+                let _ = DeleteAppContainerProfile(&self.name);
+            }
         }
     }
 }

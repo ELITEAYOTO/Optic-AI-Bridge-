@@ -1031,6 +1031,149 @@ impl ProcessManager {
     }
 }
 
+/// Internal producer for a native private-task worker. It shares the exact
+/// process store/admission and output buffers used by ordinary managed jobs.
+#[cfg(windows)]
+pub(crate) struct NativeProcessReservation {
+    id: JobId,
+    record: Arc<JobRecord>,
+    pub(crate) limits: LimitedJobObject,
+    may_have_run: bool,
+    finished: bool,
+}
+
+#[cfg(windows)]
+impl ProcessManager {
+    pub(crate) fn reserve_native_private(
+        &self,
+        spec: &ProcessStartSpec,
+    ) -> Result<NativeProcessReservation, ProcessError> {
+        let resources = spec.resources.validate_nonzero()?;
+        if !resources.fits_within(self.limits.max_process_budget)
+            || resources.timeout_ms > u64::from(u32::MAX)
+            || spec.network != NetworkAccess::Denied
+            || !spec.workspace_read_files.is_empty()
+            || !spec.env_allowlist.is_empty()
+            || spec.cwd.is_some()
+        {
+            return Err(ProcessError::ResourceBudgetExceeded);
+        }
+        if resources.output_bytes > self.limits.max_active_output_ram_bytes {
+            return Err(ProcessError::OutputMemoryLimitExceeded);
+        }
+        if resources.output_bytes > self.limits.max_active_output_ram_bytes_per_session {
+            return Err(ProcessError::OutputMemoryLimitExceededForSession);
+        }
+        self.validate_request_shape(spec)?;
+        let canonical = self.canonicalize_executable(&spec.executable)?;
+        if canonical != spec.executable {
+            return Err(ProcessError::ExecutableMustBeAbsolute);
+        }
+        let id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
+        let record = Arc::new(JobRecord {
+            owner: spec.session.clone(),
+            sequence: self.sequence.fetch_add(1, Ordering::AcqRel),
+            workload_class: spec.workload_class,
+            reserved_output_bytes: resources.output_bytes,
+            reserved_memory_bytes: resources.memory_bytes,
+            reserved_cpu_percent: self.limits.max_process_cpu_percent_per_job,
+            cwd_pin: Mutex::new(None),
+            output: Mutex::new(OutputState {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                stdout_closed: false,
+                stderr_closed: false,
+            }),
+            state: Mutex::new(JobState {
+                status: ProcessStatus::Running,
+                exit_code: None,
+            }),
+            stop_requested: AtomicBool::new(false),
+            output_overflow: AtomicBool::new(false),
+        });
+        let mut store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
+        self.prepare_store_for_start_with_workload(
+            &mut store,
+            &spec.session,
+            spec.workload_class,
+            resources.output_bytes,
+            resources.memory_bytes,
+            self.limits.max_process_cpu_percent_per_job,
+        )?;
+        let limits = LimitedJobObject::new(
+            resources.process_count,
+            resources.memory_bytes,
+            self.limits.max_process_cpu_percent_per_job,
+        )
+        .map_err(ProcessError::Io)?;
+        store.jobs.insert(id.clone(), record.clone());
+        Ok(NativeProcessReservation {
+            id,
+            record,
+            limits,
+            may_have_run: false,
+            finished: false,
+        })
+    }
+}
+
+#[cfg(windows)]
+impl NativeProcessReservation {
+    pub(crate) fn id(&self) -> JobId {
+        self.id.clone()
+    }
+    pub(crate) fn mark_native_created(&mut self) {
+        self.may_have_run = true;
+    }
+    pub(crate) fn stop_requested(&self) -> bool {
+        self.record.stop_requested.load(Ordering::Acquire)
+    }
+    pub(crate) fn overflowed(&self) -> bool {
+        self.record.output_overflow.load(Ordering::Acquire)
+    }
+    pub(crate) fn truncate_output(&self) {
+        self.record.output_overflow.store(true, Ordering::Release);
+    }
+    pub(crate) fn append(&self, stream: ProcessStream, bytes: &[u8]) {
+        append_output(&self.record, stream, bytes);
+    }
+    pub(crate) fn finish(&mut self, status: ProcessStatus, code: Option<i32>) {
+        mark_stream_closed(&self.record, ProcessStream::Stdout);
+        mark_stream_closed(&self.record, ProcessStream::Stderr);
+        if let Ok(mut state) = self.record.state.lock() {
+            *state = JobState {
+                status: if status == ProcessStatus::Running {
+                    ProcessStatus::TerminationUncertain
+                } else {
+                    status
+                },
+                exit_code: code,
+            };
+            self.finished = true;
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for NativeProcessReservation {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.record.output_overflow.store(true, Ordering::Release);
+            self.finish(
+                if self.may_have_run {
+                    ProcessStatus::TerminationUncertain
+                } else {
+                    ProcessStatus::Failed
+                },
+                None,
+            );
+        }
+    }
+}
+
 fn normalize_env_name(name: &str) -> Result<String, ProcessError> {
     if name.is_empty() || name.len() > 128 || name.contains('=') || name.contains('\0') {
         return Err(ProcessError::InvalidEnvironmentName);
