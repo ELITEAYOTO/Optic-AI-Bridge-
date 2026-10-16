@@ -128,3 +128,14 @@ dependency restore or production GUI execution grant is added by this test.
 Until the native gate passes, compatibility with Electron's own renderer
 sandbox is unproven. Copy limits bound trusted test inputs, not hard runtime disk
 quota for arbitrary code. Production staging/artifact limits remain a gate.
+
+The first gate at37a31ac failed before application main execution with native
+exit0x80000003 and empty stderr, after all73runtime files were copied. Node
+staging, HTTP lifecycle and the fixed operator viewer passed in the same job.
+This is a measured compatibility failure, not proof of its cause. Follow-up
+enables bounded Electron startup file logging without disabling either sandbox.
+The profile storage accessor now queries the fresh profile SID through
+[GetAppContainerFolderPath](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-getappcontainerfolderpath)
+instead of constructing a path from inherited LOCALAPPDATA. Windows allocation
+ownership uses LocalFree/CoTaskMemFree as specified by the native APIs; named
+profiles are refused. Native validation is required before using this accessor.

@@ -553,6 +553,7 @@ mod tests {
         fs::write(&sentinel, b"optic read grant sentinel\n").expect("write sentinel");
         let _cleanup = Cleanup(sentinel.clone());
         let profile = AppContainerProfile::create(&unique_profile_name()).expect("create profile");
+        assert!(profile.private_storage_root().is_err());
 
         assert!(
             profile.grant_file_read(&sentinel).is_err(),
@@ -686,8 +687,8 @@ app.whenReady().then(async()=>{
   assert.equal(await window.webContents.executeJavaScript('typeof require'),'undefined');
   assert.equal(await window.webContents.executeJavaScript('typeof process'),'undefined');
   let readDenied=false,writeDenied=false;
-  try{fs.readFileSync(process.argv[2]);}catch(e){readDenied=e.code==='EACCES'||e.code==='EPERM';}
-  try{fs.writeFileSync(process.argv[2],'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
+  try{fs.readFileSync(process.argv.at(-1));}catch(e){readDenied=e.code==='EACCES'||e.code==='EPERM';}
+  try{fs.writeFileSync(process.argv.at(-1),'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
   assert.equal(readDenied,true);assert.equal(writeDenied,true);
   fs.writeFileSync(path.join(__dirname,'result.json'),JSON.stringify({renderer:42,sourceReadDenied:readDenied,sourceWriteDenied:writeDenied}));
   console.log('PRIVATE_STAGE_ELECTRON_PASS');
@@ -698,12 +699,25 @@ app.whenReady().then(async()=>{
             &profile,
             &runtime.join("electron.exe"),
             vec![
+                OsString::from("--enable-logging=file"),
+                OsString::from(format!(
+                    "--log-file={}",
+                    application.join("startup.log").display()
+                )),
+                OsString::from("--v=1"),
                 application.clone().into_os_string(),
                 sentinel.clone().into_os_string(),
             ],
             &application,
             30_000,
         );
+        let startup_log = application.join("startup.log");
+        if startup_log.is_file() {
+            println!(
+                "PRIVATE_ELECTRON_STARTUP_LOG: {}",
+                read_probe_output(&startup_log)
+            );
+        }
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
         assert!(
             output.stdout.contains("PRIVATE_STAGE_ELECTRON_PASS"),

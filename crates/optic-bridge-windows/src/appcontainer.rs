@@ -5,27 +5,36 @@ use std::{
     marker::PhantomData,
     mem::{size_of, size_of_val},
     os::windows::{
-        ffi::OsStrExt,
+        ffi::{OsStrExt, OsStringExt},
         io::{AsRawHandle, BorrowedHandle},
     },
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, HLOCAL, LocalFree,
+            WAIT_OBJECT_0,
+        },
         Security::{
+            Authorization::ConvertSidToStringSidW,
             FreeSid, GetTokenInformation,
-            Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
+            Isolation::{
+                CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
+            },
             PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
-        System::Threading::{
-            CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-            PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-            TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+        System::{
+            Com::CoTaskMemFree,
+            Threading::{
+                CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
+                EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
+                InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+                TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            },
         },
     },
     core::{HSTRING, PCWSTR, PWSTR},
@@ -116,12 +125,38 @@ impl AppContainerProfile {
 
     #[cfg(test)]
     pub(crate) fn profile_storage_path_for_tests(&self) -> std::path::PathBuf {
-        let local_app_data =
-            std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA must exist on Windows tests");
-        std::path::PathBuf::from(local_app_data)
-            .join("Packages")
-            .join(self.name.to_string_lossy())
-            .join("AC")
+        self.private_storage_root()
+            .expect("native ephemeral profile storage")
+    }
+
+    /// Query Windows for this fresh profile's private storage identity. This is
+    /// not an external ACL grant or process authorization, and accepts no path.
+    /// Predictably named profiles cannot be used as reusable staging authority.
+    pub fn private_storage_root(&self) -> Result<PathBuf> {
+        if !self.external_acl_grants_allowed {
+            return Err(Error::other(
+                "private staging requires a fresh ephemeral profile",
+            ));
+        }
+        let mut sid_text = PWSTR::null();
+        // SAFETY: profile owns a valid live SID and sid_text is writable output.
+        unsafe { ConvertSidToStringSidW(self.sid, &mut sid_text) }.map_err(Error::other)?;
+        let _sid_allocation = ProfilePathAllocation::Local(sid_text);
+        // SAFETY: Windows returned a NUL-terminated SID string kept live above.
+        let folder =
+            unsafe { GetAppContainerFolderPath(PCWSTR(sid_text.0)) }.map_err(Error::other)?;
+        let _folder_allocation = ProfilePathAllocation::Com(folder);
+        if folder.is_null() {
+            return Err(Error::other("Windows returned no private profile path"));
+        }
+        // SAFETY: GetAppContainerFolderPath returned a live NUL-terminated UTF-16
+        // string. Preserve native Windows path identity without lossy Unicode.
+        let root = PathBuf::from(OsString::from_wide(unsafe { folder.as_wide() }));
+        if !root.is_absolute() {
+            return Err(Error::other("private profile path is not absolute"));
+        }
+        let observed = crate::file::inspect_directory_no_reparse(&root).map_err(Error::other)?;
+        Ok(observed.final_path)
     }
 
     /// Borrow security capabilities for process creation in this profile.
@@ -138,6 +173,26 @@ impl AppContainerProfile {
                 Reserved: 0,
             },
             _profile: PhantomData,
+        }
+    }
+}
+
+enum ProfilePathAllocation {
+    Local(PWSTR),
+    Com(PWSTR),
+}
+
+impl Drop for ProfilePathAllocation {
+    fn drop(&mut self) {
+        // SAFETY: each pointer is returned by the corresponding Windows
+        // allocation API, kept uniquely owned, and freed once on every path.
+        unsafe {
+            match self {
+                Self::Local(pointer) => {
+                    let _ = LocalFree(Some(HLOCAL(pointer.0.cast())));
+                }
+                Self::Com(pointer) => CoTaskMemFree(Some(pointer.0.cast())),
+            }
         }
     }
 }
