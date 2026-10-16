@@ -743,6 +743,16 @@ mod tests {
             },
             &[
                 (
+                    OsString::from("SystemRoot"),
+                    command
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .as_os_str()
+                        .to_owned(),
+                ),
+                (
                     OsString::from("OPTIC_EXPLICIT_ENV"),
                     OsString::from("present"),
                 ),
