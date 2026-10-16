@@ -91,3 +91,4 @@ dependency or artifact permission is added. This alpha retains its newer owner
 worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
 Equivalent native storage helpers/imports were deduplicated during integration.
 Exact merge-head validation remains required; prior CI is not its validation.
+Main post-merge CI38900962379 passed for3a89f40. Experimental managed Node first proof compiled and passed six preparation tests, then failed with Node FileSystemRead denial on an extended Windows input path; corrected path spelling and lifecycle checks require their own native result.

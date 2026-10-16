@@ -126,17 +126,8 @@ pub(crate) fn execute(
         }
         start.runtime.verify()?;
         root_pin = Some(stage.verify_inputs_and_pin()?);
-        let root = stage
-            .input_root()
-            .to_str()
-            .ok_or(Error::InvalidPrivateTask)?
-            .to_owned();
-        let entry = stage
-            .input_root()
-            .join(start.entry.as_str())
-            .to_str()
-            .ok_or(Error::InvalidPrivateTask)?
-            .to_owned();
+        let root = node_local_path(stage.input_root())?;
+        let entry = node_local_path(&stage.input_root().join(start.entry.as_str()))?;
         let args = vec![
             "--permission".into(),
             format!("--allow-fs-read={root}"),
@@ -330,4 +321,17 @@ fn cleanup_stage(
             Err(error.into())
         }
     }
+}
+
+// Node's permission matcher and CJS loader must receive the same DOS spelling.
+// Native identity checks continue to use the pinned, canonical host path. Only
+// a local drive prefix is translated; UNC/device namespaces fail closed.
+fn node_local_path(path: &Path) -> Result<String, Error> {
+    let text = path.to_str().ok_or(Error::InvalidPrivateTask)?;
+    let local = text.strip_prefix(r"\\?\").unwrap_or(text);
+    let bytes = local.as_bytes();
+    if bytes.len() < 3 || !bytes[0].is_ascii_alphabetic() || &bytes[1..3] != b":\\" {
+        return Err(Error::InvalidPrivateTask);
+    }
+    Ok(local.to_owned())
 }

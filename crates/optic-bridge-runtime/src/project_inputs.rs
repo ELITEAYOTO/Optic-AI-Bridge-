@@ -905,13 +905,17 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             .unwrap();
         assert_eq!(
             result.status,
-            ProcessStatus::Exited,
+            match case {
+                "stop" => ProcessStatus::Stopped,
+                "output" => ProcessStatus::OutputLimitExceeded,
+                _ => ProcessStatus::Exited,
+            },
             "stderr={}",
             String::from_utf8_lossy(&stderr.bytes)
         );
         assert_eq!(
             result.exit_code,
-            Some(0),
+            if case == "roundtrip" { Some(0) } else { None },
             "stderr={}",
             String::from_utf8_lossy(&stderr.bytes)
         );
