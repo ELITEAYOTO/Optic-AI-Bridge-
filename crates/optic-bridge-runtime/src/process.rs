@@ -205,6 +205,7 @@ struct JobStore {
 #[derive(Debug)]
 struct JobRecord {
     owner: SessionHandle,
+    private_action: Option<optic_bridge_core::ActionId>,
     sequence: u64,
     workload_class: WorkloadClass,
     reserved_output_bytes: u64,
@@ -475,6 +476,7 @@ impl ProcessManager {
         let reserved_cpu_percent = self.limits.max_process_cpu_percent_per_job;
         let record = Arc::new(JobRecord {
             owner: spec.session,
+            private_action: None,
             sequence,
             workload_class,
             reserved_output_bytes: resources.output_bytes,
@@ -694,6 +696,24 @@ impl ProcessManager {
             exit_code: state.exit_code,
             output_truncated: record.output_overflow.load(Ordering::Acquire),
         })
+    }
+
+    /// Reconcile a lost private-task start reply without launching it again.
+    /// This scans bounded retained records, is owner-scoped, and is not a
+    /// durable restart record or a promise after terminal-history eviction.
+    pub fn find_recorded_private_action(
+        &self,
+        session: &SessionHandle,
+        action: &optic_bridge_core::ActionId,
+    ) -> Result<Option<JobId>, ProcessError> {
+        let store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
+        Ok(store.jobs.iter().find_map(|(id, record)| {
+            (&record.owner == session && record.private_action.as_ref() == Some(action))
+                .then(|| id.clone())
+        }))
     }
 
     pub fn cancel_session(&self, session: &SessionHandle) -> Result<usize, ProcessError> {
@@ -1047,6 +1067,7 @@ impl ProcessManager {
     pub(crate) fn reserve_native_private(
         &self,
         spec: &ProcessStartSpec,
+        action: &optic_bridge_core::ActionId,
     ) -> Result<NativeProcessReservation, ProcessError> {
         let resources = spec.resources.validate_nonzero()?;
         if !resources.fits_within(self.limits.max_process_budget)
@@ -1072,6 +1093,7 @@ impl ProcessManager {
         let id = JobId::generate().map_err(|_| ProcessError::JobIdUnavailable)?;
         let record = Arc::new(JobRecord {
             owner: spec.session.clone(),
+            private_action: Some(action.clone()),
             sequence: self.sequence.fetch_add(1, Ordering::AcqRel),
             workload_class: spec.workload_class,
             reserved_output_bytes: resources.output_bytes,
@@ -1095,6 +1117,11 @@ impl ProcessManager {
             .jobs
             .lock()
             .map_err(|_| ProcessError::StateUnavailable)?;
+        if store.jobs.values().any(|record| {
+            record.owner == spec.session && record.private_action.as_ref() == Some(action)
+        }) {
+            return Err(ProcessError::PrivateActionAlreadyRecorded);
+        }
         self.prepare_store_for_start_with_workload(
             &mut store,
             &spec.session,
@@ -1480,6 +1507,8 @@ where
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
+    #[error("private start action already has a retained process record; reconcile it")]
+    PrivateActionAlreadyRecorded,
     #[error("invalid process hard limits: {0}")]
     InvalidLimits(#[from] LimitError),
     #[error("workspace root must be a directory")]
@@ -1692,6 +1721,7 @@ mod tests {
     ) -> Arc<JobRecord> {
         Arc::new(JobRecord {
             owner,
+            private_action: None,
             sequence,
             workload_class,
             reserved_output_bytes: 1,
@@ -2440,6 +2470,7 @@ mod tests {
                 uncertain_job.clone(),
                 Arc::new(JobRecord {
                     owner: owner.clone(),
+                    private_action: None,
                     sequence: 0,
                     workload_class: WorkloadClass::Standard,
                     reserved_output_bytes: 1024,

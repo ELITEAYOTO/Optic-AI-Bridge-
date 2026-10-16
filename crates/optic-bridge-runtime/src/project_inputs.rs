@@ -856,6 +856,19 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             },
             resources: process_task.resource_ceiling,
         };
+        let action_id = action.action_id.clone();
+        let replay_spec = crate::ProcessStartSpec {
+            session: action.session.clone(),
+            class,
+            workload_class: process_task.workload_class,
+            network: optic_bridge_core::NetworkAccess::Denied,
+            executable: authority.canonical_path().to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: action.resources,
+        };
         let job = prepared
             .start_node(
                 crate::PrivateNodeTaskStart {
@@ -870,6 +883,22 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             )
             .await
             .unwrap();
+        assert_eq!(
+            processes
+                .find_recorded_private_action(&fixture.session.handle, &action_id)
+                .unwrap(),
+            Some(job.clone())
+        );
+        assert!(
+            processes
+                .find_recorded_private_action(&SessionHandle::generate().unwrap(), &action_id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(matches!(
+            processes.reserve_native_private(&replay_spec, &action_id),
+            Err(crate::ProcessError::PrivateActionAlreadyRecorded)
+        ));
         if matches!(case, "stop" | "revoke") {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {

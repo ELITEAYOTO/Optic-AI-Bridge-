@@ -147,7 +147,11 @@ pub(crate) fn execute(
             env_allowlist: Vec::new(),
             resources: start.action.resources,
         };
-        record = Some(start.processes.reserve_native_private(&spec)?);
+        record = Some(
+            start
+                .processes
+                .reserve_native_private(&spec, &start.action.action_id)?,
+        );
         stdout = Some(CapturedOutputPipe::new()?);
         stderr = Some(CapturedOutputPipe::new()?);
         let environment = stage.node_environment()?;
