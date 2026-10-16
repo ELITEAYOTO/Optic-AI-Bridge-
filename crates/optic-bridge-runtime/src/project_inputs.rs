@@ -476,11 +476,31 @@ mod tests {
             calls: AtomicUsize,
             sessions: Arc<SessionRegistry>,
             handle: SessionHandle,
+            worker: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
         }
         impl Clock for RevokeClock {
             fn now(&self) -> MonotonicTime {
                 if self.calls.fetch_add(1, Ordering::SeqCst) == 4 {
-                    self.sessions.revoke(&self.handle).unwrap();
+                    // Session revoke fences admission immediately, then waits
+                    // for this capture's permit to drain. Run it concurrently;
+                    // calling it synchronously here would wait for ourselves.
+                    let sessions = self.sessions.clone();
+                    let handle = self.handle.clone();
+                    *self.worker.lock().unwrap() = Some(std::thread::spawn(move || {
+                        sessions.revoke(&handle).unwrap();
+                    }));
+                    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                    while !matches!(
+                        self.sessions
+                            .get_active(&self.handle, MonotonicTime::from_millis(100)),
+                        Err(SessionRegistryError::Revoked)
+                    ) {
+                        assert!(
+                            std::time::Instant::now() < until,
+                            "concurrent revoke must fence admission"
+                        );
+                        std::thread::yield_now();
+                    }
                 }
                 MonotonicTime::from_millis(100)
             }
@@ -488,11 +508,13 @@ mod tests {
         let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
         fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
         let mut service = fixture.service();
-        service.clock = Arc::new(RevokeClock {
+        let clock = Arc::new(RevokeClock {
             calls: AtomicUsize::new(0),
             sessions: fixture.sessions.clone(),
             handle: fixture.session.handle.clone(),
+            worker: std::sync::Mutex::new(None),
         });
+        service.clock = clock.clone();
         let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
         assert!(matches!(
             service.capture(manifest, &actions),
@@ -500,6 +522,7 @@ mod tests {
                 SessionRegistryError::Revoked
             ))
         ));
+        clock.worker.lock().unwrap().take().unwrap().join().unwrap();
     }
 
     #[cfg(not(windows))]
