@@ -4,6 +4,11 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Bounded session/task/epoch-bound project input manifests and immutable snapshots, with exact path/version/size validation. Windows capture preflights typed read authority, preserves native path identity and existing ceilings, and discards data on revocation or deadline expiry. No process or MCP authority is added; native branch validation pending (ADR-0012).
+
+
 ### Security hardening candidate — 2026-10-12 (unmerged)
 
 - #183: file read/list/Git read retain session admission and transport/I/O capacity inside their worker through the effect, including caller cancellation/timeout.

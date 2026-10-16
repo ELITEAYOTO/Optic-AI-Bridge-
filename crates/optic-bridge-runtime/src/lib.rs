@@ -29,6 +29,7 @@ mod mutation;
 mod mutation_authority;
 mod process;
 mod process_authority;
+mod project_inputs;
 mod read_authority;
 mod recovery;
 mod reusable_approval_broker;
@@ -98,6 +99,7 @@ pub use process::{
     ProcessResult, ProcessStartSpec, ProcessStatus, ProcessStream,
 };
 pub use process_authority::{ProcessAuthority, ProcessAuthorityError, ProcessExecutableIdentity};
+pub use project_inputs::{ProjectInputCaptureError, ProjectInputCaptureService};
 pub use read_authority::{
     ReadAuthorityError, ReadAuthoritySet, ReadAuthoritySpec, read_authority_resource_budget,
 };
