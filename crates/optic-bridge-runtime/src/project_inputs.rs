@@ -328,8 +328,8 @@ mod tests {
             Err(ProjectInputCaptureError::Input(ProjectInputError::Binding))
         ));
         let (manifest, mut actions) = fixture.inputs("src/missing", b"x");
-        actions[0].effect = Effect::DirectoryCreate {
-            path: WorkspacePath::parse("src/missing").unwrap(),
+        actions[0].effect = Effect::FileSearch {
+            root: Some(WorkspacePath::parse("src/missing").unwrap()),
         };
         assert!(matches!(
             service.capture(manifest, &actions),

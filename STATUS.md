@@ -16,10 +16,12 @@ Private Node staging passed native CI with relative modules, private output and
 external source writes denied. General Electron startup failed both natively
 on this PC and in GitHub CI, before the fixed application executes, without FS
 or any tunnel. The normal sandboxed path stops with0x80000003. An explicit
-outer-AppContainer comparison gets further but is still unproven; no automatic
+outer-AppContainer comparison passed its fixed CI probe at623e003; no automatic
 sandbox downgrade is permitted. Exact SID/capability sampling and owned-tree
 cleanup are part of the probe. New diagnostic head623e003 retains bounded error
-tails rather than aborting before cleanup on large startup logs; CI is pending.
+tails rather than aborting on large startup logs. Local execution reached the
+renderer but cleanup hit a sharing violation; bounded owned-directory cleanup
+retry9e9bbdb is pending native validation. This is not a GUI release.
 
 Next gate remains a real optional Electron runtime with an owned isolated tree,
 then bounded production staging/artifact publication, scoped dependency restore

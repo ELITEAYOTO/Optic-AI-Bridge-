@@ -62,3 +62,19 @@ fix/check/test/stop/resume against that binary. Following source improvements
 (default selected page cap, visible limits, versioned search offsets) passed
 32alpha tests and the4KiB UTF-8 two-page native runner proof; exact CI for those
 source changes is required before packaging a newer delivery.
+
+## Project input capture integrated — 2026-10-16
+
+PR224 independent main-based head72c06c4681769bf873b817cc67d976407c14a81a
+passed CI38836808832 (Windows, Linux and dependency policy). Seven-file diff
+reviewed locally; no reviews requesting changes or unresolved review threads.
+Squash merge bcd26aac9602d30f7461b5d7f303a23456005970 confirmed by GitHub.
+The native input capture service adds no new MCP/process/GUI authority.
+It inherits the existing scope policy; unresolved sensitive-content classification
+is not solved by input hashing. Non-Windows capture remains fail closed.
+
+Alpha incorporates main's implementation; the conflict in a wrong-effect test
+uses FileSearch, which exists on both branches, rather than alpha-only directory
+creation. Alpha status/history is preserved. Post-merge main CI and this alpha
+integration require their own checks; prior exact-head success is not a claim
+about a later merge head.

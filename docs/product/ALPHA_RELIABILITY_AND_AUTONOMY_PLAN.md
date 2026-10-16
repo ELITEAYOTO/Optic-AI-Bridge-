@@ -16,17 +16,19 @@ Packaged permission/lifecycle/crash/resume proofs passed locally. There are
 
 Versioned multi-file input manifests and native authorized capture now pass
 Rust Windows/Linux CI (including revocation, deadlines, native root replacement
-and read ceilings). PR224 extracts this increment onto main18a8ec6; its own
-head72c06c4 is under independent CI. No new build/GUI tool is exposed yet.
+and read ceilings). PR224 passed independent CI38836808832 at head72c06c4
+and merged into main asbcd26aa. No new build/GUI tool is exposed yet.
 
 Private Node staging passed native CI with relative modules, private output and
 external source writes denied. General Electron startup failed both natively
 on this PC and in GitHub CI, before the fixed application executes, without FS
 or any tunnel. The normal sandboxed path stops with0x80000003. An explicit
-outer-AppContainer comparison gets further but is still unproven; no automatic
+outer-AppContainer comparison passed its fixed CI probe at623e003; no automatic
 sandbox downgrade is permitted. Exact SID/capability sampling and owned-tree
 cleanup are part of the probe. New diagnostic head623e003 retains bounded error
-tails rather than aborting before cleanup on large startup logs; CI is pending.
+tails rather than aborting on large startup logs. Local execution reached the
+renderer but cleanup hit a sharing violation; bounded owned-directory cleanup
+retry9e9bbdb is pending native validation. This is not a GUI release.
 
 Next gate remains a real optional Electron runtime with an owned isolated tree,
 then bounded production staging/artifact publication, scoped dependency restore
