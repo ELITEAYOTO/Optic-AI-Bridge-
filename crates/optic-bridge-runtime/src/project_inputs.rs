@@ -465,6 +465,36 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn private_preparation_uncertain_cleanup_retains_accounting_without_recursive_delete() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let service = crate::PrivateProjectStageService::new(fixture.service());
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let stage = service.prepare(manifest, &actions).unwrap();
+        let root = stage.input_root().to_path_buf();
+        let identity = inspect_directory_no_reparse(&root).unwrap().identity;
+        fs::write(root.join("untracked.txt"), b"not declared").unwrap();
+        assert!(stage.discard().is_err());
+        assert_eq!(service.occupied_slots(), 1);
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), b"x");
+        // Host cleans only this test-created extra file, after checking identity.
+        // The library intentionally refuses recursive removal of unknown data.
+        if root.try_exists().unwrap() {
+            assert_eq!(
+                inspect_directory_no_reparse(&root).unwrap().identity,
+                identity
+            );
+            assert_eq!(
+                fs::read(root.join("untracked.txt")).unwrap(),
+                b"not declared"
+            );
+            fs::remove_file(root.join("untracked.txt")).unwrap();
+            fs::remove_dir(root).unwrap();
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn existing_read_limit_is_not_increased_by_manifest_capacity() {
         let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
         fs::write(fixture.root.join("src/main.cjs"), b"ab").unwrap();
