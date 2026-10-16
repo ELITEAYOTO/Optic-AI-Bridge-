@@ -197,3 +197,20 @@ sample. At least two simultaneous processes must be observed for a normal GUI
 success. Snapshots are capped at16 members; sampling is not a universal proof
 about every possible short-lived child. Network and production staging/lifecycle
 still require their own gates. Debug-only success is labelled separately.
+
+## Successful explicit comparison and next containment gate
+
+At623e003 the outer-AppContainer-only fixed Electron probe passed native CI;
+normal Chromium sandbox startup still fails0x80000003. After bounded cleanup
+retry9e9bbdb, the exact verified probe also passed locally with installed
+Electron44.7.2, including renderer42, source read/write denial, exact sampled
+AppContainer SID/zero capabilities and confirmed empty job before cleanup.
+Integration heada087cb9 repeated the comparison successfully in native CI
+run38837282705; that workflow remains red because the normal mode still fails.
+
+A follow-up fixed probe now targets an owned live127.0.0.1 listener from both
+Electron main's Node socket and the renderer fetch path. Main must observe
+EACCES/EPERM; the native listener must observe no accepted connection. This
+separates a denied network path from a closed remote port. Its native validation
+is pending. It is a loopback regression, not a proof of every Windows broker,
+network protocol or GUI capability. No production fallback or new tool is added.

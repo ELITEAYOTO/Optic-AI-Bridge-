@@ -755,6 +755,14 @@ console.log('PRIVATE_STAGE_NODE_PASS');
         copy_electron_runtime_for_probe(electron.parent().unwrap(), &runtime);
         let application = stage.join("application");
         fs::create_dir(&application).expect("application root");
+        // A live controlled destination distinguishes actual connection denial
+        // from a closed port or an unreachable external service.
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("owned loopback destination");
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking observer");
+        let port = listener.local_addr().unwrap().port();
         fs::write(
             application.join("package.json"),
             b"{\"name\":\"optic-private-probe\",\"main\":\"main.cjs\"}",
@@ -776,6 +784,16 @@ app.whenReady().then(async()=>{
   assert.equal(await window.webContents.executeJavaScript('6*7'),42);
   assert.equal(await window.webContents.executeJavaScript('typeof require'),'undefined');
   assert.equal(await window.webContents.executeJavaScript('typeof process'),'undefined');
+  const port=Number(process.argv.at(-2));
+  const networkDenied=await new Promise((resolve,reject)=>{
+    const socket=require('node:net').createConnection({host:'127.0.0.1',port});
+    const deadline=setTimeout(()=>{socket.destroy();reject(new Error('network denial not observed'));},1500);
+    socket.once('connect',()=>{clearTimeout(deadline);socket.destroy();reject(new Error('main process reached ungranted network'));});
+    socket.once('error',error=>{clearTimeout(deadline);socket.destroy();resolve(error.code==='EACCES'||error.code==='EPERM');});
+  });
+  assert.equal(networkDenied,true);
+  const rendererDenied=await window.webContents.executeJavaScript(`fetch('http://127.0.0.1:${port}/probe',{signal:AbortSignal.timeout(1500)}).then(()=>false,()=>true)`);
+  assert.equal(rendererDenied,true);
   let readDenied=false,writeDenied=false;
   try{fs.readFileSync(process.argv.at(-1));}catch(e){readDenied=e.code==='EACCES'||e.code==='EPERM';}
   try{fs.writeFileSync(process.argv.at(-1),'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
@@ -813,6 +831,7 @@ app.whenReady().then(async()=>{
             _ => panic!("unsupported fixed compatibility variant"),
         }
         arguments.push(application.clone().into_os_string());
+        arguments.push(OsString::from(port.to_string()));
         arguments.push(sentinel.clone().into_os_string());
         let output = run_isolated_capture_with_budget(
             &profile,
@@ -830,6 +849,10 @@ app.whenReady().then(async()=>{
         }
         let result = fs::read(application.join("result.json")).ok();
         let source_after = fs::read_to_string(&sentinel).expect("source sentinel");
+        let destination_unreached = matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        );
         assert!(
             fs::canonicalize(&stage)
                 .unwrap()
@@ -840,6 +863,10 @@ app.whenReady().then(async()=>{
         // a failed compatibility experiment does not retain a runtime copy.
         remove_drained_probe_stage(&stage, &profile_dir);
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
+        assert!(
+            destination_unreached,
+            "ungranted loopback destination reached"
+        );
         assert!(
             std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1")
                 || output.max_verified_processes >= 2,
@@ -862,7 +889,7 @@ app.whenReady().then(async()=>{
             );
         } else if variant == "outer-appcontainer" {
             println!(
-                "PRIVATE_ELECTRON_OUTER_ONLY_COMPATIBILITY: hidden renderer, sampled owned tokens retain exact AppContainer SID and zero capabilities, inner Chromium sandbox disabled, no renderer Node, external root source access denied and owned tree drained; network and production lifecycle require separate proof; not a GUI grant"
+                "PRIVATE_ELECTRON_OUTER_ONLY_COMPATIBILITY: hidden renderer, sampled owned tokens retain exact AppContainer SID and zero capabilities, inner Chromium sandbox disabled, no renderer Node, external root source access denied, main/renderer loopback denied and owned tree drained; wider network and production lifecycle require separate proof; not a GUI grant"
             );
         } else {
             println!(
