@@ -219,3 +219,5 @@ All notable project changes are recorded here.
 - Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
 
 - Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.
+
+- Add an owned-job watchdog armed before resume, with a nonrenewable deadline and bounded atomic stop observation independent of owner-worker I/O. No new MCP authority.
