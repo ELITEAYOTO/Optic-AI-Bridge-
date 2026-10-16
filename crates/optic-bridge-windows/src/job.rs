@@ -223,6 +223,74 @@ impl Drop for OwnedJob {
     }
 }
 
+/// Owns one AppContainer root and its bounded kernel process tree. Policy and
+/// resource admission remain the caller's responsibility. No PID is accepted.
+pub struct ContainedAppContainerProcess {
+    job: OwnedJob,
+    child: crate::SuspendedAppContainerProcess,
+}
+
+impl ContainedAppContainerProcess {
+    pub fn contain(
+        child: crate::SuspendedAppContainerProcess,
+        limits: LimitedJobObject,
+    ) -> Result<Self> {
+        if child.has_resumed() || !child.is_appcontainer()? {
+            return Err(Error::other(
+                "containment requires an owned suspended AppContainer root",
+            ));
+        }
+        let job = OwnedJob::create(
+            limits.active_process_limit,
+            limits.job_memory_limit,
+            limits.cpu_percent,
+        )?;
+        // SAFETY: consumes the uniquely owned, not-yet-resumed child. Kernel
+        // limits are set before assignment and before any application code runs.
+        unsafe {
+            AssignProcessToJobObject(job.raw(), HANDLE(child.borrowed_process().as_raw_handle()))
+        }
+        .map_err(Error::other)?;
+        Ok(Self { job, child })
+    }
+
+    pub fn resume(&self) -> Result<()> {
+        self.child.resume()
+    }
+
+    /// A root exit alone is insufficient: descendants must also be gone.
+    pub fn try_wait(&mut self) -> Result<Option<u32>> {
+        match self.child.try_wait_exit()? {
+            Some(code) if self.job.active_processes()? == 0 => Ok(Some(code)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn terminate_and_confirm_empty(&mut self, timeout_ms: u32) -> Result<()> {
+        if !(1..=5000).contains(&timeout_ms) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "owned termination confirmation requires 1..=5000 ms",
+            ));
+        }
+        // Even a failed termination request can race natural exit. Only the
+        // owned kernel accounting below establishes an empty process tree.
+        let _ = self.job.terminate(1);
+        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
+        loop {
+            if self.job.active_processes()? == 0 && self.child.try_wait_exit()?.is_some() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= until {
+                return Err(Error::other(
+                    "owned AppContainer tree termination uncertain",
+                ));
+            }
+            std::thread::sleep(JOB_EMPTY_POLL);
+        }
+    }
+}
+
 #[derive(Debug)]
 struct LimitedJobChild {
     inner: Box<dyn ChildWrapper>,
