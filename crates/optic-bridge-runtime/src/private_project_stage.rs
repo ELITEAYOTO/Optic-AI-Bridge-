@@ -226,11 +226,11 @@ impl PrivateProjectStageService {
         let snapshot = match self.capture.capture(manifest, actions) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                if let Some(ticket) = &journal {
-                    if let Err(journal_error) = ticket.closed() {
-                        slot.retain_on_drop = true;
-                        return Err(journal_error.into());
-                    }
+                if let Some(ticket) = &journal
+                    && let Err(journal_error) = ticket.closed()
+                {
+                    slot.retain_on_drop = true;
+                    return Err(journal_error.into());
                 }
                 return Err(error.into());
             }
