@@ -785,15 +785,15 @@ app.whenReady().then(async()=>{
   assert.equal(await window.webContents.executeJavaScript('typeof require'),'undefined');
   assert.equal(await window.webContents.executeJavaScript('typeof process'),'undefined');
   const port=Number(process.argv.at(-2));
-  const networkDenied=await new Promise((resolve,reject)=>{
+  const networkError=await new Promise((resolve,reject)=>{
     const socket=require('node:net').createConnection({host:'127.0.0.1',port});
     const deadline=setTimeout(()=>{socket.destroy();reject(new Error('network denial not observed'));},1500);
     socket.once('connect',()=>{clearTimeout(deadline);socket.destroy();reject(new Error('main process reached ungranted network'));});
-    socket.once('error',error=>{clearTimeout(deadline);socket.destroy();resolve(error.code==='EACCES'||error.code==='EPERM');});
+    socket.once('error',error=>{clearTimeout(deadline);socket.destroy();resolve(error.code);});
   });
-  assert.equal(networkDenied,true);
+  assert.ok(networkError==='EACCES'||networkError==='EPERM',`main socket denial code: ${networkError}`);
   const rendererDenied=await window.webContents.executeJavaScript(`fetch('http://127.0.0.1:${port}/probe',{signal:AbortSignal.timeout(1500)}).then(()=>false,()=>true)`);
-  assert.equal(rendererDenied,true);
+  assert.equal(rendererDenied,true,'renderer reached ungranted network');
   let readDenied=false,writeDenied=false;
   try{fs.readFileSync(process.argv.at(-1));}catch(e){readDenied=e.code==='EACCES'||e.code==='EPERM';}
   try{fs.writeFileSync(process.argv.at(-1),'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
