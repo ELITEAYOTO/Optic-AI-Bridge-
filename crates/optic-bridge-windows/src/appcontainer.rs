@@ -725,6 +725,7 @@ mod tests {
     fn explicit_environment_reaches_owned_child_without_ambient_path() {
         let profile = AppContainerProfile::create_ephemeral().unwrap();
         let command = system32_executable("cmd.exe");
+        let private = profile.private_storage_root().unwrap();
         let input = OpenOptions::new().read(true).open("NUL").unwrap();
         let mut output = crate::CapturedOutputPipe::new().unwrap();
         let child = spawn_appcontainer_with_environment_suspended(
@@ -742,6 +743,13 @@ mod tests {
                 stderr: output.writer_handle().unwrap(),
             },
             &[
+                (OsString::from("TEMP"), private.as_os_str().to_owned()),
+                (OsString::from("TMP"), private.as_os_str().to_owned()),
+                (
+                    OsString::from("LOCALAPPDATA"),
+                    private.as_os_str().to_owned(),
+                ),
+                (OsString::from("APPDATA"), private.as_os_str().to_owned()),
                 (
                     OsString::from("SystemRoot"),
                     command
