@@ -841,6 +841,36 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         owned.terminate_and_confirm_empty(1000).unwrap();
+        let child = spawn_appcontainer_suspended(
+            &profile,
+            &findstr,
+            &[OsString::from("/c:optic-stop-absent")],
+            findstr.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .unwrap();
+        let mut stopped = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        let signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        assert!(stopped.arm_watchdog(5000, vec![signal.clone(); 5]).is_err());
+        stopped.arm_watchdog(5000, vec![signal.clone()]).unwrap();
+        stopped.resume().unwrap();
+        signal.store(true, std::sync::atomic::Ordering::Release);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!stopped.deadline_expired());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while stopped.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        stopped.terminate_and_confirm_empty(1000).unwrap();
     }
 
     #[test]

@@ -271,13 +271,27 @@ impl ContainedAppContainerProcess {
     /// independently of the owner worker's polling or filesystem operations.
     /// Managed admission must bound the number of simultaneously armed jobs.
     pub fn arm_deadline(&mut self, timeout_ms: u32) -> Result<()> {
-        if timeout_ms == 0 || self.child.has_resumed() || self.deadline.is_some() {
+        self.arm_watchdog(timeout_ms, Vec::new())
+    }
+
+    /// At most four already-owner-bound stop/revocation flags. No callbacks,
+    /// policy I/O or locks run in the watchdog; its deadline cannot be renewed.
+    pub fn arm_watchdog(
+        &mut self,
+        timeout_ms: u32,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<()> {
+        if timeout_ms == 0
+            || stop_flags.len() > 4
+            || self.child.has_resumed()
+            || self.deadline.is_some()
+        {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "deadline requires one positive suspended-job budget",
             ));
         }
-        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms)?);
+        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms, stop_flags)?);
         Ok(())
     }
 
@@ -331,7 +345,7 @@ struct NativeJobDeadline {
     expired: Arc<AtomicBool>,
 }
 impl NativeJobDeadline {
-    fn new(job: &OwnedJob, timeout_ms: u32) -> Result<Self> {
+    fn new(job: &OwnedJob, timeout_ms: u32, stop_flags: Vec<Arc<AtomicBool>>) -> Result<Self> {
         let mut duplicate = HANDLE::default();
         // SAFETY: duplicate a live owned job into this process only. It is never
         // inheritable or exposed; OwnedHandle provides thread-safe ownership.
@@ -352,17 +366,26 @@ impl NativeJobDeadline {
         let (cancel, receive) = mpsc::sync_channel(1);
         let expired = Arc::new(AtomicBool::new(false));
         let observed = Arc::clone(&expired);
+        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
         let worker = std::thread::Builder::new()
             .name("optic-job-deadline".into())
             .spawn(move || {
-                if matches!(
-                    receive.recv_timeout(Duration::from_millis(u64::from(timeout_ms))),
-                    Err(mpsc::RecvTimeoutError::Timeout)
-                ) {
-                    observed.store(true, Ordering::Release);
-                    // SAFETY: this thread owns the duplicate of this exact kernel
-                    // job. It takes no PID and performs no file/profile cleanup.
-                    let _ = unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) };
+                loop {
+                    let timed_out = std::time::Instant::now() >= until;
+                    if timed_out || stop_flags.iter().any(|flag| flag.load(Ordering::Acquire)) {
+                        if timed_out {
+                            observed.store(true, Ordering::Release);
+                        }
+                        // SAFETY: this thread owns the duplicate of this exact kernel
+                        // job. It takes no PID and performs no file/profile cleanup.
+                        let _ = unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) };
+                        break;
+                    }
+                    let remaining = until.saturating_duration_since(std::time::Instant::now());
+                    match receive.recv_timeout(remaining.min(Duration::from_millis(20))) {
+                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => (),
+                    }
                 }
             })?;
         Ok(Self {

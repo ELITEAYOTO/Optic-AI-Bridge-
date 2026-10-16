@@ -215,7 +215,7 @@ struct JobRecord {
     cwd_pin: Mutex<Option<PinnedDirectoryChain>>,
     output: Mutex<OutputState>,
     state: Mutex<JobState>,
-    stop_requested: AtomicBool,
+    stop_requested: Arc<AtomicBool>,
     output_overflow: AtomicBool,
 }
 
@@ -494,7 +494,7 @@ impl ProcessManager {
                 status: ProcessStatus::Running,
                 exit_code: None,
             }),
-            stop_requested: AtomicBool::new(false),
+            stop_requested: Arc::new(AtomicBool::new(false)),
             output_overflow: AtomicBool::new(false),
         });
 
@@ -1110,7 +1110,7 @@ impl ProcessManager {
                 status: ProcessStatus::Running,
                 exit_code: None,
             }),
-            stop_requested: AtomicBool::new(false),
+            stop_requested: Arc::new(AtomicBool::new(false)),
             output_overflow: AtomicBool::new(false),
         });
         let mut store = self
@@ -1157,6 +1157,9 @@ impl NativeProcessReservation {
     }
     pub(crate) fn stop_requested(&self) -> bool {
         self.record.stop_requested.load(Ordering::Acquire)
+    }
+    pub(crate) fn stop_signal(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.record.stop_requested)
     }
     pub(crate) fn overflowed(&self) -> bool {
         self.record.output_overflow.load(Ordering::Acquire)
@@ -1739,7 +1742,7 @@ mod tests {
                 status,
                 exit_code: None,
             }),
-            stop_requested: AtomicBool::new(false),
+            stop_requested: Arc::new(AtomicBool::new(false)),
             output_overflow: AtomicBool::new(false),
         })
     }
@@ -2488,7 +2491,7 @@ mod tests {
                         status: ProcessStatus::TerminationUncertain,
                         exit_code: None,
                     }),
-                    stop_requested: AtomicBool::new(true),
+                    stop_requested: Arc::new(AtomicBool::new(true)),
                     output_overflow: AtomicBool::new(true),
                 }),
             );

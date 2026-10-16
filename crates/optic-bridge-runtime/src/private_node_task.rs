@@ -78,6 +78,8 @@ pub(crate) fn execute(
     let mut stderr = None;
     let mut root_pin = None;
     let mut native_created = false;
+    let mut watch_flags = Vec::new();
+    let mut deadline_status = ProcessStatus::TimedOut;
     let initialization = (|| -> Result<(), Error> {
         let first_read = reads.first().ok_or(Error::InvalidPrivateTask)?;
         stage.require_binding(
@@ -196,15 +198,22 @@ pub(crate) fn execute(
         )?);
         stdout.as_mut().unwrap().close_parent_writer();
         stderr.as_mut().unwrap().close_parent_writer();
-        native.as_mut().unwrap().arm_deadline(
-            start
-                .action
-                .resources
-                .timeout_ms
-                .try_into()
-                .map_err(|_| Error::InvalidPrivateTask)?,
+        let (flags, remaining_authority_ms) =
+            capture.cancellation_watch(&start.action, first_read)?;
+        watch_flags = flags;
+        watch_flags.push(record.as_ref().unwrap().stop_signal());
+        if remaining_authority_ms < start.action.resources.timeout_ms {
+            deadline_status = ProcessStatus::Stopped;
+        }
+        let budget = remaining_authority_ms.min(start.action.resources.timeout_ms);
+        native.as_mut().unwrap().arm_watchdog(
+            budget.try_into().map_err(|_| Error::InvalidPrivateTask)?,
+            watch_flags.clone(),
         )?;
         native.as_ref().unwrap().resume()?;
+        drop(_launch_admission);
+        drop(_last_admission);
+        drop(_admission);
         stage.journal_running()?;
         Ok(())
     })();
@@ -259,16 +268,18 @@ pub(crate) fn execute(
             || drain_once(&mut running.stderr, &running.record, ProcessStream::Stderr).is_err();
         let reason = if pipe_error {
             Some(ProcessStatus::Failed)
-        } else if running.record.stop_requested() {
+        } else if running.record.stop_requested()
+            || watch_flags
+                .iter()
+                .any(|flag| flag.load(std::sync::atomic::Ordering::Acquire))
+        {
             Some(ProcessStatus::Stopped)
         } else if running.record.overflowed() {
             Some(ProcessStatus::OutputLimitExceeded)
-        } else if running.process.deadline_expired() || Instant::now() >= deadline {
+        } else if running.process.deadline_expired() {
+            Some(deadline_status)
+        } else if Instant::now() >= deadline {
             Some(ProcessStatus::TimedOut)
-        } else if capture.live_lease(&start.action).is_err()
-            || reads.iter().any(|read| capture.live_lease(read).is_err())
-        {
-            Some(ProcessStatus::Stopped)
         } else {
             None
         };
@@ -297,7 +308,7 @@ pub(crate) fn execute(
         return Err(Error::WorkerUnavailable);
     }
     if status == ProcessStatus::Exited && running.process.deadline_expired() {
-        status = ProcessStatus::TimedOut;
+        status = deadline_status;
         exit_code = None;
     }
     // Bound final draining even if an unexpected foreign handle retained a pipe.

@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Condvar, Mutex},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
@@ -29,6 +32,7 @@ impl Default for SessionRegistry {
 struct SessionRecord {
     grant: SessionGrant,
     revoked: bool,
+    revocation_signal: Arc<AtomicBool>,
     active_admissions: u32,
 }
 
@@ -66,6 +70,7 @@ impl SessionRegistry {
             SessionRecord {
                 grant,
                 revoked: false,
+                revocation_signal: Arc::new(AtomicBool::new(false)),
                 active_admissions: 0,
             },
         );
@@ -168,6 +173,7 @@ impl SessionRegistry {
         };
         let changed = !record.revoked;
         record.revoked = true;
+        record.revocation_signal.store(true, Ordering::Release);
 
         loop {
             let active_admissions = sessions
@@ -183,6 +189,28 @@ impl SessionRegistry {
                 .map_err(|_| SessionRegistryError::StateUnavailable)?;
         }
         Ok(changed)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn watch_active(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<(Arc<AtomicBool>, SessionGrant), SessionRegistryError> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        if record.revoked {
+            return Err(SessionRegistryError::Revoked);
+        }
+        if record.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::Expired);
+        }
+        Ok((Arc::clone(&record.revocation_signal), record.grant.clone()))
     }
 
     pub(crate) fn inactive_handles(

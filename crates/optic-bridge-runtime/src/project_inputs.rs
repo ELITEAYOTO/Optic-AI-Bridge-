@@ -32,6 +32,43 @@ pub struct ProjectInputCaptureService {
 
 impl ProjectInputCaptureService {
     #[cfg(windows)]
+    pub(crate) fn cancellation_watch(
+        &self,
+        process: &ActionEnvelope,
+        read: &ActionEnvelope,
+    ) -> Result<(Vec<Arc<std::sync::atomic::AtomicBool>>, u64), ProjectInputCaptureError> {
+        if process.session != read.session || process.policy_epoch != read.policy_epoch {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        let now = self.clock.now();
+        let (session_signal, session) = self.sessions.watch_active(&process.session, now)?;
+        let mut flags = vec![session_signal];
+        let mut expiry = session.expires_at;
+        if session.policy_epoch != process.policy_epoch {
+            return Err(ProjectInputCaptureError::EffectMismatch);
+        }
+        for action in [process, read] {
+            let id = action
+                .task_lease
+                .as_ref()
+                .ok_or(ProjectInputCaptureError::EffectMismatch)?;
+            let (signal, lease) = self.leases.watch_active(id, &process.session, now)?;
+            if lease.policy_epoch != process.policy_epoch {
+                return Err(ProjectInputCaptureError::EffectMismatch);
+            }
+            expiry = expiry.min(lease.expires_at);
+            flags.push(signal);
+        }
+        Ok((
+            flags,
+            expiry
+                .as_millis()
+                .checked_sub(now.as_millis())
+                .filter(|v| *v > 0)
+                .ok_or(ProjectInputCaptureError::Deadline)?,
+        ))
+    }
+    #[cfg(windows)]
     pub(crate) fn workspace_root(&self) -> &Path {
         self.filesystem.root()
     }
@@ -912,6 +949,27 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_read_lease_revocation() {
+        private_node_task_case("read-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_process_lease_revocation() {
+        private_node_task_case("process-revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_authorization_expiry() {
+        private_node_task_case("authority-expiry").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
     async fn private_task_crash_child() {
         if std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").is_none() {
             return;
@@ -1025,7 +1083,11 @@ mod tests {
                 process_count: 4,
             },
             workload_class: WorkloadClass::Standard,
-            expires_at: fixture.session.expires_at,
+            expires_at: if case == "authority-expiry" {
+                MonotonicTime::from_millis(500)
+            } else {
+                fixture.session.expires_at
+            },
             policy_epoch: 1,
         };
         fixture.leases.register(process_task.clone()).unwrap();
@@ -1035,9 +1097,8 @@ let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         let main: &[u8] = match case {
             "roundtrip" => roundtrip,
-            "stop" | "revoke" | "timeout" | "host-crash" => {
-                b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);"
-            }
+            "stop" | "revoke" | "timeout" | "host-crash" | "read-revoke" | "process-revoke"
+            | "authority-expiry" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
             "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
             _ => panic!("unknown test case"),
         };
@@ -1136,7 +1197,10 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             processes.reserve_native_private(&replay_spec, &action_id),
             Err(crate::ProcessError::PrivateActionAlreadyRecorded)
         ));
-        if matches!(case, "stop" | "revoke" | "host-crash") {
+        if matches!(
+            case,
+            "stop" | "revoke" | "host-crash" | "read-revoke" | "process-revoke"
+        ) {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
                     let output = processes
@@ -1167,6 +1231,10 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
                 assert!(processes.stop(&fixture.session.handle, &job).unwrap());
             } else if case == "revoke" {
                 assert!(fixture.sessions.revoke(&fixture.session.handle).unwrap());
+            } else if case == "read-revoke" {
+                assert!(fixture.leases.revoke(&fixture.task.id).unwrap());
+            } else if case == "process-revoke" {
+                assert!(fixture.leases.revoke(&process_task.id).unwrap());
             } else {
                 let handoff = std::env::var_os("OPTIC_PRIVATE_NATIVE_CRASH_HANDOFF").unwrap();
                 fs::write(
@@ -1200,7 +1268,8 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert_eq!(
             result.status,
             match case {
-                "stop" | "revoke" => ProcessStatus::Stopped,
+                "stop" | "revoke" | "read-revoke" | "process-revoke" | "authority-expiry" =>
+                    ProcessStatus::Stopped,
                 "timeout" => ProcessStatus::TimedOut,
                 "output" => ProcessStatus::OutputLimitExceeded,
                 _ => ProcessStatus::Exited,
@@ -1242,7 +1311,8 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert_eq!(
             report[0].outcome,
             Some(match case {
-                "stop" | "revoke" => crate::PrivateTaskOutcome::Stopped,
+                "stop" | "revoke" | "read-revoke" | "process-revoke" | "authority-expiry" =>
+                    crate::PrivateTaskOutcome::Stopped,
                 "timeout" => crate::PrivateTaskOutcome::TimedOut,
                 "output" => crate::PrivateTaskOutcome::OutputLimitExceeded,
                 _ => crate::PrivateTaskOutcome::Exited { code: 0 },
