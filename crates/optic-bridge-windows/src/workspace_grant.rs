@@ -463,7 +463,7 @@ mod tests {
             // The existing Node staging gate selects the same two flags.
             environment.push((
                 OsString::from("NODE_OPTIONS"),
-                OsString::from("--preserve-symlinks --preserve-symlinks-main --trace-exit"),
+                OsString::from("--preserve-symlinks --preserve-symlinks-main"),
             ));
         }
         let debugging = std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1");
@@ -528,15 +528,27 @@ mod tests {
     }
 
     fn read_probe_output(path: &Path) -> String {
-        use std::io::Read;
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = fs::File::open(path).expect("probe output");
+        let size = file.metadata().expect("probe output size").len();
+        let truncated = size > 64 * 1024;
+        // Keep the tail of large startup errors, rather than panicking before
+        // the caller can remove its drained private stage. This test-only
+        // diagnostic is bounded; it does not change production output policy.
+        if truncated {
+            file.seek(SeekFrom::End(-(16 * 1024)))
+                .expect("probe output tail");
+        }
         let mut bytes = Vec::new();
-        fs::File::open(path)
-            .expect("probe output")
-            .take(64 * 1024 + 1)
+        file.take(64 * 1024)
             .read_to_end(&mut bytes)
             .expect("bounded probe output read");
-        assert!(bytes.len() <= 64 * 1024, "probe output limit");
-        String::from_utf8_lossy(&bytes).into_owned()
+        let text = String::from_utf8_lossy(&bytes);
+        if truncated {
+            format!("[TRUNCATED: {size} bytes; bounded tail follows]\n{text}")
+        } else {
+            text.into_owned()
+        }
     }
 
     fn write_probe_config(profile_dir: &Path, mode: &str, target: &Path) {
