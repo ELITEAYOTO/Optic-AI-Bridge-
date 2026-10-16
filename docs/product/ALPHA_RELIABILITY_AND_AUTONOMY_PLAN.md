@@ -7,6 +7,33 @@ This is the active near-term execution plan. The broader scope roadmap remains
 canonical; this document orders delivery gates and explicitly replaces further
 ungated fixture proliferation with integration and user-visible increments.
 
+## Latest measured execution — 2026-10-16
+
+The c8a303d Windows CI rerun passed; the earlier TEMP-only Node initialize
+failure remains intermittent evidence, not an open deterministic failure.
+Packaged permission/lifecycle/crash/resume proofs passed locally. There are
+49 alpha regression tests. The prior pending descriptions below are historical.
+
+Versioned multi-file input manifests and native authorized capture now pass
+Rust Windows/Linux CI (including revocation, deadlines, native root replacement
+and read ceilings). PR224 extracts this increment onto main18a8ec6; its own
+head72c06c4 is under independent CI. No new build/GUI tool is exposed yet.
+
+Private Node staging passed native CI with relative modules, private output and
+external source writes denied. General Electron startup failed both natively
+on this PC and in GitHub CI, before the fixed application executes, without FS
+or any tunnel. The normal sandboxed path stops with0x80000003. An explicit
+outer-AppContainer comparison gets further but is still unproven; no automatic
+sandbox downgrade is permitted. Exact SID/capability sampling and owned-tree
+cleanup are part of the probe. New diagnostic head623e003 retains bounded error
+tails rather than aborting before cleanup on large startup logs; CI is pending.
+
+Next gate remains a real optional Electron runtime with an owned isolated tree,
+then bounded production staging/artifact publication, scoped dependency restore
+and local GUI launch. Rust follows the same authorized task contract. This is a
+native runtime compatibility blocker distinct from FS generation cutoffs. Do
+not ask the user to repeat the working agenda/expense fixtures or send longer
+prompts as a proposed repair for either failure.
 ## Execution update — 2026-10-15
 
 ### Superseding update — 2026-10-16

@@ -12,6 +12,8 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Follow-up validation: native project input capture and explicit child environment pass Windows/Linux Rust CI at5ac8cbd. Normal private Electron startup remains incompatible (0x80000003), reproduced locally without FS/tunnel. Bounded diagnostic tail fix623e003 is under CI; optional GUI/build authority remains gated. Main-based capture candidate is PR224.
+
 - Explicit native private Electron compatibility gate: selected runtime copied into ephemeral AppContainer storage, hidden sandboxed renderer and external source denial probes, with owned Job Object tree confirmation before cleanup. Validation pending; no new GUI tool or dependency authority.
 - Bounded immutable project input manifest/snapshot domain types: session/task/epoch binding, exact version/size checks, portable Windows collision rejection and finite multi-module input budgets. No new read/process authority, filesystem capture or MCP build tool; follow-up validation pending.
 - Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
