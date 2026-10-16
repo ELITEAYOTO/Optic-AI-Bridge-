@@ -296,3 +296,20 @@ Acceptance uses a short goal-only brief in a selected workspace: model creates
 the app structure, tests, builds, diagnoses a failing case and produces an artifact;
 operator validates the UI and locally stops/reopens without lost sources. No
 mandatory imposed HTML/model/tests filenames or8KiB global design constraint.
+
+## Native comparison validation — 2026-10-16
+
+Exact head119cca047e7f0db4b2ad31abce54750833b99c8f passed the explicit outer-only
+Electron comparison in CI38837928895/job116771116738 and locally with installed
+Electron44.7.2. Positive parent TCP control succeeded; no main/renderer connection
+was observed at that controlled listener. Accepted main errors are explicitly
+EACCES/EPERM/ETIMEDOUT; this is an endpoint observation, not universal network
+containment. Renderer42, source read/write denial, exact sampled token identity,
+zero capabilities, owned-tree drain and private cleanup also passed. Normal
+inner-sandbox startup still fails0x80000003, so the workflow remains red by design.
+No automatic fallback, public GUI grant or broad runtime environment was shipped.
+
+Main PR224 and post-merge main CI38837205821 passed. Next implement the owned
+bounded production stage lifecycle and separately authorized artifact publication;
+then explicit dependency/network restore and local GUI permission, followed by
+an end-to-end goal-only FS test. Current private probe has no model authority.

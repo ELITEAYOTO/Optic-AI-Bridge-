@@ -78,3 +78,6 @@ uses FileSearch, which exists on both branches, rather than alpha-only directory
 creation. Alpha status/history is preserved. Post-merge main CI and this alpha
 integration require their own checks; prior exact-head success is not a claim
 about a later merge head.
+Main post-merge CI38837205821 passed forbcd26aa. The alpha provider boundary
+ADR is renumbered0017 to avoid collision with main's input capture ADR0012;
+its contents/authority are unchanged. External source classification remains open.

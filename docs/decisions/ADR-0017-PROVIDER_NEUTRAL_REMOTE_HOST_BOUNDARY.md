@@ -1,4 +1,4 @@
-# ADR-0012 — Provider-neutral remote host boundary
+# ADR-0017 — Provider-neutral remote host boundary
 
 Status: ACCEPTED DIRECTION / IMPLEMENTATION GATED  
 Date: 2026-10-10
@@ -189,4 +189,4 @@ This ADR does not replace ADR-0002, ADR-0006 or ADR-0011. It specializes their c
 - ADR-0002 remains the transport-independence rule;
 - ADR-0006 remains the application-owned session rule;
 - ADR-0011 remains the reusable approval rule;
-- ADR-0012 defines how remote hosts/providers/authentication/local consent fit around those existing boundaries.
+- ADR-0017 defines how remote hosts/providers/authentication/local consent fit around those existing boundaries.

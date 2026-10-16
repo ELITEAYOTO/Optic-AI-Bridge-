@@ -5,6 +5,8 @@ All notable project changes are recorded here.
 ## [Unreleased]
 
 ### Added
+- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
+
 
 - Bounded session/task/epoch-bound project input manifests and immutable snapshots, with exact path/version/size validation. Windows capture preflights typed read authority, preserves native path identity and existing ceilings, and discards data on revocation or deadline expiry. No process or MCP authority is added; native branch validation pending (ADR-0012).
 
@@ -17,6 +19,8 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
+
 - Follow-up validation: native project input capture and explicit child environment pass Windows/Linux Rust CI at5ac8cbd. Normal private Electron startup remains incompatible (0x80000003), reproduced locally without FS/tunnel. Bounded diagnostic tail fix623e003 is under CI; optional GUI/build authority remains gated. Main-based capture candidate is PR224.
 
 - Explicit native private Electron compatibility gate: selected runtime copied into ephemeral AppContainer storage, hidden sandboxed renderer and external source denial probes, with owned Job Object tree confirmation before cleanup. Validation pending; no new GUI tool or dependency authority.

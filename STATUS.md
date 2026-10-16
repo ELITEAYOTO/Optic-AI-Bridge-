@@ -9,8 +9,8 @@ Packaged permission/lifecycle/crash/resume proofs passed locally. There are
 
 Versioned multi-file input manifests and native authorized capture now pass
 Rust Windows/Linux CI (including revocation, deadlines, native root replacement
-and read ceilings). PR224 extracts this increment onto main18a8ec6; its own
-head72c06c4 is under independent CI. No new build/GUI tool is exposed yet.
+and read ceilings). PR224 merged into main asbcd26aa after green Windows/Linux CI; its
+post-merge CI38837205821 also passed. No new build/GUI tool is exposed yet.
 
 Private Node staging passed native CI with relative modules, private output and
 external source writes denied. General Electron startup failed both natively
@@ -891,3 +891,20 @@ PR #47 merged to `main` as `1e42b1ff`; exact final head `4ff720b2` passed depend
 ## Health rule
 
 This file describes reality. A design document alone never makes a feature “implemented”.
+
+## Native comparison validation — 2026-10-16
+
+Exact head119cca047e7f0db4b2ad31abce54750833b99c8f passed the explicit outer-only
+Electron comparison in CI38837928895/job116771116738 and locally with installed
+Electron44.7.2. Positive parent TCP control succeeded; no main/renderer connection
+was observed at that controlled listener. Accepted main errors are explicitly
+EACCES/EPERM/ETIMEDOUT; this is an endpoint observation, not universal network
+containment. Renderer42, source read/write denial, exact sampled token identity,
+zero capabilities, owned-tree drain and private cleanup also passed. Normal
+inner-sandbox startup still fails0x80000003, so the workflow remains red by design.
+No automatic fallback, public GUI grant or broad runtime environment was shipped.
+
+Main PR224 and post-merge main CI38837205821 passed. Next implement the owned
+bounded production stage lifecycle and separately authorized artifact publication;
+then explicit dependency/network restore and local GUI permission, followed by
+an end-to-end goal-only FS test. Current private probe has no model authority.
