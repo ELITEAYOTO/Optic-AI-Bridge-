@@ -133,14 +133,18 @@ impl PrivateTaskJournal {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
             Err(e) => return Err(e.into()),
         }
+        inspect_directory_no_reparse(&root)?;
         let directory = pin_full_directory(&root)?;
         let root = directory.final_path().to_path_buf();
-        let mut lock = match open_exclusive_state_file(&root.join(LOCK), true) {
-            Ok(file) => file,
+        if crate::windows_path::windows_path_is_within(workspace_pin.final_path(), &root) {
+            return Err(PrivateTaskJournalError::StateInsideWorkspace);
+        }
+        let (mut lock, created) = match open_exclusive_state_file(&root.join(LOCK), true) {
+            Ok(file) => (file, true),
             Err(optic_bridge_windows::WindowsFileError::Io(e))
                 if e.kind() == std::io::ErrorKind::AlreadyExists =>
             {
-                open_exclusive_state_file(&root.join(LOCK), false)?
+                (open_exclusive_state_file(&root.join(LOCK), false)?, false)
             }
             Err(e) => return Err(e.into()),
         };
@@ -149,7 +153,7 @@ impl PrivateTaskJournal {
         }
         let workspace_digest = workspace_digest(workspace);
         let expected = format!("optic.private-tasks.v1:{workspace_digest}\n");
-        if lock.file_mut().metadata()?.len() == 0 {
+        if created {
             lock.file_mut().write_all(expected.as_bytes())?;
             lock.file_mut().sync_all()?;
         } else {
@@ -483,6 +487,7 @@ fn workspace_digest(id: WindowsFileIdentity) -> String {
 }
 
 fn pin_full_directory(path: &Path) -> Result<PinnedDirectoryChain, PrivateTaskJournalError> {
+    validate_local_directory_shape(path)?;
     let canonical = fs::canonicalize(path)?;
     if canonical.as_os_str().len() > 4096 {
         return Err(PrivateTaskJournalError::Boundary);
@@ -506,6 +511,27 @@ fn pin_full_directory(path: &Path) -> Result<PinnedDirectoryChain, PrivateTaskJo
         relative.push(part.as_os_str());
     }
     Ok(pin_directory_chain(&anchor, Some(&relative))?)
+}
+
+fn validate_local_directory_shape(path: &Path) -> Result<(), PrivateTaskJournalError> {
+    if path.as_os_str().len() > 4096 {
+        return Err(PrivateTaskJournalError::Boundary);
+    }
+    let mut parts = path.components();
+    let Some(Component::Prefix(prefix)) = parts.next() else {
+        return Err(PrivateTaskJournalError::Boundary);
+    };
+    if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+        || parts.next() != Some(Component::RootDir)
+    {
+        return Err(PrivateTaskJournalError::Boundary);
+    }
+    for (n, part) in parts.enumerate() {
+        if n == 64 || !matches!(part, Component::Normal(_)) {
+            return Err(PrivateTaskJournalError::Boundary);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -611,6 +637,34 @@ mod tests {
         )
         .unwrap();
         (manifest, action)
+    }
+
+    #[test]
+    fn private_journal_rejects_uninitialized_lock_and_device_paths() {
+        let fixture = Fixture::new();
+        let root = fixture.state.join(DIRECTORY);
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join(LOCK), b"").unwrap();
+        assert!(PrivateTaskJournal::open(&fixture.state, &fixture.workspace).is_err());
+        assert!(fs::read(root.join(LOCK)).unwrap().is_empty());
+        for path in [
+            r"\\server\share",
+            r"\\?\UNC\server\share",
+            r"\\.\C:\state",
+            r"C:relative",
+            r"C:\a\..\state",
+        ] {
+            assert!(validate_local_directory_shape(Path::new(path)).is_err());
+        }
+    }
+
+    #[test]
+    fn private_journal_reparse_child_cannot_redirect_state_into_source() {
+        let fixture = Fixture::new();
+        std::os::windows::fs::symlink_dir(&fixture.workspace, fixture.state.join(DIRECTORY))
+            .expect("native reparse fixture");
+        assert!(PrivateTaskJournal::open(&fixture.state, &fixture.workspace).is_err());
+        assert!(!fixture.workspace.join(LOCK).exists());
     }
 
     #[test]
