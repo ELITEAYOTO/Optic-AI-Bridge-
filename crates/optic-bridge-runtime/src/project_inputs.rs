@@ -723,6 +723,25 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires an explicitly selected installed Node runtime"]
     async fn private_preparation_node_task_roundtrip() {
+        private_node_task_case("roundtrip").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_stop() {
+        private_node_task_case("stop").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_output_bound() {
+        private_node_task_case("output").await;
+    }
+
+    #[cfg(windows)]
+    async fn private_node_task_case(case: &str) {
         use crate::{ProcessAuthority, ProcessManager, ProcessStatus, ProcessStream};
         let selected = std::env::var("OPTIC_PRIVATE_TASK_NODE").expect("select Node explicitly");
         let selected = fs::canonicalize(selected)
@@ -760,10 +779,16 @@ mod tests {
             policy_epoch: 1,
         };
         fixture.leases.register(process_task.clone()).unwrap();
-        let main = br#"const fs=require('node:fs'),assert=require('node:assert/strict');
+        let roundtrip = br#"const fs=require('node:fs'),assert=require('node:assert/strict');
 assert.equal(require('./math.cjs').add(20,22),42);
 let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){denied=['ERR_ACCESS_DENIED','EACCES','EPERM'].includes(e.code);}
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
+        let main: &[u8] = match case {
+            "roundtrip" => roundtrip,
+            "stop" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
+            "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
+            _ => panic!("unknown test case"),
+        };
         let math = b"exports.add=(a,b)=>a+b;";
         fs::write(fixture.root.join("src/main.cjs"), main).unwrap();
         fs::write(fixture.root.join("src/math.cjs"), math).unwrap();
@@ -773,16 +798,13 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             fixture.session.handle.clone(),
             fixture.task.id.clone(),
             1,
-            [
-                ("src/main.cjs", main.as_slice()),
-                ("src/math.cjs", math.as_slice()),
-            ]
-            .into_iter()
-            .map(|(path, bytes)| ProjectInputSpec {
-                path: WorkspacePath::parse(path).unwrap(),
-                version: ContentVersion::from_bytes(bytes),
-                size_bytes: bytes.len() as u64,
-            }),
+            [("src/main.cjs", main), ("src/math.cjs", math.as_slice())]
+                .into_iter()
+                .map(|(path, bytes)| ProjectInputSpec {
+                    path: WorkspacePath::parse(path).unwrap(),
+                    version: ContentVersion::from_bytes(bytes),
+                    size_bytes: bytes.len() as u64,
+                }),
         )
         .unwrap();
         let service = Arc::new(crate::PrivateProjectStageService::new(fixture.service()));
@@ -832,6 +854,35 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             )
             .await
             .unwrap();
+        if case == "stop" {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let output = processes
+                        .read(
+                            &fixture.session.handle,
+                            &job,
+                            ProcessStream::Stdout,
+                            0,
+                            4096,
+                        )
+                        .unwrap();
+                    if output.bytes.starts_with(b"PRIVATE_NODE_READY") {
+                        break;
+                    }
+                    assert_eq!(
+                        processes
+                            .result(&fixture.session.handle, &job)
+                            .unwrap()
+                            .status,
+                        ProcessStatus::Running
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(processes.stop(&fixture.session.handle, &job).unwrap());
+        }
         let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
                 let result = processes.result(&fixture.session.handle, &job).unwrap();
@@ -873,7 +924,14 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
                 4096,
             )
             .unwrap();
-        assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
+        assert!(stdout.eof);
+        if case == "roundtrip" {
+            assert_eq!(stdout.bytes, b"PRIVATE_NODE_TASK_PASS\n");
+        }
+        if case == "output" {
+            assert!(stdout.truncated);
+            assert!(stdout.bytes.len() <= 4096);
+        }
         assert_eq!(service.occupied_slots(), 0);
         assert_eq!(transport.active_requests(), 0);
         assert!(!root.exists());
