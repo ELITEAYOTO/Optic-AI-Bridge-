@@ -394,6 +394,16 @@ mod tests {
         args: Vec<OsString>,
         cwd: &Path,
     ) -> IsolatedOutput {
+        run_isolated_capture_with_budget(profile, executable, args, cwd, WAIT_MS)
+    }
+
+    fn run_isolated_capture_with_budget(
+        profile: &AppContainerProfile,
+        executable: &Path,
+        args: Vec<OsString>,
+        cwd: &Path,
+        timeout_ms: u32,
+    ) -> IsolatedOutput {
         let stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
@@ -425,15 +435,34 @@ mod tests {
         )
         .expect("spawn AppContainer");
         assert!(child.is_appcontainer().expect("query AppContainer token"));
+        let job = crate::job::AppContainerProbeJob::assign(child.borrowed_process_for_tests())
+            .expect("contain owned suspended probe and descendants");
         child.resume().expect("resume AppContainer");
-        let exit_code = child.wait_exit(WAIT_MS).expect("wait AppContainer");
+        let exit_code = child.wait_exit(timeout_ms);
+        // Confirm the entire tree is gone before reading outputs or deleting
+        // private stage files; a completed root alone is insufficient.
+        job.terminate_and_confirm_empty()
+            .expect("empty owned probe tree");
+        let exit_code = exit_code.unwrap_or(125);
         drop(stdout);
         drop(stderr);
         IsolatedOutput {
             exit_code,
-            stdout: fs::read_to_string(&stdout_path).expect("read captured stdout"),
-            stderr: fs::read_to_string(&stderr_path).expect("read captured stderr"),
+            stdout: read_probe_output(&stdout_path),
+            stderr: read_probe_output(&stderr_path),
         }
+    }
+
+    fn read_probe_output(path: &Path) -> String {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        fs::File::open(path)
+            .expect("probe output")
+            .take(64 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .expect("bounded probe output read");
+        assert!(bytes.len() <= 64 * 1024, "probe output limit");
+        String::from_utf8_lossy(&bytes).into_owned()
     }
 
     fn write_probe_config(profile_dir: &Path, mode: &str, target: &Path) {
@@ -608,6 +637,139 @@ console.log('PRIVATE_STAGE_NODE_PASS');
         fs::remove_dir_all(&stage).expect("remove test-owned staged inputs/artifact");
         println!(
             "PRIVATE_STAGE_NODE_PASS: staged relative modules, private build output, ungranted source writes denied; no new runtime grants"
+        );
+    }
+
+    /// This is an explicit compatibility gate, never enabled by core startup.
+    #[test]
+    #[ignore = "requires an explicitly selected installed Electron runtime and a Windows desktop"]
+    fn private_stage_electron_window_preserves_outer_appcontainer_boundary() {
+        let selected =
+            std::env::var_os("OPTIC_STAGE_ELECTRON").expect("select installed Electron explicitly");
+        let electron = fs::canonicalize(selected).expect("installed Electron");
+        assert!(
+            electron
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("electron.exe")
+        );
+        let sentinel = unique_temp_file();
+        fs::write(&sentinel, PROBE_SENTINEL).expect("external source sentinel");
+        let _sentinel_cleanup = Cleanup(sentinel.clone());
+        let profile = AppContainerProfile::create_ephemeral().expect("private Electron profile");
+        let profile_dir = profile.profile_storage_path_for_tests();
+        let stage = profile_dir.join("electron-compatibility-stage");
+        fs::create_dir(&stage).expect("fresh private stage");
+        let runtime = stage.join("runtime");
+        fs::create_dir(&runtime).expect("private runtime root");
+        copy_electron_runtime_for_probe(electron.parent().unwrap(), &runtime);
+        let application = stage.join("application");
+        fs::create_dir(&application).expect("application root");
+        fs::write(
+            application.join("package.json"),
+            b"{\"name\":\"optic-private-probe\",\"main\":\"main.cjs\"}",
+        )
+        .expect("package");
+        fs::write(application.join("main.cjs"), br#"
+'use strict';
+const {app,BrowserWindow}=require('electron');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+app.disableHardwareAcceleration();
+app.setPath('userData',path.join(__dirname,'state'));
+app.setPath('logs',path.join(__dirname,'logs'));
+const timer=setTimeout(()=>app.exit(3),20000);
+app.whenReady().then(async()=>{
+  const window=new BrowserWindow({show:false,webPreferences:{sandbox:true,nodeIntegration:false,contextIsolation:true}});
+  await window.loadURL('data:text/html,<html><body><h1>Private Electron probe</h1></body></html>');
+  assert.equal(await window.webContents.executeJavaScript('6*7'),42);
+  assert.equal(await window.webContents.executeJavaScript('typeof require'),'undefined');
+  assert.equal(await window.webContents.executeJavaScript('typeof process'),'undefined');
+  let readDenied=false,writeDenied=false;
+  try{fs.readFileSync(process.argv[2]);}catch(e){readDenied=e.code==='EACCES'||e.code==='EPERM';}
+  try{fs.writeFileSync(process.argv[2],'MUST_NOT_REPLACE_USER_SOURCE');}catch(e){writeDenied=e.code==='EACCES'||e.code==='EPERM';}
+  assert.equal(readDenied,true);assert.equal(writeDenied,true);
+  fs.writeFileSync(path.join(__dirname,'result.json'),JSON.stringify({renderer:42,sourceReadDenied:readDenied,sourceWriteDenied:writeDenied}));
+  console.log('PRIVATE_STAGE_ELECTRON_PASS');
+  clearTimeout(timer);window.destroy();app.quit();
+}).catch(error=>{console.error(String(error));app.exit(2);});
+"#).expect("fixed compatibility application");
+        let output = run_isolated_capture_with_budget(
+            &profile,
+            &runtime.join("electron.exe"),
+            vec![
+                application.clone().into_os_string(),
+                sentinel.clone().into_os_string(),
+            ],
+            &application,
+            30_000,
+        );
+        assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
+        assert!(
+            output.stdout.contains("PRIVATE_STAGE_ELECTRON_PASS"),
+            "{}",
+            output.diagnostic()
+        );
+        assert_eq!(
+            fs::read(application.join("result.json")).expect("private result"),
+            b"{\"renderer\":42,\"sourceReadDenied\":true,\"sourceWriteDenied\":true}"
+        );
+        assert_eq!(
+            fs::read_to_string(&sentinel).expect("unchanged user source"),
+            PROBE_SENTINEL
+        );
+        assert!(
+            fs::canonicalize(&stage)
+                .unwrap()
+                .starts_with(fs::canonicalize(&profile_dir).unwrap())
+        );
+        // Helper confirms zero owned descendants before returning the result.
+        fs::remove_dir_all(&stage).expect("remove owned private compatibility stage");
+        println!(
+            "PRIVATE_STAGE_ELECTRON_PASS: real hidden renderer, sandbox/Node restrictions intact, private output, external source read/write denied, owned process tree drained; not a general GUI grant"
+        );
+    }
+
+    fn copy_electron_runtime_for_probe(source: &Path, destination: &Path) {
+        let mut pending = vec![(source.to_path_buf(), destination.to_path_buf(), 0_usize)];
+        let mut files = 0_usize;
+        let mut directories = 0_usize;
+        let mut bytes = 0_u64;
+        while let Some((from, to, depth)) = pending.pop() {
+            assert!(depth <= 8);
+            directories += 1;
+            assert!(directories <= 256);
+            let info = fs::symlink_metadata(&from).expect("runtime directory");
+            assert!(info.is_dir() && !info.file_type().is_symlink());
+            use std::os::windows::fs::MetadataExt;
+            assert_eq!(
+                info.file_attributes() & 0x400,
+                0,
+                "runtime reparse directory"
+            );
+            for item in fs::read_dir(&from).expect("runtime inventory") {
+                let item = item.expect("runtime entry");
+                let info = fs::symlink_metadata(item.path()).expect("runtime metadata");
+                assert!(!info.file_type().is_symlink());
+                assert_eq!(info.file_attributes() & 0x400, 0, "runtime reparse entry");
+                let target = to.join(item.file_name());
+                if info.is_dir() {
+                    assert!(pending.len() + directories < 256);
+                    fs::create_dir(&target).expect("new private runtime directory");
+                    pending.push((item.path(), target, depth + 1));
+                } else {
+                    assert!(info.is_file() && info.len() <= 256 * 1024 * 1024);
+                    files += 1;
+                    bytes = bytes.checked_add(info.len()).unwrap();
+                    assert!(files <= 256 && bytes <= 512 * 1024 * 1024);
+                    let copied =
+                        fs::copy(item.path(), &target).expect("copy selected optional runtime");
+                    assert_eq!(copied, info.len(), "runtime changed during copy");
+                }
+            }
+        }
+        println!(
+            "PRIVATE_ELECTRON_RUNTIME: {files} files / {bytes} bytes; original installation untouched"
         );
     }
 

@@ -223,6 +223,35 @@ impl Drop for OwnedJob {
     }
 }
 
+/// Native-test-only containment for the owned suspended AppContainer probe.
+/// Never accepts a PID or exposes an uncontained process to the tool surface.
+#[cfg(test)]
+pub(crate) struct AppContainerProbeJob(OwnedJob);
+
+#[cfg(test)]
+impl AppContainerProbeJob {
+    pub(crate) fn assign(process: BorrowedHandle<'_>) -> Result<Self> {
+        let job = OwnedJob::create(16, 1024 * 1024 * 1024, 50)?;
+        // SAFETY: process is borrowed from the owned, still-suspended test child;
+        // limits are configured before any test application code can run.
+        unsafe { AssignProcessToJobObject(job.raw(), HANDLE(process.as_raw_handle())) }
+            .map_err(Error::other)?;
+        Ok(Self(job))
+    }
+
+    pub(crate) fn terminate_and_confirm_empty(&self) -> Result<()> {
+        self.0.terminate(1)?;
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while self.0.active_processes()? != 0 {
+            if std::time::Instant::now() >= until {
+                return Err(Error::other("owned probe job did not become empty"));
+            }
+            std::thread::sleep(JOB_EMPTY_POLL);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct LimitedJobChild {
     inner: Box<dyn ChildWrapper>,

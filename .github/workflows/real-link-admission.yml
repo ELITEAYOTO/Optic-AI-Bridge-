@@ -105,6 +105,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Electron binary download failed' }
             python experiments/project-alpha/electron_viewer_smoke.py (Join-Path $ElectronTools 'node_modules/electron/dist/electron.exe')
             if ($LASTEXITCODE -ne 0) { throw 'native operator Electron viewer failed' }
+            $env:OPTIC_STAGE_ELECTRON = Join-Path $ElectronTools 'node_modules/electron/dist/electron.exe'
+            cargo test --locked -p optic-bridge-windows private_stage_electron_window -- --ignored --nocapture
+            if ($LASTEXITCODE -ne 0) { throw 'native private Electron compatibility gate failed' }
+            Remove-Item Env:OPTIC_STAGE_ELECTRON
           }
           python experiments/real-link-admission/http_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP real fixture proof failed' }

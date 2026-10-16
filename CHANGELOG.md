@@ -12,6 +12,7 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Explicit native private Electron compatibility gate: selected runtime copied into ephemeral AppContainer storage, hidden sandboxed renderer and external source denial probes, with owned Job Object tree confirmation before cleanup. Validation pending; no new GUI tool or dependency authority.
 - Bounded immutable project input manifest/snapshot domain types: session/task/epoch binding, exact version/size checks, portable Windows collision rejection and finite multi-module input budgets. No new read/process authority, filesystem capture or MCP build tool; follow-up validation pending.
 - Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
 - Explicit local JSON permission switches reduce file read/search/write/delete/directory, process and Git integration authority. Present sections default omitted booleans to denied; true requires preselected scopes/profiles. Duplicate/unknown/non-boolean fields fail closed; config/profile sources cannot reside in the writable workspace. Startup snapshot only; live reload and general dependency/build authority remain gated.

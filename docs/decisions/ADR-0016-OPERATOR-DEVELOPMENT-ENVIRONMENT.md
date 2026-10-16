@@ -109,3 +109,22 @@ or dependency authority are minted by a successful capture.
 5. Repeat with cargo check/test/build and the actual installed Rust/native linker.
 
 No new release may advertise all these gates as completed by a directory tool.
+
+## Explicit native Electron compatibility gate
+
+The ignored private_stage_electron_window test is invoked only after selecting
+an optional installed Electron runtime. It copies regular non-reparse runtime
+entries into an ephemeral AppContainer's private storage, bounded to256 files,
+256 directories, eight levels and512MiB total (256MiB per file). The original
+installation and user-source ACLs remain untouched. A fixed hidden application
+uses a sandboxed no-Node renderer, tests actual renderer evaluation and private
+output, and attempts external source read/write which must both be denied.
+
+The native test harness assigns the suspended owned process to a kill-on-close
+Job Object before resume (16 processes,1GiB memory,50% CPU); it terminates and
+confirms the entire descendant tree empty before reading bounded output or
+deleting the known private stage. No PID-based API, model-selected main/preload,
+dependency restore or production GUI execution grant is added by this test.
+Until the native gate passes, compatibility with Electron's own renderer
+sandbox is unproven. Copy limits bound trusted test inputs, not hard runtime disk
+quota for arbitrary code. Production staging/artifact limits remain a gate.

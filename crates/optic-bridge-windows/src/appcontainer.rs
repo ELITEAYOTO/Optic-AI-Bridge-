@@ -172,6 +172,12 @@ pub struct SuspendedAppContainerProcess {
 }
 
 impl SuspendedAppContainerProcess {
+    #[cfg(test)]
+    pub(crate) fn borrowed_process_for_tests(&self) -> BorrowedHandle<'_> {
+        // SAFETY: this borrow cannot outlive the uniquely owned process handle.
+        unsafe { BorrowedHandle::borrow_raw(self.process.0) }
+    }
+
     pub fn is_appcontainer(&self) -> Result<bool> {
         let mut token = HANDLE::default();
         // SAFETY: process is live and token points to writable handle storage.
