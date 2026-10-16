@@ -1,0 +1,49 @@
+name: Owned Native Process Pipes
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-windows/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/owned-native-process-pipes.yml'
+permissions:
+  contents: read
+concurrency:
+  group: owned-native-process-pipes-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-lifecycle:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact native lifecycle proof
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-windows --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'native lifecycle build failed' }
+          $Probe = @(Get-ChildItem -LiteralPath 'target/debug/deps' -Filter 'optic_bridge_windows-*.exe' -File)
+          if ($Probe.Count -ne 1) { throw 'ambiguous native proof identity' }
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-owned-native-process'
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          $Target = Join-Path $Stage 'optic-owned-native-process.exe'
+          Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='owned-native-process-and-pipe-tests-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Optic-Owned-Native-Process-${{ github.sha }}
+          path: ${{ runner.temp }}/optic-owned-native-process
+          retention-days: 7
+          if-no-files-found: error
+      - name: Verify owned tree lifecycle and bounded pipe reads
+        shell: pwsh
+        run: |
+          $Probe = Join-Path $env:RUNNER_TEMP 'optic-owned-native-process/optic-owned-native-process.exe'
+          & $Probe --exact appcontainer::tests::contained_appcontainer_binds_before_resume_and_confirms_its_tree --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'owned native tree proof failed' }
+          & $Probe --exact output_pipe::tests::bounded_pipe_distinguishes_idle_data_and_confirmed_eof --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'bounded native pipe proof failed' }
