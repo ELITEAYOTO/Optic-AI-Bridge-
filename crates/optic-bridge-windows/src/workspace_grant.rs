@@ -759,7 +759,10 @@ app.whenReady().then(async()=>{
             // Explicit compatibility comparison only: the fresh root token
             // remains AppContainer and its whole tree stays in the owned Job.
             // This is not a production fallback or descendant-token proof.
-            "outer-appcontainer" => arguments.push(OsString::from("--no-sandbox")),
+            "outer-appcontainer" => {
+                arguments.push(OsString::from("--no-sandbox"));
+                arguments.push(OsString::from("--no-stdio-init"));
+            }
             "default" => {}
             _ => panic!("unsupported fixed compatibility variant"),
         }

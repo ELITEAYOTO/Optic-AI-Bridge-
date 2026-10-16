@@ -177,3 +177,10 @@ explicitly labelled preliminary compatibility with the inner Chromium sandbox
 disabled; it is not an automatic fallback, normal-gate pass, descendant token/
 network proof or production GUI authorization. Native layered-isolation and
 all-child containment must be proven before adopting an execution mode.
+
+The outer-only comparison at8365e61 progressed past that first failure and
+produced a specific startup FATAL at Electron node_bindings.cc:710: access to
+NUL needed for Node initialization was refused, recommending --no-stdio-init.
+The explicit outer-only comparison therefore also selects that documented
+initialization flag. The normal layered gate remains unchanged. This measured
+second failure is distinct from the earlier broker breakpoint and FS errors.
