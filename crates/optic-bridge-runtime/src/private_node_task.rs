@@ -187,8 +187,6 @@ pub(crate) fn execute(
     })();
     // The start effect has a definite outcome or an owned record now. A lost
     // response never retries start; the shared manager retains owner-scoped IDs.
-    drop(request);
-    drop(start_io);
     if let Err(error) = initialization {
         let known_empty = match native.as_mut() {
             Some(process) => process.terminate_and_confirm_empty(2000).is_ok(),
@@ -197,7 +195,11 @@ pub(crate) fn execute(
         drop(native);
         drop(root_pin);
         if known_empty {
+            // Release only after the attempted native effect is known empty;
+            // cleanup then acquires its own slot in the same I/O governor.
+            drop(start_io);
             let cleanup = cleanup_stage(std::mem::ManuallyDrop::into_inner(stage), io, runtime);
+            drop(request);
             if let Some(record) = record.as_mut() {
                 record.finish(ProcessStatus::Failed, None);
             }
@@ -208,9 +210,13 @@ pub(crate) fn execute(
         if let Some(record) = record.as_mut() {
             record.finish(ProcessStatus::TerminationUncertain, None);
         }
+        drop(start_io);
+        drop(request);
         let _ = reply.take().unwrap().send(Err(error));
         return Err(Error::WorkerUnavailable);
     }
+    drop(start_io);
+    drop(request);
     let mut running = Running {
         record: record.take().unwrap(),
         process: native.take().unwrap(),
