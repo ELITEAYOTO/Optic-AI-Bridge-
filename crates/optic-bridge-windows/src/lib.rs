@@ -21,6 +21,8 @@ mod job;
 #[cfg(windows)]
 mod memory;
 #[cfg(windows)]
+mod output_pipe;
+#[cfg(windows)]
 mod workspace_grant;
 
 #[cfg(windows)]
@@ -39,8 +41,10 @@ pub use file::{
     open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
-pub use job::LimitedJobObject;
+pub use job::{ContainedAppContainerProcess, LimitedJobObject};
 #[cfg(windows)]
 pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
+#[cfg(windows)]
+pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
 #[cfg(windows)]
 pub use workspace_grant::AppContainerReadFileGrant;
