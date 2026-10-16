@@ -32,9 +32,9 @@ use windows::{
                 DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
                 GetExitCodeProcess, InitializeProcThreadAttributeList,
                 LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, ResumeThread,
-                STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
-                WaitForSingleObject,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_CREATION_FLAGS,
+                PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+                TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
             },
         },
     },
@@ -396,7 +396,15 @@ pub fn spawn_appcontainer_suspended(
     cwd: &Path,
     stdio: AppContainerStdio<'_>,
 ) -> Result<SuspendedAppContainerProcess> {
-    spawn_appcontainer_inner(profile, executable, args, cwd, stdio, None)
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        None,
+        PROCESS_CREATION_FLAGS(0),
+    )
 }
 
 /// Create a suspended child with a complete explicit environment instead of
@@ -410,7 +418,36 @@ pub fn spawn_appcontainer_with_environment_suspended(
     environment: &[(OsString, OsString)],
 ) -> Result<SuspendedAppContainerProcess> {
     let block = explicit_environment_block(environment)?;
-    spawn_appcontainer_inner(profile, executable, args, cwd, stdio, Some(&block))
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        Some(&block),
+        PROCESS_CREATION_FLAGS(0),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn spawn_appcontainer_debug_probe(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: &[(OsString, OsString)],
+) -> Result<SuspendedAppContainerProcess> {
+    let block = explicit_environment_block(environment)?;
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        Some(&block),
+        windows::Win32::System::Threading::DEBUG_ONLY_THIS_PROCESS,
+    )
 }
 
 fn explicit_environment_block(values: &[(OsString, OsString)]) -> Result<Vec<u16>> {
@@ -465,6 +502,7 @@ fn spawn_appcontainer_inner(
     cwd: &Path,
     stdio: AppContainerStdio<'_>,
     environment: Option<&[u16]>,
+    extra_flags: PROCESS_CREATION_FLAGS,
 ) -> Result<SuspendedAppContainerProcess> {
     let executable_wide = wide_null(executable.as_os_str());
     let cwd_wide = wide_null(cwd.as_os_str());
@@ -527,7 +565,8 @@ fn spawn_appcontainer_inner(
             EXTENDED_STARTUPINFO_PRESENT
                 | CREATE_SUSPENDED
                 | CREATE_NO_WINDOW
-                | CREATE_UNICODE_ENVIRONMENT,
+                | CREATE_UNICODE_ENVIRONMENT
+                | extra_flags,
             environment.map(|block| block.as_ptr().cast()),
             PCWSTR(cwd_wide.as_ptr()),
             &startup.StartupInfo,

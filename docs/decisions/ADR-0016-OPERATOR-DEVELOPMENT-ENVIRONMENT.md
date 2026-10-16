@@ -155,3 +155,13 @@ Electron programs assert that HOME/USERPROFILE were not inherited. The legacy
 launcher retains its existing curated-parent environment until separately wired.
 One fixed diagnostic variant tests Electron's documented --no-stdio-init flag;
 it does not disable Chromium/AppContainer isolation or admit arbitrary switches.
+
+Explicit private environment and --no-stdio-init did not fix the native startup
+failure. The diagnostic probe can create only its own fixed public child under
+DEBUG_ONLY_THIS_PROCESS: at most4096 OS events,8192-byte debug strings and32KiB
+reported evidence within the existing deadline. It reports debug strings and
+exception codes/offsets, handles only the loader's first breakpoint, and passes
+later exceptions back to Windows. There is no arbitrary attach/PID or memory
+inspection tool. Debugger detach and owned Job Object drain cover error paths.
+Debug-mode success would not certify normal launch; the normal gate stays red
+until normal-mode containment and renderer checks pass.

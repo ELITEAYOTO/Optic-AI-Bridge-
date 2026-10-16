@@ -10,6 +10,8 @@
 
 #[cfg(windows)]
 mod appcontainer;
+#[cfg(all(windows, test))]
+mod debug_probe;
 #[cfg(windows)]
 mod directory;
 #[cfg(windows)]

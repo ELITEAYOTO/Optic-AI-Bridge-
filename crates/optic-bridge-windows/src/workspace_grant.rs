@@ -452,7 +452,13 @@ mod tests {
             (OsString::from("TMP"), private.join("tmp").into_os_string()),
             (OsString::from("OPTIC_PRIVATE_ENV"), OsString::from("1")),
         ];
-        let mut child = spawn_appcontainer_with_environment_suspended(
+        let debugging = std::env::var("OPTIC_PRIVATE_ELECTRON_DEBUG").as_deref() == Ok("1");
+        let spawn = if debugging {
+            crate::appcontainer::spawn_appcontainer_debug_probe
+        } else {
+            spawn_appcontainer_with_environment_suspended
+        };
+        let mut child = spawn(
             profile,
             executable,
             &args,
@@ -469,7 +475,11 @@ mod tests {
         let job = crate::job::AppContainerProbeJob::assign(child.borrowed_process_for_tests())
             .expect("contain owned suspended probe and descendants");
         child.resume().expect("resume AppContainer");
-        let exit_code = child.wait_exit(timeout_ms);
+        let exit_code = if debugging {
+            crate::debug_probe::wait_owned_debug_probe(&mut child, timeout_ms)
+        } else {
+            child.wait_exit(timeout_ms)
+        };
         // Confirm the entire tree is gone before reading outputs or deleting
         // private stage files; a completed root alone is insufficient.
         job.terminate_and_confirm_empty()
