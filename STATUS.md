@@ -291,3 +291,7 @@ Private preparation now has an optional bounded native owner worker: caller canc
 Owned Windows AppContainer tree and bounded pipe primitives prepared independently of experimental adapters. Native assignment-before-resume and confirmed tree completion do not grant process/MCP/GUI authority. Exact candidate checks pending.
 
 Private-state preparation primitives: deterministic input fingerprints, preallocated fresh profile plans, exclusive nontruncating state handles with hard-link/reparse refusal, and acknowledged profile cleanup. No journal, replay or new model authority is exposed by this main increment. Exact candidate checks pending.
+
+Owned native watchdog candidate: one deadline and at most four atomic stop flags,
+armed before resume, independent of filesystem/registry activity. Owned-tree empty
+confirmation remains mandatory. Focused native tests and exact CI pending.
