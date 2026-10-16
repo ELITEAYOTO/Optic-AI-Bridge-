@@ -2,6 +2,13 @@
 
 ## Development-environment transition — 2026-10-16
 
+Headc8a303d passed the nine workflow validations after a successful CI rerun.
+The initial Windows TEMP-only Node initialize timeout remains unexplained and
+is retained as intermittent evidence; no timeout/isolation weakening was used.
+Its packaged binaries/sources passed local permissions and supervised lifecycle
+proofs. Follow-up adds the bounded, versioned project input data contract below;
+validation of this new head is pending. This does not expose a full build tool.
+
 Permissions/directory head0f0c7ae passed all nine workflows, including native
 Windows/Linux JSON capability-denial and policy-source protection proofs.
 Follow-up adds bounded model-readable tool diagnostics and a filtered previous

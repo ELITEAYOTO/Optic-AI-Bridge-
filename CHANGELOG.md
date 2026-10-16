@@ -12,6 +12,7 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
+- Bounded immutable project input manifest/snapshot domain types: session/task/epoch binding, exact version/size checks, portable Windows collision rejection and finite multi-module input budgets. No new read/process authority, filesystem capture or MCP build tool; follow-up validation pending.
 - Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
 - Explicit local JSON permission switches reduce file read/search/write/delete/directory, process and Git integration authority. Present sections default omitted booleans to denied; true requires preselected scopes/profiles. Duplicate/unknown/non-boolean fields fail closed; config/profile sources cannot reside in the writable workspace. Startup snapshot only; live reload and general dependency/build authority remain gated.
 - Opt-in generated HTTP directory creation with128 conservative directory slots, bounded startup inventory and exact absent intent. Real Windows supervised runner proves nested source creation and same-run resume;46 Python tests pass. Exact follow-up CI pending.

@@ -57,6 +57,26 @@ Native tests must cover existing file/directory conflicts, missing parents,
 prefix boundaries, absent grant/precondition, revoked authority, reparse parents,
 root replacement and creating a versioned file inside the new directory.
 
+## Sealed build inputs (data contract, not execution authority)
+
+ProjectInputManifest binds an explicit input list to one session, task lease and
+policy epoch. It sorts paths deterministically and caps inputs at256 files,
+1MiB per file and8MiB total; paths are portable ASCII, at most240 bytes and16
+segments. Windows device names, trailing dots, case-insensitive file collisions,
+file/parent collisions and .git/.optic/node_modules/target segments are denied.
+Dependency trees must use a separate owned cache contract, not an implicit
+recursive source grant. Input selection still requires sensitivity policy.
+
+Sealing consumes complete already-authorized reads, verifies exact size and
+content version, and rejects duplicate, missing and extra entries. Snapshot
+contents cannot be mutated through the API or printed by Debug. This is an
+in-memory manifest of exact file versions, not a globally atomic directory read,
+durable recovery record, live lease check, staging write or MCP build tool.
+No filesystem is opened by these domain types. A future capture service must
+retain admission while reading each native observed target and check the live
+binding again before execution. Source edits after capture must never alter the
+sealed bytes, and output publication remains a separately authorized mutation.
+
 ## Remaining delivery gates
 
 1. Map these primitives into a generated full-project HTTP tool surface with
