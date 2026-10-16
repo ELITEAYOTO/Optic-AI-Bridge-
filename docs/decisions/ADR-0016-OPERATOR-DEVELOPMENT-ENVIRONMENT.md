@@ -261,3 +261,23 @@ ownership, successful explicit/drop cleanup, finite capacity and stale input
 rejection. This new head requires native Windows/Linux CI; local linking still
 lacks msvcrt.lib. No public MCP tool or stable ZIP changes yet. Execution handoff,
 owned-task recovery, artifacts and dependency authority remain separate gates.
+## Bounded preparation owner worker
+
+An opt-in background preparation API retains native profiles on their creating
+worker rather than adding unsafe Send/Sync promises for SID pointers. Four stage
+reservations bound preparing/idle owner threads, and each control channel has
+capacity one. A Sendable host lease carries immutable owner binding and the
+prepared input path; it exposes no native profile, process command or policy.
+
+The worker owns the caller's transport and blocking-I/O permits through the
+synchronous preparation even when its async caller is cancelled. It checks the
+original transport deadline before and after copying. Idle prepared state holds
+only its stage slot. Explicit discard waits for the worker's cleanup result;
+lease Drop closes the control channel and triggers owned cleanup. Cleanup
+reacquires the shared I/O governor; unavailable ownership retains capacity.
+
+Regression tests cover acknowledged cleanup, abandoned ready leases, and a
+cancelled caller while its worker is deliberately blocked: transport/I/O/stage
+capacity must remain occupied until the worker finishes. No native profile is
+moved between threads and no process starts. Native exact-head validation is
+required. Durable recovery and future execution handoff remain separate gates.

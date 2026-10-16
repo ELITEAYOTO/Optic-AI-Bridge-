@@ -97,6 +97,8 @@ pub use mutation::{
 pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
 };
+#[cfg(windows)]
+pub use private_project_stage::PreparedPrivateProjectLease;
 pub use private_project_stage::{
     PreparedPrivateProject, PrivateProjectStageError, PrivateProjectStageService,
 };

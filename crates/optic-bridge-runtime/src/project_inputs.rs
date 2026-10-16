@@ -509,6 +509,175 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[tokio::test]
+    async fn private_preparation_worker_owns_profile_until_acknowledged_cleanup() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let service = Arc::new(crate::PrivateProjectStageService::new(fixture.service()));
+        let guard = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
+        let io = crate::BlockingIoGovernor::new(1).unwrap();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let lease = service
+            .clone()
+            .prepare_background(
+                manifest,
+                actions,
+                guard
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+                io.clone(),
+            )
+            .await
+            .unwrap();
+        let root = lease.input_root().to_path_buf();
+        assert_eq!(fs::read(root.join("src/main.cjs")).unwrap(), b"x");
+        assert!(
+            lease
+                .require_binding(&fixture.session.handle, &fixture.task.id, 1)
+                .is_ok()
+        );
+        assert!(
+            lease
+                .require_binding(&fixture.session.handle, &fixture.task.id, 2)
+                .is_err()
+        );
+        assert_eq!(guard.active_requests(), 0);
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), io.run(|| 42))
+                .await
+                .unwrap()
+                .unwrap(),
+            42
+        );
+        lease.discard().await.unwrap();
+        assert!(!root.exists());
+        assert_eq!(service.occupied_slots(), 0);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn private_preparation_dropped_worker_lease_completes_owned_cleanup() {
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let service = Arc::new(crate::PrivateProjectStageService::new(fixture.service()));
+        let guard = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
+        let io = crate::BlockingIoGovernor::new(1).unwrap();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let lease = service
+            .clone()
+            .prepare_background(
+                manifest,
+                actions,
+                guard
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+                io,
+            )
+            .await
+            .unwrap();
+        let root = lease.input_root().to_path_buf();
+        drop(lease);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while service.occupied_slots() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!root.exists());
+        assert_eq!(fs::read(fixture.root.join("src/main.cjs")).unwrap(), b"x");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn private_preparation_cancelled_caller_retains_effect_permits_until_worker_finishes() {
+        use std::sync::{
+            Condvar, Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+        struct WorkerClock {
+            entered: AtomicBool,
+            released: Mutex<bool>,
+            wake: Condvar,
+        }
+        impl Clock for WorkerClock {
+            fn now(&self) -> MonotonicTime {
+                if std::thread::current().name() == Some("optic-private-inputs")
+                    && !self.entered.swap(true, Ordering::SeqCst)
+                {
+                    let mut released = self.released.lock().unwrap();
+                    while !*released {
+                        released = self.wake.wait(released).unwrap();
+                    }
+                }
+                MonotonicTime::from_millis(100)
+            }
+        }
+        struct Release(Arc<WorkerClock>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                *self.0.released.lock().unwrap() = true;
+                self.0.wake.notify_all();
+            }
+        }
+        let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
+        fs::write(fixture.root.join("src/main.cjs"), b"x").unwrap();
+        let clock = Arc::new(WorkerClock {
+            entered: AtomicBool::new(false),
+            released: Mutex::new(false),
+            wake: Condvar::new(),
+        });
+        let release = Release(clock.clone());
+        let mut capture = fixture.service();
+        capture.clock = clock.clone();
+        let service = Arc::new(crate::PrivateProjectStageService::new(capture));
+        let guard = crate::TransportGuard::new(HardLimits::default().into()).unwrap();
+        let io = crate::BlockingIoGovernor::new(1).unwrap();
+        let (manifest, actions) = fixture.inputs("src/main.cjs", b"x");
+        let task = tokio::spawn(
+            service.clone().prepare_background(
+                manifest,
+                actions,
+                guard
+                    .begin_execution(MonotonicTime::from_millis(100))
+                    .unwrap(),
+                io.clone(),
+            ),
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !clock.entered.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(guard.active_requests(), 1);
+        assert_eq!(service.occupied_slots(), 1);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), io.run(|| 42))
+                .await
+                .is_err()
+        );
+        drop(release);
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), io.run(|| 42))
+                .await
+                .unwrap()
+                .unwrap(),
+            42
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while guard.active_requests() != 0 || service.occupied_slots() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[cfg(windows)]
     #[test]
     fn existing_read_limit_is_not_increased_by_manifest_capacity() {
         let fixture = Fixture::new(Capability::FileRead, ReadContentScope::all());
