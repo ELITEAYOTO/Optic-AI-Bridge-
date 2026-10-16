@@ -741,6 +741,20 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_revocation() {
+        private_node_task_case("revoke").await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires an explicitly selected installed Node runtime"]
+    async fn private_preparation_node_task_timeout() {
+        private_node_task_case("timeout").await;
+    }
+
+    #[cfg(windows)]
     async fn private_node_task_case(case: &str) {
         use crate::{ProcessAuthority, ProcessManager, ProcessStatus, ProcessStream};
         let selected = std::env::var("OPTIC_PRIVATE_TASK_NODE").expect("select Node explicitly");
@@ -769,7 +783,7 @@ mod tests {
                 },
             ]),
             resource_ceiling: ResourceBudget {
-                timeout_ms: 10000,
+                timeout_ms: if case == "timeout" { 1000 } else { 10000 },
                 output_bytes: 4096,
                 memory_bytes: 512 * 1024 * 1024,
                 process_count: 4,
@@ -785,7 +799,9 @@ let denied=false;try{fs.writeFileSync(__dirname+'/forbidden.txt','x');}catch(e){
 assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         let main: &[u8] = match case {
             "roundtrip" => roundtrip,
-            "stop" => b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);",
+            "stop" | "revoke" | "timeout" => {
+                b"console.log('PRIVATE_NODE_READY');setInterval(()=>{},1000);"
+            }
             "output" => b"while(true){process.stdout.write('x'.repeat(16384));}",
             _ => panic!("unknown test case"),
         };
@@ -854,7 +870,7 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             )
             .await
             .unwrap();
-        if case == "stop" {
+        if matches!(case, "stop" | "revoke") {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
                     let output = processes
@@ -881,7 +897,11 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
             })
             .await
             .unwrap();
-            assert!(processes.stop(&fixture.session.handle, &job).unwrap());
+            if case == "stop" {
+                assert!(processes.stop(&fixture.session.handle, &job).unwrap());
+            } else {
+                assert!(fixture.sessions.revoke(&fixture.session.handle).unwrap());
+            }
         }
         let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
@@ -906,7 +926,8 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         assert_eq!(
             result.status,
             match case {
-                "stop" => ProcessStatus::Stopped,
+                "stop" | "revoke" => ProcessStatus::Stopped,
+                "timeout" => ProcessStatus::TimedOut,
                 "output" => ProcessStatus::OutputLimitExceeded,
                 _ => ProcessStatus::Exited,
             },
