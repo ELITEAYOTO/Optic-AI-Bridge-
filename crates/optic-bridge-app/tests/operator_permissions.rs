@@ -70,10 +70,7 @@ async fn exercise(config: &Path, root: &Path, reduced: bool) {
             if reduced {
                 match answer {
                     Err(rmcp::service::ServiceError::McpError(error))
-                        if error.message == "optic.policy_denied" =>
-                    {
-                        ()
-                    }
+                        if error.message == "optic.policy_denied" => {}
                     other => {
                         return Err(io::Error::other(format!(
                             "read denial was not enforced: {other:?}"
