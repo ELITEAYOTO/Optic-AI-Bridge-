@@ -1,5 +1,13 @@
 # Project Status
 
+## Fixed private Rust output — candidate, 2026-10-17
+
+ADR0027 extends the test-only compiler proof to one actual private LLVM file,
+with collection after confirmed tree exit and bounded size/alias/writer checks.
+Exact native CI and local proof pending. No general build or disk-quota claim.
+PR238 output-module consolidation is merged as `f5eb8a2`; exact CI39041817382
+and native preparation39041817335 passed. Its main CI39042229124 is separate.
+
 ## Current checkpoint — 2026-10-17
 
 This checkpoint supersedes earlier candidate/validation-pending entries below,
