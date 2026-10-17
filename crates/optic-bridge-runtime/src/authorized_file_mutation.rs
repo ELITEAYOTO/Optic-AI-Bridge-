@@ -26,6 +26,18 @@ pub struct AuthorizedFileMutationService {
 }
 
 impl AuthorizedFileMutationService {
+    /// Policy-only check for a composed batch. Every actual write must still
+    /// call write(), which rechecks live admission before reaching the journal.
+    pub(crate) fn preflight_write(
+        &self,
+        envelope: &ActionEnvelope,
+    ) -> Result<(), AuthorizedFileMutationError> {
+        if !matches!(envelope.effect, Effect::FileWrite { .. }) {
+            return Err(AuthorizedFileMutationError::EffectMismatch);
+        }
+        drop(self.authorize(envelope)?);
+        Ok(())
+    }
     pub fn from_hard_limits(
         workspace_root: impl AsRef<Path>,
         state_root: impl AsRef<Path>,
