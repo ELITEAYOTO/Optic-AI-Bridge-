@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Opt-in fixed public Rust compiler compatibility probe: isolated no_std LLVM IR
+  and real type diagnostics, bounded runtime copying and output. Test-only;
+  no required runtime, linker/Cargo or new execution grant. Validation pending.
+
 - Separately scoped absent-only directory creation for Windows project workflows,
   with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
   validation pending; no recursive creation, overwrite or implied file authority.
