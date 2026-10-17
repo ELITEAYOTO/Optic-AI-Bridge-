@@ -38,6 +38,7 @@ impl DirectoryCreationService {
         if path.as_str().split('/').count() > 32 {
             return Err(DirectoryCreateError::DepthExceeded);
         }
+        validate_names(path)?;
         #[cfg(windows)]
         {
             let _root = pin_directory_chain(self.filesystem.root(), None)?;
@@ -52,6 +53,20 @@ impl DirectoryCreationService {
             // Each ancestor rejects reparse points and denies delete-sharing.
             // Keep every handle live through the single atomic create call.
             let pinned = pin_directory_chain(self.filesystem.root(), parent)?;
+            if let Some(parent) = parent {
+                let observed = crate::windows_path::windows_relative_path(
+                    self.filesystem.root(),
+                    pinned.final_path(),
+                )
+                .ok_or(DirectoryCreateError::AncestorAlias)?;
+                let observed = WorkspacePath::from_native_relative(&observed)
+                    .map_err(|_| DirectoryCreateError::AncestorAlias)?;
+                let expected = WorkspacePath::from_native_relative(parent)
+                    .map_err(|_| DirectoryCreateError::AncestorAlias)?;
+                if !observed.as_str().eq_ignore_ascii_case(expected.as_str()) {
+                    return Err(DirectoryCreateError::AncestorAlias);
+                }
+            }
             let leaf = relative
                 .file_name()
                 .ok_or(DirectoryCreateError::InvalidTarget)?;
@@ -65,8 +80,45 @@ impl DirectoryCreationService {
     }
 }
 
+fn validate_names(path: &WorkspacePath) -> Result<(), DirectoryCreateError> {
+    for segment in path.as_str().split('/') {
+        let stem = segment
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(' ')
+            .to_ascii_lowercase();
+        let device = matches!(
+            stem.as_str(),
+            "con" | "prn" | "aux" | "nul" | "conin$" | "conout$"
+        ) || ["com", "lpt"].into_iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+        });
+        if device
+            || segment.ends_with(['.', ' '])
+            || segment
+                .chars()
+                .any(|c| c.is_control() || "<>\"|?*".contains(c))
+        {
+            return Err(DirectoryCreateError::InvalidName);
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum DirectoryCreateError {
+    #[error(
+        "directory names must not use Windows device, control or ambiguous trailing characters"
+    )]
+    InvalidName,
+    #[error("directory ancestor resolves to another native name")]
+    AncestorAlias,
     #[error("directory creation path exceeds32 components")]
     DepthExceeded,
     #[error("directory creation requires one workspace-relative leaf")]
@@ -92,6 +144,35 @@ mod tests {
     use super::*;
     use optic_bridge_core::ActionId;
     use std::{env, fs};
+
+    #[test]
+    fn directory_names_refuse_devices_and_aliases_but_allow_unicode_projects() {
+        for name in [
+            "src.",
+            "src ",
+            "NUL",
+            "CON.txt",
+            "con .txt",
+            "COM1",
+            "lpt9.log",
+            "COM¹",
+            "CONIN$",
+            "a/child?",
+            "a\u{0001}",
+            "a/child*",
+        ] {
+            assert!(
+                matches!(
+                    validate_names(&WorkspacePath::parse(name).unwrap()),
+                    Err(DirectoryCreateError::InvalidName)
+                ),
+                "{name:?}"
+            );
+        }
+        for name in ["projet français/assets", "日本語", "COM10", "my folder"] {
+            validate_names(&WorkspacePath::parse(name).unwrap()).unwrap();
+        }
+    }
 
     #[test]
     fn absent_leaf_only_and_root_identity_are_enforced() {

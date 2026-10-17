@@ -1296,4 +1296,108 @@ mod tests {
         );
         fs::remove_dir_all(root).expect("remove fixture");
     }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn directory_only_mcp_authority_creates_scoped_leaves_and_stops_on_revocation() {
+        use crate::mutation_tools::{DirectoryExpectedState, FsCreateDirectoryRequest};
+        use optic_bridge_runtime::{MutationAuthoritySpec, mutation_resource_budget};
+        let root = workspace("directory-only");
+        let state = workspace("directory-state");
+        let base = server(&root, &[Capability::DirectoryCreate]);
+        assert!(
+            !base
+                .registered_tool_names()
+                .contains(&"fs_create_directory".into())
+        );
+        let authority = MutationAuthoritySet::provision(
+            &base.task_leases,
+            &base.session,
+            &MutationAuthoritySpec {
+                directory_scopes: BTreeSet::from([optic_bridge_core::LeaseScope::WorkspacePrefix(
+                    WorkspacePath::parse("src").unwrap(),
+                )]),
+                ..Default::default()
+            },
+            mutation_resource_budget(base.limits),
+            MonotonicTime::from_millis(1000),
+            1,
+        )
+        .unwrap();
+        let lease = authority
+            .lease_for(Capability::DirectoryCreate)
+            .unwrap()
+            .clone();
+        let mutations = AuthorizedFileMutationService::from_hard_limits(
+            &root,
+            &state,
+            base.limits,
+            base.sessions.clone(),
+            base.task_leases.clone(),
+            base.clock.clone(),
+        )
+        .unwrap();
+        let server = ReadonlyMcpServer::new_with_mutation_runtime(
+            &root,
+            base.sessions.clone(),
+            base.session.clone(),
+            base.clock.clone(),
+            base.limits,
+            base.processes.clone(),
+            base.task_leases.clone(),
+            BTreeMap::new(),
+            Some(Arc::new(mutations)),
+            authority,
+        )
+        .unwrap();
+        let names = server.registered_tool_names();
+        assert!(names.contains(&"fs_create_directory".into()));
+        for name in ["fs_write", "fs_apply_patch", "fs_delete"] {
+            assert!(!names.contains(&name.into()));
+        }
+        let request = |path: &str| {
+            Parameters(FsCreateDirectoryRequest {
+                path: path.into(),
+                expected: DirectoryExpectedState::Absent,
+            })
+        };
+        assert!(base.fs_create_directory(request("src")).await.is_err());
+        assert!(
+            server
+                .fs_create_directory(request("src-other"))
+                .await
+                .is_err()
+        );
+        assert!(!root.join("src-other").exists());
+        assert!(
+            server
+                .fs_create_directory(request("src"))
+                .await
+                .unwrap()
+                .0
+                .created
+        );
+        assert!(server.fs_create_directory(request("src")).await.is_err());
+        assert!(
+            server
+                .fs_create_directory(request("src/日本語"))
+                .await
+                .unwrap()
+                .0
+                .created
+        );
+        assert!(root.join("src/日本語").is_dir());
+        server.task_leases.revoke(&lease).unwrap();
+        assert!(
+            server
+                .fs_create_directory(request("src/after-revoke"))
+                .await
+                .is_err()
+        );
+        assert!(!root.join("src/after-revoke").exists());
+        drop(server);
+        drop(base);
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(state).unwrap();
+    }
 }

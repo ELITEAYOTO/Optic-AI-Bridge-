@@ -356,6 +356,9 @@ fn map_authorized_mutation_error(error: AuthorizedFileMutationError) -> ErrorDat
             optic_bridge_runtime::DirectoryCreateError::DepthExceeded => {
                 ErrorData::invalid_params("optic.directory_depth_exceeded", None)
             }
+            optic_bridge_runtime::DirectoryCreateError::InvalidName => {
+                ErrorData::invalid_params("optic.invalid_directory_name", None)
+            }
             optic_bridge_runtime::DirectoryCreateError::UnsupportedPlatform => {
                 ErrorData::invalid_request("optic.unsupported_platform", None)
             }

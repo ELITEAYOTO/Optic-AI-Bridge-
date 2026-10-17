@@ -28,8 +28,9 @@ pub use git_tools::{
     GitLogEntryResponse, GitLogRequest, GitLogResponse, GitStatusResponse,
 };
 pub use mutation_tools::{
-    ExpectedStateRequest, FsApplyPatchRequest, FsDeleteRequest, FsDeleteResponse,
-    FsMutationResponse, FsWriteRequest,
+    DirectoryExpectedState, ExpectedStateRequest, FsApplyPatchRequest, FsCreateDirectoryRequest,
+    FsCreateDirectoryResponse, FsDeleteRequest, FsDeleteResponse, FsMutationResponse,
+    FsWriteRequest,
 };
 pub use process_tools::{
     ProcessJobRequest, ProcessReadRequest, ProcessReadResponse, ProcessResultResponse,

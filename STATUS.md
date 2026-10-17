@@ -1,5 +1,17 @@
 # Project Status
 
+## Scoped project directory creation — candidate, 2026-10-17
+
+The generated-alpha directory primitive is proposed independently for main:
+separate DirectoryCreate capability/lease, optional local CLI/JSON workspace
+scopes, explicit absent-only MCP request, one native Windows leaf and pinned
+ancestors/root identity. It grants no file overwrite/delete/recursive mkdir or
+build permission. Exact native and Windows/Linux validation pending; ADR0024.
+
+PR233 task event timeline merged as9504422 after CI38987260151/native38987260164
+passed. Its verified harness reproduced11 journal and10 Node cases locally
+(1.24s/8.07s). PR232 main post-merge CI38987044878 passed.
+
 ## Current integration — 2026-10-17
 
 PR231 native environment and cancellation accounting merged to main as4e6ff6c;
