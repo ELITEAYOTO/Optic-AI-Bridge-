@@ -12,13 +12,19 @@ The fixed file is collected only after the invocation returned from confirmed
 owned-tree quiescence. The collector also rejects retained native uncertainty or
 a failed compile result, pins its known root/output directory, verifies root
 identity and opened final path, rejects reparse/hard-link aliases and concurrent
-writers through the existing exclusive native file primitive, and reads at most
+writers through an exclusive read-only native file primitive, and reads at most
 128KiB plus one detection byte. Missing, empty or oversized outputs fail closed.
 Only the fixed recorded output/fixture files are deleted. Unknown extra files
 still make empty-directory cleanup fail rather than triggering recursive deletion.
 
 Native regression cases exercise the actual compiler file, oversized file,
 concurrent writer, hard link, reparse redirect, missing file and uncertain owner.
+The read-only primitive requests no write right and never creates or truncates.
+Its regular-file, link-count and identity checks are shared with the existing
+exclusive state-file primitive; that primitive retains read/write rights and
+its original behavior. Native tests also verify that the returned read handle
+cannot write, a missing target remains absent, and a read-only compiler artifact
+can be collected without changing that attribute during collection.
 The workflow runs the existing exact ignored compiler test in disposable Windows
 CI and retains the source-bound hashed harness for optional local reproduction.
 
