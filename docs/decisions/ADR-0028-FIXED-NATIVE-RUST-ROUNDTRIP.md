@@ -5,7 +5,7 @@ Date: 2026-10-17
 
 After ADR0025/27, prove a complete fixed native application path without relying
 on installed MSVC CRT libraries: compile a public no_std library to one COFF
-object, invoke the selected toolchain's direct rust-lld in link flavor with
+object, invoke an explicitly selected installed Microsoft link.exe or rust-lld with
 explicit entry/subsystem/no-default-libraries/machine/output/object and one
 explicitly selected Windows SDK x64 kernel32 import library, then run the
 generated executable and require the real exit code42 from ExitProcess.
@@ -34,3 +34,21 @@ service or MCP tool; production build admission/enrollment remains separate.
 
 The hashed Windows harness must pass exact CI and a source-bound verified local
 reproduction before claiming this installed toolchain can complete the roundtrip.
+
+## Observed linker boundary
+
+Initial head1f925b9 compiled the COFF object but rust-lld returned exit1 with
+permission denied before linking (native run39043251239). Installed linker
+version reports LLVM23.1.1, Rust LLVM commit1b9c0d5ff9bbe7634aead059efe6b11a7eeba145.
+Pinned InitLLVM.cpp calls GetCommandLineArguments, whose GetExecutableName calls
+GetLongPathNameW and propagates failure. This is a source-supported hypothesis,
+not measured proof of the failing native call. No user-directory ACL widening,
+sandbox downgrade or successful LLD claim is permitted on this evidence.
+
+The CI's explicit native proof profile now selects installed Microsoft link.exe
+and at most eight named adjacent runtime DLLs; no automatic fallback occurs.
+Both linker flavors retain identical owned Jobs, private paths and budgets.
+A successful Microsoft roundtrip does not resolve the recorded LLD limitation.
+The eight names and copies are fixed, their inventory/copy ceilings unchanged.
+The generated no_std application needs no CRT libraries; the linker process
+itself can use its copied Microsoft runtime DLLs.

@@ -1,7 +1,7 @@
 //! Opt-in fixed public Rust compilation proof, never an execution/tool grant.
 use crate::{
     AppContainerProfile, AppContainerStdio, CapturedOutputPipe, ContainedAppContainerProcess,
-    LimitedJobObject, WindowsFileIdentity, inspect_directory_no_reparse, open_exclusive_state_file,
+    LimitedJobObject, WindowsFileIdentity, inspect_directory_no_reparse, open_exclusive_read_file,
     open_file_no_reparse, pin_directory_chain, spawn_appcontainer_with_environment_suspended,
 };
 use std::{
@@ -222,7 +222,7 @@ fn collect_fixed_output(
     let output = pin_directory_chain(root, Some(Path::new("output"))).map_err(io::Error::other)?;
     let expected = output.final_path().join("library.ll");
     // Exclusive opened handle rejects writers and hard-link/reparse aliases.
-    let mut file = open_exclusive_state_file(&expected, false).map_err(io::Error::other)?;
+    let mut file = open_exclusive_read_file(&expected).map_err(io::Error::other)?;
     if !file
         .final_path()
         .to_string_lossy()
@@ -385,14 +385,21 @@ fn run_rust_probe(native_program: bool) {
         String::from_utf8_lossy(&on_disk.stderr)
     );
     assert!(on_disk.stdout.is_empty());
+    // Collect an actual compiler artifact without requesting write access.
+    let artifact = root.join("output/library.ll");
+    let original_permissions = fs::metadata(&artifact).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
+    permissions.set_readonly(true);
+    fs::set_permissions(&artifact, permissions.clone()).unwrap();
     let bytes = collect_fixed_output(&owner, &root, root_identity, &on_disk).unwrap();
+
+    fs::set_permissions(&artifact, original_permissions).unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("optic_add"));
     assert_eq!(fs::read(&source).unwrap(), valid);
     assert!(collect_fixed_output(&owner, &root, root_identity, &failure).is_err());
     let mut wrong_root = root_identity;
     wrong_root.file_id[0] ^= 1;
     assert!(collect_fixed_output(&owner, &root, wrong_root, &on_disk).is_err());
-    let artifact = root.join("output/library.ll");
     // An open writer must prevent collection, even after the compiler exited.
     let writer = OpenOptions::new().write(true).open(&artifact).unwrap();
     assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
@@ -434,8 +441,45 @@ fn run_rust_probe(native_program: bool) {
                 .to_ascii_lowercase(),
             "kernel32.lib"
         );
-        let linker_source = sysroot.join(format!("lib/rustlib/{TARGET}/bin/rust-lld.exe"));
-        let linker = root.join("bin/rust-lld.exe");
+        let linker_source = PathBuf::from(
+            std::env::var_os("OPTIC_PRIVATE_LINKER").expect("explicit native linker selection"),
+        );
+        assert!(linker_source.is_absolute());
+        let flavor = linker_source
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_ascii_lowercase();
+        assert!(matches!(flavor.as_str(), "link.exe" | "rust-lld.exe"));
+        let linker_root = root.join("bin/native-linker");
+        fs::create_dir(&linker_root).unwrap();
+        let linker = linker_root.join(&flavor);
+        let linker_dlls = if flavor == "link.exe" {
+            selected_files(linker_source.parent().unwrap(), |name| {
+                matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "vcruntime140.dll"
+                        | "vcruntime140_1.dll"
+                        | "msvcp140.dll"
+                        | "msvcp140_atomic_wait.dll"
+                        | "tbbmalloc.dll"
+                        | "msobj140.dll"
+                        | "mspdbcore.dll"
+                        | "mspdb140.dll"
+                )
+            })
+            .unwrap()
+        } else {
+            Vec::new()
+        };
+        for dll in &linker_dlls {
+            copy_exact(
+                dll,
+                &linker_root.join(dll.file_name().unwrap()),
+                &mut remaining,
+            )
+            .unwrap();
+        }
         let import = root.join("output/kernel32.lib");
         copy_exact(&linker_source, &linker, &mut remaining).unwrap();
         copy_exact(&sdk, &import, &mut remaining).unwrap();
@@ -470,9 +514,7 @@ fn run_rust_probe(native_program: bool) {
         );
         assert!(compiled.stdout.is_empty());
         assert!(fs::metadata(&object).unwrap().len() <= MAX_OUTPUT as u64);
-        let link_args: Vec<OsString> = vec![
-            "-flavor".into(),
-            "link".into(),
+        let mut link_args: Vec<OsString> = vec![
             "/entry:optic_entry".into(),
             "/subsystem:console".into(),
             "/nodefaultlib".into(),
@@ -481,6 +523,11 @@ fn run_rust_probe(native_program: bool) {
             object.clone().into_os_string(),
             import.clone().into_os_string(),
         ];
+        if flavor == "rust-lld.exe" {
+            link_args.splice(0..0, [OsString::from("-flavor"), OsString::from("link")]);
+        } else {
+            link_args.insert(0, "/nologo".into());
+        }
         let linked = run_native(&owner, &root, &linker, &link_args).unwrap();
         assert_eq!(
             linked.exit,
@@ -501,8 +548,12 @@ fn run_rust_probe(native_program: bool) {
         for recorded in [&executable, &object, &import, &linker] {
             fs::remove_file(recorded).unwrap();
         }
+        for dll in &linker_dlls {
+            fs::remove_file(linker_root.join(dll.file_name().unwrap())).unwrap();
+        }
+        fs::remove_dir(&linker_root).unwrap();
         println!(
-            "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected lld linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
+            "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected {flavor} linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
         );
     }
     // Delete recorded fixed fixture files only, after every native tree was

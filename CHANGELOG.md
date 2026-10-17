@@ -8,6 +8,11 @@ All notable project changes are recorded here.
   kernel32 import, and produced application exit42 under owned native Jobs.
   Test-only ADR0028, exact validation pending; no Cargo/CRT/general build grant.
 
+- Add exclusive read-only native artifact opening, retaining regular-file,
+  no-reparse, single-link and identity checks without requesting write access.
+  The fixed Rust proof now collects an actual read-only compiler output;
+  native validation pending, no new application permission.
+
 - Extend the optional fixed Rust proof with one compiler-written private LLVM
   file and bounded collection after owned-tree exit, including alias/writer/size
   denial cases. Test-only; exact native validation pending, not build authority.

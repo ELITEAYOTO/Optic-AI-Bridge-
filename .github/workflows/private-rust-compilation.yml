@@ -60,5 +60,8 @@ jobs:
           $SdkImport = @($SdkVersions | Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName 'um\x64\kernel32.lib' } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
           if ($SdkImport.Count -ne 1) { throw 'explicit kernel32 import library unavailable' }
           $env:OPTIC_PRIVATE_KERNEL32_LIB = $SdkImport[0]
+          $Linkers = @(Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' -File | Select-Object -First 33)
+          if ($Linkers.Count -eq 0 -or $Linkers.Count -gt 32) { throw 'installed linker unavailable or inventory exceeds bound' }
+          $env:OPTIC_PRIVATE_LINKER = ($Linkers | Sort-Object FullName -Descending | Select-Object -First 1).FullName
           & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_rust_compiles_links_and_executes_fixed_native_program --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'native Rust roundtrip unproven; retain actual diagnostic' }
