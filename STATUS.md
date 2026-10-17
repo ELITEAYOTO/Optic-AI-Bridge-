@@ -1,5 +1,14 @@
 # Project Status
 
+## Optional Rust compiler compatibility — candidate, 2026-10-17
+
+A test-only native probe copies a bounded subset of an explicitly selected
+Rust compiler/sysroot into a fresh AppContainer, emits a fixed public library's
+LLVM IR to bounded stdout and requires a real type-error diagnostic. No linker,
+Cargo/dependency operation, public tool or arbitrary Rust execution permission.
+Exact native validation pending; ADR0025. PR234 directory creation has merged as
+fdafb3a after CI38987795891/native38987795892 and local boundary tests passed.
+
 ## Scoped project directory creation — candidate, 2026-10-17
 
 The generated-alpha directory primitive is proposed independently for main:
