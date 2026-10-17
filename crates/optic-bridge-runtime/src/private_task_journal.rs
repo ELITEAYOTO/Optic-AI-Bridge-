@@ -90,6 +90,14 @@ pub struct PrivateTaskRecoveryExecution {
     pub job_fingerprint: ContentVersion,
 }
 
+impl PrivateTaskRecoveryExecution {
+    /// Correlate a retained start action without exposing fingerprint encoding
+    /// to the caller. A match is diagnostic evidence, never replay permission.
+    pub fn matches_action(&self, action: &ActionId) -> bool {
+        self.action_fingerprint.to_hex() == digest("action", &action.to_token())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateTaskRecoveryObservation {
     pub phase: PrivateTaskRecoveryPhase,
@@ -843,6 +851,8 @@ mod tests {
         );
         assert_eq!(report[0].input_fingerprint, manifest.fingerprint());
         let execution = report[0].execution.as_ref().unwrap();
+        assert!(execution.matches_action(&action.action_id));
+        assert!(!execution.matches_action(&ActionId::generate().unwrap()));
         assert_eq!(
             execution.action_fingerprint.to_hex(),
             digest("action", &action.action_id.to_token())
@@ -1081,6 +1091,8 @@ mod tests {
             assert_eq!(report[0].phase, PrivateTaskRecoveryPhase::Starting);
             assert!(report[0].outcome.is_none());
             let execution = report[0].execution.as_ref().unwrap();
+            assert!(execution.matches_action(&action.action_id));
+            assert!(!execution.matches_action(&ActionId::generate().unwrap()));
             assert_eq!(
                 execution.action_fingerprint.to_hex(),
                 digest("action", &action.action_id.to_token())

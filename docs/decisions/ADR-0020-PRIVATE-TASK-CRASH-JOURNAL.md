@@ -90,7 +90,9 @@ The existing 2048-byte line/16KiB record/eight-event limits still apply.
 The host-only recovery report now returns optional typed fingerprints of the
 start action, process lease, pinned runtime and managed job. These values were
 already persisted in Starting; parsing now retains them instead of discarding
-that evidence. Before Starting the field is None. Legacy v1 and timed v2 records
+that evidence. A diagnostic matches_action helper compares a retained ActionId
+using the existing domain; a match never authorizes retry. Before Starting the
+field is None. Legacy v1 and timed v2 records
 use the same unchanged encoding, domains, capacity and strict transition checks.
 No new durable bytes, raw tokens, paths, command lines or output text are added.
 
