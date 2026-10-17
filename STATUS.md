@@ -1,5 +1,13 @@
 # Project Status
 
+## Standard Rust application — candidate, 2026-10-17
+
+ADR0029 extends the opt-in native proof with std, explicitly selected CRT/SDK
+libraries and a compiler-owned linker descendant in a two-process Job. Actual
+fixed app output, exact CI and local reproduction are pending. No Cargo/general
+build admission or runtime disk-quota claim. PR241 no_std compile/link/run is
+merged as `4e8e94d` after exact CI and verified local execution passed.
+
 ## Native Rust roundtrip — candidate, 2026-10-17
 
 ADR0028 proposes an opt-in fixed no_std COFF object, direct lld link and generated

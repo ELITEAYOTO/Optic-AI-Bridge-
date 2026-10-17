@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Add opt-in fixed std Rust app proof with copied explicit CRT/SDK resources,
+  compiler-owned linker descendant and real Vec/parse/assert/println execution.
+  Test-only ADR0029, exact validation pending; no Cargo or general execution grant.
+
 - Opt-in fixed no_std Rust native roundtrip: COFF object, direct lld with explicit
   kernel32 import, and produced application exit42 under owned native Jobs.
   Test-only ADR0028, exact validation pending; no Cargo/CRT/general build grant.

@@ -39,6 +39,17 @@ fn copy_exact(source: &Path, destination: &Path, remaining: &mut u64) -> io::Res
 }
 
 fn selected_files(directory: &Path, select: impl Fn(&str) -> bool) -> io::Result<Vec<PathBuf>> {
+    selected_files_limited(directory, select, 8)
+}
+
+fn selected_files_limited(
+    directory: &Path,
+    select: impl Fn(&str) -> bool,
+    max_files: usize,
+) -> io::Result<Vec<PathBuf>> {
+    if max_files == 0 || max_files > 64 {
+        return Err(io::Error::other("runtime selection count bound"));
+    }
     inspect_directory_no_reparse(directory).map_err(io::Error::other)?;
     let mut selected = Vec::new();
     // Bound metadata discovery as well as the selected copy set.
@@ -52,7 +63,7 @@ fn selected_files(directory: &Path, select: impl Fn(&str) -> bool) -> io::Result
             .into_string()
             .map_err(|_| io::Error::other("non-Unicode runtime name"))?;
         if select(&name) {
-            if selected.len() == 8 {
+            if selected.len() == max_files {
                 return Err(io::Error::other("too many selected Rust runtime files"));
             }
             selected.push(item.path());
@@ -60,6 +71,31 @@ fn selected_files(directory: &Path, select: impl Fn(&str) -> bool) -> io::Result
     }
     selected.sort();
     Ok(selected)
+}
+
+// Diagnostic metadata only, never a recursive cleanup fallback. Unknown
+// compiler products keep the original failure; inspect at most eight names.
+fn remove_empty_fixture_directory(path: &Path) {
+    if let Err(error) = fs::remove_dir(path) {
+        let remaining: Vec<String> = fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .take(8)
+            .map(|entry| match entry {
+                Ok(entry) => entry
+                    .file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .take(80)
+                    .collect(),
+                Err(_) => "<entry-unavailable>".to_owned(),
+            })
+            .collect();
+        panic!(
+            "fixture cleanup failed: {error}; leaf={:?}; bounded remaining names={remaining:?}",
+            path.file_name()
+        );
+    }
 }
 
 struct Compilation {
@@ -121,10 +157,23 @@ fn run_native(
     executable: &Path,
     args: &[OsString],
 ) -> io::Result<Compilation> {
+    run_native_with_process_limit(owner, root, executable, args, 1)
+}
+
+fn run_native_with_process_limit(
+    owner: &OwnedProbeProfile,
+    root: &Path,
+    executable: &Path,
+    args: &[OsString],
+    process_limit: u32,
+) -> io::Result<Compilation> {
+    if !(1..=2).contains(&process_limit) {
+        return Err(io::Error::other("fixed proof process bound"));
+    }
     let input = File::open("NUL")?;
     let mut stdout = CapturedOutputPipe::new()?;
     let mut stderr = CapturedOutputPipe::new()?;
-    let environment = vec![
+    let mut environment = vec![
         (
             "SystemRoot".into(),
             std::env::var_os("SystemRoot").ok_or_else(|| io::Error::other("SystemRoot"))?,
@@ -134,6 +183,9 @@ fn run_native(
         ("LOCALAPPDATA".into(), root.join("local").into_os_string()),
         ("APPDATA".into(), root.join("roaming").into_os_string()),
     ];
+    if process_limit == 2 {
+        environment.push(("LIB".into(), root.join("std-libs").into_os_string()));
+    }
     owner.uncertain.set(true);
     let child = spawn_appcontainer_with_environment_suspended(
         owner.profile.as_ref().unwrap(),
@@ -150,7 +202,7 @@ fn run_native(
     .map_err(|error| io::Error::other(format!("Rust suspended spawn failed: {error}")))?;
     let mut process = ContainedAppContainerProcess::contain(
         child,
-        LimitedJobObject::new(1, 1024 * 1024 * 1024, 50)?,
+        LimitedJobObject::new(process_limit, 1024 * 1024 * 1024, 50)?,
     )?;
     stdout.close_parent_writer();
     stderr.close_parent_writer();
@@ -247,16 +299,22 @@ fn collect_fixed_output(
 #[test]
 #[ignore = "requires an explicitly selected installed direct Rust compiler"]
 fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
-    run_rust_probe(false);
+    run_rust_probe(false, false);
 }
 
 #[test]
 #[ignore = "requires direct rustc and explicit Windows SDK kernel32 import library"]
 fn private_rust_compiles_links_and_executes_fixed_native_program() {
-    run_rust_probe(true);
+    run_rust_probe(true, false);
 }
 
-fn run_rust_probe(native_program: bool) {
+#[test]
+#[ignore = "requires explicit direct Rust, MSVC linker, CRT libraries and SDK"]
+fn private_rust_std_compiles_and_executes_fixed_application() {
+    run_rust_probe(true, true);
+}
+
+fn run_rust_probe(native_program: bool, standard_library: bool) {
     let compiler = PathBuf::from(
         std::env::var_os("OPTIC_PRIVATE_RUSTC").expect("select installed direct rustc.exe"),
     );
@@ -271,16 +329,26 @@ fn run_rust_probe(native_program: bool) {
         "direct compiler must have its pinned runtime DLL"
     );
     let lib_relative = PathBuf::from(format!("lib/rustlib/{TARGET}/lib"));
-    let libraries = selected_files(&sysroot.join(&lib_relative), |name| {
-        (name.starts_with("libcore-") || name.starts_with("libcompiler_builtins-"))
-            && (name.ends_with(".rlib") || name.ends_with(".rmeta"))
-    })
+    let libraries = selected_files_limited(
+        &sysroot.join(&lib_relative),
+        |name| {
+            (standard_library
+                || name.starts_with("libcore-")
+                || name.starts_with("libcompiler_builtins-"))
+                && (name.ends_with(".rlib") || name.ends_with(".rmeta"))
+        },
+        if standard_library { 64 } else { 8 },
+    )
     .unwrap();
-    assert_eq!(
-        libraries.len(),
-        4,
-        "one core and compiler_builtins rlib/rmeta pair from selected sysroot"
-    );
+    if standard_library {
+        assert!(libraries.len() >= 4 && libraries.len() <= 64);
+    } else {
+        assert_eq!(
+            libraries.len(),
+            4,
+            "one core and compiler_builtins rlib/rmeta pair from selected sysroot"
+        );
+    }
     for prefix in ["libcore-", "libcompiler_builtins-"] {
         let archive = libraries
             .iter()
@@ -564,6 +632,126 @@ fn run_rust_probe(native_program: bool) {
         );
         assert!(executed.stdout.is_empty() && executed.stderr.is_empty());
         assert_eq!(fs::read(&source).unwrap(), native_source);
+        if standard_library {
+            assert_eq!(
+                flavor, "link.exe",
+                "explicit Microsoft standard-library proof profile"
+            );
+            let crt = PathBuf::from(
+                std::env::var_os("OPTIC_PRIVATE_CRT_LIB_DIR")
+                    .expect("explicit CRT library directory"),
+            );
+            assert!(crt.is_absolute());
+            let native_libs = root.join("std-libs");
+            fs::create_dir(&native_libs).unwrap();
+            let mut copied_libs = Vec::new();
+            for name in [
+                "msvcrt.lib",
+                "vcruntime.lib",
+                "legacy_stdio_definitions.lib",
+            ] {
+                let destination = native_libs.join(name);
+                copy_exact(&crt.join(name), &destination, &mut remaining).unwrap();
+                copied_libs.push(destination);
+            }
+            for name in [
+                "kernel32.lib",
+                "advapi32.lib",
+                "bcrypt.lib",
+                "ntdll.lib",
+                "userenv.lib",
+                "ws2_32.lib",
+                "dbghelp.lib",
+                "synchronization.lib",
+            ] {
+                let destination = native_libs.join(name);
+                copy_exact(
+                    &sdk.parent().unwrap().join(name),
+                    &destination,
+                    &mut remaining,
+                )
+                .unwrap();
+                copied_libs.push(destination);
+            }
+            let ucrt = PathBuf::from(
+                std::env::var_os("OPTIC_PRIVATE_UCRT_LIB").expect("explicit UCRT import library"),
+            );
+            assert!(ucrt.is_absolute());
+            let destination = native_libs.join("ucrt.lib");
+            copy_exact(&ucrt, &destination, &mut remaining).unwrap();
+            copied_libs.push(destination);
+            let mut app_dlls = Vec::new();
+            for dll in &linker_dlls {
+                let name = dll
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                if matches!(name.as_str(), "vcruntime140.dll" | "vcruntime140_1.dll") {
+                    let destination = root.join("output").join(dll.file_name().unwrap());
+                    copy_exact(dll, &destination, &mut remaining).unwrap();
+                    app_dlls.push(destination);
+                }
+            }
+            let standard_source = b"fn main() { let values: Vec<i32> = [\"2\", \"3\"].iter().map(|s| s.parse().unwrap()).collect(); assert_eq!(values.iter().sum::<i32>(), 5); println!(\"PRIVATE_RUST_STD_APP_PASS\"); }\n";
+            fs::write(&source, standard_source).unwrap();
+            let standard_exe = root.join("output/std-application.exe");
+            let standard_pdb = root.join("output/std-application.pdb");
+            assert!(!standard_exe.exists() && !standard_pdb.exists());
+            let args: Vec<OsString> = vec![
+                "--crate-name=optic_std_probe".into(),
+                "--crate-type=bin".into(),
+                "--edition=2024".into(),
+                "--target".into(),
+                TARGET.into(),
+                "--sysroot".into(),
+                root.clone().into_os_string(),
+                "-Cdebuginfo=0".into(),
+                "-Cpanic=abort".into(),
+                format!("-Clinker={}", linker.display()).into(),
+                "-Clink-arg=/manifest:no".into(),
+                "-Clink-arg=/incremental:no".into(),
+                "-L".into(),
+                format!("native={}", native_libs.display()).into(),
+                "-o".into(),
+                standard_exe.clone().into_os_string(),
+                source.clone().into_os_string(),
+            ];
+            // The driver's linker is an actual descendant in the same owned Job.
+            let built =
+                run_native_with_process_limit(&owner, &root, &root.join("bin/rustc.exe"), &args, 2)
+                    .unwrap();
+            assert_eq!(
+                built.exit,
+                0,
+                "stdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&built.stdout),
+                String::from_utf8_lossy(&built.stderr)
+            );
+            assert!(fs::metadata(&standard_exe).unwrap().len() <= 8 * 1024 * 1024);
+            let app = run_native(&owner, &root, &standard_exe, &[]).unwrap();
+            assert_eq!(app.exit, 0, "{}", String::from_utf8_lossy(&app.stderr));
+            assert_eq!(app.stdout, b"PRIVATE_RUST_STD_APP_PASS\n");
+            assert!(app.stderr.is_empty());
+            assert_eq!(fs::read(&source).unwrap(), standard_source);
+            // rustc's Windows link step can emit this exact named PDB even
+            // with source debuginfo disabled. It is now an explicit output,
+            // not permission to enumerate/delete arbitrary compiler products.
+            if standard_pdb.try_exists().unwrap() {
+                let mut symbols = open_exclusive_read_file(&standard_pdb).unwrap();
+                assert!(symbols.file_mut().metadata().unwrap().len() <= 16 * 1024 * 1024);
+                drop(symbols);
+                fs::remove_file(&standard_pdb).unwrap();
+            }
+            fs::remove_file(&standard_exe).unwrap();
+            for recorded in copied_libs.into_iter().chain(app_dlls) {
+                fs::remove_file(recorded).unwrap();
+            }
+            fs::remove_dir(&native_libs).unwrap();
+            println!(
+                "PRIVATE_RUST_STD_EXECUTION_OBSERVED: actual std binary compiled with owned linker descendant, executed Vec/parse/assert/println successfully, private copies only; no Cargo/dependency install/generic build or disk quota claimed"
+            );
+        }
         for recorded in [&executable, &object, &import, &linker] {
             fs::remove_file(recorded).unwrap();
         }
@@ -572,7 +760,7 @@ fn run_rust_probe(native_program: bool) {
         }
         fs::remove_dir(&linker_root).unwrap();
         for relative in private_temp_directories.iter().rev() {
-            fs::remove_dir(root.join(relative)).unwrap();
+            remove_empty_fixture_directory(&root.join(relative));
         }
         println!(
             "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected {flavor} linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
@@ -589,7 +777,7 @@ fn run_rust_probe(native_program: bool) {
         fs::remove_file(root.join(&lib_relative).join(library.file_name().unwrap())).unwrap();
     }
     for relative in directories.into_iter().rev() {
-        fs::remove_dir(root.join(relative)).unwrap();
+        remove_empty_fixture_directory(&root.join(relative));
     }
     fs::remove_dir(&root).unwrap();
     println!(
@@ -598,4 +786,9 @@ fn run_rust_probe(native_program: bool) {
     );
     assert!(!owner.uncertain.get());
     owner.profile.take().unwrap().close().unwrap();
+    if standard_library {
+        println!(
+            "PRIVATE_RUST_STD_PASS: std compile/link/run and exact known executable/PDB/runtime cleanup confirmed; profile closed"
+        );
+    }
 }
