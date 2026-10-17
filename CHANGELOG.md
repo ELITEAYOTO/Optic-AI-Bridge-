@@ -4,6 +4,11 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Private-task recovery reports now include bounded diagnostic lifecycle times;
+  legacy records retain their original lock/capacity domain and absent times.
+  Event order and monotonic live authorization remain authoritative. Native
+  validation pending; no durable output capture or automatic task replay.
+
 ### Added
 - Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
 

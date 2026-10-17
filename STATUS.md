@@ -1,5 +1,19 @@
 # Project Status
 
+## Current integration — 2026-10-17
+
+PR231 native environment and cancellation accounting merged to main as4e6ff6c;
+post-merge CI38986075081 passed. PR232 authorized artifact publication merged as
+b7ca583 after exact Windows/Linux CI38986768540 and native38986768542 passed.
+Its verified Windows harness reproduced all seven publication cases locally
+(0.22s). Main post-merge validation is pending. These are host API increments,
+not public build/dependency/Electron permission. Normal private Electron startup
+still fails0x80000003; alpha38986587860/38986587895 retain that known red gate.
+
+Follow-up adds bounded wall-clock lifecycle observations to the crash journal,
+preserving legacy records and their unresolved capacity. No output text is made
+durable and no authority is recovered. Exact native validation is pending.
+
 ## Latest measured execution — 2026-10-16
 
 The c8a303d Windows CI rerun passed; the earlier TEMP-only Node initialize

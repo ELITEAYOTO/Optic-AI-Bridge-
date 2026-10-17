@@ -75,3 +75,21 @@ is blocked; request/stage accounting remains occupied until release and confirme
 cleanup. This barrier simulates blocked bookkeeping, not an injected OS fsync
 failure. The blocked-owner and admission-signal cases reproduced locally from
 verified artifact12070842559 (1.95s/0.01s). No deliberate native crash ran locally.
+
+### Diagnostic event observations — 2026-10-17
+
+New records use version2 envelopes with an optional UNIX-epoch millisecond
+observation for every synced lifecycle event. Recovery returns at most eight
+ordered phase observations per record. This is a system-clock observation before
+the event append/sync, not a monotonic duration, acknowledgement time, exact crash
+time or authority expiry. Clock rollback is allowed; unavailable/unrepresentable
+clock readings become None. Only validated event order determines lifecycle.
+No process output/source/environment or credentials are added to durable state.
+
+Keep the existing private-tasks-v1 directory, lock binding and domain fingerprints.
+Legacy version1 records remain readable with absent times and consume the same
+32-record/four-unresolved capacity. Retained legacy tickets append version1.
+Version2 and legacy lines cannot mix inside one record; header and encoding must
+agree. Unknown versions, malformed observations and transitions fail closed.
+No migration, capacity reset, automatic cleanup/replay or restored permission.
+The existing 2048-byte line/16KiB record/eight-event limits still apply.
