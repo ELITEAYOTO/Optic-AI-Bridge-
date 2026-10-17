@@ -1,0 +1,52 @@
+name: Private Rust Compilation
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-windows/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/private-rust-compilation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-rust-compilation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-rust-ir:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact opt-in Rust compilation proof
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-windows --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'native proof build failed' }
+          $Probe = @(Get-ChildItem -LiteralPath 'target/debug/deps' -Filter 'optic_bridge_windows-*.exe' -File)
+          if ($Probe.Count -ne 1) { throw 'ambiguous proof identity' }
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile'
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          $Target = Join-Path $Stage 'optic-private-rust-compile.exe'
+          Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-rust-ir-only'; rust_version='1.99.0'; target='x86_64-pc-windows-msvc'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Optic-Private-Rust-Compilation-${{ github.sha }}
+          path: ${{ runner.temp }}/optic-private-rust-compile
+          retention-days: 7
+          if-no-files-found: error
+      - name: Compile public no_std library and receive actual type diagnostics
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc
+          if ($LASTEXITCODE -ne 0) { throw 'direct compiler selection failed' }
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_rust_compiles_fixed_library_and_reports_real_type_error --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'private Rust compile remains unproven; inspect actual diagnostic' }

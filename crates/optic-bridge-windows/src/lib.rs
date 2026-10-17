@@ -22,6 +22,8 @@ mod job;
 mod memory;
 #[cfg(windows)]
 mod output_pipe;
+#[cfg(all(windows, test))]
+mod rust_compile_probe;
 #[cfg(windows)]
 mod workspace_grant;
 
