@@ -696,6 +696,8 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
             let standard_source = b"fn main() { let values: Vec<i32> = [\"2\", \"3\"].iter().map(|s| s.parse().unwrap()).collect(); assert_eq!(values.iter().sum::<i32>(), 5); println!(\"PRIVATE_RUST_STD_APP_PASS\"); }\n";
             fs::write(&source, standard_source).unwrap();
             let standard_exe = root.join("output/std-application.exe");
+            let standard_pdb = root.join("output/std-application.pdb");
+            assert!(!standard_exe.exists() && !standard_pdb.exists());
             let args: Vec<OsString> = vec![
                 "--crate-name=optic_std_probe".into(),
                 "--crate-type=bin".into(),
@@ -732,13 +734,22 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
             assert_eq!(app.stdout, b"PRIVATE_RUST_STD_APP_PASS\n");
             assert!(app.stderr.is_empty());
             assert_eq!(fs::read(&source).unwrap(), standard_source);
+            // rustc's Windows link step can emit this exact named PDB even
+            // with source debuginfo disabled. It is now an explicit output,
+            // not permission to enumerate/delete arbitrary compiler products.
+            if standard_pdb.try_exists().unwrap() {
+                let mut symbols = open_exclusive_read_file(&standard_pdb).unwrap();
+                assert!(symbols.file_mut().metadata().unwrap().len() <= 16 * 1024 * 1024);
+                drop(symbols);
+                fs::remove_file(&standard_pdb).unwrap();
+            }
             fs::remove_file(&standard_exe).unwrap();
             for recorded in copied_libs.into_iter().chain(app_dlls) {
                 fs::remove_file(recorded).unwrap();
             }
             fs::remove_dir(&native_libs).unwrap();
             println!(
-                "PRIVATE_RUST_STD_PASS: actual std binary compiled with owned linker descendant, executed Vec/parse/assert/println successfully, private copies only; no Cargo/dependency install/generic build or disk quota claimed"
+                "PRIVATE_RUST_STD_EXECUTION_OBSERVED: actual std binary compiled with owned linker descendant, executed Vec/parse/assert/println successfully, private copies only; no Cargo/dependency install/generic build or disk quota claimed"
             );
         }
         for recorded in [&executable, &object, &import, &linker] {
@@ -775,4 +786,9 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
     );
     assert!(!owner.uncertain.get());
     owner.profile.take().unwrap().close().unwrap();
+    if standard_library {
+        println!(
+            "PRIVATE_RUST_STD_PASS: std compile/link/run and exact known executable/PDB/runtime cleanup confirmed; profile closed"
+        );
+    }
 }

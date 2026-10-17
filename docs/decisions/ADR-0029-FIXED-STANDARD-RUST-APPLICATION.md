@@ -36,3 +36,13 @@ or GUI permission, hard runtime disk quota, sensitive-project classification,
 crash-journal integration or a production process controller. No new MCP/core
 authority or required runtime dependency is added. Exact Windows/Linux/native
 CI and a source-bound verified local reproduction precede compatibility claims.
+
+
+Initial std runs39044959371 and39045141103 successfully compiled/ran the app but
+failed cleanup on the unexpected exact output/std-application.pdb. The bounded
+name diagnostic preserved failure and did not remove it. The plan now explicitly
+records that optional fixed path before compile, rejects preexistence, checks
+its regular exclusive no-alias opened handle and16MiB size ceiling, then deletes
+only that file. The final STD_PASS marker is printed only after all known files,
+empty directories and the fresh profile are closed. No recursive sweep or
+reinterpretation of the original failure as success is permitted.
