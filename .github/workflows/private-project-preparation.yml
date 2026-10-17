@@ -60,6 +60,13 @@ jobs:
         run: |
           & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') artifact_publication::tests::artifact_publication_ --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'authorized artifact publication proof failed' }
+      - name: Prove separately authorized absent directory creation
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') directory_create::tests:: --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native directory boundary failed' }
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') authorized_file_mutation::tests::directory_creation_has_distinct_capability_and_scoped_revocable_admission --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'directory authorization failed' }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.15.1'

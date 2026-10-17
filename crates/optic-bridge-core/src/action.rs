@@ -9,6 +9,7 @@ pub enum Capability {
     FileRead,
     FileSearch,
     FileWrite,
+    DirectoryCreate,
     FileDelete,
     GitRead,
     GitIntegrate,
@@ -76,6 +77,10 @@ pub enum Effect {
         path: WorkspacePath,
         expected: ContentVersion,
     },
+    /// Create one absent directory; its parent must already exist.
+    DirectoryCreate {
+        path: WorkspacePath,
+    },
     GitRead,
     GitIntegrationObserve,
     GitIntegrate {
@@ -108,6 +113,7 @@ impl Effect {
             Self::FileRead { .. } => Some(Capability::FileRead),
             Self::FileSearch { .. } => Some(Capability::FileSearch),
             Self::FileWrite { .. } => Some(Capability::FileWrite),
+            Self::DirectoryCreate { .. } => Some(Capability::DirectoryCreate),
             Self::FileDelete { .. } => Some(Capability::FileDelete),
             Self::GitRead => Some(Capability::GitRead),
             Self::GitIntegrationObserve | Self::GitIntegrate { .. } => {
@@ -128,6 +134,7 @@ impl Effect {
             Self::FileRead { .. }
                 | Self::FileSearch { .. }
                 | Self::FileWrite { .. }
+                | Self::DirectoryCreate { .. }
                 | Self::FileDelete { .. }
                 | Self::GitIntegrationObserve
                 | Self::GitIntegrate { .. }
@@ -162,6 +169,7 @@ impl Effect {
                 Reversibility::Transactional
             }
             Self::ProcessRun { .. }
+            | Self::DirectoryCreate { .. }
             | Self::ProfiledProcessRun { .. }
             | Self::NetworkAccess { .. }
             | Self::PolicyChange

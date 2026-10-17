@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Separately scoped absent-only directory creation for Windows project workflows,
+  with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
+  validation pending; no recursive creation, overwrite or implied file authority.
+
 - Bounded diagnostic private-task event times, with compatible legacy recovery
   and unchanged lock/capacity limits. Timestamps never authorize, reorder events
   or restore tasks; native and Windows/Linux validation pending.

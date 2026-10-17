@@ -1,7 +1,7 @@
 use optic_bridge_mcp::{
-    ExpectedStateRequest, FsApplyPatchRequest, FsDeleteRequest, FsListRequest, FsReadRequest,
-    FsWriteRequest, GitDiffRequest, GitLogCursorRequest, GitLogRequest, ProcessJobRequest,
-    ProcessReadRequest, ProcessStartRequest,
+    ExpectedStateRequest, FsApplyPatchRequest, FsCreateDirectoryRequest, FsDeleteRequest,
+    FsListRequest, FsReadRequest, FsWriteRequest, GitDiffRequest, GitLogCursorRequest,
+    GitLogRequest, ProcessJobRequest, ProcessReadRequest, ProcessStartRequest,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -16,6 +16,9 @@ fn rejects_unknown_field<T: DeserializeOwned>(value: Value) {
 
 #[test]
 fn public_mcp_request_objects_reject_unknown_fields() {
+    rejects_unknown_field::<FsCreateDirectoryRequest>(json!({
+        "path": "src", "expected": "absent", "session": "caller-selected"
+    }));
     rejects_unknown_field::<FsReadRequest>(json!({
         "path": "input.txt",
         "unexpected": true
@@ -86,4 +89,22 @@ fn public_mcp_request_objects_reject_unknown_fields() {
         "offset": 0,
         "unexpected": true
     }));
+}
+
+#[test]
+fn directory_request_requires_explicit_absence_without_recursive_or_overwrite_flags() {
+    assert!(
+        serde_json::from_value::<FsCreateDirectoryRequest>(
+            json!({"path":"src","expected":"absent"})
+        )
+        .is_ok()
+    );
+    for invalid in [
+        json!({"path":"src"}),
+        json!({"path":"src","expected":"present"}),
+        json!({"path":"src","expected":"absent","recursive":true}),
+        json!({"path":"src","expected":"absent","overwrite":true}),
+    ] {
+        assert!(serde_json::from_value::<FsCreateDirectoryRequest>(invalid).is_err());
+    }
 }

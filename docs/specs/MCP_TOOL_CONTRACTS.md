@@ -37,6 +37,25 @@ fs_search(...)
 
 ## Durable file mutation
 
+### Separately authorized directory creation (Windows)
+
+`fs_create_directory(path, expected="absent")` is registered only with locally
+provisioned `DirectoryCreate` authority, independently of file write/delete.
+Operator CLI `--allow-directory-create-scope all|prefix:<path>` or config
+`mutation.directory_scopes` supplies scopes; the existing mutation state setup
+remains required. Omitting this setting grants nothing.
+
+One absent leaf is created under an existing parent. Existing files/directories,
+missing parents, unsafe Windows names, native ancestor aliases and reparse points
+fail. Unicode names are supported; maximum depth32. Missing absence intent and
+unknown recursive/overwrite/authority fields fail schema validation. Revoked
+session/task/epoch or out-of-scope paths fail live policy. Other platforms refuse.
+The response contains the server-generated action_id, path and created=true only
+after creation. This is not file-journal rollback or durable exactly-once;
+inspect the parent after uncertain completion, never blindly retry. See ADR0024.
+
+### Transactional files
+
 Implemented on Windows and exposed conditionally from operator-owned authority:
 
 ```text
