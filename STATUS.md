@@ -1,5 +1,22 @@
 # Project Status
 
+## Verified checkpoint — 2026-10-17
+
+PR231–236 are merged into main, including authorized artifact publication,
+diagnostic task event times, separately scoped directory creation, optional
+private Rust IR compilation and strict duplicate-field configuration rejection.
+Main post-merge checks through PR235 passed; main236 CI38990056521 is pending.
+Exact pre-merge CI23638989470332 passed. Local verified harnesses passed seven
+artifact cases, eleven journal cases, ten Node lifecycle cases and directory
+boundaries. Rust1.99 compiled a public no_std library, reported E0308, recompiled
+the correction and cleaned recorded files locally in4.34s. No linker/native app
+execution, general Cargo/build/dependency or Electron GUI permission is claimed.
+
+PR237 remains draft atd0f96089cd8c90dcf7b85bd36d3a25a324b03dd9: operator
+permission reductions and a real stdio authority test await exact CI. Alpha has
+its older permission switches but not that direct-CLI override regression yet;
+import the reviewed candidate only after validation. Stable user ZIP unchanged.
+
 ## Optional Rust compiler compatibility — candidate, 2026-10-17
 
 A test-only native probe copies a bounded subset of an explicitly selected
