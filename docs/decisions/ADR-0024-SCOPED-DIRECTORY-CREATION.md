@@ -18,11 +18,16 @@ are rejected. One action creates one leaf under an existing parent. Existing
 file/directory, missing parent and reparse ancestors are errors, never implicit
 success or recursive creation. The existing path/request/execution bounds apply;
 depth is at most32 components. Paths stay normalized workspace-relative.
+Device names (including DOS superscript digit variants), controls/forbidden names
+and trailing dot/space ambiguity are refused. Unicode project names remain valid.
 
 Windows captures root identity at service construction, pins the root and every
 ancestor without delete sharing, rejects reparse points, then calls a single
 absent-directory create while retaining session admission. Other platforms refuse
-the operation until a native boundary is proven. Public visibility is not a
+the operation until a native boundary is proven. The observed parent spelling
+must also match the requested relative parent (ASCII case-insensitively), refusing
+short-name or redirected ancestor aliases instead of silently changing targets.
+Public visibility is not a
 substitute for policy: every call checks live capability, task/epoch and scope.
 Transport and blocking-I/O permits remain held through actual synchronous work.
 
