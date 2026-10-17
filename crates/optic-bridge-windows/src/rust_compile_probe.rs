@@ -509,7 +509,8 @@ fn run_rust_probe(native_program: bool) {
         assert_eq!(
             compiled.exit,
             0,
-            "{}",
+            "compiler stdout: {}\ncompiler stderr: {}",
+            String::from_utf8_lossy(&compiled.stdout),
             String::from_utf8_lossy(&compiled.stderr)
         );
         assert!(compiled.stdout.is_empty());
@@ -534,7 +535,8 @@ fn run_rust_probe(native_program: bool) {
         assert_eq!(
             linked.exit,
             0,
-            "{}",
+            "linker stdout: {}\nlinker stderr: {}",
+            String::from_utf8_lossy(&linked.stdout),
             String::from_utf8_lossy(&linked.stderr)
         );
         assert!(fs::metadata(&executable).unwrap().len() <= MAX_OUTPUT as u64);
