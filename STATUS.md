@@ -1,5 +1,14 @@
 # Project Status
 
+## Local permission reductions — candidate, 2026-10-17
+
+Optional strict JSON permission bits reduce separately selected filesystem,
+process and Git authority. Present sections default omitted bits to false; true
+never creates a scope. Startup policy/profile sources must be outside writable
+project paths. Real stdio and CLI/config regressions validate actual authority
+reduction, not just tool hiding. No live reload, whole-PC bypass or new build
+permission. Exact Windows/Linux CI pending; ADR0026.
+
 ## Optional Rust compilation — candidate, 2026-10-17
 
 Test-only fixed public no_std compilation emits bounded LLVM IR inside a fresh

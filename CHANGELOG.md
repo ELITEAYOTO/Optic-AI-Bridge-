@@ -4,10 +4,16 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 - Extract existing bounded process-output storage and pipe drains into a private
   child module. Cursor authorization, aggregate reservations, overflow handling
   and termination ownership are unchanged; no new authority or dependency.
 
+=======
+- Operator JSON permission reductions and protected startup policy sources,
+  with default-off present sections and order-independent process-read denial.
+  No implicit scopes or live reload; exact stdio/Windows/Linux validation pending.
+>>>>>>> origin/main
 - Reject duplicated operator JSON authority fields before generic map parsing can
   collapse them. Valid version1 configuration and capability scopes are unchanged.
 
