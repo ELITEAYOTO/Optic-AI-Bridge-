@@ -110,6 +110,17 @@ fn compile(
         destination,
         source.into(),
     ];
+    run_native(owner, root, &executable, &args)
+}
+
+// Fixed test phases only. Each invocation gets a fresh owned one-process Job
+// and independent deadline, including the linker and produced native program.
+fn run_native(
+    owner: &OwnedProbeProfile,
+    root: &Path,
+    executable: &Path,
+    args: &[OsString],
+) -> io::Result<Compilation> {
     let input = File::open("NUL")?;
     let mut stdout = CapturedOutputPipe::new()?;
     let mut stderr = CapturedOutputPipe::new()?;
@@ -126,8 +137,8 @@ fn compile(
     owner.uncertain.set(true);
     let child = spawn_appcontainer_with_environment_suspended(
         owner.profile.as_ref().unwrap(),
-        &executable,
-        &args,
+        executable,
+        args,
         root,
         AppContainerStdio {
             stdin: input.as_handle(),
@@ -236,6 +247,16 @@ fn collect_fixed_output(
 #[test]
 #[ignore = "requires an explicitly selected installed direct Rust compiler"]
 fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
+    run_rust_probe(false);
+}
+
+#[test]
+#[ignore = "requires direct rustc and explicit Windows SDK kernel32 import library"]
+fn private_rust_compiles_links_and_executes_fixed_native_program() {
+    run_rust_probe(true);
+}
+
+fn run_rust_probe(native_program: bool) {
     let compiler = PathBuf::from(
         std::env::var_os("OPTIC_PRIVATE_RUSTC").expect("select installed direct rustc.exe"),
     );
@@ -400,6 +421,90 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     println!(
         "PRIVATE_RUST_FILE_OUTPUT_PASS: actual private LLVM file collected only after owned tree exit; oversized, writer, hardlink, reparse, missing and uncertain cases refused; no disk quota or generic output authority claimed"
     );
+    if native_program {
+        let sdk = PathBuf::from(
+            std::env::var_os("OPTIC_PRIVATE_KERNEL32_LIB")
+                .expect("explicit fixed Windows SDK kernel32.lib"),
+        );
+        assert!(sdk.is_absolute());
+        assert_eq!(
+            sdk.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_ascii_lowercase(),
+            "kernel32.lib"
+        );
+        let linker_source = sysroot.join(format!("lib/rustlib/{TARGET}/bin/rust-lld.exe"));
+        let linker = root.join("bin/rust-lld.exe");
+        let import = root.join("output/kernel32.lib");
+        copy_exact(&linker_source, &linker, &mut remaining).unwrap();
+        copy_exact(&sdk, &import, &mut remaining).unwrap();
+        let native_source = b"#![no_std]\n#[link(name=\"kernel32\")] unsafe extern \"system\" { fn ExitProcess(code:u32)->!; }\n#[unsafe(no_mangle)] pub extern \"system\" fn optic_entry()->! { unsafe { ExitProcess(42) } }\n#[panic_handler] fn panic(_: &core::panic::PanicInfo)->! { loop {} }\n";
+        fs::write(&source, native_source).unwrap();
+        let object = root.join("output/native.obj");
+        let executable = root.join("output/native.exe");
+        assert!(!object.exists() && !executable.exists());
+        let object_args: Vec<OsString> = vec![
+            "--crate-name".into(),
+            "optic_native_probe".into(),
+            "--crate-type=lib".into(),
+            "--edition=2024".into(),
+            "--target".into(),
+            TARGET.into(),
+            "--sysroot".into(),
+            root.clone().into_os_string(),
+            "--emit=obj".into(),
+            "-Cdebuginfo=0".into(),
+            "-Cpanic=abort".into(),
+            "-o".into(),
+            object.clone().into_os_string(),
+            source.clone().into_os_string(),
+        ];
+        let compiled =
+            run_native(&owner, &root, &root.join("bin/rustc.exe"), &object_args).unwrap();
+        assert_eq!(
+            compiled.exit,
+            0,
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        assert!(compiled.stdout.is_empty());
+        assert!(fs::metadata(&object).unwrap().len() <= MAX_OUTPUT as u64);
+        let link_args: Vec<OsString> = vec![
+            "-flavor".into(),
+            "link".into(),
+            "/entry:optic_entry".into(),
+            "/subsystem:console".into(),
+            "/nodefaultlib".into(),
+            "/machine:x64".into(),
+            format!("/out:{}", executable.display()).into(),
+            object.clone().into_os_string(),
+            import.clone().into_os_string(),
+        ];
+        let linked = run_native(&owner, &root, &linker, &link_args).unwrap();
+        assert_eq!(
+            linked.exit,
+            0,
+            "{}",
+            String::from_utf8_lossy(&linked.stderr)
+        );
+        assert!(fs::metadata(&executable).unwrap().len() <= MAX_OUTPUT as u64);
+        let executed = run_native(&owner, &root, &executable, &[]).unwrap();
+        assert_eq!(
+            executed.exit,
+            42,
+            "{}",
+            String::from_utf8_lossy(&executed.stderr)
+        );
+        assert!(executed.stdout.is_empty() && executed.stderr.is_empty());
+        assert_eq!(fs::read(&source).unwrap(), native_source);
+        for recorded in [&executable, &object, &import, &linker] {
+            fs::remove_file(recorded).unwrap();
+        }
+        println!(
+            "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected lld linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
+        );
+    }
     // Delete recorded fixed fixture files only, after every native tree was
     // confirmed empty. Unknown compiler files make empty-directory removal fail.
     fs::remove_file(&source).unwrap();
@@ -415,7 +520,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     }
     fs::remove_dir(&root).unwrap();
     println!(
-        "PRIVATE_RUST_IR_PASS: fixed no_std library compiled to bounded LLVM stdout; real E0308 then corrected recompile; copied {} runtime bytes; recorded files cleaned; no linker, Cargo, dependency install, native app execution or MCP grant",
+        "PRIVATE_RUST_IR_PASS: fixed no_std library compiled to bounded LLVM stdout; real E0308 then corrected recompile; copied {} runtime bytes; recorded files cleaned; native variant={native_program}; no Cargo, dependency install or MCP grant",
         MAX_RUNTIME - remaining
     );
     assert!(!owner.uncertain.get());
