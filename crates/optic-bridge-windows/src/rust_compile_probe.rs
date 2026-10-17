@@ -214,8 +214,8 @@ fn collect_fixed_output(
     let mut file = open_exclusive_state_file(&expected, false).map_err(io::Error::other)?;
     if !file
         .final_path()
-        .as_os_str()
-        .eq_ignore_ascii_case(expected.as_os_str())
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&expected.to_string_lossy())
     {
         return Err(io::Error::other("private output path alias"));
     }
