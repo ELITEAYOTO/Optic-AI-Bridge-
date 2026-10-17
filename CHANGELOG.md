@@ -4,6 +4,9 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Reject duplicated operator JSON authority fields before generic map parsing can
+  collapse them. Valid version1 configuration and capability scopes are unchanged.
+
 - Separately scoped absent-only directory creation for Windows project workflows,
   with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
   validation pending; no recursive creation, overwrite or implied file authority.

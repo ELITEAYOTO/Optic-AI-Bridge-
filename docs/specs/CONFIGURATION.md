@@ -155,4 +155,10 @@ A layered file-based configuration may later expose smaller operator-selected va
 
 ## Rules
 
+Versioned JSON operator configuration is deserialized directly into its strict
+typed schema. Duplicate fields, including identical duplicates and nested scope/
+executable fields, are errors rather than last-key-wins authority. Unknown fields
+and unsupported/invalid versions remain rejected. This does not add permissions
+or change valid configurations; startup fails before authority provisioning.
+
 Paths are never silently widened. Zero does not mean unlimited. Secrets/tunnel credentials do not belong in normal committed config. SDK/library defaults never override Optic-owned hard ceilings. Operator startup configuration may grant only capabilities/scopes that the application can normalize and enforce deterministically.
