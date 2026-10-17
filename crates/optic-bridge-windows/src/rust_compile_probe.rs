@@ -367,6 +367,10 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     let bytes = collect_fixed_output(&owner, &root, root_identity, &on_disk).unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("optic_add"));
     assert_eq!(fs::read(&source).unwrap(), valid);
+    assert!(collect_fixed_output(&owner, &root, root_identity, &failure).is_err());
+    let mut wrong_root = root_identity;
+    wrong_root.file_id[0] ^= 1;
+    assert!(collect_fixed_output(&owner, &root, wrong_root, &on_disk).is_err());
     let artifact = root.join("output/library.ll");
     // An open writer must prevent collection, even after the compiler exited.
     let writer = OpenOptions::new().write(true).open(&artifact).unwrap();
@@ -382,6 +386,10 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     let oversized = OpenOptions::new().write(true).open(&artifact).unwrap();
     oversized.set_len(MAX_OUTPUT as u64 + 1).unwrap();
     drop(oversized);
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    let empty = OpenOptions::new().write(true).open(&artifact).unwrap();
+    empty.set_len(0).unwrap();
+    drop(empty);
     assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
     fs::remove_file(&artifact).unwrap();
     assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
