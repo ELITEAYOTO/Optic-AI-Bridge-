@@ -8,6 +8,10 @@ All notable project changes are recorded here.
   with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
   validation pending; no recursive creation, overwrite or implied file authority.
 
+- Bounded diagnostic private-task event times, with compatible legacy recovery
+  and unchanged lock/capacity limits. Timestamps never authorize, reorder events
+  or restore tasks; native and Windows/Linux validation pending.
+
 ### Added
 - Authorized private project input preparation under the existing read/ownership boundary, with finite capacity and nonrecursive recorded-only cleanup. No process, MCP or dependency permission is added. Exact-head validation pending; see ADR-0018.
 
