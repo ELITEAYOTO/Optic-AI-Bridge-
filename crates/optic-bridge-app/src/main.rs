@@ -173,7 +173,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
-    let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
+    let mut capabilities = BTreeSet::new();
+    if args.file_read {
+        capabilities.insert(Capability::FileRead);
+    }
+    if args.file_search {
+        capabilities.insert(Capability::FileSearch);
+    }
     if !canonical_process_executables.is_empty() {
         capabilities.insert(Capability::ProcessRun);
     }
@@ -214,10 +220,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
     let session = grant.handle;
 
+    let mut read_spec = ReadAuthoritySpec::workspace_all_non_sensitive();
+    if !args.file_read {
+        read_spec.read_content.clear();
+        read_spec.read_sensitive.clear();
+    }
+    if !args.file_search {
+        read_spec.search_metadata.clear();
+    }
     let read_authorities = ReadAuthoritySet::provision(
         &task_leases,
         &session,
-        &ReadAuthoritySpec::workspace_all_non_sensitive(),
+        &read_spec,
         read_authority_resource_budget(limits),
         expires_at,
         args.policy_epoch,
@@ -646,6 +660,8 @@ fn provision_process_leases(
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
+    file_read: bool,
+    file_search: bool,
     policy_epoch: u64,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
@@ -680,6 +696,8 @@ impl AppArgs {
         }
 
         let mut workspace = None;
+        let mut file_read = true;
+        let mut file_search = true;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
@@ -697,7 +715,11 @@ impl AppArgs {
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
-            if arg == "--allow-executable" {
+            if arg == "--deny-file-read" {
+                file_read = false;
+            } else if arg == "--deny-file-search" {
+                file_search = false;
+            } else if arg == "--allow-executable" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -925,8 +947,13 @@ impl AppArgs {
             ));
         }
 
+        if !file_read {
+            process_read_grants.clear();
+        }
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
+            file_read,
+            file_search,
             policy_epoch: 1,
             allowed_executables,
             process_read_grants,
@@ -1219,14 +1246,17 @@ mod tests {
     fn persistent_v1_config_reuses_cli_validation_and_sets_policy_epoch() {
         let token = SessionHandle::generate().expect("test entropy").to_token();
         let path = std::env::temp_dir().join(format!("optic-config-{token}.json"));
+        let workspace = std::env::temp_dir().join(format!("optic-config-workspace-{token}"));
+        std::fs::create_dir(&workspace).expect("workspace for source-boundary validation");
         std::fs::write(
             &path,
-            r#"{
+            serde_json::json!({
                 "version": 1,
                 "policy_epoch": 9,
-                "workspace": "workspace-from-config",
+                "workspace": workspace,
                 "environment_grants": [{"class":"benign","name":"PATH_HINT"}]
-            }"#,
+            })
+            .to_string(),
         )
         .expect("write config");
 
@@ -1236,12 +1266,13 @@ mod tests {
         ])
         .expect("persistent config");
         assert_eq!(parsed.policy_epoch, 9);
-        assert_eq!(parsed.workspace, PathBuf::from("workspace-from-config"));
+        assert_eq!(parsed.workspace, workspace);
         assert_eq!(
             parsed.environment_grants,
             vec![EnvironmentGrant::benign("PATH_HINT")]
         );
         std::fs::remove_file(path).expect("remove config");
+        std::fs::remove_dir(workspace).expect("remove workspace");
     }
 
     #[test]
@@ -1866,6 +1897,49 @@ mod tests {
             BTreeSet::from([LeaseScope::WorkspaceAll])
         );
         assert_eq!(parsed.mutation_state_dir, Some(state));
+    }
+
+    #[test]
+    fn local_read_denials_reduce_default_authority() {
+        let normal = AppArgs::parse_from([OsString::from("workspace")]).expect("default");
+        assert!(normal.file_read && normal.file_search);
+        let denied = AppArgs::parse_from([
+            OsString::from("--deny-file-read"),
+            OsString::from("--deny-file-search"),
+            OsString::from("workspace"),
+        ])
+        .expect("deny");
+        assert!(!denied.file_read && !denied.file_search);
+        let state = std::env::temp_dir().join("optic-directory-args-state");
+        let directories = AppArgs::parse_from([
+            OsString::from("--allow-directory-create-scope=prefix:src"),
+            OsString::from("--mutation-state-dir"),
+            state.into_os_string(),
+            OsString::from("workspace"),
+        ])
+        .expect("directory-only");
+        assert!(directories.write_scopes.is_empty() && directories.delete_scopes.is_empty());
+        assert_eq!(directories.directory_scopes.len(), 1);
+    }
+
+    #[test]
+    fn direct_read_denial_removes_process_source_grants_in_either_argument_order() {
+        for first in [true, false] {
+            let mut flags = vec![
+                OsString::from("--allow-process-read-file"),
+                OsString::from("C:\\tool.exe"),
+                OsString::from("src/input.txt"),
+            ];
+            if first {
+                flags.insert(0, "--deny-file-read".into());
+            } else {
+                flags.push("--deny-file-read".into());
+            }
+            flags.push("workspace".into());
+            let parsed = AppArgs::parse_from(flags).unwrap();
+            assert!(!parsed.file_read);
+            assert!(parsed.process_read_grants.is_empty());
+        }
     }
 
     #[test]
