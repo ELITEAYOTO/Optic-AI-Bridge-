@@ -518,6 +518,8 @@ fn run_rust_probe(native_program: bool) {
             "/entry:optic_entry".into(),
             "/subsystem:console".into(),
             "/nodefaultlib".into(),
+            "/manifest:no".into(),
+            "/incremental:no".into(),
             "/machine:x64".into(),
             format!("/out:{}", executable.display()).into(),
             object.clone().into_os_string(),
