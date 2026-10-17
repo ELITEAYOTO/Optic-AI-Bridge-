@@ -8,6 +8,41 @@ The compiled `HardLimits` remain the non-overridable security ceiling. Operator 
 
 ## Current compiled hard ceilings
 
+### Explicit operator permission switches (development increment)
+
+The optional JSON permissions section reduces explicitly selected authority.
+When omitted, existing startup behavior is preserved. When present, omitted
+booleans default to false; true only enables the configured scopes/executables,
+never an implicit whole-PC grant. Example fragment:
+
+```json
+{
+  "permissions": {
+    "files": {"read": true, "search": true, "write": true, "delete": false, "create_directories": true},
+    "processes": {"run": true},
+    "git": {"read": true, "merge": false}
+  }
+}
+```
+
+This fragment needs the normal version/policy_epoch/workspace and explicit
+mutation scopes, state directory and executable/profile selections. Directory
+scope is mutation.directory_scopes and compiles to --allow-directory-create-scope.
+File-write authority does not imply directory creation. Read/search=false removes
+the corresponding session capabilities and read leases; process input-file grants
+are also suppressed when file read is disabled. run=false removes executable,
+profile, environment and process-file grants. Git merge means the existing exact
+Git integration authority; arbitrary commit/push is not yet implemented. Unknown
+fields, non-booleans and duplicate fields fail startup instead of being ignored.
+
+Local --deny-file-read / --deny-file-search can reduce the CLI read baseline.
+Policy files and enabled tool-profile files loaded through --config must resolve
+outside the selected writable workspace; Windows checks the opened file's final
+path. The file is read once: editing it does NOT yet hot-reload permissions.
+This section does not enable dependency egress, process writes, arbitrary GUI
+launch or a full-access bypass. Live policy change remains the ADR0026 epoch/
+revocation/cleanup gate.
+
 `HardLimits::default()` currently defines:
 
 - request body: 1 MiB;
