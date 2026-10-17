@@ -110,6 +110,8 @@ fn compile(owner: &OwnedProbeProfile, root: &Path, source: &Path) -> io::Result<
         ),
         ("TEMP".into(), root.join("tmp").into_os_string()),
         ("TMP".into(), root.join("tmp").into_os_string()),
+        ("LOCALAPPDATA".into(), root.join("local").into_os_string()),
+        ("APPDATA".into(), root.join("roaming").into_os_string()),
     ];
     owner.uncertain.set(true);
     let child = spawn_appcontainer_with_environment_suspended(
@@ -123,7 +125,8 @@ fn compile(owner: &OwnedProbeProfile, root: &Path, source: &Path) -> io::Result<
             stderr: stderr.writer_handle()?,
         },
         &environment,
-    )?;
+    )
+    .map_err(|error| io::Error::other(format!("Rust suspended spawn failed: {error}")))?;
     let mut process = ContainedAppContainerProcess::contain(
         child,
         LimitedJobObject::new(1, 1024 * 1024 * 1024, 50)?,
@@ -219,6 +222,8 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         "lib/rustlib/x86_64-pc-windows-msvc",
         "lib/rustlib/x86_64-pc-windows-msvc/lib",
         "tmp",
+        "local",
+        "roaming",
     ] {
         fs::create_dir(root.join(relative)).unwrap();
     }

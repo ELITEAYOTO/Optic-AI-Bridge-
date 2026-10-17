@@ -19,7 +19,8 @@ This is a fixed trusted-fixture copy, not production runtime enrollment or a
 versioned authorized sysroot/dependency capture service.
 
 Structured fixed argv controls crate type, target, sysroot, no-debug/panic-abort
-and stdout emission. Only SystemRoot and private TEMP/TMP are forwarded. A
+and stdout emission. Only SystemRoot and private TEMP/TMP/LOCALAPPDATA/APPDATA
+are forwarded, matching the proven native Node baseline. A
 configured Job owns the suspended child before resume, with one process,
 1GiB memory,50percent CPU and an independent15second deadline. Polling output is
 bounded128KiB accepted aggregate, without disk spools. Root exit is insufficient:
