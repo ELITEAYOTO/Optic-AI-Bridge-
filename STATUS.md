@@ -1,5 +1,29 @@
 # Project Status
 
+## Current checkpoint — 2026-10-17
+
+This checkpoint supersedes earlier candidate/validation-pending entries below,
+which remain historical evidence.
+
+- PR237 startup permission reductions merged as `ed3369f`; exact head
+  `c7d14ad` passed Windows/Ubuntu/dependency CI39041285058, including the real
+  stdio authority proof. Post-merge main CI is a separate pending check.
+- PR235 fixed no_std Rust-to-LLVM proof and PR236 strict duplicate-field parser
+  are merged. Rust proof passed native CI38988945783 and verified local execution;
+  it does not provide Cargo, linking or general native application builds.
+- PR238 extracts existing process output storage/drains into a private module;
+  no limits, ownership, public API, authority or persistent format change.
+  Validation of the combined head after PR237 is pending.
+- Next: finish this small consolidation, then bounded private writable build
+  outputs, diagnostics/recovery and explicit toolchain/dependency admission.
+  Electron normal startup remains unresolved; no automatic sandbox downgrade.
+
+Canonical boundaries: [permissions](docs/specs/CONFIGURATION.md),
+[output](docs/architecture/MEMORY_OUTPUT.md),
+[security](docs/security/SECURITY_INVARIANTS.md), and
+[decisions](docs/decisions/). The entries below provide the detailed history,
+not additional grants or a claim that a complete FS build package is ready.
+
 ## Local permission reductions — candidate, 2026-10-17
 
 Optional strict JSON permission bits reduce separately selected filesystem,

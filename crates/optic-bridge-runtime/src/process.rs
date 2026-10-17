@@ -1,3 +1,8 @@
+mod output;
+#[cfg(windows)]
+use output::append_output;
+use output::{OutputState, drain_output, mark_stream_closed};
+
 #[cfg(windows)]
 use std::ffi::OsString;
 use std::{
@@ -30,16 +35,10 @@ use serde::Serialize;
 use thiserror::Error;
 #[cfg(windows)]
 use tokio::io::AsyncWriteExt;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt},
-    process::Command,
-    runtime::Handle,
-    time::Instant,
-};
+use tokio::{process::Command, runtime::Handle, time::Instant};
 
 const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const TERMINATION_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
-const DRAIN_CHUNK_BYTES: usize = 8 * 1024;
 #[cfg(windows)]
 const ISOLATION_LAUNCHER_PROTOCOL_VERSION: u32 = 2;
 #[cfg(windows)]
@@ -217,14 +216,6 @@ struct JobRecord {
     state: Mutex<JobState>,
     stop_requested: Arc<AtomicBool>,
     output_overflow: AtomicBool,
-}
-
-#[derive(Debug)]
-struct OutputState {
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    stdout_closed: bool,
-    stderr_closed: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1370,49 +1361,6 @@ fn oldest_terminal_job_for_session(
         }
     }
     Ok(oldest.map(|(job_id, _)| job_id.clone()))
-}
-
-async fn drain_output<R>(mut reader: R, stream: ProcessStream, record: Arc<JobRecord>)
-where
-    R: AsyncRead + Unpin,
-{
-    let mut chunk = [0_u8; DRAIN_CHUNK_BYTES];
-    loop {
-        match reader.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(read) => append_output(&record, stream, &chunk[..read]),
-            Err(_) => break,
-        }
-    }
-    mark_stream_closed(&record, stream);
-}
-
-fn append_output(record: &JobRecord, stream: ProcessStream, bytes: &[u8]) {
-    let Ok(mut output) = record.output.lock() else {
-        record.output_overflow.store(true, Ordering::Release);
-        return;
-    };
-    let used = output.stdout.len().saturating_add(output.stderr.len());
-    let budget = usize::try_from(record.reserved_output_bytes).unwrap_or(usize::MAX);
-    let remaining = budget.saturating_sub(used);
-    let keep = remaining.min(bytes.len());
-    let target = match stream {
-        ProcessStream::Stdout => &mut output.stdout,
-        ProcessStream::Stderr => &mut output.stderr,
-    };
-    target.extend_from_slice(&bytes[..keep]);
-    if keep < bytes.len() {
-        record.output_overflow.store(true, Ordering::Release);
-    }
-}
-
-fn mark_stream_closed(record: &JobRecord, stream: ProcessStream) {
-    if let Ok(mut output) = record.output.lock() {
-        match stream {
-            ProcessStream::Stdout => output.stdout_closed = true,
-            ProcessStream::Stderr => output.stderr_closed = true,
-        }
-    }
 }
 
 async fn monitor_child(
