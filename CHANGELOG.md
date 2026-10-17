@@ -7,6 +7,8 @@ All notable project changes are recorded here.
 - Operator JSON permission reductions and protected startup policy sources,
   with default-off present sections and order-independent process-read denial.
   No implicit scopes or live reload; exact stdio/Windows/Linux validation pending.
+- Reject duplicated operator JSON authority fields before generic map parsing can
+  collapse them. Valid version1 configuration and capability scopes are unchanged.
 
 - Opt-in fixed public Rust compiler compatibility probe: isolated no_std LLVM IR
   and real type diagnostics, bounded runtime copying and output. Test-only;

@@ -119,8 +119,8 @@ fn require_external_operator_file(workspace: &Path, source: &Path) -> Result<(),
 }
 
 fn parse_config_bytes(bytes: &[u8]) -> Result<LoadedPersistentConfig, io::Error> {
-    // Deserialize directly so duplicate authority fields cannot be collapsed by
-    // an intermediate generic Value before strict struct validation.
+    // A generic Value silently collapses duplicate keys before strict typed
+    // validation. Authority-bearing configuration must reject that ambiguity.
     let config: OpticConfigV1 = serde_json::from_slice(bytes).map_err(json_error)?;
     config.into_loaded()
 }
@@ -398,6 +398,21 @@ fn json_error(error: serde_json::Error) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_authority_fields_are_rejected_before_any_key_can_be_collapsed() {
+        for value in [
+            r#"{"version":1,"version":1,"policy_epoch":1,"workspace":"x"}"#,
+            r#"{"version":1,"policy_epoch":1,"policy_epoch":2,"workspace":"x"}"#,
+            r#"{"version":1,"policy_epoch":1,"workspace":"one","workspace":"two"}"#,
+            r#"{"version":1,"policy_epoch":1,"workspace":"x","mutation":null,"mutation":{}}"#,
+            r#"{"version":1,"policy_epoch":1,"workspace":"x","mutation":{"write_scopes":["prefix:src"],"write_scopes":["all"]}}"#,
+            r#"{"version":1,"policy_epoch":1,"workspace":"x","executables":[{"class":"fixed-tool","class":"repository-code","path":"C:\\tool.exe"}]}"#,
+        ] {
+            let error = parse(value).unwrap_err();
+            assert!(error.to_string().contains("duplicate field"), "{error}");
+        }
+    }
 
     fn parse(input: &str) -> Result<LoadedPersistentConfig, io::Error> {
         parse_config_bytes(input.as_bytes())
