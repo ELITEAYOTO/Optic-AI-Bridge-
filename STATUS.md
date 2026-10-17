@@ -1,5 +1,17 @@
 # Project Status
 
+## Optional Rust compilation — candidate, 2026-10-17
+
+Test-only fixed public no_std compilation emits bounded LLVM IR inside a fresh
+AppContainer using a bounded copy of an explicitly selected direct compiler and
+minimal sysroot. A deliberate type error requires real E0308. No linker, Cargo,
+dependency install, arbitrary native execution or public MCP permission. Exact
+native compatibility validation pending; ADR0025.
+
+PR233 and234 are integrated (9504422/fdafb3a). Their post-merge main CI passed
+38987591834/38988095234. The journal and directory proofs also reproduced locally;
+historical candidate descriptions below are preserved as earlier checkpoints.
+
 ## Scoped project directory creation — candidate, 2026-10-17
 
 The generated-alpha directory primitive is proposed independently for main:
