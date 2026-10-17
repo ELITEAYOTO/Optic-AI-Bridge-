@@ -8,6 +8,7 @@
 //! recovery, or output constraints.
 
 mod approval_broker;
+mod artifact_publication;
 mod authorized_file_mutation;
 mod authorized_git_integration;
 mod blocking_io;
@@ -52,6 +53,10 @@ mod transport;
 mod windows_path;
 
 pub use approval_broker::{ApprovalBroker, ApprovalBrokerError, ApprovalSpec};
+pub use artifact_publication::{
+    ArtifactPublicationError, ArtifactPublicationInterruption, ArtifactPublicationProgress,
+    ArtifactPublicationReceipt, AuthorizedArtifactPublicationService,
+};
 pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
 pub use authorized_git_integration::{
     AuthorizedGitIntegrationError, AuthorizedGitIntegrationService,
