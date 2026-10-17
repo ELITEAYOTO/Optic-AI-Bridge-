@@ -1,5 +1,24 @@
 # Project Status
 
+## Current integration — 2026-10-17
+
+PR224–232 have merged the bounded capture, private preparation/owner/native Node
+task lifecycle, crash journal/watchdog, explicit native environment, cancellation
+accounting and authorized same-workspace artifact publication increments. PR231
+post-merge CI38986075081 passed. PR232 exact Windows/Linux CI38986768540 and native
+preparation38986768542 passed; its verified harness reproduced all seven artifact
+publication tests locally (0.22s). Mainb7ca583 post-merge CI is pending.
+
+These are host services, not new public build/dependency/Electron permission.
+Private output capture and disk bounds remain gates. Experimental Electron's
+normal sandboxed startup still fails0x80000003 outside this main increment;
+the explicit outer-only comparison does not grant production GUI authority.
+
+Follow-up adds bounded diagnostic task event times, preserving legacy journal
+records and their unresolved capacity. Event order and live monotonic authority
+remain unchanged; no durable output text or automatic replay. Exact native and
+Windows/Linux validation of this follow-up is pending.
+
 ## 2026-10-16 authorized private input preparation — candidate
 
 Private input preparation composes the merged PR224 capture with fresh SID-derived storage, four retained live/uncertain slots and recorded-only cleanup. No process or MCP authority is added. Exact-head Windows/Linux validation pending; see ADR-0018. PR224 pre/post-merge CI passed (38836808832/38837205821); earlier candidate descriptions below are historical.

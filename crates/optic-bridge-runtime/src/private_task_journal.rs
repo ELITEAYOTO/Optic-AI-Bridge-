@@ -11,6 +11,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf, Prefix},
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
 
@@ -71,6 +72,16 @@ pub struct PrivateTaskRecoveryRecord {
     pub outcome: Option<PrivateTaskOutcome>,
     pub owner_fingerprint: ContentVersion,
     pub input_fingerprint: ContentVersion,
+    /// Bounded event order is authoritative. Wall-clock observations are only
+    /// diagnostic, may go backwards, and never restore authorization/deadlines.
+    pub timeline: Vec<PrivateTaskRecoveryObservation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateTaskRecoveryObservation {
+    pub phase: PrivateTaskRecoveryPhase,
+    /// None for legacy records or an unavailable/unrepresentable system clock.
+    pub observed_unix_ms: Option<u64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -107,11 +118,25 @@ enum Event {
     Closed,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimedEvent {
+    entry: Event,
+    observed_unix_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct TimedEventRef<'a> {
+    entry: &'a Event,
+    observed_unix_ms: Option<u64>,
+}
+
 struct Parsed {
     header: Header,
     phase: PrivateTaskRecoveryPhase,
     outcome: Option<PrivateTaskOutcome>,
     events: usize,
+    timeline: Vec<PrivateTaskRecoveryObservation>,
 }
 
 pub(crate) struct PrivateTaskJournalTicket {
@@ -233,6 +258,7 @@ impl PrivateTaskJournal {
                         .map_err(|_| PrivateTaskJournalError::Corrupt)?,
                     input_fingerprint: ContentVersion::from_hex(&p.header.inputs)
                         .map_err(|_| PrivateTaskJournalError::Corrupt)?,
+                    timeline: p.timeline,
                 })
             })
             .collect()
@@ -277,7 +303,7 @@ impl PrivateTaskJournal {
             file.delete()?;
         }
         let header = Header {
-            version: 1,
+            version: 2,
             run: ActionId::generate()
                 .map_err(|_| PrivateTaskJournalError::Unavailable)?
                 .to_token(),
@@ -295,7 +321,7 @@ impl PrivateTaskJournal {
             return Err(PrivateTaskJournalError::Boundary);
         }
         let run = header.run.clone();
-        append(file.file_mut(), &Event::Intent { header })?;
+        append(file.file_mut(), &Event::Intent { header }, 2)?;
         Ok(PrivateTaskJournalTicket {
             journal: Arc::clone(self),
             run,
@@ -404,12 +430,23 @@ impl PrivateTaskJournalTicket {
             return Err(PrivateTaskJournalError::WorkspaceMismatch);
         }
         advance(&mut parsed, &event)?;
-        append(file.file_mut(), &event)
+        append(file.file_mut(), &event, parsed.header.version)
     }
 }
 
-fn append(file: &mut File, event: &Event) -> Result<(), PrivateTaskJournalError> {
-    let mut bytes = serde_json::to_vec(event).map_err(|_| PrivateTaskJournalError::Corrupt)?;
+fn append(file: &mut File, event: &Event, version: u32) -> Result<(), PrivateTaskJournalError> {
+    let mut bytes = match version {
+        1 => serde_json::to_vec(event),
+        2 => serde_json::to_vec(&TimedEventRef {
+            entry: event,
+            observed_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .and_then(|duration| u64::try_from(duration.as_millis()).ok()),
+        }),
+        _ => return Err(PrivateTaskJournalError::Corrupt),
+    }
+    .map_err(|_| PrivateTaskJournalError::Corrupt)?;
     bytes.push(b'\n');
     if bytes.len() > 2048 || file.metadata()?.len().saturating_add(bytes.len() as u64) > MAX_BYTES {
         return Err(PrivateTaskJournalError::Capacity);
@@ -439,13 +476,12 @@ fn parse(bytes: &[u8], run: &str) -> Result<Parsed, PrivateTaskJournalError> {
     if first.len() > 2048 {
         return Err(PrivateTaskJournalError::Capacity);
     }
-    let event: Event =
-        serde_json::from_slice(first).map_err(|_| PrivateTaskJournalError::Corrupt)?;
+    let (event, observed_unix_ms, version) = decode(first)?;
     let Event::Intent { header } = event else {
         return Err(PrivateTaskJournalError::Corrupt);
     };
     validate_header(&header)?;
-    if header.run != run {
+    if header.run != run || header.version != version {
         return Err(PrivateTaskJournalError::Corrupt);
     }
     let mut parsed = Parsed {
@@ -453,15 +489,35 @@ fn parse(bytes: &[u8], run: &str) -> Result<Parsed, PrivateTaskJournalError> {
         phase: PrivateTaskRecoveryPhase::Intent,
         outcome: None,
         events: 1,
+        timeline: vec![PrivateTaskRecoveryObservation {
+            phase: PrivateTaskRecoveryPhase::Intent,
+            observed_unix_ms,
+        }],
     };
     for line in lines {
         if line.len() > 2048 {
             return Err(PrivateTaskJournalError::Capacity);
         }
-        let event = serde_json::from_slice(line).map_err(|_| PrivateTaskJournalError::Corrupt)?;
+        let (event, observed_unix_ms, version) = decode(line)?;
+        if version != parsed.header.version {
+            return Err(PrivateTaskJournalError::Corrupt);
+        }
         advance(&mut parsed, &event)?;
+        parsed.timeline.push(PrivateTaskRecoveryObservation {
+            phase: parsed.phase,
+            observed_unix_ms,
+        });
     }
     Ok(parsed)
+}
+
+fn decode(line: &[u8]) -> Result<(Event, Option<u64>, u32), PrivateTaskJournalError> {
+    if let Ok(event) = serde_json::from_slice::<Event>(line) {
+        return Ok((event, None, 1));
+    }
+    let timed: TimedEvent =
+        serde_json::from_slice(line).map_err(|_| PrivateTaskJournalError::Corrupt)?;
+    Ok((timed.entry, timed.observed_unix_ms, 2))
 }
 
 fn advance(parsed: &mut Parsed, event: &Event) -> Result<(), PrivateTaskJournalError> {
@@ -500,7 +556,7 @@ fn advance(parsed: &mut Parsed, event: &Event) -> Result<(), PrivateTaskJournalE
 }
 
 fn validate_header(h: &Header) -> Result<(), PrivateTaskJournalError> {
-    if h.version != 1
+    if !matches!(h.version, 1 | 2)
         || h.epoch == 0
         || ![&h.run, &h.workspace, &h.owner, &h.read_task, &h.inputs]
             .iter()
@@ -761,6 +817,21 @@ mod tests {
             Some(PrivateTaskOutcome::Exited { code: 0 })
         );
         assert_eq!(report[0].input_fingerprint, manifest.fingerprint());
+        assert_eq!(report[0].timeline.len(), 7);
+        assert_eq!(
+            report[0].timeline[0].phase,
+            PrivateTaskRecoveryPhase::Intent
+        );
+        assert_eq!(
+            report[0].timeline[6].phase,
+            PrivateTaskRecoveryPhase::Closed
+        );
+        assert!(
+            report[0]
+                .timeline
+                .iter()
+                .all(|event| event.observed_unix_ms.is_some())
+        );
         drop(restarted);
         let other = fixture.root.join("other");
         fs::create_dir(&other).unwrap();
@@ -789,6 +860,139 @@ mod tests {
                 &EphemeralAppContainerPlan::generate().unwrap()
             ),
             Err(PrivateTaskJournalError::Capacity)
+        ));
+    }
+
+    #[test]
+    fn private_journal_legacy_unresolved_records_keep_the_same_capacity_domain() {
+        let fixture = Fixture::new();
+        let journal = fixture.open();
+        let (manifest, action) = input();
+        for _ in 0..MAX_UNRESOLVED {
+            let ticket = journal
+                .begin(
+                    &manifest,
+                    &action,
+                    &EphemeralAppContainerPlan::generate().unwrap(),
+                )
+                .unwrap();
+            let path = journal.path(&ticket.run);
+            let mut legacy: TimedEvent = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            let Event::Intent { header } = &mut legacy.entry else {
+                panic!("intent")
+            };
+            header.version = 1;
+            let mut bytes = serde_json::to_vec(&legacy.entry).unwrap();
+            bytes.push(b'\n');
+            fs::write(&path, bytes).unwrap();
+            // A retained legacy ticket continues its original encoding.
+            ticket.allocating().unwrap();
+        }
+        drop(journal);
+        let restarted = fixture.open();
+        let report = restarted.recovery_report().unwrap();
+        assert_eq!(report.len(), MAX_UNRESOLVED);
+        assert!(report.iter().all(|record| {
+            record.phase == PrivateTaskRecoveryPhase::Allocating
+                && record.timeline.len() == 2
+                && record
+                    .timeline
+                    .iter()
+                    .all(|event| event.observed_unix_ms.is_none())
+        }));
+        assert!(matches!(
+            restarted.begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap()
+            ),
+            Err(PrivateTaskJournalError::Capacity)
+        ));
+    }
+
+    #[test]
+    fn private_journal_wall_clock_rollback_is_diagnostic_not_transition_authority() {
+        let fixture = Fixture::new();
+        let journal = fixture.open();
+        let (manifest, action) = input();
+        let ticket = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
+        let mut first: TimedEvent =
+            serde_json::from_slice(&fs::read(journal.path(&ticket.run)).unwrap()).unwrap();
+        first.observed_unix_ms = Some(2000);
+        let mut bytes = serde_json::to_vec(&first).unwrap();
+        bytes.push(b'\n');
+        for (event, time) in [(Event::Allocating, Some(1000)), (Event::Prepared, None)] {
+            bytes.extend(
+                serde_json::to_vec(&TimedEvent {
+                    entry: event,
+                    observed_unix_ms: time,
+                })
+                .unwrap(),
+            );
+            bytes.push(b'\n');
+        }
+        let parsed = parse(&bytes, &ticket.run).unwrap();
+        assert_eq!(parsed.phase, PrivateTaskRecoveryPhase::Prepared);
+        assert_eq!(
+            parsed
+                .timeline
+                .iter()
+                .map(|event| event.observed_unix_ms)
+                .collect::<Vec<_>>(),
+            vec![Some(2000), Some(1000), None]
+        );
+        // A timestamp cannot make an invalid phase transition acceptable.
+        bytes.extend_from_slice(
+            b"{\"entry\":{\"event\":\"running\"},\"observed_unix_ms\":999999999}\n",
+        );
+        assert!(matches!(
+            parse(&bytes, &ticket.run),
+            Err(PrivateTaskJournalError::Transition)
+        ));
+    }
+
+    #[test]
+    fn private_journal_rejects_mixed_versions_and_malformed_observations() {
+        let fixture = Fixture::new();
+        let journal = fixture.open();
+        let (manifest, action) = input();
+        let ticket = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
+        let original = fs::read(journal.path(&ticket.run)).unwrap();
+        for suffix in [
+            "{\"event\":\"allocating\"}\n",
+            "{\"entry\":{\"event\":\"allocating\"},\"observed_unix_ms\":-1}\n",
+            "{\"entry\":{\"event\":\"allocating\"},\"observed_unix_ms\":1.5}\n",
+            "{\"entry\":{\"event\":\"allocating\"},\"observed_unix_ms\":null,\"extra\":1}\n",
+        ] {
+            let mut bytes = original.clone();
+            bytes.extend_from_slice(suffix.as_bytes());
+            assert!(matches!(
+                parse(&bytes, &ticket.run),
+                Err(PrivateTaskJournalError::Corrupt)
+            ));
+        }
+        let mut timed: TimedEvent = serde_json::from_slice(&original).unwrap();
+        let Event::Intent { header } = &mut timed.entry else {
+            panic!("intent")
+        };
+        header.version = 1;
+        let mut mismatched = serde_json::to_vec(&timed).unwrap();
+        mismatched.push(b'\n');
+        assert!(matches!(
+            parse(&mismatched, &ticket.run),
+            Err(PrivateTaskJournalError::Corrupt)
         ));
     }
 
@@ -832,7 +1036,8 @@ mod tests {
         ));
         assert!(ticket.allocating().is_err());
         let mut reordered = original.clone();
-        reordered.extend_from_slice(b"{\"event\":\"running\"}\n");
+        reordered
+            .extend_from_slice(b"{\"entry\":{\"event\":\"running\"},\"observed_unix_ms\":1}\n");
         fs::write(&path, reordered).unwrap();
         assert!(matches!(
             journal.recovery_report(),
