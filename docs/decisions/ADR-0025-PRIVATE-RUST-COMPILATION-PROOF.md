@@ -6,13 +6,15 @@ Date: 2026-10-17
 Before proposing broad writable Cargo/build authority, prove that an explicitly
 selected installed direct Rust compiler can compile a fixed public no_std library
 inside a fresh zero-capability AppContainer. Emit LLVM IR only to bounded stdout;
-then compile a deliberate type error and require the real E0308 diagnostic.
+then compile a deliberate type error, require the real E0308 diagnostic, and
+restore/recompile the valid source.
 No linker, Cargo, dependency install, arbitrary source execution, package script,
 private-project access, public MCP route or production permission is introduced.
 
 The cfg(test) ignored probe selects rustc.exe directly, not a rustup proxy. It
 copies the compiler, at most eight adjacent DLLs and exactly one core and
-compiler_builtins rlib each into its fresh native private storage. Directory
+compiler_builtins rlib/rmeta pair each into its fresh native private storage.
+Rust1.99 uses split metadata, not complete metadata in the rlib stub. Directory
 discovery is bounded256 entries per selected directory; copies are capped at
 256MiB/file and512MiB total. No installed runtime file ACL/content is changed.
 This is a fixed trusted-fixture copy, not production runtime enrollment or a
@@ -26,6 +28,8 @@ configured Job owns the suspended child before resume, with one process,
 bounded128KiB accepted aggregate, without disk spools. Root exit is insufficient:
 confirm the owned tree empty before profile deletion. Native uncertainty retains
 only this fresh profile rather than deleting storage on a kill request.
+Successful cleanup removes only recorded fixture files and empty directories;
+unexpected files are not recursively walked or removed.
 
 This test's runtime-copy ceiling is not a hard disk quota on an executing
 compiler or its private storage. It establishes neither arbitrary Rust/Cargo

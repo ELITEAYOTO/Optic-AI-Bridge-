@@ -195,14 +195,31 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     let lib_relative = PathBuf::from(format!("lib/rustlib/{TARGET}/lib"));
     let libraries = selected_files(&sysroot.join(&lib_relative), |name| {
         (name.starts_with("libcore-") || name.starts_with("libcompiler_builtins-"))
-            && name.ends_with(".rlib")
+            && (name.ends_with(".rlib") || name.ends_with(".rmeta"))
     })
     .unwrap();
     assert_eq!(
         libraries.len(),
-        2,
-        "one core and compiler_builtins rlib from selected sysroot"
+        4,
+        "one core and compiler_builtins rlib/rmeta pair from selected sysroot"
     );
+    for prefix in ["libcore-", "libcompiler_builtins-"] {
+        let archive = libraries
+            .iter()
+            .filter(|file| {
+                file.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(prefix)
+                    && file.extension().unwrap() == "rlib"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(archive.len(), 1);
+        assert!(
+            libraries.contains(&archive[0].with_extension("rmeta")),
+            "matching split metadata"
+        );
+    }
     let mut owner = OwnedProbeProfile {
         profile: Some(AppContainerProfile::create_ephemeral().unwrap()),
         uncertain: Cell::new(false),
@@ -215,7 +232,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         .unwrap()
         .join("rust-ir-probe");
     fs::create_dir(&root).unwrap();
-    for relative in [
+    let directories = [
         "bin",
         "lib",
         "lib/rustlib",
@@ -224,7 +241,8 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         "tmp",
         "local",
         "roaming",
-    ] {
+    ];
+    for relative in directories {
         fs::create_dir(root.join(relative)).unwrap();
     }
     let mut remaining = MAX_RUNTIME;
@@ -267,8 +285,32 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         String::from_utf8_lossy(&failure.stderr)
     );
     assert_eq!(fs::read(&source).unwrap(), invalid);
+    fs::write(&source, valid).unwrap();
+    let restored = compile(&owner, &root, &source).unwrap();
+    assert_eq!(
+        restored.exit,
+        0,
+        "{}",
+        String::from_utf8_lossy(&restored.stderr)
+    );
+    assert!(String::from_utf8_lossy(&restored.stdout).contains("optic_add"));
+    assert_eq!(fs::read(&source).unwrap(), valid);
+    // Delete recorded fixed fixture files only, after every native tree was
+    // confirmed empty. Unknown compiler files make empty-directory removal fail.
+    fs::remove_file(&source).unwrap();
+    fs::remove_file(root.join("bin/rustc.exe")).unwrap();
+    for dll in &dlls {
+        fs::remove_file(root.join("bin").join(dll.file_name().unwrap())).unwrap();
+    }
+    for library in &libraries {
+        fs::remove_file(root.join(&lib_relative).join(library.file_name().unwrap())).unwrap();
+    }
+    for relative in directories.into_iter().rev() {
+        fs::remove_dir(root.join(relative)).unwrap();
+    }
+    fs::remove_dir(&root).unwrap();
     println!(
-        "PRIVATE_RUST_IR_PASS: fixed no_std library compiled to bounded LLVM stdout; real E0308; copied {} runtime bytes; no linker, Cargo, dependency install, native app execution or MCP grant",
+        "PRIVATE_RUST_IR_PASS: fixed no_std library compiled to bounded LLVM stdout; real E0308 then corrected recompile; copied {} runtime bytes; recorded files cleaned; no linker, Cargo, dependency install, native app execution or MCP grant",
         MAX_RUNTIME - remaining
     );
     assert!(!owner.uncertain.get());
