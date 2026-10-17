@@ -933,3 +933,11 @@ Explicit native environment candidate: bounded keys/values, no case-insensitive
 duplicates or NUL, complete Unicode block including explicit empty environment.
 Private task callers must choose this API; compatibility inheritance is unchanged.
 No new process permission is exposed. Exact CI/native validation pending.
+
+Host-only journaled private Node controller candidate: sealed authorized inputs,
+fixed read-only argv/environment, shared managed job records/output budgets and
+independent revocation/deadline observation. A bounded exclusive state journal
+records intent before native allocation/start, retains unresolved restart capacity
+and exposes diagnostics without replay/PID recovery. No MCP entry point, build
+writes, dependency installation or GUI authority is added. Exact main-candidate
+CI is required independently of the experimental alpha proofs.
