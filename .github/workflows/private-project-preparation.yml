@@ -55,6 +55,11 @@ jobs:
         run: |
           & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') private_task_journal::tests::private_journal --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'private task recovery journal proof failed' }
+      - name: Prove authorized artifact publication and partial progress
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') artifact_publication::tests::artifact_publication_ --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'authorized artifact publication proof failed' }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.15.1'

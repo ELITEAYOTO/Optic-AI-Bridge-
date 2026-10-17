@@ -308,3 +308,11 @@ records intent before native allocation/start, retains unresolved restart capaci
 and exposes diagnostics without replay/PID recovery. No MCP entry point, build
 writes, dependency installation or GUI authority is added. Exact main-candidate
 CI is required independently of the experimental alpha proofs.
+
+Artifact publication candidate (ADR0023): up to32 same-workspace captured files,
+existing read/mutation byte limits, policy-only preflight for every destination,
+sealed versioned sources, and independent live journaled FileWrite effects.
+Interrupted batches return verified prior receipts and a failed index, without
+claiming rollback or that a failed write had no effect. Private build output
+capture, writable process grants and hard disk quotas are not implemented here.
+No MCP tool is added. Exact main-candidate CI/native proof required.

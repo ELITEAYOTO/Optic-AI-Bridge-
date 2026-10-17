@@ -225,3 +225,5 @@ All notable project changes are recorded here.
 - Add a bounded explicit Unicode environment for suspended native children, with no implicit inheritance on an empty list and no mutation of the parent's environment.
 
 - Add a host-only journaled read-only private Node controller with bounded job/output ownership, crash-intent evidence, retained unresolved capacity, and no public task replay or new MCP tool.
+
+- Compose bounded same-workspace artifact capture with independently authorized versioned publication and explicit partial progress; no process write permission or new MCP route is added.
