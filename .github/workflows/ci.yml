@@ -40,7 +40,29 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
+        id: workspace-tests
         run: cargo test --locked --workspace --all-features
+      - name: Diagnose failed Windows Node loopback proof without relaxing its gate
+        if: failure() && runner.os == 'Windows' && steps.workspace-tests.outcome == 'failure'
+        shell: pwsh
+        timeout-minutes: 4
+        env:
+          OPTIC_REQUIRE_HOSTED_TOOLCHAINS: "1"
+        run: |
+          # The original Test failure stays red. These separate serialized
+          # attempts compare startup/exit/output; they never replace that gate.
+          $DiagnosticResults = @()
+          foreach ($DiagnosticAttempt in 1..3) {
+            $DiagnosticClock = [Diagnostics.Stopwatch]::StartNew()
+            cargo test --locked -p optic-bridge-app --test appcontainer_network_isolation_windows capability_free_appcontainer_denies_node_loopback_connection -- --exact --nocapture --test-threads=1
+            $DiagnosticExit = $LASTEXITCODE
+            $DiagnosticClock.Stop()
+            $DiagnosticResults += @{ attempt=$DiagnosticAttempt; exit_code=$DiagnosticExit; elapsed_ms=$DiagnosticClock.ElapsedMilliseconds }
+          }
+          @{ diagnostic_only=$true; original_test_failure_preserved=$true; results=$DiagnosticResults } | ConvertTo-Json -Depth 4
+          if (@($DiagnosticResults | Where-Object { $_.exit_code -ne 0 }).Count) {
+            throw 'Isolated Node loopback comparison also failed; inspect startup/exit/output evidence.'
+          }
       - name: Characterize isolated toolchain compatibility
         if: runner.os == 'Windows'
         shell: pwsh

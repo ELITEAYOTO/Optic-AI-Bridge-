@@ -27,7 +27,11 @@ mod hardened_command;
 mod journaled_mutation;
 mod mutation;
 mod mutation_authority;
+#[cfg(windows)]
+mod private_node_task;
 mod private_project_stage;
+#[cfg(windows)]
+mod private_task_journal;
 mod process;
 mod process_authority;
 mod project_inputs;
@@ -96,9 +100,16 @@ pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
 };
 #[cfg(windows)]
+pub use private_node_task::PrivateNodeTaskStart;
+#[cfg(windows)]
 pub use private_project_stage::PreparedPrivateProjectLease;
 pub use private_project_stage::{
     PreparedPrivateProject, PrivateProjectStageError, PrivateProjectStageService,
+};
+#[cfg(windows)]
+pub use private_task_journal::{
+    PrivateTaskJournal, PrivateTaskJournalError, PrivateTaskOutcome, PrivateTaskRecoveryPhase,
+    PrivateTaskRecoveryRecord,
 };
 pub use process::{
     EnvironmentGrant, EnvironmentVariableClass, ProcessError, ProcessManager, ProcessReadChunk,
