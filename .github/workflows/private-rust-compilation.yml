@@ -36,14 +36,14 @@ jobs:
           New-Item -ItemType Directory -Path $Stage | Out-Null
           $Target = Join-Path $Stage 'optic-private-rust-compile.exe'
           Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
-          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-rust-ir-only'; rust_version='1.99.0'; target='x86_64-pc-windows-msvc'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-rust-ir-and-private-file-only'; rust_version='1.99.0'; target='x86_64-pc-windows-msvc'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Optic-Private-Rust-Compilation-${{ github.sha }}
           path: ${{ runner.temp }}/optic-private-rust-compile
           retention-days: 7
           if-no-files-found: error
-      - name: Compile public no_std library and receive actual type diagnostics
+      - name: Compile public library, collect private output and reject invalid artifacts
         shell: pwsh
         run: |
           $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc

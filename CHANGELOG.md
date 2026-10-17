@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Extend the optional fixed Rust proof with one compiler-written private LLVM
+  file and bounded collection after owned-tree exit, including alias/writer/size
+  denial cases. Test-only; exact native validation pending, not build authority.
+
 - Extract existing bounded process-output storage and pipe drains into a private
   child module. Cursor authorization, aggregate reservations, overflow handling
   and termination ownership are unchanged; no new authority or dependency.

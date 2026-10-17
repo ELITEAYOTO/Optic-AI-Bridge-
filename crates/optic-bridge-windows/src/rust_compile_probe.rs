@@ -1,8 +1,8 @@
 //! Opt-in fixed public Rust compilation proof, never an execution/tool grant.
 use crate::{
     AppContainerProfile, AppContainerStdio, CapturedOutputPipe, ContainedAppContainerProcess,
-    LimitedJobObject, inspect_directory_no_reparse, open_file_no_reparse,
-    spawn_appcontainer_with_environment_suspended,
+    LimitedJobObject, WindowsFileIdentity, inspect_directory_no_reparse, open_exclusive_state_file,
+    open_file_no_reparse, pin_directory_chain, spawn_appcontainer_with_environment_suspended,
 };
 use std::{
     cell::Cell,
@@ -82,8 +82,18 @@ impl Drop for OwnedProbeProfile {
     }
 }
 
-fn compile(owner: &OwnedProbeProfile, root: &Path, source: &Path) -> io::Result<Compilation> {
+fn compile(
+    owner: &OwnedProbeProfile,
+    root: &Path,
+    source: &Path,
+    private_output: bool,
+) -> io::Result<Compilation> {
     let executable = root.join("bin/rustc.exe");
+    let destination = if private_output {
+        root.join("output/library.ll").into_os_string()
+    } else {
+        OsString::from("-")
+    };
     let args = [
         OsString::from("--crate-name"),
         "optic_public_probe".into(),
@@ -97,7 +107,7 @@ fn compile(owner: &OwnedProbeProfile, root: &Path, source: &Path) -> io::Result<
         "-Cdebuginfo=0".into(),
         "-Cpanic=abort".into(),
         "-o".into(),
-        "-".into(),
+        destination,
         source.into(),
     ];
     let input = File::open("NUL")?;
@@ -176,6 +186,53 @@ fn compile(owner: &OwnedProbeProfile, root: &Path, source: &Path) -> io::Result<
     result
 }
 
+// Fixed public test fixture only. This is not an output-root enrollment API.
+// The caller must possess this probe's completed compile result. compile returns
+// it only after confirming the owned native tree empty, including failure paths.
+fn collect_fixed_output(
+    owner: &OwnedProbeProfile,
+    root: &Path,
+    expected_root: WindowsFileIdentity,
+    completed: &Compilation,
+) -> io::Result<Vec<u8>> {
+    if owner.uncertain.get() || completed.exit != 0 {
+        return Err(io::Error::other(
+            "output requires confirmed successful compilation",
+        ));
+    }
+    let _root_pin = pin_directory_chain(root, None).map_err(io::Error::other)?;
+    if inspect_directory_no_reparse(root)
+        .map_err(io::Error::other)?
+        .identity
+        != expected_root
+    {
+        return Err(io::Error::other("private output root identity changed"));
+    }
+    let output = pin_directory_chain(root, Some(Path::new("output"))).map_err(io::Error::other)?;
+    let expected = output.final_path().join("library.ll");
+    // Exclusive opened handle rejects writers and hard-link/reparse aliases.
+    let mut file = open_exclusive_state_file(&expected, false).map_err(io::Error::other)?;
+    if !file
+        .final_path()
+        .as_os_str()
+        .eq_ignore_ascii_case(expected.as_os_str())
+    {
+        return Err(io::Error::other("private output path alias"));
+    }
+    let size = file.file_mut().metadata()?.len();
+    if size == 0 || size > MAX_OUTPUT as u64 {
+        return Err(io::Error::other("private output size limit"));
+    }
+    let mut bytes = Vec::new();
+    file.file_mut()
+        .take(MAX_OUTPUT as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 != size {
+        return Err(io::Error::other("private output size changed"));
+    }
+    Ok(bytes)
+}
+
 #[test]
 #[ignore = "requires an explicitly selected installed direct Rust compiler"]
 fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
@@ -241,6 +298,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         "tmp",
         "local",
         "roaming",
+        "output",
     ];
     for relative in directories {
         fs::create_dir(root.join(relative)).unwrap();
@@ -266,7 +324,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     let source = root.join("library.rs");
     let valid = b"#![no_std]\npub fn optic_add(a:i32,b:i32)->i32 { a+b }\n";
     fs::write(&source, valid).unwrap();
-    let result = compile(&owner, &root, &source).unwrap();
+    let result = compile(&owner, &root, &source, false).unwrap();
     assert_eq!(
         result.exit,
         0,
@@ -277,7 +335,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     assert_eq!(fs::read(&source).unwrap(), valid);
     let invalid = b"#![no_std]\npub fn optic_add()->i32 { true }\n";
     fs::write(&source, invalid).unwrap();
-    let failure = compile(&owner, &root, &source).unwrap();
+    let failure = compile(&owner, &root, &source, false).unwrap();
     assert_ne!(failure.exit, 0);
     assert!(
         String::from_utf8_lossy(&failure.stderr).contains("E0308"),
@@ -286,7 +344,7 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     );
     assert_eq!(fs::read(&source).unwrap(), invalid);
     fs::write(&source, valid).unwrap();
-    let restored = compile(&owner, &root, &source).unwrap();
+    let restored = compile(&owner, &root, &source, false).unwrap();
     assert_eq!(
         restored.exit,
         0,
@@ -295,6 +353,45 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     );
     assert!(String::from_utf8_lossy(&restored.stdout).contains("optic_add"));
     assert_eq!(fs::read(&source).unwrap(), valid);
+    // A second real invocation writes one known output in the private profile.
+    // No project path is passed as a writable destination.
+    let root_identity = inspect_directory_no_reparse(&root).unwrap().identity;
+    let on_disk = compile(&owner, &root, &source, true).unwrap();
+    assert_eq!(
+        on_disk.exit,
+        0,
+        "{}",
+        String::from_utf8_lossy(&on_disk.stderr)
+    );
+    assert!(on_disk.stdout.is_empty());
+    let bytes = collect_fixed_output(&owner, &root, root_identity, &on_disk).unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains("optic_add"));
+    assert_eq!(fs::read(&source).unwrap(), valid);
+    let artifact = root.join("output/library.ll");
+    // An open writer must prevent collection, even after the compiler exited.
+    let writer = OpenOptions::new().write(true).open(&artifact).unwrap();
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    drop(writer);
+    let alias = root.join("output/alias.ll");
+    fs::hard_link(&artifact, &alias).unwrap();
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    fs::remove_file(&alias).unwrap();
+    owner.uncertain.set(true);
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    owner.uncertain.set(false);
+    let oversized = OpenOptions::new().write(true).open(&artifact).unwrap();
+    oversized.set_len(MAX_OUTPUT as u64 + 1).unwrap();
+    drop(oversized);
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    fs::remove_file(&artifact).unwrap();
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    // Reparse output cannot redirect collection to the fixed source fixture.
+    std::os::windows::fs::symlink_file(&source, &artifact).unwrap();
+    assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());
+    fs::remove_file(&artifact).unwrap();
+    println!(
+        "PRIVATE_RUST_FILE_OUTPUT_PASS: actual private LLVM file collected only after owned tree exit; oversized, writer, hardlink, reparse, missing and uncertain cases refused; no disk quota or generic output authority claimed"
+    );
     // Delete recorded fixed fixture files only, after every native tree was
     // confirmed empty. Unknown compiler files make empty-directory removal fail.
     fs::remove_file(&source).unwrap();
