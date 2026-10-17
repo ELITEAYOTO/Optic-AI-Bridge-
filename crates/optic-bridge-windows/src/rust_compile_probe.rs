@@ -298,8 +298,10 @@ fn run_rust_probe(native_program: bool) {
             "matching split metadata"
         );
     }
+    let plan = crate::EphemeralAppContainerPlan::generate().unwrap();
+    let profile_name = plan.name().to_ascii_lowercase();
     let mut owner = OwnedProbeProfile {
-        profile: Some(AppContainerProfile::create_ephemeral().unwrap()),
+        profile: Some(plan.create().unwrap()),
         uncertain: Cell::new(false),
     };
     let root = owner
@@ -429,6 +431,19 @@ fn run_rust_probe(native_program: bool) {
         "PRIVATE_RUST_FILE_OUTPUT_PASS: actual private LLVM file collected only after owned tree exit; oversized, writer, hardlink, reparse, missing and uncertain cases refused; no disk quota or generic output authority claimed"
     );
     if native_program {
+        // Observed Microsoft linker temp virtualization beneath the explicitly
+        // supplied private LOCALAPPDATA. Create only this fresh profile's exact
+        // known chain, never a directory beneath the operator's real profile.
+        let package = PathBuf::from("local/Packages").join(&profile_name);
+        let private_temp_directories = [
+            PathBuf::from("local/Packages"),
+            package.clone(),
+            package.join("AC"),
+            package.join("AC/Temp"),
+        ];
+        for relative in &private_temp_directories {
+            fs::create_dir(root.join(relative)).unwrap();
+        }
         let sdk = PathBuf::from(
             std::env::var_os("OPTIC_PRIVATE_KERNEL32_LIB")
                 .expect("explicit fixed Windows SDK kernel32.lib"),
@@ -556,6 +571,9 @@ fn run_rust_probe(native_program: bool) {
             fs::remove_file(linker_root.join(dll.file_name().unwrap())).unwrap();
         }
         fs::remove_dir(&linker_root).unwrap();
+        for relative in private_temp_directories.iter().rev() {
+            fs::remove_dir(root.join(relative)).unwrap();
+        }
         println!(
             "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected {flavor} linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
         );

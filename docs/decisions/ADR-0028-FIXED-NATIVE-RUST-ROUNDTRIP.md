@@ -52,3 +52,12 @@ A successful Microsoft roundtrip does not resolve the recorded LLD limitation.
 The eight names and copies are fixed, their inventory/copy ceilings unchanged.
 The generated no_std application needs no CRT libraries; the linker process
 itself can use its copied Microsoft runtime DLLs.
+
+
+Microsoft run39044081753 reached the linker but failed1104 creating
+LOCALAPPDATA/Packages/<fresh-profile>/AC/Temp/lnk{GUID}.tmp beneath the explicit
+private LOCALAPPDATA. This was visible only when both bounded streams were
+reported (Microsoft wrote the diagnostic to stdout). The fixture now creates
+that exact known private directory chain from its own generated profile name.
+It deletes these directories only when empty after confirmed execution. Unknown
+leftover temp files remain a cleanup failure; no recursive sweep is introduced.
