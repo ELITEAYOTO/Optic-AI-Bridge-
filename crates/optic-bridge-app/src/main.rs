@@ -337,12 +337,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
 
     eprintln!(
-        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), Git read {}, Git integrate authority {})",
+        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), {} directory scope(s), Git read {}, Git integrate authority {})",
         env!("CARGO_PKG_VERSION"),
         args.allowed_executables.len(),
         tool_profile_count,
         args.write_scopes.len(),
         args.delete_scopes.len(),
+        args.directory_scopes.len(),
         if git_read_enabled {
             "enabled"
         } else {
@@ -1872,6 +1873,30 @@ mod tests {
         assert!(
             AppArgs::parse_from(args(&["--allow-write-scope=prefix:src", "workspace"])).is_err()
         );
+    }
+
+    #[test]
+    fn directory_scope_flags_require_state_and_do_not_imply_file_mutation() {
+        assert!(
+            AppArgs::parse_from(args(&[
+                "--allow-directory-create-scope=prefix:src",
+                "workspace"
+            ]))
+            .is_err()
+        );
+        let state = std::env::temp_dir().join("optic-directory-args-state");
+        let parsed = AppArgs::parse_from(vec![
+            "--allow-directory-create-scope".into(),
+            "prefix:src".into(),
+            "--allow-directory-create-scope=prefix:assets".into(),
+            "--mutation-state-dir".into(),
+            state.into_os_string(),
+            "workspace".into(),
+        ])
+        .unwrap();
+        assert_eq!(parsed.directory_scopes.len(), 2);
+        assert!(parsed.write_scopes.is_empty());
+        assert!(parsed.delete_scopes.is_empty());
     }
 
     #[test]
