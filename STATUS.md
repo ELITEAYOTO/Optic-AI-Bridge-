@@ -1,5 +1,51 @@
 # Project Status
 
+## Validated native build checkpoint — 2026-10-17
+
+This section supersedes historical candidate/pending entries below. Main now
+contains PR237–242, through `5550c64850d06c3369fb6bac41cb28b3219b35e0`.
+
+| Increment | Integrated commit | Exact validation |
+| --- | --- | --- |
+| Startup permission reductions, PR237 | ed3369f | CI39041285058; real stdio authority reductions |
+| Private process-output extraction, PR238 | f5eb8a2 | CI39041817382; native preparation39041817335 |
+| Fixed private compiler file, PR239 | 8cd453f | CI39042555326; Rust39042555195; verified local3.68s |
+| Exclusive read-only native file handle, PR240 | 002a634 | CI39043289621; Rust39043289633; read-only/alias regressions |
+| Actual no_std compile/link/run, PR241 | 4e8e94d | CI39044267972; Rust39044268008; verified local2.97s |
+| Actual std app and owned linker descendant, PR242 | 5550c64 | CI39045365602; Rust39045365611; verified local3.25s |
+
+PR237–241 post-merge main CI also passed separately (39041589805,
+39042229124,39042889372,39043653023,39044669889 respectively).
+PR242 post-merge main validation is a separate run, not implied by its PR checks.
+The std local artifact was bound to head87d2a88 and merge-source911303f;
+archive SHA25661856b9e5c9994c9ff0d98529adb36ad8e7c4484687cac7b8e4b56b257b0bdac.
+Its exact ignored test confirmed compile, real linker descendant, execution,
+known-file cleanup including the optional PDB, and profile closure. Earlier
+cleanup failures remain recorded in ADR0029.
+
+The existing VS2022 Build Tools installation supplies a complete matched CRT;
+the newer VS18 installation lacks those selected CRT files. Local proof used the
+explicit VS2022 linker/CRT and installed SDK without installing or modifying
+any toolchain. This is a fixed trusted-source compatibility result, not Cargo,
+arbitrary build scripts, dependency installation or production build authority.
+
+### Next product increment
+
+Use the existing capture, private preparation, owned process, task journal and
+publication services rather than exposing the test harness as a build API.
+Before admitting writable arbitrary builds, settle disk-growth containment,
+explicit compiler/runtime enrollment and bounded artifact receipts. Preserve
+session/lease ownership, unknown-effect recovery and independent cancellation.
+A Cargo profile must separately cover its descendants, build scripts and explicit
+dependency/network policy; successful direct rustc does not establish that.
+
+Rust and Electron remain separate tracks. Normal Electron44.7.2 startup under
+outer AppContainer still fails0x80000003; the explicit outer-only diagnostic with
+Chromium sandbox disabled is not a production fallback. Establish the actual
+startup failure before selecting a GUI architecture. Do not ask the operator to
+repeat the previous tiny FS fixtures or claim that an unrestricted full-project
+package is ready. The experimental umbrella PR is not approved wholesale.
+
 ## Standard Rust application — candidate, 2026-10-17
 
 ADR0029 extends the opt-in native proof with std, explicitly selected CRT/SDK
