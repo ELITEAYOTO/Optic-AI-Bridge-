@@ -73,6 +73,31 @@ fn selected_files_limited(
     Ok(selected)
 }
 
+// Diagnostic metadata only, never a recursive cleanup fallback. Unknown
+// compiler products keep the original failure; inspect at most eight names.
+fn remove_empty_fixture_directory(path: &Path) {
+    if let Err(error) = fs::remove_dir(path) {
+        let remaining: Vec<String> = fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .take(8)
+            .map(|entry| match entry {
+                Ok(entry) => entry
+                    .file_name()
+                    .to_string_lossy()
+                    .chars()
+                    .take(80)
+                    .collect(),
+                Err(_) => "<entry-unavailable>".to_owned(),
+            })
+            .collect();
+        panic!(
+            "fixture cleanup failed: {error}; leaf={:?}; bounded remaining names={remaining:?}",
+            path.file_name()
+        );
+    }
+}
+
 struct Compilation {
     exit: u32,
     stdout: Vec<u8>,
@@ -724,7 +749,7 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
         }
         fs::remove_dir(&linker_root).unwrap();
         for relative in private_temp_directories.iter().rev() {
-            fs::remove_dir(root.join(relative)).unwrap();
+            remove_empty_fixture_directory(&root.join(relative));
         }
         println!(
             "PRIVATE_RUST_NATIVE_PASS: actual no_std COFF object compiled, explicitly selected {flavor} linked against copied kernel32 import, generated native app exited42 under owned AppContainer Jobs; no Cargo, CRT, generic build or disk quota claimed"
@@ -741,7 +766,7 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
         fs::remove_file(root.join(&lib_relative).join(library.file_name().unwrap())).unwrap();
     }
     for relative in directories.into_iter().rev() {
-        fs::remove_dir(root.join(relative)).unwrap();
+        remove_empty_fixture_directory(&root.join(relative));
     }
     fs::remove_dir(&root).unwrap();
     println!(
