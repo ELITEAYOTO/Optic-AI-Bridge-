@@ -26,8 +26,8 @@ pub struct AuthorizedFileMutationService {
 }
 
 impl AuthorizedFileMutationService {
-    /// Policy-only check for a composed batch. Every actual write must still
-    /// call write(), which rechecks live admission before reaching the journal.
+    /// Policy-only batch preflight. Actual writes must recheck live admission
+    /// through write() before reaching the transactional mutation journal.
     pub(crate) fn preflight_write(
         &self,
         envelope: &ActionEnvelope,
