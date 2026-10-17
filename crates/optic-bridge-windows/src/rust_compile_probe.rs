@@ -1,7 +1,7 @@
 //! Opt-in fixed public Rust compilation proof, never an execution/tool grant.
 use crate::{
     AppContainerProfile, AppContainerStdio, CapturedOutputPipe, ContainedAppContainerProcess,
-    LimitedJobObject, WindowsFileIdentity, inspect_directory_no_reparse, open_exclusive_state_file,
+    LimitedJobObject, WindowsFileIdentity, inspect_directory_no_reparse, open_exclusive_read_file,
     open_file_no_reparse, pin_directory_chain, spawn_appcontainer_with_environment_suspended,
 };
 use std::{
@@ -211,7 +211,7 @@ fn collect_fixed_output(
     let output = pin_directory_chain(root, Some(Path::new("output"))).map_err(io::Error::other)?;
     let expected = output.final_path().join("library.ll");
     // Exclusive opened handle rejects writers and hard-link/reparse aliases.
-    let mut file = open_exclusive_state_file(&expected, false).map_err(io::Error::other)?;
+    let mut file = open_exclusive_read_file(&expected).map_err(io::Error::other)?;
     if !file
         .final_path()
         .to_string_lossy()
@@ -364,14 +364,20 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
         String::from_utf8_lossy(&on_disk.stderr)
     );
     assert!(on_disk.stdout.is_empty());
+    // Collect an actual compiler artifact without requesting write access.
+    let artifact = root.join("output/library.ll");
+    let mut permissions = fs::metadata(&artifact).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&artifact, permissions.clone()).unwrap();
     let bytes = collect_fixed_output(&owner, &root, root_identity, &on_disk).unwrap();
+    permissions.set_readonly(false);
+    fs::set_permissions(&artifact, permissions).unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("optic_add"));
     assert_eq!(fs::read(&source).unwrap(), valid);
     assert!(collect_fixed_output(&owner, &root, root_identity, &failure).is_err());
     let mut wrong_root = root_identity;
     wrong_root.file_id[0] ^= 1;
     assert!(collect_fixed_output(&owner, &root, wrong_root, &on_disk).is_err());
-    let artifact = root.join("output/library.ll");
     // An open writer must prevent collection, even after the compiler exited.
     let writer = OpenOptions::new().write(true).open(&artifact).unwrap();
     assert!(collect_fixed_output(&owner, &root, root_identity, &on_disk).is_err());

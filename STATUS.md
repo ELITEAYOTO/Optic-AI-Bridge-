@@ -1,5 +1,14 @@
 # Project Status
 
+## Exclusive read-only output handle — candidate, 2026-10-17
+
+The native output reader no longer requests write rights. Unit and real compiler
+tests cover read-only output, no write-through, no creation/truncation, shared
+handle exclusion and aliases. Exact Windows/native validation pending.
+PR239 fixed private file proof merged as `8cd453f` after all exact-head CI and
+verified local reproduction passed. It remains test-only, not general build
+authority or a disk quota. Previous candidate sections are historical checkpoints.
+
 ## Fixed private Rust output — candidate, 2026-10-17
 
 ADR0027 extends the test-only compiler proof to one actual private LLVM file,
