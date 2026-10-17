@@ -1,5 +1,7 @@
 mod output;
-use output::{OutputState, append_output, drain_output, mark_stream_closed};
+#[cfg(windows)]
+use output::append_output;
+use output::{OutputState, drain_output, mark_stream_closed};
 
 #[cfg(windows)]
 use std::ffi::OsString;
