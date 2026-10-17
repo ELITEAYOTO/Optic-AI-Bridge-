@@ -1,5 +1,12 @@
 # Project Status
 
+## Recovery correlation — candidate, 2026-10-17
+
+The host recovery report retains already-persisted start action/process-lease/
+runtime/job fingerprints for diagnostic correlation after restart. Before start
+intent they are absent. No record format, permission, replay or PID adoption
+change; ADR0020. Native local and exact CI validation precede integration.
+
 ## Validated native build checkpoint — 2026-10-17
 
 This section supersedes historical candidate/pending entries below. Main now
