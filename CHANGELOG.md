@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Opt-in fixed no_std Rust native roundtrip: COFF object, direct lld with explicit
+  kernel32 import, and produced application exit42 under owned native Jobs.
+  Test-only ADR0028, exact validation pending; no Cargo/CRT/general build grant.
+
 - Add exclusive read-only native artifact opening, retaining regular-file,
   no-reparse, single-link and identity checks without requesting write access.
   The fixed Rust proof now collects an actual read-only compiler output;

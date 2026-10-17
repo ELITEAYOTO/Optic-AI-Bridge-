@@ -1,5 +1,12 @@
 # Project Status
 
+## Native Rust roundtrip — candidate, 2026-10-17
+
+ADR0028 proposes an opt-in fixed no_std COFF object, direct lld link and generated
+native executable exit42 inside owned AppContainer Jobs, without MSVC CRT.
+Exact native and local validation pending. This is a compatibility proof, not
+general Cargo/build/GUI authority or runtime disk containment.
+
 ## Exclusive read-only output handle — candidate, 2026-10-17
 
 The native output reader no longer requests write rights. Unit and real compiler
