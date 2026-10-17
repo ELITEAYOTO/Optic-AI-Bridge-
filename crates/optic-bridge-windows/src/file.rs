@@ -353,7 +353,8 @@ mod tests {
         let identity = observed.identity();
         let final_path = observed.final_path().to_owned();
         drop(observed);
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        let original_permissions = fs::metadata(&path).unwrap().permissions();
+        let mut permissions = original_permissions.clone();
         permissions.set_readonly(true);
         fs::set_permissions(&path, permissions.clone()).unwrap();
         // Existing state read/write opening is intentionally stronger.
@@ -368,8 +369,8 @@ mod tests {
         assert!(open_exclusive_read_file(&path).is_err());
         assert!(fs::rename(&path, root.join("moved.bin")).is_err());
         drop(file);
-        permissions.set_readonly(false);
-        fs::set_permissions(&path, permissions).unwrap();
+
+        fs::set_permissions(&path, original_permissions).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"fixed output");
         let writer = OpenOptions::new().write(true).open(&path).unwrap();
         assert!(open_exclusive_read_file(&path).is_err());

@@ -366,12 +366,13 @@ fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
     assert!(on_disk.stdout.is_empty());
     // Collect an actual compiler artifact without requesting write access.
     let artifact = root.join("output/library.ll");
-    let mut permissions = fs::metadata(&artifact).unwrap().permissions();
+    let original_permissions = fs::metadata(&artifact).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
     permissions.set_readonly(true);
     fs::set_permissions(&artifact, permissions.clone()).unwrap();
     let bytes = collect_fixed_output(&owner, &root, root_identity, &on_disk).unwrap();
-    permissions.set_readonly(false);
-    fs::set_permissions(&artifact, permissions).unwrap();
+
+    fs::set_permissions(&artifact, original_permissions).unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("optic_add"));
     assert_eq!(fs::read(&source).unwrap(), valid);
     assert!(collect_fixed_output(&owner, &root, root_identity, &failure).is_err());
