@@ -1,5 +1,13 @@
 # Project Status
 
+## Scoped project directory creation — candidate, 2026-10-17
+
+The generated-alpha directory primitive is proposed independently for main:
+separate DirectoryCreate capability/lease, optional local CLI/JSON workspace
+scopes, explicit absent-only MCP request, one native Windows leaf and pinned
+ancestors/root identity. It grants no file overwrite/delete/recursive mkdir or
+build permission. Exact native and Windows/Linux validation pending; ADR0024.
+
 ## 2026-10-16 authorized private input preparation — candidate
 
 Private input preparation composes the merged PR224 capture with fresh SID-derived storage, four retained live/uncertain slots and recorded-only cleanup. No process or MCP authority is added. Exact-head Windows/Linux validation pending; see ADR-0018. PR224 pre/post-merge CI passed (38836808832/38837205821); earlier candidate descriptions below are historical.

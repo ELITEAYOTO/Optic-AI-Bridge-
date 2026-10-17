@@ -163,6 +163,8 @@ struct MutationConfig {
     write_scopes: Vec<String>,
     #[serde(default)]
     delete_scopes: Vec<String>,
+    #[serde(default)]
+    directory_scopes: Vec<String>,
     state_dir: Option<String>,
 }
 
@@ -225,6 +227,9 @@ impl OpticConfigV1 {
             }
             for scope in mutation.delete_scopes {
                 push_pair(&mut args, "--allow-delete-scope", scope);
+            }
+            for scope in mutation.directory_scopes {
+                push_pair(&mut args, "--allow-directory-create-scope", scope);
             }
             if let Some(state_dir) = mutation.state_dir {
                 push_pair(&mut args, "--mutation-state-dir", state_dir);
@@ -307,5 +312,23 @@ mod tests {
     fn config_mode_is_exclusive() {
         let config = OsString::from("--config=C:\\optic.json");
         assert!(load_exclusive_config_args(&[config, OsString::from("workspace")]).is_err());
+    }
+
+    #[test]
+    fn directory_configuration_does_not_imply_file_write_or_delete() {
+        let loaded = parse(r#"{"version":1,"policy_epoch":1,"workspace":"C:\\work","mutation":{"directory_scopes":["prefix:src"],"state_dir":"C:\\state"}}"#).expect("directory-only config");
+        assert!(
+            loaded
+                .args
+                .iter()
+                .any(|arg| arg == "--allow-directory-create-scope")
+        );
+        assert!(
+            !loaded
+                .args
+                .iter()
+                .any(|arg| arg == "--allow-write-scope" || arg == "--allow-delete-scope")
+        );
+        assert!(parse(r#"{"version":1,"policy_epoch":1,"workspace":"x","mutation":{"directory_scopes":true}}"#).is_err());
     }
 }

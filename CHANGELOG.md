@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Separately scoped absent-only directory creation for Windows project workflows,
+  with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
+  validation pending; no recursive creation, overwrite or implied file authority.
+
 ### Added
 - Authorized private project input preparation under the existing read/ownership boundary, with finite capacity and nonrecursive recorded-only cleanup. No process, MCP or dependency permission is added. Exact-head validation pending; see ADR-0018.
 

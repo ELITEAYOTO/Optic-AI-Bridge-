@@ -255,7 +255,9 @@ impl ReadonlyMcpServer {
         {
             return Err(ServerBuildError::ResponseLimitTooSmall);
         }
-        if (mutation_authorities.has_write() || mutation_authorities.has_delete())
+        if (mutation_authorities.has_write()
+            || mutation_authorities.has_delete()
+            || mutation_authorities.has_directory_create())
             && mutation_service.is_none()
         {
             return Err(ServerBuildError::MutationRuntimeMissing);
@@ -274,6 +276,9 @@ impl ReadonlyMcpServer {
         }
         if mutation_authorities.has_delete() {
             tool_router.merge(Self::mutation_delete_tool_router());
+        }
+        if mutation_authorities.has_directory_create() {
+            tool_router.merge(Self::directory_create_tool_router());
         }
         if git_service.is_some() {
             tool_router.merge(Self::git_read_tool_router());
@@ -779,6 +784,7 @@ fn capability_name(capability: Capability) -> &'static str {
         Capability::FileSearch => "file_search",
         Capability::FileWrite => "file_write",
         Capability::FileDelete => "file_delete",
+        Capability::DirectoryCreate => "directory_create",
         Capability::GitRead => "git_read",
         Capability::GitIntegrate => "git_integrate",
         Capability::ProcessRun => "process_run",
