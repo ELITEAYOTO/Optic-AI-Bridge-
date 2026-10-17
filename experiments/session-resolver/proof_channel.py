@@ -1,20 +1,43 @@
 """Bounded best-effort proof output; sink I/O never runs in producer threads."""
+import os
 import queue
+import sys
 import threading
+
+_DEFAULT_SINK = object()
 
 
 class ProofChannel:
-    def __init__(self, sink=lambda line: print(line, flush=True), capacity=128, budget=4096):
-        if (not callable(sink) or type(capacity) is not int or not 1 <= capacity <= 128
+    def __init__(self, sink=_DEFAULT_SINK, capacity=128, budget=4096):
+        if ((sink is not _DEFAULT_SINK and not callable(sink)) or type(capacity) is not int or not 1 <= capacity <= 128
                 or type(budget) is not int or not 1 <= budget <= 4096):
             raise ValueError('invalid fixed proof limits')
-        self.sink, self.budget = sink, budget
+        # A daemon must never hold Python's buffered stdout lock at interpreter
+        # shutdown. Duplicate only the native descriptor; the worker owns it.
+        # A full pipe can still stall this best-effort sink, but cannot stall
+        # producers or leave Python's BufferedWriter locked during finalization.
+        self.output_fd = os.dup(sys.stdout.fileno()) if sink is _DEFAULT_SINK else None
+        self.sink = self._write_native if sink is _DEFAULT_SINK else sink
+        self.budget = budget
         self.queue = queue.Queue(maxsize=capacity)
         self.lock = threading.Lock()
         self.accepted = self.delivered = self.dropped = 0
         self.closed = self.failed = False
         self.worker = threading.Thread(target=self._run, daemon=True)
-        self.worker.start()
+        try:
+            self.worker.start()
+        except BaseException:
+            if self.output_fd is not None:
+                os.close(self.output_fd)
+            raise
+
+    def _write_native(self, line):
+        pending = (line + '\n').encode('ascii')
+        while pending:
+            written = os.write(self.output_fd, pending)
+            if written <= 0:
+                raise OSError('proof output unavailable')
+            pending = pending[written:]
 
     def emit(self, line):
         with self.lock:
@@ -31,6 +54,13 @@ class ProofChannel:
             return True
 
     def _run(self):
+        try:
+            self._deliver()
+        finally:
+            if self.output_fd is not None:
+                os.close(self.output_fd)
+
+    def _deliver(self):
         while True:
             with self.lock:
                 if self.closed and self.queue.empty():

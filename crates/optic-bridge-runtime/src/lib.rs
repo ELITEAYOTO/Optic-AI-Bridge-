@@ -8,10 +8,12 @@
 //! recovery, or output constraints.
 
 mod approval_broker;
+mod artifact_publication;
 mod authorized_file_mutation;
 mod authorized_git_integration;
 mod blocking_io;
 mod clock;
+mod directory_create;
 mod filesystem;
 mod git_blob_batch;
 mod git_change_set;
@@ -27,8 +29,14 @@ mod hardened_command;
 mod journaled_mutation;
 mod mutation;
 mod mutation_authority;
+#[cfg(windows)]
+mod private_node_task;
+mod private_project_stage;
+#[cfg(windows)]
+mod private_task_journal;
 mod process;
 mod process_authority;
+mod project_inputs;
 mod read_authority;
 mod recovery;
 mod reusable_approval_broker;
@@ -46,12 +54,17 @@ mod transport;
 mod windows_path;
 
 pub use approval_broker::{ApprovalBroker, ApprovalBrokerError, ApprovalSpec};
+pub use artifact_publication::{
+    ArtifactPublicationError, ArtifactPublicationInterruption, ArtifactPublicationProgress,
+    ArtifactPublicationReceipt, AuthorizedArtifactPublicationService,
+};
 pub use authorized_file_mutation::{AuthorizedFileMutationError, AuthorizedFileMutationService};
 pub use authorized_git_integration::{
     AuthorizedGitIntegrationError, AuthorizedGitIntegrationService,
 };
 pub use blocking_io::{BlockingIoError, BlockingIoGovernor};
 pub use clock::{Clock, StdClock};
+pub use directory_create::DirectoryCreateError;
 pub use filesystem::{
     BoundedFileSystem, DirectoryEntry, EntryKind, FileSystemError, FsListPage, FsReadChunk,
     MutationError, MutationObservation, PreparedFileRead, ReadTargetObservation,
@@ -93,11 +106,24 @@ pub use mutation::{
 pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
 };
+#[cfg(windows)]
+pub use private_node_task::PrivateNodeTaskStart;
+#[cfg(windows)]
+pub use private_project_stage::PreparedPrivateProjectLease;
+pub use private_project_stage::{
+    PreparedPrivateProject, PrivateProjectStageError, PrivateProjectStageService,
+};
+#[cfg(windows)]
+pub use private_task_journal::{
+    PrivateTaskJournal, PrivateTaskJournalError, PrivateTaskOutcome,
+    PrivateTaskRecoveryObservation, PrivateTaskRecoveryPhase, PrivateTaskRecoveryRecord,
+};
 pub use process::{
     EnvironmentGrant, EnvironmentVariableClass, ProcessError, ProcessManager, ProcessReadChunk,
     ProcessResult, ProcessStartSpec, ProcessStatus, ProcessStream,
 };
 pub use process_authority::{ProcessAuthority, ProcessAuthorityError, ProcessExecutableIdentity};
+pub use project_inputs::{ProjectInputCaptureError, ProjectInputCaptureService};
 pub use read_authority::{
     ReadAuthorityError, ReadAuthoritySet, ReadAuthoritySpec, read_authority_resource_budget,
 };

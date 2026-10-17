@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -21,6 +22,11 @@ MAX_REQUESTS = 512
 MAX_LIFETIME = 25 * 60
 PROOF_VERSION = "fs-probe-v2"
 request_proof = ContextVar("request_proof", default=None)
+
+
+def timestamp_utc():
+    # Display/correlation only; authorization and durations remain monotonic.
+    return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 handles = Handles()
 mcp = MCPServer("Optic-FranceStudent-Dummy-Probe", instructions=(
     "Authority-free synthetic probe. Call probe_create_handle then pass the returned "
@@ -35,6 +41,7 @@ def result(tool, payload):
     invocation = {"tool": tool, "marker": secrets.token_hex(8),
                   "server_instance": proof["server_instance"], "request_sequence": proof["sequence"]}
     if proof.get('timed_diagnostics'):
+        invocation['timestamp_utc'] = timestamp_utc()
         now = proof['clock']()
         invocation['elapsed_ms'] = round(max(0, now - proof['started']) * 1000, 3)
         invocation['request_elapsed_ms'] = round(max(0, now - proof['admitted']) * 1000, 3)
@@ -78,7 +85,11 @@ class Guard:
     def __init__(self, app, clock=time.monotonic, emit=print, request_timeout=20,
                  header_observer=observe_headers,
                  zero_arg_tools=("probe_headers", "probe_create_handle"),
-                 handle_tool="probe_consume_handle", extra_handle_tools=(), timed_diagnostics=False):
+                 handle_tool="probe_consume_handle", extra_handle_tools=(), timed_diagnostics=False,
+                 lifetime=MAX_LIFETIME):
+        if type(lifetime) is not int or not 5 <= lifetime <= 3000:
+            raise ValueError('invalid probe lifetime')
+        self.lifetime = lifetime
         self.app, self.clock, self.emit = app, clock, emit
         self.request_timeout = request_timeout
         self.header_observer = header_observer
@@ -95,13 +106,30 @@ class Guard:
         self.started = clock()
         self.sequence = self.active = 0
 
+    def valid_arguments(self, name, args):
+        if name in self.zero_arg_tools:
+            return args == {}
+        if (self.handle_tool is not None and name == self.handle_tool) or name in self.extra_handle_tools:
+            return (isinstance(args, dict) and set(args) == {"application_handle"}
+                and isinstance(args["application_handle"], str)
+                and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
+        return False
+
+    def decode_request(self, body):
+        return json.loads(body)
+
+    def admit_request(self, now):
+        if self.sequence >= MAX_REQUESTS or now - self.started >= self.lifetime:
+            return False
+        self.sequence += 1
+        return True
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         admitted = self.clock()
-        if self.sequence >= MAX_REQUESTS or self.clock() - self.started >= MAX_LIFETIME:
+        if not self.admit_request(admitted):
             return await self.reject(send, 429)
-        self.sequence += 1
         owner, observation = self.header_observer(scope.get("headers", []))
         raw_method = scope.get("method")
         # Only predefined labels leave the process: never echo arbitrary verbs,
@@ -113,6 +141,8 @@ class Guard:
                  "query_present": bool(scope.get("query_string")),
                  "elapsed_ms": round(max(0, self.clock() - self.started) * 1000, 3),
                  "observation": observation}
+        if self.timed_diagnostics:
+            proof['timestamp_utc'] = timestamp_utc()
         self.emit("[FS-PROBE] HTTP " + json.dumps(proof, sort_keys=True))
         original_send = send
         response_started = False
@@ -127,7 +157,8 @@ class Guard:
                     "server_instance": self.instance, "sequence": proof["sequence"],
                     "status": message["status"], "stage": stage,
                     "proof_version": self.proof_version,
-                    **({'elapsed_ms': round(max(0, self.clock() - self.started) * 1000, 3),
+                    **({'timestamp_utc': timestamp_utc(),
+                        'elapsed_ms': round(max(0, self.clock() - self.started) * 1000, 3),
                         'request_elapsed_ms': round(max(0, self.clock() - admitted) * 1000, 3)}
                        if self.timed_diagnostics else {})}, sort_keys=True))
             await original_send(message)
@@ -137,6 +168,7 @@ class Guard:
                 self.emit('[FS-PROBE] COMPLETE ' + json.dumps({
                     'server_instance': self.instance, 'sequence': proof['sequence'],
                     'proof_version': self.proof_version, 'status': response_status,
+                    'timestamp_utc': timestamp_utc(),
                     'elapsed_ms': round(max(0, now - self.started) * 1000, 3),
                     'request_elapsed_ms': round(max(0, now - admitted) * 1000, 3)}, sort_keys=True))
         send = safe_send
@@ -177,21 +209,14 @@ class Guard:
                 if body:
                     stage = "request_shape"
                     try:
-                        request = json.loads(body)
+                        request = self.decode_request(body)
                         if not isinstance(request, dict):
                             raise ValueError()
                         if request.get("method") == "tools/call":
                             params = request.get("params", {})
                             name = params.get("name")
                             args = params.get("arguments", {})
-                            if name in self.zero_arg_tools:
-                                valid = args == {}
-                            elif (self.handle_tool is not None and name == self.handle_tool) or name in self.extra_handle_tools:
-                                valid = (isinstance(args, dict) and set(args) == {"application_handle"}
-                                    and isinstance(args["application_handle"], str)
-                                    and HANDLE_RE.fullmatch(args["application_handle"]) is not None)
-                            else:
-                                valid = False
+                            valid = self.valid_arguments(name, args)
                             if not valid:
                                 raise ValueError()
                     except (ValueError, TypeError, AttributeError, RecursionError):

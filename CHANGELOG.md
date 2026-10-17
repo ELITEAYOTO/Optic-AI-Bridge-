@@ -4,7 +4,68 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Private-task recovery reports now include bounded diagnostic lifecycle times;
+  legacy records retain their original lock/capacity domain and absent times.
+  Event order and monotonic live authorization remain authoritative. Native
+  validation pending; no durable output capture or automatic task replay.
+- Reject duplicated operator JSON authority fields before generic map parsing can
+  collapse them. Valid version1 configuration and capability scopes are unchanged.
+
+- Opt-in fixed public Rust compiler compatibility probe: isolated no_std LLVM IR
+  and real type diagnostics, bounded runtime copying and output. Test-only;
+  no required runtime, linker/Cargo or new execution grant. Validation pending.
+
+- Separately scoped absent-only directory creation for Windows project workflows,
+  with operator CLI/JSON provisioning and a conditional strict MCP tool. Native
+  validation pending; no recursive creation, overwrite or implied file authority.
+
+- Bounded diagnostic private-task event times, with compatible legacy recovery
+  and unchanged lock/capacity limits. Timestamps never authorize, reorder events
+  or restore tasks; native and Windows/Linux validation pending.
+
 ### Added
+- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
+
+- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
+
+
+- Bounded session/task/epoch-bound project input manifests and immutable snapshots, with exact path/version/size validation. Windows capture preflights typed read authority, preserves native path identity and existing ceilings, and discards data on revocation or deadline expiry. No process or MCP authority is added; native branch validation pending (ADR-0012).
+
+
+### Security hardening candidate — 2026-10-12 (unmerged)
+
+- #183: file read/list/Git read retain session admission and transport/I/O capacity inside their worker through the effect, including caller cancellation/timeout.
+- #181: observed native paths use lossless segment conversion for read/list/mutation observation; Unix literal backslashes cannot become different authority targets.
+- #176 (pagination only): oversized nonempty list pages fail instead of returning a non-progressing cursor; final cursor size is rechecked.
+- See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
+
+### Added
+- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
+
+- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
+
+- Follow-up validation: native project input capture and explicit child environment pass Windows/Linux Rust CI at5ac8cbd. Normal private Electron startup remains incompatible (0x80000003), reproduced locally without FS/tunnel. Bounded diagnostic tail fix623e003 is under CI; optional GUI/build authority remains gated. Main-based capture candidate is PR224.
+
+- Explicit native private Electron compatibility gate: selected runtime copied into ephemeral AppContainer storage, hidden sandboxed renderer and external source denial probes, with owned Job Object tree confirmation before cleanup. Validation pending; no new GUI tool or dependency authority.
+- Bounded immutable project input manifest/snapshot domain types: session/task/epoch binding, exact version/size checks, portable Windows collision rejection and finite multi-module input budgets. No new read/process authority, filesystem capture or MCP build tool; follow-up validation pending.
+- Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
+- Explicit local JSON permission switches reduce file read/search/write/delete/directory, process and Git integration authority. Present sections default omitted booleans to denied; true requires preselected scopes/profiles. Duplicate/unknown/non-boolean fields fail closed; config/profile sources cannot reside in the writable workspace. Startup snapshot only; live reload and general dependency/build authority remain gated.
+- Opt-in generated HTTP directory creation with128 conservative directory slots, bounded startup inventory and exact absent intent. Real Windows supervised runner proves nested source creation and same-run resume;46 Python tests pass. Exact follow-up CI pending.
+- Separately authorized single absent-directory creation for Windows, with typed effect, scoped lease, explicit MCP precondition, pinned ancestors and native root identity. CLI/JSON selection defaults off; native validation pending. This is the first Electron/Rust development-environment increment, not general dependency/build/GUI authority.
+- Opt-in supervised generated alpha with locally renewed bounded core leases, fixed request/start windows, bounded source/job accounting and owned job list/terminal release. Native Windows idle/reconnect/stop/revoke/crash/resume proof added; exact-head CI and packaged acceptance pending. Default timed mode remains available; no remote permission renewal or general build environment.
+- Generated-data-only connection diagnostic server/client with verified payload receipt, correlated markers, bounded reports and optional idle-gap tests; no project authority or claim of FS outage attribution.
+- Operator last-stop.json separates confirmed core revocation/drain from best-effort diagnostic delivery. Default native proof sink avoids Python BufferedWriter ownership during shutdown; actual Windows blocked/broken-output and expiry regression tests added.
+- Agenda/budget/subscription FS test kit and optional fixed operator Electron viewer after confirmed session stop, with source versions, immutable asset protocol, sandboxed no-Node renderer and bounded fixed-directory JSON export (ADR0015). Native local close/reopen/network/export proof and23 Python/3 policy tests pass; CI pending. No MCP GUI process, npm/build or installer grant.
+- FS Luna Node22 host acceptance: correlated source modification, real failing assertion, versioned restoration and successful check/test. Sonnet runtime custom-header omission recorded separately from successful configuration discovery and Luna transport; no general FS component diagnosis asserted.
+- Generated Node check/test milestone validated at4b5ca2e: all nine workflows, native metadata deny/revoke tests, pinned Node22.15.1 runner and matching downloaded package on the local installed Node pass. SYNCHRONIZE enables synchronous attribute handles without list/data/write rights. First FS process exercise pending; no dependencies/build/server or personal project enrollment claim.
+- Optional generated Node runner with explicit installed executable selection, fixed check/test profiles and three source-read slots; matching hashed helper package and native runner lifecycle proof added (21 local tests; native runner validation pending).
+- Native relative Node module proof passed at3c0228 with list/read/write denials. Outside-root helper regression now uses an owned test root rather than System32; execution adapter preserves native stopped status (19 local alpha tests pass; full corrected Windows CI pending).
+- Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).
+- Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.
+- Experimental named-profile process forwarding preparation with bounded owned jobs, retained cancellation accounting and six synthetic tests; disabled in the editing HTTP runner until native Node/enrollment integration gates pass.
+- Alpha read pagination with full observed versions on each bounded page and no duplicated text/base64; UTC millisecond diagnostic timestamps. FS generated-app browser acceptance recorded separately from incomplete final counter edit.
+- Generated-project six-tool HTTP editing alpha, strict bounded schemas, retained serialized forwarding, uncertainty-aware mutation replies, saved generated projects and matching CI package/manual steps. Complete offset0 Rust reads now expose observed content versions; partial reads return null. No process/Git/delete or real-project enrollment grant.
+- Generated project alpha delivery track and actual Rust MCP create/read/edit mini-project proof with narrow operator write scope, exact preconditions and negative/revocation checks; Windows/Linux workflow coverage. FS parameterized editing and isolated execution remain separate delivery checkpoints.
 - Volatile expected public-root identity comparison on the actual owned reference before child opens, with unchanged reopen and actual substitution refusal regressions. No trusted enrollment, snapshot authenticity/persistence or antirollback selected.
 - Negative native root-selection characterization: actual valid same-name substitution before root open is accepted, while held-root rename is denied. Two public-only regressions; no security fix or production enrollment selected.
 - Explicit held-root NT fixed public-pair read candidate: open-existing only, exact completion ownership checks, no leaf path fallback and five native regressions. No initial-root containment or production authentication claim.
@@ -224,3 +285,28 @@ All notable project changes are recorded here.
 - Git read and Git integration startup authority use distinct executable options: `--git-executable` alone provisions `GitRead`, while `--git-integration-executable` participates only in integration recovery/authority setup; neither silently grants the other.
 - Git integration recovery executes before MCP serve when the complete integration runtime configuration is present; `--allow-git-integrate` is separately required before a `GitIntegrate` capability/lease exists, and the MCP server rejects runtime/authority mismatch.
 - Git integration MCP execution retains its transport permit until a started blocking integration reaches a known outcome; stale target and non-fast-forward failures are explicit, while a successful ref update followed by unverifiable post-update state is reported as `optic.git_integration_outcome_uncertain` rather than a safe retry.
+
+## Main private-preparation integration — 2026-10-16
+
+PR225 exacthead78a45aa passed CI38899856537, preparation38899856368 and local
+three-test native reproduction. Squash merge3a89f4060fb9ba2512db211e9922e28654980924
+confirmed. Sourcecapture/readpolicy remains mandatory; no public process, GUI,
+dependency or artifact permission is added. This alpha retains its newer owner
+worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
+Equivalent native storage helpers/imports were deduplicated during integration.
+Exact merge-head validation remains required; prior CI is not its validation.
+- Prototype host-only managed private Node tasks with sealed multi-module inputs, shared bounded output/job admission, stop/revocation/deadline handling and retained-action lookup for lost start replies. No public MCP mode or durable task recovery is claimed.
+- Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.
+
+- Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
+
+- Prototype bounded private-task crash evidence using an exclusive workspace-bound state journal, strict pre-effect transitions and retained unresolved capacity after restart. No task replay or new MCP authority.
+- Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.
+
+- Add an owned-job watchdog armed before resume, with a nonrenewable deadline and bounded atomic stop observation independent of owner-worker I/O. No new MCP authority.
+
+- Add a bounded explicit Unicode environment for suspended native children, with no implicit inheritance on an empty list and no mutation of the parent's environment.
+
+- Add a host-only journaled read-only private Node controller with bounded job/output ownership, crash-intent evidence, retained unresolved capacity, and no public task replay or new MCP tool.
+
+- Compose bounded same-workspace artifact capture with independently authorized versioned publication and explicit partial progress; no process write permission or new MCP route is added.

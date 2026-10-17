@@ -196,6 +196,9 @@ fn launcher_preserves_ungranted_file_denial() {
 
 #[test]
 fn launcher_rejects_read_grant_outside_workspace_root() {
+    let workspace = unique_temp_path("workspace");
+    fs::create_dir(&workspace).expect("create owned workspace");
+    let _workspace_cleanup = DirectoryCleanup(workspace.clone());
     let sentinel = unique_temp_path("outside-workspace-sentinel.txt");
     fs::write(&sentinel, b"optic outside workspace sentinel").expect("write sentinel");
     let _cleanup = Cleanup(sentinel.clone());
@@ -208,13 +211,12 @@ fn launcher_rejects_read_grant_outside_workspace_root() {
         &["/c:optic outside workspace sentinel", &sentinel_arg],
         &cwd,
         &[sentinel.as_path()],
-        &cwd,
+        &workspace,
     ));
 
     assert_eq!(output.status.code(), Some(LAUNCHER_FAILURE_EXIT));
     assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("workspace grant target resolves outside the configured workspace"),
+        String::from_utf8_lossy(&output.stderr).contains("read-grant ancestor escapes workspace"),
         "out-of-workspace grant did not fail at the helper boundary: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -256,6 +258,14 @@ fn unique_temp_path(suffix: &str) -> PathBuf {
 }
 
 struct Cleanup(PathBuf);
+
+struct DirectoryCleanup(PathBuf);
+
+impl Drop for DirectoryCleanup {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.0);
+    }
+}
 
 impl Drop for Cleanup {
     fn drop(&mut self) {

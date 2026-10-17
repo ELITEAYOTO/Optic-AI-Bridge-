@@ -18,6 +18,7 @@ use crate::{
 /// mutation primitive, and only then reaches the transactional filesystem.
 pub struct AuthorizedFileMutationService {
     transactions: TransactionalFileService,
+    directories: crate::directory_create::DirectoryCreationService,
     sessions: Arc<SessionRegistry>,
     task_leases: Arc<TaskLeaseRegistry>,
     clock: Arc<dyn Clock>,
@@ -25,6 +26,18 @@ pub struct AuthorizedFileMutationService {
 }
 
 impl AuthorizedFileMutationService {
+    /// Policy-only batch preflight. Actual writes must recheck live admission
+    /// through write() before reaching the transactional mutation journal.
+    pub(crate) fn preflight_write(
+        &self,
+        envelope: &ActionEnvelope,
+    ) -> Result<(), AuthorizedFileMutationError> {
+        if !matches!(envelope.effect, Effect::FileWrite { .. }) {
+            return Err(AuthorizedFileMutationError::EffectMismatch);
+        }
+        drop(self.authorize(envelope)?);
+        Ok(())
+    }
     pub fn from_hard_limits(
         workspace_root: impl AsRef<Path>,
         state_root: impl AsRef<Path>,
@@ -33,15 +46,30 @@ impl AuthorizedFileMutationService {
         task_leases: Arc<TaskLeaseRegistry>,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, AuthorizedFileMutationError> {
+        let directories =
+            crate::directory_create::DirectoryCreationService::new(&workspace_root, limits)?;
         let transactions =
             TransactionalFileService::from_hard_limits(workspace_root, state_root, limits)?;
         Ok(Self {
             transactions,
+            directories,
             sessions,
             task_leases,
             clock,
             policy: PolicyEngine,
         })
+    }
+
+    pub fn create_directory(
+        &self,
+        envelope: &ActionEnvelope,
+    ) -> Result<(), AuthorizedFileMutationError> {
+        let Effect::DirectoryCreate { path } = &envelope.effect else {
+            return Err(AuthorizedFileMutationError::EffectMismatch);
+        };
+        let _admission = self.authorize(envelope)?;
+        self.directories.create(path)?;
+        Ok(())
     }
 
     pub fn write(
@@ -116,6 +144,8 @@ impl AuthorizedFileMutationService {
 
 #[derive(Debug, Error)]
 pub enum AuthorizedFileMutationError {
+    #[error("directory creation failed: {0}")]
+    Directory(#[from] crate::DirectoryCreateError),
     #[error("application session is not active: {0}")]
     Session(#[from] SessionRegistryError),
     #[error("task lease is not active for this session: {0}")]
@@ -154,6 +184,64 @@ mod tests {
 
     fn now() -> MonotonicTime {
         MonotonicTime::from_millis(10_000)
+    }
+
+    #[test]
+    fn directory_creation_has_distinct_capability_and_scoped_revocable_admission() {
+        let (base, workspace, state) = fixture("directory-policy");
+        let sessions = Arc::new(SessionRegistry::new());
+        let leases = Arc::new(TaskLeaseRegistry::new());
+        let grant = session(&[Capability::FileWrite, Capability::DirectoryCreate]);
+        sessions.register(grant.clone()).expect("session");
+        let write = lease(
+            &grant,
+            &[Capability::FileWrite],
+            &[LeaseScope::WorkspaceAll],
+        );
+        leases.register(write.clone()).expect("write lease");
+        let directory = lease(
+            &grant,
+            &[Capability::DirectoryCreate],
+            &[LeaseScope::WorkspacePrefix(path("src"))],
+        );
+        leases.register(directory.clone()).expect("directory lease");
+        let service = service(
+            &workspace,
+            &state,
+            HardLimits::default(),
+            sessions,
+            Arc::clone(&leases),
+        );
+        let effect = Effect::DirectoryCreate { path: path("src") };
+        let mut action = envelope(&grant, Some(&write), effect);
+        assert!(matches!(
+            service.create_directory(&action),
+            Err(AuthorizedFileMutationError::PolicyDenied(
+                PolicyReason::MissingCapability
+            ))
+        ));
+        action.task_lease = Some(directory.id.clone());
+        action.effect = Effect::DirectoryCreate {
+            path: path("src-other"),
+        };
+        assert!(matches!(
+            service.create_directory(&action),
+            Err(AuthorizedFileMutationError::PolicyDenied(
+                PolicyReason::ScopeNotAuthorized
+            ))
+        ));
+        action.effect = Effect::DirectoryCreate { path: path("src") };
+        leases
+            .revoke(&directory.id)
+            .expect("revoke directory lease");
+        assert!(matches!(
+            service.create_directory(&action),
+            Err(AuthorizedFileMutationError::TaskLease(
+                TaskLeaseRegistryError::Revoked
+            ))
+        ));
+        assert!(!workspace.join("src").exists());
+        fs::remove_dir_all(base).expect("cleanup");
     }
 
     fn budget() -> ResourceBudget {

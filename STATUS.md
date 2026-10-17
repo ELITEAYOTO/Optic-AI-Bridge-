@@ -1,5 +1,437 @@
 # Project Status
 
+## Verified checkpoint — 2026-10-17
+
+PR231–236 are merged into main, including authorized artifact publication,
+diagnostic task event times, separately scoped directory creation, optional
+private Rust IR compilation and strict duplicate-field configuration rejection.
+Main post-merge checks through PR235 passed; main236 CI38990056521 is pending.
+Exact pre-merge CI23638989470332 passed. Local verified harnesses passed seven
+artifact cases, eleven journal cases, ten Node lifecycle cases and directory
+boundaries. Rust1.99 compiled a public no_std library, reported E0308, recompiled
+the correction and cleaned recorded files locally in4.34s. No linker/native app
+execution, general Cargo/build/dependency or Electron GUI permission is claimed.
+
+PR237 remains draft atd0f96089cd8c90dcf7b85bd36d3a25a324b03dd9: operator
+permission reductions and a real stdio authority test await exact CI. Alpha has
+its older permission switches but not that direct-CLI override regression yet;
+import the reviewed candidate only after validation. Stable user ZIP unchanged.
+
+## Optional Rust compiler compatibility — candidate, 2026-10-17
+
+A test-only native probe copies a bounded subset of an explicitly selected
+Rust compiler/sysroot into a fresh AppContainer, emits a fixed public library's
+LLVM IR to bounded stdout and requires a real type-error diagnostic. No linker,
+Cargo/dependency operation, public tool or arbitrary Rust execution permission.
+Exact native validation pending; ADR0025. PR234 directory creation has merged as
+fdafb3a after CI38987795891/native38987795892 and local boundary tests passed.
+
+## Scoped project directory creation — candidate, 2026-10-17
+
+The generated-alpha directory primitive is proposed independently for main:
+separate DirectoryCreate capability/lease, optional local CLI/JSON workspace
+scopes, explicit absent-only MCP request, one native Windows leaf and pinned
+ancestors/root identity. It grants no file overwrite/delete/recursive mkdir or
+build permission. Exact native and Windows/Linux validation pending; ADR0024.
+
+PR233 task event timeline merged as9504422 after CI38987260151/native38987260164
+passed. Its verified harness reproduced11 journal and10 Node cases locally
+(1.24s/8.07s). PR232 main post-merge CI38987044878 passed.
+
+## Current integration — 2026-10-17
+
+PR231 native environment and cancellation accounting merged to main as4e6ff6c;
+post-merge CI38986075081 passed. PR232 authorized artifact publication merged as
+b7ca583 after exact Windows/Linux CI38986768540 and native38986768542 passed.
+Its verified Windows harness reproduced all seven publication cases locally
+(0.22s). Main post-merge validation is pending. These are host API increments,
+not public build/dependency/Electron permission. Normal private Electron startup
+still fails0x80000003; alpha38986587860/38986587895 retain that known red gate.
+
+Follow-up adds bounded wall-clock lifecycle observations to the crash journal,
+preserving legacy records and their unresolved capacity. No output text is made
+durable and no authority is recovered. Exact native validation is pending.
+
+## Latest measured execution — 2026-10-16
+
+The c8a303d Windows CI rerun passed; the earlier TEMP-only Node initialize
+failure remains intermittent evidence, not an open deterministic failure.
+Packaged permission/lifecycle/crash/resume proofs passed locally. There are
+49 alpha regression tests. The prior pending descriptions below are historical.
+
+Versioned multi-file input manifests and native authorized capture now pass
+Rust Windows/Linux CI (including revocation, deadlines, native root replacement
+and read ceilings). PR224 merged into main asbcd26aa after green Windows/Linux CI; its
+post-merge CI38837205821 also passed. No new build/GUI tool is exposed yet.
+
+Private Node staging passed native CI with relative modules, private output and
+external source writes denied. General Electron startup failed both natively
+on this PC and in GitHub CI, before the fixed application executes, without FS
+or any tunnel. The normal sandboxed path stops with0x80000003. An explicit
+outer-AppContainer comparison passed its fixed CI probe at623e003; no automatic
+sandbox downgrade is permitted. Exact SID/capability sampling and owned-tree
+cleanup are part of the probe. New diagnostic head623e003 retains bounded error
+tails rather than aborting on large startup logs. Local execution reached the
+renderer but cleanup hit a sharing violation; bounded owned-directory cleanup
+retry9e9bbdb is pending native validation. This is not a GUI release.
+
+Next gate remains a real optional Electron runtime with an owned isolated tree,
+then bounded production staging/artifact publication, scoped dependency restore
+and local GUI launch. Rust follows the same authorized task contract. This is a
+native runtime compatibility blocker distinct from FS generation cutoffs. Do
+not ask the user to repeat the working agenda/expense fixtures or send longer
+prompts as a proposed repair for either failure.
+## Development-environment transition — 2026-10-16
+
+Headc8a303d passed the nine workflow validations after a successful CI rerun.
+The initial Windows TEMP-only Node initialize timeout remains unexplained and
+is retained as intermittent evidence; no timeout/isolation weakening was used.
+Its packaged binaries/sources passed local permissions and supervised lifecycle
+proofs. Follow-up adds the bounded, versioned project input data contract below;
+validation of this new head is pending. This does not expose a full build tool.
+
+Permissions/directory head0f0c7ae passed all nine workflows, including native
+Windows/Linux JSON capability-denial and policy-source protection proofs.
+Follow-up adds bounded model-readable tool diagnostics and a filtered previous
+stop summary, with48alpha tests and real Windows crash/resume proof passed.
+A separately invoked native private Node staging experiment tests relative
+modules and artifact creation inside an ephemeral AppContainer while external
+source writes remain denied. This is an execution-design gate, not an exposed
+package manager/build/GUI grant; exact follow-up CI pending.
+
+Core directory increment208fc61 passed native Windows/Linux read-link validation;
+the new HTTP adapter passed46 Python tests and the real Windows supervised
+runner proof, including nested source creation and retained-project resume.
+Follow-up operator JSON booleans reduce actual capabilities/scopes and protect
+policy/profile sources from the writable workspace; exact-head CI pending.
+
+The next accepted user target is a real Electron project, followed by Rust,
+with operator-selected project permissions, dependencies and resumable work.
+ADR0016 records the scope and remaining execution/private-enrollment gates.
+First increment adds separately granted typed single-directory creation in core,
+local CLI/JSON and MCP; native authorization/path regression validation pending.
+The delivered supervised ZIP remains5d58fb9, with all nine workflows and packaged
+Windows Node/stop/crash/resume proof passed. New development-environment features
+are not yet included in that delivered ZIP.
+
+## Opt-in supervised alpha adapter — 2026-10-15
+
+Local Supervised selection connects the existing native lease supervisor to the
+HTTP runner. It preserves one generated project through reconnects and explicit
+local resume, with fixed request/start windows,128 source-file slots and16 owned
+job records. List recovers bridge-received job IDs; terminal forget releases a
+record without killing a process. No model-controlled renewal is exposed.
+44alpha and26session tests pass. Native Windows runner proof covers real idle
+renewal, Node failure/fix/check/test, manual stop beyond the console budget,
+EOF/revoke, same-project resume and actual runner crash/core exit/recovery.
+Exact-head CI and packaged-source acceptance remain pending. FS generation
+cutoffs, arbitrary build environments and private-project enrollment remain
+separate gates. Earlier status sections record their original milestone state.
+
+## Validated main integration and alpha usability follow-up — 2026-10-15
+
+Alpha head8ecd2bb passed all nine workflows after integrating main PR184.
+The verified package includes the read-admission/path fix; native Node editing,
+failing assertion, versioned correction, check/test and stop/resume passed.
+Follow-up257eb1b exposes operator read limits/schema defaults and versioned
+literal-search byte offsets with explicit shortened-line/more-match indicators;
+32alpha/26session Python tests and real4KiB UTF-8 paging/Node smoke passed.
+Further local stop correction keeps stop available beyond the16-command control
+budget and treats lost/malformed console input as stop.35alpha/7link tests and
+seven native shutdown cases passed, including budget exhaustion and stdin EOF.
+Exact-head CI/package validation is still required for these follow-up sources.
+No supervisor renewal, arbitrary build environment or private-project enrollment
+is delivered by these increments. FS generation diagnosis remains with FS.
+
+## Alpha integration of main read-boundary hardening — 2026-10-15
+
+Main commit `18a8ec6` (PR #184) is integrated into this alpha branch. Effect-spanning read admission and native path checks are retained alongside alpha content-version responses. Integration validation is pending; earlier binaries do not include this merge.
+
+## FS administrator reproduction reported; size ceiling unconfirmed — 2026-10-15
+
+User relays administrator Emmanuel has reproduced the generation problem and
+will investigate. This is not yet a timeout/root-cause/fix confirmation. Last
+isolated7168byte diagnostic request27 on1fa7b0483240 completed HTTP200 and its
+trailing markerfa8e900bbed57075 is visible to Luna, despite its simultaneous
+truncation claim. Thus no universal6656–7168byte limit is established. Raw FS
+tool-result data is unavailable; earlier truncation observations remain qualified
+model reports. Full correlated ledger and separate incident classes recorded in
+docs/research/FS_CONNECTION_DIAGNOSTIC_2026-10-15.md. Pause repetitive manual
+size tests; preserve reproduction for after admin change. Optic shutdown repair
+and main184integration remain independently verified, not explanations of FS cut.
+
+## FS diagnostic size boundary observed — 2026-10-15
+
+Server66f4c64a7c56/run0a1c57367a670887: FS Luna128/0 success(request11,
+markerd992c40951b58e1b),128/10 success(request15, actual10.016s),8192/0
+explicit truncation reported with missing trailing probe_invocation(request19,
+local markerb099656166f0ed67 and HTTP200 COMPLETE).4096/0 returned trailing
+markerfa04b4c9e0f444bc(request23); repeated calls27/28/29 returned exactly matching
+markers763d9d449fed284b/17bef52157966629/95c56391b6836696, no explicit truncation.
+All three repeat markers corroborated in supplied server log. This is evidence
+of host-visible truncation for this synthetic envelope, not a universal byte/token
+ceiling or proof that it caused earlier generation failures. Other connectors
+were removed for the successful baseline; their causal role is not established.
+
+Diagnostic sizes now include512byte steps4096–8192 without changing envelope
+order, authority or maximum response. Actual HTTP receipt/hash tests cover each
+intermediate size. Default client comparison matrix stays unchanged for baseline
+comparability. Narrow source-only patch prepared for further FS threshold tests.
+
+## Diagnostic comparison baseline ready for FS — 2026-10-15
+
+Generated local matrix48/48 and a separately owned Cloudflare matrix52/52 pass
+with verified complete payloads,128–8192bytes and0/1/3/10s delays. Cloudflare
+also passes after15/45/75/100s client idle gaps (same MCP client session, no
+fabricated heartbeat); post-gap client calls125–265ms. Both use the same diagnostic
+server build, separate ephemeral instances. This does not prove FS receipt or
+identify its model/provider stream failure. ngrok was not independently retested.
+Reports retained locally outside the repository, no credentials or raw payloads.
+
+Runtime b65002ffbd21892812ed43ca50d01f01974dec52 passed all nine workflows,
+including CI/run38752448985 and Read Link/run38752448899.29alpha and26session
+Python tests pass; actual Windows shutdown/Node/Electron smokes pass in CI.
+Verified artifact11981603327 merge sourcebd192afac57ce8f224a06f5827fa45a0468e6117;
+inner ZIP SHA256d37bc59481aacbd2f8597008fe9424daf7309268d3d9af5b29cbf03c99e1505e.
+Archive paths/bounds and all binary/viewer manifest hashes checked. User ZIP:
+outputs/Optic-Connection-Diagnostic.zip. Next manual gate: same harmless tool via
+FS on a separate8010diagnostic connector, without reopening the actual project.
+Persistent stop-controlled project mode and larger file/module tools are still
+planned; current50minute project authority is unchanged.
+
+## First main integration and local diagnostic matrix accepted — 2026-10-15
+
+PR184 is squash-merged to main at18a8ec665907454863cb4e911d3a57baccca3416,
+with premerge CI680 and postmerge38751500494 successful. Read admission/native
+path/pagination scope remains distinct from deferred classification/enrollment.
+See docs/engineering/INTEGRATION_LEDGER_2026-10-15.md for remaining41PR inventory.
+Alpha ea23de4 passed all nine workflows; downloaded artifact11980608896 verified.
+Actual local diagnostic matrix:48/48verified payloads, sizes128–8192bytes and
+delays0/1/3/10s across3repeats. Cloudflare matrix/idle test in progress; no host
+generation attribution. Resume now invalidates last-stop.json with viewer-ready
+before admitting a new run, so a stale stop report is not current-session evidence.
+
+## Local shutdown reproduced; diagnostic baseline implemented — native CI pending
+
+Reproduced the user's _enter_buffered_busy stdout fatal in an owned Windows
+subprocess by leaving the former print/BufferedWriter proof sink pipe unread;
+exit3221226505. Default proof sink now owns a duplicated native descriptor and
+uses bounded-record os.write, never Python buffered stdout from its daemon.
+Queue/budget/admission and0.2s best-effort close stay bounded; blocked output may
+remain undelivered and is not claimed flushed. Custom test sinks are unchanged.
+Five actual Windows runner cases pass: manual stop, expiry, blocked-output stop,
+blocked-output expiry and broken-output stop. They confirm core revoke/drain and
+retained sources. last-stop.json separates core cleanup from diagnostic delivery.
+Native Node stop/restart smoke passes with unchanged sources and owned jobs.
+
+Generated-only diagnostic_host/client added on separate8010: fixed payloads128–
+8192bytes, delay0/1/3/10s,3repetitions and optional idle gaps. Client checks exact
+receipt/hash/build/run/marker and records UTC/monotonic/status evidence in bounded
+create-only reports. No project access, auth values, raw errors or URLs logged
+by the client CLI. Real HTTP quick samples and8192byte/10s test pass locally;
+full matrix, remote tunnels and FS-side evidence remain to collect. No claim
+that the host generation-stream timeout is fixed. See DIAGNOSTIC_TEST.md.
+
+## User-directed reliability and integration plan — 2026-10-15
+
+User reports Luna eventually succeeded but recurring host errors remain. New
+active plan: docs/product/ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md. Priorities are
+correlated direct/tunnel/host diagnosis, native Python shutdown reproduction and
+repair, reviewed consolidation toward main, efficient bounded multi-file tools,
+operator-supervised persistent availability and installed Node/Electron/Rust
+development environments. Current1024-byte pages,8KiB source limit,50-minute
+session and fixed task profiles remain implemented; their replacements are not
+claimed delivered. Fatal daemon/stdout shutdown is a real unresolved local bug;
+the earlier generation-stream failures remain unlocalized. GitHub inventory
+found42 open PRs; alpha223 targets experimental222's branch, not main. No PR was
+merged during roadmap preparation. Work resumes with R0/R1 and integration audit.
+
+## Fifty-minute retained alpha delivery accepted — 2026-10-15
+
+Runtime head e37c6a7c8ad8d19dd0636823081db79708a91dae passed all nine
+PR workflows, including CI790 (38656395720) and Read Link Admission42
+(38656395481). Windows runner proof now stops and reopens the same retained run,
+preserves every source byte, executes the preserved Node test successfully and
+regenerates the viewer snapshot only after another confirmed stop. Windows25
+Python tests, isolated Node22.15.1 and operator Electron44.7.2 proofs passed.
+The downloaded exact package also passed the actual runner/restart proof locally
+with installed Node22.15.1. Artifact11936343395 corresponds to merge source
+f98b7c99fc23ee79526b9d18619c950a243e26cc. Delivered inner ZIP SHA256:
+d13fc9c27bbbddef8c6d62717d11934c769247bd776939fdbd331dbdde6d07b7.
+Archive bounds/paths and all four manifest binary/viewer hashes verified. Package
+contains no output folder; existing test12 alpha-zpre99l7 can remain in place
+when updating program files, then local -ResumeRun reauthorizes it for50minutes.
+FS reconnection and completion of that user's unfinished app.js remain manual.
+
+## Explicit retained alpha resume — native runner CI pending
+
+Local -ResumeRun selects an alpha name directly under package output. Existing
+Node sources are validated and preserved, never regenerated. A Windows lock
+excludes another runner and is released by OS process exit. The previous viewer
+marker is invalidated while editing and republished after confirmed stop. Close
+the prior viewer first. Fresh authorization and jobs replace the expired session;
+the model cannot renew access. 25 local Python tests pass on Windows. Actual
+child restart and preserved-source execution proof added to CI, delivery pending.
+
+## User-selected fifty-minute alpha — native validation pending
+
+User requested40–50minutes rather than25. Alpha defaults now50minutes and local
+PowerShell SessionMinutes can select1–50. Both HTTP deadline and core session /
+leases use the selected monotonic lifetime through an operator-only CLI option
+--session-lifetime-seconds (5–3000, duplicate/malformed/out-of-range denied).
+Core default stays30minutes for other callers. No model renewal or wider grants.
+Viewer close limit also50minutes. Test12 logs show last request at22m07 followed
+by expiry warning; they do not show confirmed stop, so FS inference error is not
+attributed to TTL. Existing saved sources remain at alpha-zpre99l7. New binary /
+package requires native CI; old package cannot be extended by changing HTTP only.
+
+## Agenda/budget Electron test package accepted — 2026-10-15
+
+At85b7d86 all nine workflows passed (CI785 / real-link37), including pinned
+Electron44.7.2 native renderer/network/export/reopen proof and actual Node
+runner stop -> readiness snapshot with matching source hashes.23 Python alpha
+and4 viewer policy tests pass. Downloaded artifact11934343405 verified; its
+bridge/helper and main/policy digests matched the manifest, and the exact
+package passed Electron and Node runner proofs again on this PC.
+User package: outputs/Optic-Planner-Electron.zip, SHA256
+5a451f75f3158e8f67c7cad8647d9e99e7905ee05a48d95878e59b1e9caf32bc.
+Tested merge source1e377d5b09afbcc890d26c164c782efbef9b0df1. Logic/UI prompts
+and local-window manual steps are packaged. Actual planner feature acceptance
+is the next FS user test. Electron stays an operator-opened fixed viewer,
+not a remote GUI process grant, installer or arbitrary generated main code.
+Earlier pending entries below describe the validation history.
+
+
+## Agenda/budget operator Electron test preparation — 2026-10-15
+
+Expense app test11 accepted by user in browser: addition/filter/delete/validation
+and persistence confirmed, after FS Node check/test succeeded. Next fixture is
+agenda/budget/subscriptions with import/export and a fixed operator Electron
+viewer (ADR0015). No generated privileged main/preload or new MCP GUI permission.
+Create-only readiness versions after confirmed stop, immutable four-asset view,
+sandboxed no-Node renderer, blocked connections/navigation and fixed JSON export.
+Three policy tests,23 Python tests and actual local Electron44.7.2 hidden
+close/reopen/network/export proof pass; CI/package validation pending.
+
+## FS Node check/test host acceptance — 2026-10-15
+
+Luna completed test11 on server instance cdaecdde161c, installed Node22.15.1.
+Operator TOOL logs correlate baseline info/list/start/result/read (requests16–20)
+and the mutation/test sequence24–37. Model source changed from addition to
+subtraction using its observed version; actual test exited1 with AssertionError
+(-1 versus5). Reread observed the changed version, restoration recovered the
+original content version; syntax check and test then exited0 with their pass
+markers. This is actual FS source edit -> Node failure -> correction -> success.
+No browser app, build/dependency/server or live-job cancellation proof follows.
+
+On the same configuration, Sonnet chat requests omitted both custom headers
+while configuration-time discovery sent them and succeeded. Bearer was valid;
+401 was emitted at dummy_custom_headers before MCP dispatch. Luna forwarded
+the headers successfully. This locates a host-path difference without proving
+the responsible FS component or any model-wide behavior.
+
+## Node check/test milestone accepted — 2026-10-14
+
+At4b5ca2e all nine workflows passed (CI779 / real-link31). Native metadata
+attribute access, revocation/pinning and data/list/create denials passed. The
+Node22.15.1 HTTP and generated runner proofs passed; SYNCHRONIZE resolves the
+older synchronous-stat failure without directory listing/data/write authority.
+Artifact11931087651 verified and matching bridge/helper tested locally with
+installed Node22.15.1: failing assertion -> versioned fix -> passing check/test
+-> local stop -> retained sources.21 local tests pass. FS execution test pending.
+User package outputs/Optic-Node-Alpha.zip, SHA256
+5f18c885fc929af813886ee8e779ed4ad409f6ec246c7d34ef282f1dde387c24;
+tested merge sourcece5c52ef7056511c021b374c6abe264e6cc7eaac.
+Generated project only, three Node source slots, no dependencies/build/server
+or personal project selection. Earlier pending entries below record chronology.
+
+## Cross-version Node validation — correction pending
+
+Real-link28 passed the actual new generated Node runner and packaged both
+executables. Verified artifact11930124023 was downloaded, but the same proof
+failed locally with installed Node22.15.1: relative module was not found. General
+CI's explicit attribute-only CreateFile test also failed access denied. Directory
+grants now include SYNCHRONIZE (completion synchronization, not listing/data).
+ADR0014 records the narrow correction; workflow pins Node22.15.1 to prevent the
+newer runner fast-stat path hiding this discrepancy. No package released to user.
+
+## Generated Node runner integration — validation pending
+
+Optional locally selected Node mode now composes the ten-tool alpha with fixed
+check/test profiles and three exact generated source slots. Editing-only mode
+remains default. Matching helper packaged with SHA256; PowerShell verifies it
+before Node startup. All21 local tests and script parsing pass. Workflow adds
+actual owned-runner failing assertion -> versioned fix -> check/test -> stop
+and retained-source proof. No dependency/build/server or personal project claim.
+
+## Node module metadata correction — native CI pending
+
+CI775 reached the native metadata primitive after the owned-root helper test
+passed, but its std::fs::metadata child failed the positive attribute-read
+assertion. The child now explicitly opens with FILE_READ_ATTRIBUTES rather
+than std's broader path-based fallback; no production ACL rights are widened.
+Diagnostic output is included in positive assertions. Native rerun pending.
+
+At3c0228, real-link26 passed on Windows, including actual relative Node module
+resolution with directory-listing, sibling-read and file-create denial. Ubuntu
+Rust passed. General Windows CI774 stopped on the outside-root launcher test:
+its System32 workspace failed ACL access before the expected containment check.
+The test now uses an owned disposable root and requires the ancestor-escape
+diagnostic. Native validation of all remaining tests is still pending.
+The Python execution adapter now preserves Rust's `stopped` status; an unknown
+`killed` status remains rejected. All19 local alpha tests pass.
+
+ADR0014 defines source-directory attribute/traversal access derived from exact
+operator-authorized source reads, without directory listing/data/write rights.
+The Windows helper now pins the root and bounded ancestors before adding
+non-inheritable metadata ACEs. Native primitive tests cover data/list/create/
+outside-root denial, revocation and namespace pinning; Node HTTP proof now
+requires actual relative-module success with listing/sibling/write denial.
+Formatting passes. Local Rust linking still lacks msvcrt.lib; successful native
+compilation/tests must be confirmed by CI before this implementation is accepted.
+
+## Node alpha preparation and host editing evidence — 2026-10-14
+
+User selected Node web applications for the next end-to-end alpha. See
+[delivery contract](docs/product/NODE_PROJECT_ALPHA_DELIVERY.md). Eight new
+gate/SDK tests plus ten editing tests pass locally. Native HTTP->Rust->isolated
+Node fixed-driver failing assertion/source fix/passing test also passed using
+CI767's verified binary/helper pair. Direct unflagged entry is denied locally on
+ancestor lstat; locally frozen symlink-resolution flags permit syntax checking
+and direct test-file entry while a sibling stays denied. Normal module trees,
+full build/dependency/preview remain gated. Named frozen
+profiles forward to existing Rust process tools, with bounded owned-job state
+and uncertainty-aware cancellation; optional ten-tool HTTP composition exists,
+but the current editing startup does NOT enable it.
+No real-project enrollment or FS Node build/test/preview claim yet.
+
+FS task-list creation/paged read acceptance and user browser feature checks
+passed. Latest extra counter edit remained unconfirmed and absent on disk before
+25-minute stop. Corrected paging commit53a4391: eight experiment workflows,
+Ubuntu Rust/dependency checks passed; Windows CI769 network-isolation test
+timed out before probe output; all nine workflows passed later atf6827cb,
+including actual Windows network denial and reusable Node approval. New UX/
+module-lookup characterization changes have eighteen local tests plus native
+Node proof, with exact new-head CI still pending. project_info reports time
+remaining; local expiry warning and optional compact AI replies added.
+
+## Generated project alpha delivery — 2026-10-14
+
+Priority shifted from storage micro-proofs to a usable single-session project
+alpha. First real Rust MCP vertical step creates/reads/edits a generated HTML
+project with exact preconditions; stale/absent/out-of-scope/traversal/revoked
+writes refused. Six-tool parameterized HTTP editing/retained-project runner now
+implemented with bounded schemas, observed read versions, serialized retained
+forwarding and real local stop. Runtime snapshot4247f1f passed all nine workflows
+(general CI767/real-link19); matching downloaded Windows package passed HTTP,
+runner, isolated setup and actual Windows PowerShell launch/write/read/stop.
+Nine boundary regressions pass. No FS editing result claimed yet;
+FS manual editing and isolated execution still require their separate evidence.
+User targets now explicitly include websites, applications and Java Minecraft
+plugins. Java execution eligibility/build/server tests remain pending, independently
+of common source editing. Non-Windows editing proof verifies explicit unsupported
+refusal rather than claiming mutation portability.
+
 ## Volatile expected public root identity — 2026-10-14
 
 Snapshot from an active owned root compared against the reopened reference
@@ -236,6 +668,9 @@ intentional non-Windows skip, including four simulated native error/cleanup
 cases. No production storage, credential enrollment or runtime authority is
 implemented. ACLs, recovery, rollback and real-secret lifecycle remain open.
 This draft evidence does not supersede merged production history below.
+## Historical read-boundary candidate — merged as PR #184 on 2026-10-15
+
+Branch `security/read-boundary-hardening`, based on main `156653a406f01383e2fc14cada513963453b04f3`, implements #183 effect-spanning admission, #181 native-path representation safety, and the #176 pagination-progress subfinding. This entry records proposed branch work, not a merged milestone. Validation and the deferred-decision register are in `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` and its PR. Historical entries below are preserved; #176 classifier/canonical-list, #180, #182 and H-02–H-05 remain open.
 
 **Last updated:** 2026-10-08
 **Lifecycle:** pre-alpha / Phase 3 multi-session runtime
@@ -508,3 +943,61 @@ PR #47 merged to `main` as `1e42b1ff`; exact final head `4ff720b2` passed depend
 ## Health rule
 
 This file describes reality. A design document alone never makes a feature “implemented”.
+
+## Native comparison validation — 2026-10-16
+
+Exact head119cca047e7f0db4b2ad31abce54750833b99c8f passed the explicit outer-only
+Electron comparison in CI38837928895/job116771116738 and locally with installed
+Electron44.7.2. Positive parent TCP control succeeded; no main/renderer connection
+was observed at that controlled listener. Accepted main errors are explicitly
+EACCES/EPERM/ETIMEDOUT; this is an endpoint observation, not universal network
+containment. Renderer42, source read/write denial, exact sampled token identity,
+zero capabilities, owned-tree drain and private cleanup also passed. Normal
+inner-sandbox startup still fails0x80000003, so the workflow remains red by design.
+No automatic fallback, public GUI grant or broad runtime environment was shipped.
+
+Main PR224 and post-merge main CI38837205821 passed. Next implement the owned
+bounded production stage lifecycle and separately authorized artifact publication;
+then explicit dependency/network restore and local GUI permission, followed by
+an end-to-end goal-only FS test. Current private probe has no model authority.
+## Main private-preparation integration — 2026-10-16
+
+PR225 exacthead78a45aa passed CI38899856537, preparation38899856368 and local
+three-test native reproduction. Squash merge3a89f4060fb9ba2512db211e9922e28654980924
+confirmed. Sourcecapture/readpolicy remains mandatory; no public process, GUI,
+dependency or artifact permission is added. This alpha retains its newer owner
+worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
+Equivalent native storage helpers/imports were deduplicated during integration.
+Exact merge-head validation remains required; prior CI is not its validation.
+Experimental private Node task controller: implemented behind the host API, not exposed to MCP; native CI validation pending. Uses existing job admission/output and confirmed tree cleanup. General build/dependency/GUI/restart support is not delivered by this increment.
+Private preparation now has an optional bounded native owner worker: caller cancellation retains effect permits until real completion, and explicit discard waits for owned cleanup. Process launch and durable restart recovery remain outside this increment. Exact candidate CI pending.
+
+Owned Windows AppContainer tree and bounded pipe primitives prepared independently of experimental adapters. Native assignment-before-resume and confirmed tree completion do not grant process/MCP/GUI authority. Exact candidate checks pending.
+
+Experimental private-task crash journal added behind an explicit host-only constructor. Intent precedes allocation/start; unresolved records retain capacity across restart. No restored authorization or automatic replay. Native validation pending; durable output logs/operator reconciliation remain open.
+Private-state preparation primitives: deterministic input fingerprints, preallocated fresh profile plans, exclusive nontruncating state handles with hard-link/reparse refusal, and acknowledged profile cleanup. No journal, replay or new model authority is exposed by this main increment. Exact candidate checks pending.
+
+Owned native watchdog candidate: one deadline and at most four atomic stop flags,
+armed before resume, independent of filesystem/registry activity. Owned-tree empty
+confirmation remains mandatory. Focused native tests and exact CI pending.
+
+Explicit native environment candidate: bounded keys/values, no case-insensitive
+duplicates or NUL, complete Unicode block including explicit empty environment.
+Private task callers must choose this API; compatibility inheritance is unchanged.
+No new process permission is exposed. Exact CI/native validation pending.
+
+Host-only journaled private Node controller candidate: sealed authorized inputs,
+fixed read-only argv/environment, shared managed job records/output budgets and
+independent revocation/deadline observation. A bounded exclusive state journal
+records intent before native allocation/start, retains unresolved restart capacity
+and exposes diagnostics without replay/PID recovery. No MCP entry point, build
+writes, dependency installation or GUI authority is added. Exact main-candidate
+CI is required independently of the experimental alpha proofs.
+
+Artifact publication candidate (ADR0023): up to32 same-workspace captured files,
+existing read/mutation byte limits, policy-only preflight for every destination,
+sealed versioned sources, and independent live journaled FileWrite effects.
+Interrupted batches return verified prior receipts and a failed index, without
+claiming rollback or that a failed write had no effect. Private build output
+capture, writable process grants and hard disk quotas are not implemented here.
+No MCP tool is added. Exact main-candidate CI/native proof required.

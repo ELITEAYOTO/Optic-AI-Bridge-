@@ -23,9 +23,9 @@ use optic_bridge_runtime::{
     EnvironmentGrant, EnvironmentVariableClass, GitIntegrationAuthoritySet,
     GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService, MutationAuthoritySet,
     MutationAuthoritySpec, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec, SessionGrantSpec,
-    SessionLifecycleManager, SessionRegistry, StdClock, TaskLeaseRegistry,
-    TransactionalFileService, git_integration_resource_budget, mutation_resource_budget,
-    read_authority_resource_budget,
+    SessionLifecycleError, SessionLifecycleManager, SessionRegistry, SessionRegistryError,
+    StdClock, TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
+    mutation_resource_budget, read_authority_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let limits = HardLimits::default().validate_nonzero()?;
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
-    let expires_at = now.saturating_add_millis(INITIAL_SESSION_TTL_MS);
+    let expires_at = now.saturating_add_millis(args.session_lifetime_ms);
     let processes = Arc::new(build_process_manager(&args, limits)?);
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
     let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits)?);
@@ -132,6 +132,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mutation_spec = MutationAuthoritySpec {
         write_scopes: args.write_scopes.clone(),
         delete_scopes: args.delete_scopes.clone(),
+        directory_scopes: args.directory_scopes.clone(),
     };
     mutation_spec.validate()?;
 
@@ -172,7 +173,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
-    let mut capabilities = BTreeSet::from([Capability::FileRead, Capability::FileSearch]);
+    let mut capabilities = BTreeSet::new();
+    if args.file_read {
+        capabilities.insert(Capability::FileRead);
+    }
+    if args.file_search {
+        capabilities.insert(Capability::FileSearch);
+    }
     if !canonical_process_executables.is_empty() {
         capabilities.insert(Capability::ProcessRun);
     }
@@ -181,6 +188,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     if !mutation_spec.delete_scopes.is_empty() {
         capabilities.insert(Capability::FileDelete);
+    }
+    if !mutation_spec.directory_scopes.is_empty() {
+        capabilities.insert(Capability::DirectoryCreate);
     }
     if git_service.is_some() {
         capabilities.insert(Capability::GitRead);
@@ -209,11 +219,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         now,
     )?;
     let session = grant.handle;
+    let supervised_session = session.clone();
 
+    let mut read_spec = ReadAuthoritySpec::workspace_all_non_sensitive();
+    if !args.file_read {
+        read_spec.read_content.clear();
+        read_spec.read_sensitive.clear();
+    }
+    if !args.file_search {
+        read_spec.search_metadata.clear();
+    }
     let read_authorities = ReadAuthoritySet::provision(
         &task_leases,
         &session,
-        &ReadAuthoritySpec::workspace_all_non_sensitive(),
+        &read_spec,
         read_authority_resource_budget(limits),
         expires_at,
         args.policy_epoch,
@@ -333,12 +352,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     )?;
 
     eprintln!(
-        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), Git read {}, Git integrate authority {})",
+        "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), {} directory scope(s), Git read {}, Git integrate authority {})",
         env!("CARGO_PKG_VERSION"),
         args.allowed_executables.len(),
         tool_profile_count,
         args.write_scopes.len(),
         args.delete_scopes.len(),
+        args.directory_scopes.len(),
         if git_read_enabled {
             "enabled"
         } else {
@@ -351,29 +371,72 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service = server.serve(transport).await?;
-    tokio::select! {
-        result = service.waiting() => {
-            result?;
-        }
-        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock)) => {
-            result?;
-            return Err(std::io::Error::other(
+    let renewal = args
+        .supervise_session
+        .then_some((supervised_session.clone(), args.session_lifetime_ms));
+    if args.supervise_session {
+        eprintln!("Optic AI Bridge operator supervision enabled; bounded leases, unchanged scopes");
+    }
+    let service_result: Result<(), Box<dyn Error + Send + Sync>> = tokio::select! {
+        result = service.waiting() => result.map(|_| ()).map_err(Into::into),
+        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock), renewal) => {
+            result.and_then(|()| Err(std::io::Error::other(
                 "session expiry supervisor stopped unexpectedly",
-            )
-            .into());
+            ).into()))
+        }
+    };
+    if args.supervise_session {
+        // Dropping the supervisor future cannot cancel a started blocking renewal.
+        // Revoke closes admission and waits for that critical section: a renewal
+        // racing transport shutdown must never leave effective authority behind.
+        let cleanup =
+            tokio::task::spawn_blocking(move || lifecycle.revoke(&supervised_session)).await?;
+        match cleanup {
+            Ok(_)
+            | Err(SessionLifecycleError::SessionRegistry(SessionRegistryError::UnknownSession)) => {
+            }
+            Err(error) => return Err(error.into()),
         }
     }
-    Ok(())
+    service_result
 }
 
 async fn supervise_session_expiry(
     lifecycle: Arc<SessionLifecycleManager>,
     clock: Arc<dyn Clock>,
+    mut renewal: Option<(SessionHandle, u64)>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut interval = tokio::time::interval(Duration::from_millis(SESSION_REAP_INTERVAL_MS));
+    let interval_ms = renewal
+        .as_ref()
+        .map_or(SESSION_REAP_INTERVAL_MS, |(_, ttl)| {
+            SESSION_REAP_INTERVAL_MS.min(ttl / 3)
+        });
+    let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    if renewal.is_some() {
+        interval.tick().await; // Skip the immediate tick; renewal must extend expiry.
+    }
     loop {
         interval.tick().await;
+        if let Some((session, ttl)) = renewal.as_ref() {
+            let lifecycle = Arc::clone(&lifecycle);
+            let clock = Arc::clone(&clock);
+            let session = session.clone();
+            let ttl = *ttl;
+            let result = tokio::task::spawn_blocking(move || {
+                // Sample inside the worker, not before it waits for CPU capacity.
+                let now = clock.now();
+                lifecycle.renew(&session, now, now.saturating_add_millis(ttl))
+            })
+            .await?;
+            if result.is_err() {
+                // No retry/reprovision: expired/revoked/invalid leases stay denied.
+                renewal = None;
+                eprintln!(
+                    "Optic AI Bridge operator renewal disabled after inactive or invalid authority"
+                );
+            }
+        }
         let now = clock.now();
         let lifecycle = Arc::clone(&lifecycle);
         let removed_sessions = tokio::task::spawn_blocking(move || lifecycle.reap_inactive(now))
@@ -641,6 +704,10 @@ fn provision_process_leases(
 #[derive(Debug)]
 struct AppArgs {
     workspace: PathBuf,
+    file_read: bool,
+    file_search: bool,
+    session_lifetime_ms: u64,
+    supervise_session: bool,
     policy_epoch: u64,
     allowed_executables: Vec<AllowedExecutableSpec>,
     process_read_grants: Vec<ProcessReadGrantSpec>,
@@ -649,6 +716,7 @@ struct AppArgs {
     environment_grants: Vec<EnvironmentGrant>,
     write_scopes: BTreeSet<LeaseScope>,
     delete_scopes: BTreeSet<LeaseScope>,
+    directory_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
     git_executable: Option<PathBuf>,
     git_integration_executable: Option<PathBuf>,
@@ -674,6 +742,10 @@ impl AppArgs {
         }
 
         let mut workspace = None;
+        let mut file_read = true;
+        let mut file_search = true;
+        let mut session_lifetime_ms = None;
+        let mut supervise_session = false;
         let mut allowed_executables = Vec::new();
         let mut process_read_grants = Vec::new();
         let mut isolated_node_executables = Vec::new();
@@ -681,6 +753,7 @@ impl AppArgs {
         let mut environment_grants = Vec::new();
         let mut write_scopes = BTreeSet::new();
         let mut delete_scopes = BTreeSet::new();
+        let mut directory_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
         let mut git_executable = None;
         let mut git_integration_executable = None;
@@ -690,7 +763,41 @@ impl AppArgs {
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
-            if arg == "--allow-executable" {
+            if arg == "--deny-file-read" {
+                file_read = false;
+            } else if arg == "--deny-file-search" {
+                file_search = false;
+            } else if arg == "--supervise-session" {
+                if std::mem::replace(&mut supervise_session, true) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "operator supervision must be supplied once",
+                    ));
+                }
+            } else if arg == "--session-lifetime-seconds" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "session lifetime requires seconds",
+                    )
+                })?;
+                let seconds = os_string_to_utf8(value, "session lifetime")?
+                    .parse::<u64>()
+                    .map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "invalid session lifetime",
+                        )
+                    })?;
+                if !(5..=3000).contains(&seconds)
+                    || session_lifetime_ms.replace(seconds * 1000).is_some()
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "session lifetime must be supplied once, within 5..3000 seconds",
+                    ));
+                }
+            } else if arg == "--allow-executable" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -778,6 +885,17 @@ impl AppArgs {
                     value,
                     "delete scope",
                 )?)?);
+            } else if arg == "--allow-directory-create-scope" {
+                let value = args.next().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-directory-create-scope requires all or prefix:<workspace-path>",
+                    )
+                })?;
+                directory_scopes.insert(parse_mutation_scope(os_string_to_utf8(
+                    value,
+                    "directory scope",
+                )?)?);
             } else if arg == "--mutation-state-dir" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -855,6 +973,8 @@ impl AppArgs {
                 write_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--allow-delete-scope=")? {
                 delete_scopes.insert(parse_mutation_scope(value)?);
+            } else if let Some(value) = option_value(&arg, "--allow-directory-create-scope=")? {
+                directory_scopes.insert(parse_mutation_scope(value)?);
             } else if let Some(value) = option_value(&arg, "--mutation-state-dir=")? {
                 set_mutation_state_dir(&mut mutation_state_dir, PathBuf::from(value))?;
             } else if let Some(value) = option_value(&arg, "--git-executable=")? {
@@ -881,7 +1001,9 @@ impl AppArgs {
             }
         }
 
-        if (!write_scopes.is_empty() || !delete_scopes.is_empty()) && mutation_state_dir.is_none() {
+        if (!write_scopes.is_empty() || !delete_scopes.is_empty() || !directory_scopes.is_empty())
+            && mutation_state_dir.is_none()
+        {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "mutation authority requires --mutation-state-dir",
@@ -903,8 +1025,21 @@ impl AppArgs {
             ));
         }
 
+        let session_lifetime_ms = session_lifetime_ms.unwrap_or(INITIAL_SESSION_TTL_MS);
+        if supervise_session
+            && session_lifetime_ms > HardLimits::default().max_session_renewal_horizon_ms
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "supervised lease exceeds the configured renewal horizon",
+            ));
+        }
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
+            file_read,
+            file_search,
+            session_lifetime_ms,
+            supervise_session,
             policy_epoch: 1,
             allowed_executables,
             process_read_grants,
@@ -913,6 +1048,7 @@ impl AppArgs {
             environment_grants,
             write_scopes,
             delete_scopes,
+            directory_scopes,
             mutation_state_dir,
             git_executable,
             git_integration_executable,
@@ -1162,6 +1298,79 @@ fn os_string_to_utf8(value: OsString, label: &str) -> Result<String, std::io::Er
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn operator_session_lifetime_is_bounded_and_explicit() {
+        assert_eq!(
+            super::AppArgs::parse_from(args(&["workspace"]))
+                .unwrap()
+                .session_lifetime_ms,
+            1_800_000
+        );
+        assert_eq!(
+            super::AppArgs::parse_from(args(&["workspace", "--session-lifetime-seconds", "3000"]))
+                .unwrap()
+                .session_lifetime_ms,
+            3_000_000
+        );
+        for value in ["0", "4", "3001", "-1", "18446744073709551615", "invalid"] {
+            assert!(
+                super::AppArgs::parse_from(args(&[
+                    "workspace",
+                    "--session-lifetime-seconds",
+                    value
+                ]))
+                .is_err()
+            );
+        }
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--session-lifetime-seconds",
+                "3000",
+                "--session-lifetime-seconds",
+                "2400"
+            ]))
+            .is_err()
+        );
+        assert!(
+            super::AppArgs::parse_from(args(&["workspace", "--session-lifetime-seconds"])).is_err()
+        );
+    }
+
+    #[test]
+    fn operator_supervision_is_local_explicit_and_horizon_bounded() {
+        assert!(
+            !super::AppArgs::parse_from(args(&["workspace"]))
+                .unwrap()
+                .supervise_session
+        );
+        let parsed = super::AppArgs::parse_from(args(&[
+            "workspace",
+            "--supervise-session",
+            "--session-lifetime-seconds",
+            "5",
+        ]))
+        .unwrap();
+        assert!(parsed.supervise_session);
+        assert_eq!(parsed.session_lifetime_ms, 5000);
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--supervise-session",
+                "--supervise-session"
+            ]))
+            .is_err()
+        );
+        assert!(
+            super::AppArgs::parse_from(args(&[
+                "workspace",
+                "--supervise-session",
+                "--session-lifetime-seconds",
+                "3000"
+            ]))
+            .is_err()
+        );
+    }
 
     #[test]
     fn classified_environment_grant_parser_preserves_operator_class() {
@@ -1196,14 +1405,17 @@ mod tests {
     fn persistent_v1_config_reuses_cli_validation_and_sets_policy_epoch() {
         let token = SessionHandle::generate().expect("test entropy").to_token();
         let path = std::env::temp_dir().join(format!("optic-config-{token}.json"));
+        let workspace = std::env::temp_dir().join(format!("optic-config-workspace-{token}"));
+        std::fs::create_dir(&workspace).expect("workspace for source-boundary validation");
         std::fs::write(
             &path,
-            r#"{
+            serde_json::json!({
                 "version": 1,
                 "policy_epoch": 9,
-                "workspace": "workspace-from-config",
+                "workspace": workspace,
                 "environment_grants": [{"class":"benign","name":"PATH_HINT"}]
-            }"#,
+            })
+            .to_string(),
         )
         .expect("write config");
 
@@ -1213,12 +1425,13 @@ mod tests {
         ])
         .expect("persistent config");
         assert_eq!(parsed.policy_epoch, 9);
-        assert_eq!(parsed.workspace, PathBuf::from("workspace-from-config"));
+        assert_eq!(parsed.workspace, workspace);
         assert_eq!(
             parsed.environment_grants,
             vec![EnvironmentGrant::benign("PATH_HINT")]
         );
         std::fs::remove_file(path).expect("remove config");
+        std::fs::remove_dir(workspace).expect("remove workspace");
     }
 
     #[test]
@@ -1846,10 +2059,57 @@ mod tests {
     }
 
     #[test]
+    fn local_read_denials_reduce_default_authority() {
+        let normal = AppArgs::parse_from([OsString::from("workspace")]).expect("default");
+        assert!(normal.file_read && normal.file_search);
+        let denied = AppArgs::parse_from([
+            OsString::from("--deny-file-read"),
+            OsString::from("--deny-file-search"),
+            OsString::from("workspace"),
+        ])
+        .expect("deny");
+        assert!(!denied.file_read && !denied.file_search);
+        let state = std::env::temp_dir().join("optic-directory-args-state");
+        let directories = AppArgs::parse_from([
+            OsString::from("--allow-directory-create-scope=prefix:src"),
+            OsString::from("--mutation-state-dir"),
+            state.into_os_string(),
+            OsString::from("workspace"),
+        ])
+        .expect("directory-only");
+        assert!(directories.write_scopes.is_empty() && directories.delete_scopes.is_empty());
+        assert_eq!(directories.directory_scopes.len(), 1);
+    }
+
+    #[test]
     fn mutation_scope_without_state_dir_fails_closed() {
         assert!(
             AppArgs::parse_from(args(&["--allow-write-scope=prefix:src", "workspace"])).is_err()
         );
+    }
+
+    #[test]
+    fn directory_scope_flags_require_state_and_do_not_imply_file_mutation() {
+        assert!(
+            AppArgs::parse_from(args(&[
+                "--allow-directory-create-scope=prefix:src",
+                "workspace"
+            ]))
+            .is_err()
+        );
+        let state = std::env::temp_dir().join("optic-directory-args-state");
+        let parsed = AppArgs::parse_from(vec![
+            "--allow-directory-create-scope".into(),
+            "prefix:src".into(),
+            "--allow-directory-create-scope=prefix:assets".into(),
+            "--mutation-state-dir".into(),
+            state.into_os_string(),
+            "workspace".into(),
+        ])
+        .unwrap();
+        assert_eq!(parsed.directory_scopes.len(), 2);
+        assert!(parsed.write_scopes.is_empty());
+        assert!(parsed.delete_scopes.is_empty());
     }
 
     #[test]

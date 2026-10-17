@@ -2,15 +2,15 @@ use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use optic_bridge_core::{
-    ActionEnvelope, ActionId, Capability, Effect, HardLimits, LimitError, ResourceBudget,
-    SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,
+    ActionEnvelope, ActionId, Capability, ContentVersion, Effect, HardLimits, LimitError,
+    ResourceBudget, SessionGrant, SessionHandle, TaskLeaseId, WorkspacePath,
 };
 use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
     BlockingIoError, BlockingIoGovernor, BoundedFileSystem, Clock, EntryKind, FileSystemError,
     GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, ProcessError, ProcessManager,
-    ReadAuthoritySet, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
+    ReadAuthoritySet, RequestPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
     ToolProfileRegistry, TransportError, TransportGuard, TransportLimits,
 };
 use rmcp::{
@@ -255,7 +255,9 @@ impl ReadonlyMcpServer {
         {
             return Err(ServerBuildError::ResponseLimitTooSmall);
         }
-        if (mutation_authorities.has_write() || mutation_authorities.has_delete())
+        if (mutation_authorities.has_write()
+            || mutation_authorities.has_delete()
+            || mutation_authorities.has_directory_create())
             && mutation_service.is_none()
         {
             return Err(ServerBuildError::MutationRuntimeMissing);
@@ -274,6 +276,9 @@ impl ReadonlyMcpServer {
         }
         if mutation_authorities.has_delete() {
             tool_router.merge(Self::mutation_delete_tool_router());
+        }
+        if mutation_authorities.has_directory_create() {
+            tool_router.merge(Self::directory_create_tool_router());
         }
         if git_service.is_some() {
             tool_router.merge(Self::git_read_tool_router());
@@ -361,64 +366,37 @@ impl ReadonlyMcpServer {
             ));
         }
 
-        let now = self.clock.now();
-        let permit = self
-            .transport_guard
-            .begin_execution(now)
-            .map_err(map_transport_error)?;
-        let grant = self.active_grant(now)?;
-
-        let filesystem = Arc::clone(&self.filesystem);
-        let task_path = path.clone();
-        let prepare_timeout_ms = permit
-            .deadline()
-            .as_millis()
-            .saturating_sub(now.as_millis())
-            .max(1);
-        let blocking_io = self.blocking_io.clone();
-        let prepared = tokio::time::timeout(
-            Duration::from_millis(prepare_timeout_ms),
-            blocking_io.run(move || filesystem.prepare_read(&task_path, offset, Some(max_bytes))),
-        )
-        .await
-        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(map_blocking_io_error)?
-        .map_err(map_filesystem_error)?;
-
-        let canonical_path = prepared.observation().canonical_path.clone();
-        let authorize_now = self.clock.now();
-        self.authorize(
-            &grant,
-            Effect::FileRead {
-                path: canonical_path.clone(),
-            },
-            authorize_now,
-        )?;
-
-        let read_timeout_ms = permit
-            .deadline()
-            .as_millis()
-            .saturating_sub(authorize_now.as_millis())
-            .max(1);
-        let chunk = tokio::time::timeout(
-            Duration::from_millis(read_timeout_ms),
-            blocking_io.run(move || prepared.read()),
-        )
-        .await
-        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(map_blocking_io_error)?
-        .map_err(map_filesystem_error)?;
+        let (canonical_path, chunk) = self
+            .run_admitted_read(move |server, grant, permit| {
+                let prepared = server
+                    .filesystem
+                    .prepare_read(&path, offset, Some(max_bytes))
+                    .map_err(map_filesystem_error)?;
+                let canonical_path = prepared.observation().canonical_path.clone();
+                server.ensure_read_deadline(permit)?;
+                server.authorize(
+                    grant,
+                    Effect::FileRead {
+                        path: canonical_path.clone(),
+                    },
+                    server.clock.now(),
+                )?;
+                let chunk = prepared.read().map_err(map_filesystem_error)?;
+                Ok((canonical_path, chunk))
+            })
+            .await?;
 
         let response = FsReadResponse {
             path: canonical_path.as_str().to_owned(),
             encoding: "base64".to_owned(),
-            data: STANDARD.encode(chunk.bytes),
+            data: STANDARD.encode(&chunk.bytes),
             offset: chunk.offset,
             next_offset: chunk.next_offset,
             eof: chunk.eof,
+            content_version: (chunk.offset == 0 && chunk.eof)
+                .then(|| ContentVersion::from_bytes(&chunk.bytes).to_hex()),
         };
         self.ensure_structured_payload_fits(&response)?;
-        drop(permit);
         Ok(Json(response))
     }
 
@@ -447,30 +425,20 @@ impl ReadonlyMcpServer {
             ));
         }
 
-        let now = self.clock.now();
-        let permit = self
-            .transport_guard
-            .begin_execution(now)
-            .map_err(map_transport_error)?;
-        let grant = self.active_grant(now)?;
-        self.authorize(&grant, Effect::FileSearch { root: root.clone() }, now)?;
-
-        let filesystem = Arc::clone(&self.filesystem);
-        let task_root = root.clone();
-        let timeout_ms = permit
-            .deadline()
-            .as_millis()
-            .saturating_sub(now.as_millis())
-            .max(1);
-        let blocking_io = self.blocking_io.clone();
-        let page = tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            blocking_io.run(move || filesystem.list(task_root.as_ref(), cursor, limit)),
-        )
-        .await
-        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
-        .map_err(map_blocking_io_error)?
-        .map_err(map_filesystem_error)?;
+        let page = self
+            .run_admitted_read(move |server, grant, permit| {
+                server.ensure_read_deadline(permit)?;
+                server.authorize(
+                    grant,
+                    Effect::FileSearch { root: root.clone() },
+                    server.clock.now(),
+                )?;
+                server
+                    .filesystem
+                    .list(root.as_ref(), cursor, limit)
+                    .map_err(map_filesystem_error)
+            })
+            .await?;
 
         let original_len = page.entries.len();
         let mut response = FsListResponse {
@@ -488,7 +456,6 @@ impl ReadonlyMcpServer {
                 .map(|value| u64::try_from(value).unwrap_or(u64::MAX)),
         };
         self.fit_list_response(cursor_u64, original_len, &mut response)?;
-        drop(permit);
         Ok(Json(response))
     }
 
@@ -526,6 +493,50 @@ impl ReadonlyMcpServer {
         self.sessions
             .get_active(&self.session, now)
             .map_err(map_session_error)
+    }
+
+    /// Admission and transport capacity live in the worker, not in its waiter.
+    /// A timeout/cancel cannot cancel spawn_blocking: revoke must still drain
+    /// that worker before claiming the session is quiescent.
+    pub(crate) async fn run_admitted_read<T, F>(&self, operation: F) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Self, &SessionGrant, &RequestPermit) -> Result<T, ErrorData> + Send + 'static,
+    {
+        let now = self.clock.now();
+        let permit = self
+            .transport_guard
+            .begin_execution(now)
+            .map_err(map_transport_error)?;
+        let timeout_ms = permit
+            .deadline()
+            .as_millis()
+            .saturating_sub(now.as_millis())
+            .max(1);
+        let server = self.clone();
+        tokio::time::timeout(
+            Duration::from_millis(timeout_ms),
+            self.blocking_io.run(move || {
+                let permit = permit;
+                server.ensure_read_deadline(&permit)?;
+                let admission = server
+                    .sessions
+                    .begin_admission(&server.session, server.clock.now())
+                    .map_err(map_session_error)?;
+                operation(&server, admission.grant(), &permit)
+            }),
+        )
+        .await
+        .map_err(|_| ErrorData::internal_error("optic.request_timeout", None))?
+        .map_err(map_blocking_io_error)?
+    }
+
+    pub(crate) fn ensure_read_deadline(&self, permit: &RequestPermit) -> Result<(), ErrorData> {
+        if permit.is_expired_at(self.clock.now()) {
+            Err(ErrorData::internal_error("optic.request_timeout", None))
+        } else {
+            Ok(())
+        }
     }
 
     fn authorize(
@@ -610,6 +621,20 @@ impl ReadonlyMcpServer {
         self.ensure_structured_payload_fits(response)?;
 
         if response.entries.len() < original_len {
+            if response.entries.is_empty() {
+                return Err(ErrorData::internal_error("optic.response_too_large", None));
+            }
+            let kept = u64::try_from(response.entries.len())
+                .map_err(|_| ErrorData::internal_error("optic.response_too_large", None))?;
+            response.next_cursor = Some(cursor.saturating_add(kept));
+        }
+        // Changing the cursor can itself grow the serialized response. Refit
+        // with the final cursor and require at least one entry of progress.
+        while self.ensure_structured_payload_fits(response).is_err() {
+            response.entries.pop();
+            if response.entries.is_empty() {
+                return Err(ErrorData::internal_error("optic.response_too_large", None));
+            }
             let kept = u64::try_from(response.entries.len())
                 .map_err(|_| ErrorData::internal_error("optic.response_too_large", None))?;
             response.next_cursor = Some(cursor.saturating_add(kept));
@@ -634,6 +659,9 @@ pub struct FsReadResponse {
     pub offset: u64,
     pub next_offset: u64,
     pub eof: bool,
+    /// Exact version of the observed bytes only for a complete read from zero.
+    /// A later mutation must still compare it; this is not an authority grant.
+    pub content_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -761,6 +789,7 @@ fn capability_name(capability: Capability) -> &'static str {
         Capability::FileSearch => "file_search",
         Capability::FileWrite => "file_write",
         Capability::FileDelete => "file_delete",
+        Capability::DirectoryCreate => "directory_create",
         Capability::GitRead => "git_read",
         Capability::GitIntegrate => "git_integrate",
         Capability::ProcessRun => "process_run",
@@ -937,6 +966,22 @@ mod tests {
             .0;
         assert_eq!(response.data, STANDARD.encode(b"hello"));
         assert!(response.eof);
+        assert_eq!(
+            response.content_version,
+            Some(ContentVersion::from_bytes(b"hello").to_hex())
+        );
+        for (offset, max_bytes) in [(0, 2), (2, 3)] {
+            let partial = server
+                .fs_read(Parameters(FsReadRequest {
+                    path: "hello.bin".to_owned(),
+                    offset: Some(offset),
+                    max_bytes: Some(max_bytes),
+                }))
+                .await
+                .expect("bounded partial read")
+                .0;
+            assert!(partial.content_version.is_none());
+        }
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
@@ -977,6 +1022,199 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn list_fitting_rejects_zero_progress_and_refits_the_final_cursor() {
+        let root = workspace("list-fit");
+        let mut server = server(&root, &[Capability::FileSearch]);
+        let entry = || FsListEntry {
+            name: "x".to_owned(),
+            path: "x".to_owned(),
+            kind: "file".to_owned(),
+        };
+        let mut oversized = FsListResponse {
+            entries: vec![FsListEntry {
+                name: "x".repeat(200),
+                path: "x".repeat(200),
+                kind: "file".to_owned(),
+            }],
+            next_cursor: None,
+        };
+        server.limits.max_response_bytes = MCP_ENVELOPE_RESERVE_BYTES + 100;
+        assert_eq!(
+            server
+                .fit_list_response(7, 1, &mut oversized)
+                .expect_err("must not return cursor 7 again")
+                .message,
+            "optic.response_too_large"
+        );
+
+        // A final cursor with many digits is bigger than the initial null.
+        let one = FsListResponse {
+            entries: vec![entry()],
+            next_cursor: Some(1_000_000_002),
+        };
+        let budget = serde_json::to_vec(&one).expect("json").len() as u64;
+        server.limits.max_response_bytes = MCP_ENVELOPE_RESERVE_BYTES + budget;
+        let mut response = FsListResponse {
+            entries: vec![entry(), entry(), entry()],
+            next_cursor: None,
+        };
+        server
+            .fit_list_response(1_000_000_000, 3, &mut response)
+            .expect("fit with progress");
+        assert!(!response.entries.is_empty());
+        assert_eq!(
+            response.next_cursor,
+            Some(1_000_000_000 + response.entries.len() as u64)
+        );
+        server
+            .ensure_structured_payload_fits(&response)
+            .expect("final cursor also fits");
+        let mut empty = FsListResponse {
+            entries: vec![],
+            next_cursor: None,
+        };
+        server
+            .fit_list_response(0, 0, &mut empty)
+            .expect("empty directory is valid");
+        assert_eq!(empty.next_cursor, None);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn admitted_read_workers_drain_on_revoke_after_cancel_timeout_success_or_error() {
+        use std::sync::mpsc;
+
+        for listing in [false, true] {
+            for interruption in ["cancel", "timeout", "success", "error"] {
+                let root = workspace("read-drain");
+                fs::write(root.join("fixture.txt"), b"fixture").expect("fixture");
+                let mut server = server(&root, &[Capability::FileRead, Capability::FileSearch]);
+                server.transport_guard = TransportGuard::new(TransportLimits {
+                    max_request_duration_ms: if interruption == "timeout" { 50 } else { 5_000 },
+                    ..TransportLimits::from(server.limits)
+                })
+                .expect("transport");
+                let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+                let (release_tx, release_rx) = mpsc::channel();
+                let reader = server.clone();
+                let request = tokio::spawn(async move {
+                    reader
+                        .run_admitted_read(move |server, grant, _permit| {
+                            let effect = if listing {
+                                Effect::FileSearch { root: None }
+                            } else {
+                                Effect::FileRead {
+                                    path: WorkspacePath::parse("fixture.txt").expect("path"),
+                                }
+                            };
+                            server.authorize(grant, effect, server.clock.now())?;
+                            entered_tx.send(()).expect("reader entered");
+                            release_rx
+                                .recv_timeout(Duration::from_secs(5))
+                                .expect("release worker");
+                            if interruption == "error" {
+                                return Err(ErrorData::internal_error("test.effect_failed", None));
+                            }
+                            if listing {
+                                server
+                                    .filesystem
+                                    .list(None, 0, 8)
+                                    .map_err(map_filesystem_error)?;
+                            } else {
+                                server
+                                    .filesystem
+                                    .read(
+                                        &WorkspacePath::parse("fixture.txt").expect("path"),
+                                        0,
+                                        Some(8),
+                                    )
+                                    .map_err(map_filesystem_error)?;
+                            }
+                            Ok(())
+                        })
+                        .await
+                });
+                tokio::time::timeout(Duration::from_secs(5), entered_rx)
+                    .await
+                    .expect("start deadline")
+                    .expect("start");
+                let mut request = Some(request);
+                if interruption == "cancel" {
+                    let request = request.take().expect("request");
+                    request.abort();
+                    assert!(request.await.expect_err("cancelled").is_cancelled());
+                } else if interruption == "timeout" {
+                    let result = request
+                        .take()
+                        .expect("request")
+                        .await
+                        .expect("request task");
+                    assert_eq!(
+                        result.expect_err("timed out").message,
+                        "optic.request_timeout"
+                    );
+                }
+                let sessions = Arc::clone(&server.sessions);
+                let session = server.session.clone();
+                let revoke = tokio::task::spawn_blocking(move || sessions.revoke(&session));
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while server
+                        .sessions
+                        .get_active(&server.session, server.clock.now())
+                        .is_ok()
+                    {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .expect("revoke marks inactive");
+                assert!(
+                    !revoke.is_finished(),
+                    "revoke must wait for the authorized effect"
+                );
+                assert_eq!(
+                    server.transport_guard.active_requests(),
+                    1,
+                    "worker owns capacity after waiter cancellation"
+                );
+                release_tx.send(()).expect("release");
+                if let Some(request) = request {
+                    let result = request.await.expect("request task");
+                    if interruption == "error" {
+                        assert_eq!(
+                            result.expect_err("effect failed").message,
+                            "test.effect_failed"
+                        );
+                    } else {
+                        result.expect("admitted effect completes");
+                    }
+                }
+                tokio::time::timeout(Duration::from_secs(5), revoke)
+                    .await
+                    .expect("revoke deadline")
+                    .expect("revoke task")
+                    .expect("revoke");
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while server.transport_guard.active_requests() != 0 {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .expect("worker releases capacity");
+                assert_eq!(
+                    server
+                        .run_admitted_read(|_, _, _| Ok(()))
+                        .await
+                        .expect_err("inactive")
+                        .message,
+                    "optic.session_inactive"
+                );
+                fs::remove_dir_all(root).expect("cleanup");
+            }
+        }
     }
 
     #[test]
@@ -1057,5 +1295,109 @@ mod tests {
             ]
         );
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn directory_only_mcp_authority_creates_scoped_leaves_and_stops_on_revocation() {
+        use crate::mutation_tools::{DirectoryExpectedState, FsCreateDirectoryRequest};
+        use optic_bridge_runtime::{MutationAuthoritySpec, mutation_resource_budget};
+        let root = workspace("directory-only");
+        let state = workspace("directory-state");
+        let base = server(&root, &[Capability::DirectoryCreate]);
+        assert!(
+            !base
+                .registered_tool_names()
+                .contains(&"fs_create_directory".into())
+        );
+        let authority = MutationAuthoritySet::provision(
+            &base.task_leases,
+            &base.session,
+            &MutationAuthoritySpec {
+                directory_scopes: BTreeSet::from([optic_bridge_core::LeaseScope::WorkspacePrefix(
+                    WorkspacePath::parse("src").unwrap(),
+                )]),
+                ..Default::default()
+            },
+            mutation_resource_budget(base.limits),
+            MonotonicTime::from_millis(1000),
+            1,
+        )
+        .unwrap();
+        let lease = authority
+            .lease_for(Capability::DirectoryCreate)
+            .unwrap()
+            .clone();
+        let mutations = AuthorizedFileMutationService::from_hard_limits(
+            &root,
+            &state,
+            base.limits,
+            base.sessions.clone(),
+            base.task_leases.clone(),
+            base.clock.clone(),
+        )
+        .unwrap();
+        let server = ReadonlyMcpServer::new_with_mutation_runtime(
+            &root,
+            base.sessions.clone(),
+            base.session.clone(),
+            base.clock.clone(),
+            base.limits,
+            base.processes.clone(),
+            base.task_leases.clone(),
+            BTreeMap::new(),
+            Some(Arc::new(mutations)),
+            authority,
+        )
+        .unwrap();
+        let names = server.registered_tool_names();
+        assert!(names.contains(&"fs_create_directory".into()));
+        for name in ["fs_write", "fs_apply_patch", "fs_delete"] {
+            assert!(!names.contains(&name.into()));
+        }
+        let request = |path: &str| {
+            Parameters(FsCreateDirectoryRequest {
+                path: path.into(),
+                expected: DirectoryExpectedState::Absent,
+            })
+        };
+        assert!(base.fs_create_directory(request("src")).await.is_err());
+        assert!(
+            server
+                .fs_create_directory(request("src-other"))
+                .await
+                .is_err()
+        );
+        assert!(!root.join("src-other").exists());
+        assert!(
+            server
+                .fs_create_directory(request("src"))
+                .await
+                .unwrap()
+                .0
+                .created
+        );
+        assert!(server.fs_create_directory(request("src")).await.is_err());
+        assert!(
+            server
+                .fs_create_directory(request("src/日本語"))
+                .await
+                .unwrap()
+                .0
+                .created
+        );
+        assert!(root.join("src/日本語").is_dir());
+        server.task_leases.revoke(&lease).unwrap();
+        assert!(
+            server
+                .fs_create_directory(request("src/after-revoke"))
+                .await
+                .is_err()
+        );
+        assert!(!root.join("src/after-revoke").exists());
+        drop(server);
+        drop(base);
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(state).unwrap();
     }
 }

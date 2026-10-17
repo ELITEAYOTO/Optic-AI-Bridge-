@@ -3,9 +3,14 @@ use std::{
     future::Future,
     io::{Error, ErrorKind, Result},
     mem::size_of,
-    os::windows::io::{AsRawHandle, BorrowedHandle},
+    os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle},
     pin::Pin,
     process::ExitStatus,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -13,7 +18,9 @@ use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper};
 use tokio::process::Command;
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_NO_MORE_FILES, HANDLE,
+        },
         System::{
             Diagnostics::ToolHelp::{
                 CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First,
@@ -29,8 +36,8 @@ use windows::{
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
-                CREATE_SUSPENDED, GetProcessId, OpenThread, PROCESS_CREATION_FLAGS, ResumeThread,
-                THREAD_SUSPEND_RESUME,
+                CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
+                PROCESS_CREATION_FLAGS, ResumeThread, THREAD_SUSPEND_RESUME,
             },
         },
     },
@@ -220,6 +227,345 @@ impl Drop for OwnedJob {
         // SAFETY: this value owns the handle and Drop runs once. KILL_ON_JOB_CLOSE makes
         // closing the final Job Object handle the containment backstop for descendants.
         let _ = unsafe { CloseHandle(self.0) };
+    }
+}
+
+/// Owns one AppContainer root and its bounded kernel process tree. Policy and
+/// resource admission remain the caller's responsibility. No PID is accepted.
+pub struct ContainedAppContainerProcess {
+    // Disarm/join before the final owning job handle is closed.
+    deadline: Option<NativeJobDeadline>,
+    job: OwnedJob,
+    child: crate::SuspendedAppContainerProcess,
+}
+
+impl ContainedAppContainerProcess {
+    pub fn contain(
+        child: crate::SuspendedAppContainerProcess,
+        limits: LimitedJobObject,
+    ) -> Result<Self> {
+        if child.has_resumed() || !child.is_appcontainer()? {
+            return Err(Error::other(
+                "containment requires an owned suspended AppContainer root",
+            ));
+        }
+        let job = OwnedJob::create(
+            limits.active_process_limit,
+            limits.job_memory_limit,
+            limits.cpu_percent,
+        )?;
+        // SAFETY: consumes the uniquely owned, not-yet-resumed child. Kernel
+        // limits are set before assignment and before any application code runs.
+        unsafe {
+            AssignProcessToJobObject(job.raw(), HANDLE(child.borrowed_process().as_raw_handle()))
+        }
+        .map_err(Error::other)?;
+        Ok(Self {
+            deadline: None,
+            job,
+            child,
+        })
+    }
+
+    /// One nonrenewable deadline, armed while suspended. It requests termination
+    /// independently of the owner worker's polling or filesystem operations.
+    /// Managed admission must bound the number of simultaneously armed jobs.
+    pub fn arm_deadline(&mut self, timeout_ms: u32) -> Result<()> {
+        self.arm_watchdog(timeout_ms, Vec::new())
+    }
+
+    /// At most four already-owner-bound stop/revocation flags. No callbacks,
+    /// policy I/O or locks run in the watchdog; its deadline cannot be renewed.
+    pub fn arm_watchdog(
+        &mut self,
+        timeout_ms: u32,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<()> {
+        if timeout_ms == 0
+            || stop_flags.len() > 4
+            || self.child.has_resumed()
+            || self.deadline.is_some()
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "deadline requires one positive suspended-job budget",
+            ));
+        }
+        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms, stop_flags)?);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn deadline_expired(&self) -> bool {
+        self.deadline
+            .as_ref()
+            .is_some_and(|deadline| deadline.expired.load(Ordering::Acquire))
+    }
+
+    pub fn resume(&self) -> Result<()> {
+        self.child.resume()
+    }
+
+    /// A root exit alone is insufficient: descendants must also be gone.
+    pub fn try_wait(&mut self) -> Result<Option<u32>> {
+        match self.child.try_wait_exit()? {
+            Some(code) if self.job.active_processes()? == 0 => Ok(Some(code)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn terminate_and_confirm_empty(&mut self, timeout_ms: u32) -> Result<()> {
+        if !(1..=5000).contains(&timeout_ms) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "owned termination confirmation requires 1..=5000 ms",
+            ));
+        }
+        // Even a failed termination request can race natural exit. Only the
+        // owned kernel accounting below establishes an empty process tree.
+        let _ = self.job.terminate(1);
+        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
+        loop {
+            if self.job.active_processes()? == 0 && self.child.try_wait_exit()?.is_some() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= until {
+                return Err(Error::other(
+                    "owned AppContainer tree termination uncertain",
+                ));
+            }
+            std::thread::sleep(JOB_EMPTY_POLL);
+        }
+    }
+}
+
+struct NativeJobDeadline {
+    cancel: Option<mpsc::SyncSender<()>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    expired: Arc<AtomicBool>,
+}
+impl NativeJobDeadline {
+    fn new(job: &OwnedJob, timeout_ms: u32, stop_flags: Vec<Arc<AtomicBool>>) -> Result<Self> {
+        let mut duplicate = HANDLE::default();
+        // SAFETY: duplicate a live owned job into this process only. It is never
+        // inheritable or exposed; OwnedHandle provides thread-safe ownership.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                job.raw(),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: successful duplication transfers exactly one unique handle.
+        let handle = unsafe { OwnedHandle::from_raw_handle(duplicate.0) };
+        let (cancel, receive) = mpsc::sync_channel(1);
+        let expired = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&expired);
+        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
+        let worker = std::thread::Builder::new()
+            .name("optic-job-deadline".into())
+            .spawn(move || {
+                loop {
+                    let timed_out = std::time::Instant::now() >= until;
+                    if timed_out || stop_flags.iter().any(|flag| flag.load(Ordering::Acquire)) {
+                        if timed_out {
+                            observed.store(true, Ordering::Release);
+                        }
+                        // SAFETY: this thread owns the duplicate of this exact kernel
+                        // job. It takes no PID and performs no file/profile cleanup.
+                        let _ = unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) };
+                        break;
+                    }
+                    let remaining = until.saturating_duration_since(std::time::Instant::now());
+                    match receive.recv_timeout(remaining.min(Duration::from_millis(20))) {
+                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => (),
+                    }
+                }
+            })?;
+        Ok(Self {
+            cancel: Some(cancel),
+            worker: Some(worker),
+            expired,
+        })
+    }
+}
+impl Drop for NativeJobDeadline {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.try_send(());
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Native-test-only containment for the owned suspended AppContainer probe.
+/// Never accepts a PID or exposes an uncontained process to the tool surface.
+#[cfg(test)]
+pub(crate) struct AppContainerProbeJob(OwnedJob);
+
+#[cfg(test)]
+impl AppContainerProbeJob {
+    /// Inspect only live members of this owned kernel job. PID membership is
+    /// rechecked on the opened handle before token access to fence PID reuse.
+    pub(crate) fn verify_active_tokens(&self, profile: &crate::AppContainerProfile) -> Result<u32> {
+        use std::mem::size_of_val;
+        use windows::Win32::{
+            Security::{
+                EqualSid, GetTokenInformation, TOKEN_APPCONTAINER_INFORMATION, TOKEN_QUERY,
+                TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer,
+            },
+            System::{
+                JobObjects::{IsProcessInJob, JobObjectBasicProcessIdList},
+                Threading::{
+                    GetExitCodeProcess, OpenProcess, OpenProcessToken,
+                    PROCESS_QUERY_LIMITED_INFORMATION,
+                },
+            },
+        };
+        #[repr(C)]
+        struct ProcessIds {
+            assigned: u32,
+            listed: u32,
+            ids: [usize; 16],
+        }
+        struct ProbeHandle(HANDLE);
+        impl Drop for ProbeHandle {
+            fn drop(&mut self) {
+                // SAFETY: each successful open creates one uniquely owned handle.
+                let _ = unsafe { CloseHandle(self.0) };
+            }
+        }
+        let mut ids = ProcessIds {
+            assigned: 0,
+            listed: 0,
+            ids: [0; 16],
+        };
+        // SAFETY: exact native layout, fixed capacity equals the configured job
+        // process ceiling; Windows refuses a snapshot larger than this buffer.
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.0.raw()),
+                JobObjectBasicProcessIdList,
+                (&mut ids as *mut ProcessIds).cast(),
+                size_of::<ProcessIds>() as u32,
+                None,
+            )
+        }
+        .map_err(Error::other)?;
+        if ids.assigned > 16 || ids.listed > 16 {
+            return Err(Error::other("owned probe process ceiling"));
+        }
+        let mut verified = 0;
+        for value in &ids.ids[..ids.listed as usize] {
+            let pid = u32::try_from(*value)
+                .map_err(|_| Error::other("invalid owned process identity"))?;
+            // SAFETY: PID comes only from this owned job snapshot. No memory or
+            // token is read until current handle membership is confirmed below.
+            let process = match unsafe {
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+            } {
+                Ok(handle) => ProbeHandle(handle),
+                Err(error) if error.code() == windows::core::HRESULT::from_win32(87) => continue,
+                Err(error) => return Err(Error::other(error)),
+            };
+            let mut member = windows::core::BOOL::default();
+            // SAFETY: opened process, owned job and exact BOOL output.
+            unsafe { IsProcessInJob(process.0, Some(self.0.raw()), &mut member) }
+                .map_err(Error::other)?;
+            if !member.as_bool() {
+                continue;
+            }
+            let mut exit = 0;
+            // SAFETY: owned job member handle has query rights and valid output.
+            unsafe { GetExitCodeProcess(process.0, &mut exit) }.map_err(Error::other)?;
+            if exit != 259 {
+                continue;
+            }
+            let mut token = HANDLE::default();
+            // SAFETY: current member process and writable handle output.
+            if let Err(error) = unsafe { OpenProcessToken(process.0, TOKEN_QUERY, &mut token) } {
+                // A short-lived member may exit between the liveness check
+                // and opening its token. Do not mistake that for a live escape.
+                unsafe { GetExitCodeProcess(process.0, &mut exit) }.map_err(Error::other)?;
+                if exit != 259 {
+                    continue;
+                }
+                return Err(Error::other(error));
+            }
+            let token = ProbeHandle(token);
+            let mut is_container = 0_u32;
+            let mut returned = 0_u32;
+            // SAFETY: each information class matches a fixed, aligned bounded
+            // output buffer that stays live through all pointer/SID use.
+            unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIsAppContainer,
+                    Some((&mut is_container as *mut u32).cast()),
+                    4,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                if is_container == 0 {
+                    return Err(Error::other("owned descendant lost AppContainer isolation"));
+                }
+                let mut sid_buffer = [0_usize; 16];
+                GetTokenInformation(
+                    token.0,
+                    TokenAppContainerSid,
+                    Some(sid_buffer.as_mut_ptr().cast()),
+                    size_of_val(&sid_buffer) as u32,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                let info = &*sid_buffer.as_ptr().cast::<TOKEN_APPCONTAINER_INFORMATION>();
+                EqualSid(info.TokenAppContainer, profile.package_sid())
+                    .map_err(|_| Error::other("owned descendant changed container identity"))?;
+                let mut caps = [0_u64; 64];
+                GetTokenInformation(
+                    token.0,
+                    TokenCapabilities,
+                    Some(caps.as_mut_ptr().cast()),
+                    size_of_val(&caps) as u32,
+                    &mut returned,
+                )
+                .map_err(Error::other)?;
+                if *caps.as_ptr().cast::<u32>() != 0 {
+                    return Err(Error::other("owned descendant gained capability SIDs"));
+                }
+            }
+            verified += 1;
+        }
+        Ok(verified)
+    }
+
+    pub(crate) fn assign(process: BorrowedHandle<'_>) -> Result<Self> {
+        let job = OwnedJob::create(16, 1024 * 1024 * 1024, 50)?;
+        // SAFETY: process is borrowed from the owned, still-suspended test child;
+        // limits are configured before any test application code can run.
+        unsafe { AssignProcessToJobObject(job.raw(), HANDLE(process.as_raw_handle())) }
+            .map_err(Error::other)?;
+        Ok(Self(job))
+    }
+
+    pub(crate) fn terminate_and_confirm_empty(&self) -> Result<()> {
+        self.0.terminate(1)?;
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while self.0.active_processes()? != 0 {
+            if std::time::Instant::now() >= until {
+                return Err(Error::other("owned probe job did not become empty"));
+            }
+            std::thread::sleep(JOB_EMPTY_POLL);
+        }
+        Ok(())
     }
 }
 

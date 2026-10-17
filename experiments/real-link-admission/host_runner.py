@@ -21,14 +21,21 @@ from proof_channel import ProofChannel
 
 
 def console(state, loop, stop, channel):
-    for _ in range(16):
+    # Exhausting diagnostics/control commands must never disable local stop.
+    commands = 0
+    while True:
         line = sys.stdin.readline(65)
-        if not line or len(line) > 64 or not line.endswith('\n'):
-            return
         command = line.strip()
-        if command == 'stop':
-            loop.call_soon_threadsafe(stop.set)
+        if not line or len(line) > 64 or not line.endswith('\n') or command == 'stop':
+            try:
+                loop.call_soon_threadsafe(stop.set)
+            except RuntimeError:
+                pass  # The service already closed its event loop.
             return
+        if commands >= 16:
+            channel.emit('[LOCAL] command_budget_exhausted; stop remains available')
+            continue
+        commands += 1
         if command in ('rotate-a', 'revoke-a'):
             operation = 'rotate' if command == 'rotate-a' else 'revoke'
             payload = state.control(operation, 'A')

@@ -515,7 +515,7 @@ fn profiled_process_approval_message(
         .as_ref()
         .map_or("<workspace-root>", WorkspacePath::as_str);
     format!(
-        "Approve exact tool profile '{}'\nExecutable: {}\nClass: {:?}\nWorkload: {:?}\nArgs: {:?}\nCwd: {}\nWorkspace read files: {:?}\nEnvironment allowlist: {:?}\nNetwork: {:?}\nRequested resources: timeout={}ms output={}B memory={}B process_count={}",
+        "Approve exact tool profile '{}'\nExecutable: {}\nClass: {:?}\nWorkload: {:?}\nArgs: {:?}\nCwd: {}\nWorkspace read files: {:?}\nSource reads include ancestor metadata within the workspace, without directory listing or writes.\nEnvironment allowlist: {:?}\nNetwork: {:?}\nRequested resources: timeout={}ms output={}B memory={}B process_count={}",
         profile.name().as_str(),
         invocation.executable,
         invocation.class,
@@ -653,6 +653,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::invalid_params("optic.process_cursor_out_of_range", None)
         }
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
+        ProcessError::PrivateActionAlreadyRecorded => {
+            ErrorData::invalid_request("optic.process_action_already_recorded", None)
+        }
         ProcessError::IsolationUnavailable | ProcessError::IsolationEnvironmentUnavailable(_) => {
             ErrorData::invalid_request("optic.process_isolation_unavailable", None)
         }

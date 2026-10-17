@@ -27,6 +27,7 @@ fs_read(path, offset?, max_bytes?)
 - Paths are project-relative and must remain inside the canonical workspace.
 - Listing is deterministic, paginated and scan-bounded.
 - Reads are byte-bounded and binary bytes are returned as base64.
+- Candidate hardening (#183/#181/#176 pagination): read/list/Git-read workers hold admission and transport/I/O capacity through their effect even after client cancellation/timeout. Timeout does not prove the effect stopped. Native observed paths must be losslessly representable. A nonempty listing page retaining no entry fails with `optic.response_too_large`; truncated success advances and fits with its final cursor. Canonical-list authorization and sensitive classification remain open. See `../security/READ_BOUNDARY_HARDENING_2026-10-12.md`.
 
 Reserved for later work:
 
@@ -35,6 +36,25 @@ fs_search(...)
 ```
 
 ## Durable file mutation
+
+### Separately authorized directory creation (Windows)
+
+`fs_create_directory(path, expected="absent")` is registered only with locally
+provisioned `DirectoryCreate` authority, independently of file write/delete.
+Operator CLI `--allow-directory-create-scope all|prefix:<path>` or config
+`mutation.directory_scopes` supplies scopes; the existing mutation state setup
+remains required. Omitting this setting grants nothing.
+
+One absent leaf is created under an existing parent. Existing files/directories,
+missing parents, unsafe Windows names, native ancestor aliases and reparse points
+fail. Unicode names are supported; maximum depth32. Missing absence intent and
+unknown recursive/overwrite/authority fields fail schema validation. Revoked
+session/task/epoch or out-of-scope paths fail live policy. Other platforms refuse.
+The response contains the server-generated action_id, path and created=true only
+after creation. This is not file-journal rollback or durable exactly-once;
+inspect the parent after uncertain completion, never blindly retry. See ADR0024.
+
+### Transactional files
 
 Implemented on Windows and exposed conditionally from operator-owned authority:
 

@@ -1,31 +1,42 @@
 use std::{
+    cell::Cell,
     ffi::{OsStr, OsString, c_void},
     fmt::Write as _,
     io::{Error, Result},
     marker::PhantomData,
     mem::{size_of, size_of_val},
     os::windows::{
-        ffi::OsStrExt,
+        ffi::{OsStrExt, OsStringExt},
         io::{AsRawHandle, BorrowedHandle},
     },
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, HLOCAL, LocalFree,
+            WAIT_OBJECT_0,
+        },
         Security::{
+            Authorization::ConvertSidToStringSidW,
             FreeSid, GetTokenInformation,
-            Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
+            Isolation::{
+                CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
+            },
             PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
-        System::Threading::{
-            CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-            PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-            TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+        System::{
+            Com::CoTaskMemFree,
+            Threading::{
+                CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
+                DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
+                GetExitCodeProcess, InitializeProcThreadAttributeList,
+                LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_CREATION_FLAGS,
+                PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+                TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            },
         },
     },
     core::{HSTRING, PCWSTR, PWSTR},
@@ -40,6 +51,40 @@ pub struct AppContainerProfile {
     name: HSTRING,
     sid: PSID,
     external_acl_grants_allowed: bool,
+    delete_on_drop: bool,
+}
+
+/// Fresh identity allocated in memory before any native profile effect. It can
+/// be recorded durably, but cannot be reconstructed from a journal/model name.
+pub struct EphemeralAppContainerPlan(String);
+
+impl std::fmt::Debug for EphemeralAppContainerPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EphemeralAppContainerPlan(REDACTED)")
+    }
+}
+
+impl EphemeralAppContainerPlan {
+    pub fn generate() -> Result<Self> {
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random)
+            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
+        let mut name = String::from("Optic.Isolation.");
+        for byte in random {
+            write!(&mut name, "{byte:02x}")
+                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
+        }
+        Ok(Self(name))
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+
+    pub fn create(self) -> Result<AppContainerProfile> {
+        AppContainerProfile::create_inner(&self.0, true)
+    }
 }
 
 /// Borrowed AppContainer process-creation capabilities.
@@ -73,15 +118,7 @@ impl AppContainerProfile {
     /// A stale ACE left behind by abrupt process termination cannot be reused by a later
     /// Optic profile because the Package SID is derived from a fresh 128-bit random name.
     pub fn create_ephemeral() -> Result<Self> {
-        let mut random = [0u8; 16];
-        getrandom::fill(&mut random)
-            .map_err(|_| Error::other("AppContainer profile entropy unavailable"))?;
-        let mut name = String::from("Optic.Isolation.");
-        for byte in random {
-            write!(&mut name, "{byte:02x}")
-                .map_err(|_| Error::other("failed to format AppContainer profile name"))?;
-        }
-        Self::create_inner(&name, true)
+        EphemeralAppContainerPlan::generate()?.create()
     }
 
     fn create_inner(name: &str, external_acl_grants_allowed: bool) -> Result<Self> {
@@ -103,11 +140,22 @@ impl AppContainerProfile {
             name,
             sid,
             external_acl_grants_allowed,
+            delete_on_drop: true,
         })
     }
 
     pub(crate) const fn package_sid(&self) -> PSID {
         self.sid
+    }
+
+    /// Explicitly remove this owned profile, reporting failure instead of only
+    /// relying on Drop. Callers must first confirm/drain their owned process tree.
+    pub fn close(mut self) -> Result<()> {
+        // SAFETY: uniquely owned live profile name. No raw SID is released until
+        // this method and every lifetime-bound security/grant borrow have ended.
+        unsafe { DeleteAppContainerProfile(&self.name) }.map_err(Error::other)?;
+        self.delete_on_drop = false;
+        Ok(())
     }
 
     pub(crate) const fn external_acl_grants_allowed(&self) -> bool {
@@ -116,12 +164,38 @@ impl AppContainerProfile {
 
     #[cfg(test)]
     pub(crate) fn profile_storage_path_for_tests(&self) -> std::path::PathBuf {
-        let local_app_data =
-            std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA must exist on Windows tests");
-        std::path::PathBuf::from(local_app_data)
-            .join("Packages")
-            .join(self.name.to_string_lossy())
-            .join("AC")
+        self.private_storage_root()
+            .expect("native ephemeral profile storage")
+    }
+
+    /// Query Windows for this fresh profile's private storage identity. This is
+    /// not an external ACL grant or process authorization, and accepts no path.
+    /// Predictably named profiles cannot be used as reusable staging authority.
+    pub fn private_storage_root(&self) -> Result<PathBuf> {
+        if !self.external_acl_grants_allowed {
+            return Err(Error::other(
+                "private staging requires a fresh ephemeral profile",
+            ));
+        }
+        let mut sid_text = PWSTR::null();
+        // SAFETY: profile owns a valid live SID and sid_text is writable output.
+        unsafe { ConvertSidToStringSidW(self.sid, &mut sid_text) }.map_err(Error::other)?;
+        let _sid_allocation = ProfilePathAllocation::Local(sid_text);
+        // SAFETY: Windows returned a NUL-terminated SID string kept live above.
+        let folder =
+            unsafe { GetAppContainerFolderPath(PCWSTR(sid_text.0)) }.map_err(Error::other)?;
+        let _folder_allocation = ProfilePathAllocation::Com(folder);
+        if folder.is_null() {
+            return Err(Error::other("Windows returned no private profile path"));
+        }
+        // SAFETY: GetAppContainerFolderPath returned a live NUL-terminated UTF-16
+        // string. Preserve native Windows path identity without lossy Unicode.
+        let root = PathBuf::from(OsString::from_wide(unsafe { folder.as_wide() }));
+        if !root.is_absolute() {
+            return Err(Error::other("private profile path is not absolute"));
+        }
+        let observed = crate::file::inspect_directory_no_reparse(&root).map_err(Error::other)?;
+        Ok(observed.final_path)
     }
 
     /// Borrow security capabilities for process creation in this profile.
@@ -142,13 +216,35 @@ impl AppContainerProfile {
     }
 }
 
+enum ProfilePathAllocation {
+    Local(PWSTR),
+    Com(PWSTR),
+}
+
+impl Drop for ProfilePathAllocation {
+    fn drop(&mut self) {
+        // SAFETY: each pointer is returned by the corresponding Windows
+        // allocation API, kept uniquely owned, and freed once on every path.
+        unsafe {
+            match self {
+                Self::Local(pointer) => {
+                    let _ = LocalFree(Some(HLOCAL(pointer.0.cast())));
+                }
+                Self::Com(pointer) => CoTaskMemFree(Some(pointer.0.cast())),
+            }
+        }
+    }
+}
+
 impl Drop for AppContainerProfile {
     fn drop(&mut self) {
         // SAFETY: `sid` came from CreateAppContainerProfile and is released once.
         // Profile cleanup is best-effort in Drop and cannot weaken a running child.
         unsafe {
             let _ = FreeSid(self.sid);
-            let _ = DeleteAppContainerProfile(&self.name);
+            if self.delete_on_drop {
+                let _ = DeleteAppContainerProfile(&self.name);
+            }
         }
     }
 }
@@ -169,9 +265,47 @@ pub struct SuspendedAppContainerProcess {
     process: HANDLE,
     thread: HANDLE,
     completed: bool,
+    resumed: Cell<bool>,
 }
 
 impl SuspendedAppContainerProcess {
+    pub fn try_wait_exit(&mut self) -> Result<Option<u32>> {
+        // SAFETY: uniquely owned live process handle; polling never terminates
+        // a running process or infers completion from an exit-code sentinel.
+        let state = unsafe { WaitForSingleObject(self.process, 0) };
+        if state == windows::Win32::Foundation::WAIT_TIMEOUT {
+            return Ok(None);
+        }
+        if state != WAIT_OBJECT_0 {
+            return Err(Error::other("AppContainer process wait failed"));
+        }
+        let mut code = 0;
+        // SAFETY: signaled owned process and exact writable DWORD output.
+        unsafe { GetExitCodeProcess(self.process, &mut code) }.map_err(Error::other)?;
+        self.completed = true;
+        Ok(Some(code))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn try_wait_probe_exit(&mut self) -> Result<Option<u32>> {
+        self.try_wait_exit()
+    }
+
+    pub(crate) fn has_resumed(&self) -> bool {
+        self.resumed.get()
+    }
+
+    pub(crate) fn borrowed_process(&self) -> BorrowedHandle<'_> {
+        // SAFETY: the borrow cannot outlive this uniquely owned process handle.
+        unsafe { BorrowedHandle::borrow_raw(self.process.0) }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn borrowed_process_for_tests(&self) -> BorrowedHandle<'_> {
+        // SAFETY: this borrow cannot outlive the uniquely owned process handle.
+        unsafe { BorrowedHandle::borrow_raw(self.process.0) }
+    }
+
     pub fn is_appcontainer(&self) -> Result<bool> {
         let mut token = HANDLE::default();
         // SAFETY: process is live and token points to writable handle storage.
@@ -195,11 +329,17 @@ impl SuspendedAppContainerProcess {
     }
 
     pub fn resume(&self) -> Result<()> {
+        if self.resumed.get() {
+            return Err(Error::other(
+                "owned AppContainer process was already resumed",
+            ));
+        }
         // SAFETY: thread is the primary thread created suspended by CreateProcessW.
         let previous = unsafe { ResumeThread(self.thread) };
         if previous == u32::MAX {
             return Err(Error::last_os_error());
         }
+        self.resumed.set(true);
         Ok(())
     }
 
@@ -323,7 +463,9 @@ impl Drop for HandleGuard {
     }
 }
 
-/// Create an AppContainer child suspended, with only the supplied stdio handles inherited.
+/// Create a suspended child with only supplied stdio handles inherited.
+/// Compatibility API inherits the parent environment; private task callers use
+/// spawn_appcontainer_with_environment_suspended instead.
 ///
 /// The caller can verify `TokenIsAppContainer` before calling `resume`. Dropping the returned
 /// value before a successful bounded `wait_exit` terminates the child fail-closed.
@@ -333,6 +475,114 @@ pub fn spawn_appcontainer_suspended(
     args: &[OsString],
     cwd: &Path,
     stdio: AppContainerStdio<'_>,
+) -> Result<SuspendedAppContainerProcess> {
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        None,
+        PROCESS_CREATION_FLAGS(0),
+    )
+}
+
+/// Create a suspended child with a complete explicit environment instead of
+/// inheriting the parent. Callers still authorize executable, args and values.
+pub fn spawn_appcontainer_with_environment_suspended(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: &[(OsString, OsString)],
+) -> Result<SuspendedAppContainerProcess> {
+    let block = explicit_environment_block(environment)?;
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        Some(&block),
+        PROCESS_CREATION_FLAGS(0),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn spawn_appcontainer_debug_probe(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: &[(OsString, OsString)],
+) -> Result<SuspendedAppContainerProcess> {
+    let block = explicit_environment_block(environment)?;
+    spawn_appcontainer_inner(
+        profile,
+        executable,
+        args,
+        cwd,
+        stdio,
+        Some(&block),
+        windows::Win32::System::Threading::DEBUG_ONLY_THIS_PROCESS,
+    )
+}
+
+fn explicit_environment_block(values: &[(OsString, OsString)]) -> Result<Vec<u16>> {
+    const MAX_UNITS: usize = 32_767;
+    if values.len() > 64 {
+        return Err(Error::other("too many explicit environment variables"));
+    }
+    let mut sorted = std::collections::BTreeMap::new();
+    for (name, value) in values {
+        let key = name
+            .to_str()
+            .ok_or_else(|| Error::other("environment key must be ASCII"))?;
+        if key.is_empty()
+            || key.len() > 128
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            return Err(Error::other("invalid explicit environment key"));
+        }
+        if sorted
+            .insert(key.to_ascii_uppercase(), (name, value))
+            .is_some()
+        {
+            return Err(Error::other("duplicate case-insensitive environment key"));
+        }
+    }
+    let mut block = Vec::new();
+    for (_, (name, value)) in sorted {
+        let value = value.encode_wide().take(MAX_UNITS + 1).collect::<Vec<_>>();
+        if value.contains(&0) || block.len() + name.len() + value.len() + 3 > MAX_UNITS {
+            return Err(Error::other(
+                "explicit environment exceeds bounded UTF-16 block",
+            ));
+        }
+        block.extend(name.encode_wide());
+        block.push(u16::from(b'='));
+        block.extend(value);
+        block.push(0);
+    }
+    if block.is_empty() {
+        block.push(0);
+    }
+    block.push(0);
+    Ok(block)
+}
+
+fn spawn_appcontainer_inner(
+    profile: &AppContainerProfile,
+    executable: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    stdio: AppContainerStdio<'_>,
+    environment: Option<&[u16]>,
+    extra_flags: PROCESS_CREATION_FLAGS,
 ) -> Result<SuspendedAppContainerProcess> {
     let executable_wide = wide_null(executable.as_os_str());
     let cwd_wide = wide_null(cwd.as_os_str());
@@ -392,8 +642,12 @@ pub fn spawn_appcontainer_suspended(
             None,
             None,
             true,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
-            None,
+            EXTENDED_STARTUPINFO_PRESENT
+                | CREATE_SUSPENDED
+                | CREATE_NO_WINDOW
+                | CREATE_UNICODE_ENVIRONMENT
+                | extra_flags,
+            environment.map(|block| block.as_ptr().cast()),
             PCWSTR(cwd_wide.as_ptr()),
             &startup.StartupInfo,
             &mut info,
@@ -405,6 +659,7 @@ pub fn spawn_appcontainer_suspended(
         process: info.hProcess,
         thread: info.hThread,
         completed: false,
+        resumed: Cell::new(false),
     })
 }
 
@@ -470,6 +725,150 @@ mod tests {
     static PROFILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
     const PROCESS_WAIT_MS: u32 = 10_000;
 
+    #[test]
+    fn ephemeral_plan_is_fresh_and_can_be_recorded_before_creation() {
+        let first = EphemeralAppContainerPlan::generate().unwrap();
+        let other = EphemeralAppContainerPlan::generate().unwrap();
+        assert_ne!(first.name(), other.name());
+        assert!(!format!("{first:?}").contains(first.name()));
+        let expected = first.name().to_owned();
+        let profile = first.create().unwrap();
+        assert!(profile.private_storage_root().unwrap().is_dir());
+        assert_eq!(profile.name.to_string(), expected);
+        profile.close().unwrap();
+    }
+
+    #[test]
+    fn explicit_environment_reaches_owned_child_without_ambient_path() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let command = system32_executable("cmd.exe");
+        let private = profile.private_storage_root().unwrap();
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let mut output = crate::CapturedOutputPipe::new().unwrap();
+        let child = spawn_appcontainer_with_environment_suspended(
+            &profile,
+            &command,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("set"),
+            ],
+            command.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.writer_handle().unwrap(),
+                stderr: output.writer_handle().unwrap(),
+            },
+            &[
+                (OsString::from("TEMP"), private.as_os_str().to_owned()),
+                (OsString::from("TMP"), private.as_os_str().to_owned()),
+                (
+                    OsString::from("LOCALAPPDATA"),
+                    private.as_os_str().to_owned(),
+                ),
+                (OsString::from("APPDATA"), private.as_os_str().to_owned()),
+                (
+                    OsString::from("SystemRoot"),
+                    command
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .as_os_str()
+                        .to_owned(),
+                ),
+                (
+                    OsString::from("OPTIC_EXPLICIT_ENV"),
+                    OsString::from("present"),
+                ),
+                (
+                    OsString::from("PATH"),
+                    OsString::from("controlled-test-path"),
+                ),
+            ],
+        )
+        .unwrap();
+        let mut owned = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        output.close_parent_writer();
+        owned.arm_deadline(3000).unwrap();
+        owned.resume().unwrap();
+        let mut bytes = Vec::new();
+        let mut eof = false;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !eof {
+            let chunk = output.try_read(1024).unwrap();
+            bytes.extend_from_slice(&chunk.bytes);
+            assert!(bytes.len() <= 4096);
+            eof = chunk.eof;
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // A process can close its stdio before its root/tree actually exits.
+        // EOF is output evidence, not kernel completion acknowledgement.
+        let exit = loop {
+            if let Some(code) = owned.try_wait().unwrap() {
+                break code;
+            }
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(exit, 0);
+        let text = String::from_utf8(bytes).unwrap().to_ascii_lowercase();
+        assert!(
+            text.lines()
+                .any(|line| line == "optic_explicit_env=present")
+        );
+        assert!(text.lines().any(|line| line == "path=controlled-test-path"));
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.starts_with("userprofile=") || line.starts_with("node_options="))
+        );
+        owned.terminate_and_confirm_empty(1000).unwrap();
+    }
+
+    #[test]
+    fn explicit_environment_is_bounded_sorted_and_never_implicitly_inherited() {
+        assert_eq!(explicit_environment_block(&[]).unwrap(), [0, 0]);
+        let block = explicit_environment_block(&[
+            (OsString::from("z"), OsString::from("a=b")),
+            (OsString::from("A"), OsString::from("1")),
+        ])
+        .unwrap();
+        assert_eq!(String::from_utf16(&block).unwrap(), "A=1\0z=a=b\0\0");
+        for key in ["", "a=b", "with space", "a\0", "é"] {
+            assert!(
+                explicit_environment_block(&[(OsString::from(key), OsString::from("x"))]).is_err()
+            );
+        }
+        assert!(
+            explicit_environment_block(&[
+                (OsString::from("PATH"), OsString::from("a")),
+                (OsString::from("Path"), OsString::from("b"))
+            ])
+            .is_err()
+        );
+        assert!(
+            explicit_environment_block(&[(OsString::from("a"), OsString::from("x\0y"))]).is_err()
+        );
+        assert!(
+            explicit_environment_block(&[(OsString::from("a"), OsString::from("x".repeat(32767)))])
+                .is_err()
+        );
+        assert!(
+            explicit_environment_block(
+                &(0..65)
+                    .map(|i| (OsString::from(format!("v{i}")), OsString::from("x")))
+                    .collect::<Vec<_>>()
+            )
+            .is_err()
+        );
+    }
+
     fn unique_profile_name() -> String {
         format!(
             "Optic.Test.{}.{}",
@@ -481,6 +880,134 @@ mod tests {
     fn system32_executable(name: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot").expect("SystemRoot");
         PathBuf::from(root).join("System32").join(name)
+    }
+
+    #[test]
+    fn private_storage_requires_a_fresh_ephemeral_profile() {
+        let named = AppContainerProfile::create(&unique_profile_name()).expect("named profile");
+        assert!(named.private_storage_root().is_err());
+        let ephemeral = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let root = ephemeral
+            .private_storage_root()
+            .expect("SID-derived native storage");
+        assert!(root.is_absolute());
+        assert_eq!(
+            crate::inspect_directory_no_reparse(&root)
+                .unwrap()
+                .final_path,
+            root
+        );
+    }
+
+    #[test]
+    fn contained_deadline_terminates_without_owner_polling() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let findstr = system32_executable("findstr.exe");
+        let (input, _keep_open) = std::io::pipe().unwrap();
+        let output = OpenOptions::new().write(true).open("NUL").unwrap();
+        let child = spawn_appcontainer_suspended(
+            &profile,
+            &findstr,
+            &[OsString::from("/c:optic-deadline-absent")],
+            findstr.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .unwrap();
+        let mut owned = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        assert!(owned.arm_deadline(0).is_err());
+        owned.arm_deadline(200).unwrap();
+        assert!(owned.arm_deadline(10000).is_err());
+        owned.resume().unwrap();
+        assert!(owned.arm_deadline(10000).is_err());
+        // Simulates a blocked owner; no monitor poll/stop runs during this wait.
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(owned.deadline_expired());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while owned.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        owned.terminate_and_confirm_empty(1000).unwrap();
+        let child = spawn_appcontainer_suspended(
+            &profile,
+            &findstr,
+            &[OsString::from("/c:optic-stop-absent")],
+            findstr.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .unwrap();
+        let mut stopped = crate::ContainedAppContainerProcess::contain(
+            child,
+            crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap(),
+        )
+        .unwrap();
+        let signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        assert!(stopped.arm_watchdog(5000, vec![signal.clone(); 5]).is_err());
+        stopped.arm_watchdog(5000, vec![signal.clone()]).unwrap();
+        stopped.resume().unwrap();
+        signal.store(true, std::sync::atomic::Ordering::Release);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!stopped.deadline_expired());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while stopped.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        stopped.terminate_and_confirm_empty(1000).unwrap();
+    }
+
+    #[test]
+    fn contained_appcontainer_binds_before_resume_and_confirms_its_tree() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let make_child = || {
+            let findstr = system32_executable("findstr.exe");
+            let input = OpenOptions::new().read(true).open("NUL").unwrap();
+            let output = OpenOptions::new().write(true).open("NUL").unwrap();
+            spawn_appcontainer_suspended(
+                &profile,
+                &findstr,
+                &[OsString::from("/c:optic-contained-absent")],
+                findstr.parent().unwrap(),
+                AppContainerStdio {
+                    stdin: input.as_handle(),
+                    stdout: output.as_handle(),
+                    stderr: output.as_handle(),
+                },
+            )
+            .unwrap()
+        };
+        let limits = crate::LimitedJobObject::new(2, 256 * 1024 * 1024, 50).unwrap();
+        let mut contained =
+            crate::ContainedAppContainerProcess::contain(make_child(), limits).unwrap();
+        assert!(contained.try_wait().unwrap().is_none());
+        assert!(contained.terminate_and_confirm_empty(0).is_err());
+        contained.resume().unwrap();
+        assert!(contained.resume().is_err());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while contained.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        contained.terminate_and_confirm_empty(1000).unwrap();
+        let mut suspended =
+            crate::ContainedAppContainerProcess::contain(make_child(), limits).unwrap();
+        suspended.terminate_and_confirm_empty(1000).unwrap();
+        assert!(suspended.try_wait().unwrap().is_some());
+        let resumed = make_child();
+        resumed.resume().unwrap();
+        assert!(crate::ContainedAppContainerProcess::contain(resumed, limits).is_err());
     }
 
     #[test]

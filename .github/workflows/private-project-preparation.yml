@@ -1,0 +1,86 @@
+name: Private Project Preparation
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-core/src/project_inputs.rs'
+      - 'crates/optic-bridge-runtime/**'
+      - 'crates/optic-bridge-windows/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/private-project-preparation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-project-preparation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-preparation:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact native preparation proof
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'native preparation build failed' }
+          $Probe = @(Get-ChildItem -LiteralPath 'target/debug/deps' -Filter 'optic_bridge_runtime-*.exe' -File)
+          if ($Probe.Count -ne 1) { throw 'ambiguous runtime proof identity' }
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation'
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          $Target = Join-Path $Stage 'optic-private-project-preparation.exe'
+          Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='exact-private-preparation-tests-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Optic-Private-Project-Preparation-${{ github.sha }}
+          path: ${{ runner.temp }}/optic-private-project-preparation
+          retention-days: 7
+          if-no-files-found: error
+      - name: Verify exact private copies, owner binding, capacity and cleanup
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') project_inputs::tests::private_preparation --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'private preparation regression failed' }
+      - name: Prove bounded crash journal and exclusive owner recovery
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') private_task_journal::tests::private_journal --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'private task recovery journal proof failed' }
+      - name: Prove authorized artifact publication and partial progress
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') artifact_publication::tests::artifact_publication_ --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'authorized artifact publication proof failed' }
+      - name: Prove separately authorized absent directory creation
+        shell: pwsh
+        run: |
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') directory_create::tests:: --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native directory boundary failed' }
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') authorized_file_mutation::tests::directory_creation_has_distinct_capability_and_scoped_revocable_admission --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'directory authorization failed' }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.15.1'
+          package-manager-cache: false
+      - name: Prove read-only private Node uses shared managed job records
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') project_inputs::tests::private_preparation_node_task_ --ignored --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'managed private Node roundtrip failed' }
+      - name: Quarantine an actual interrupted native owner without replay
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_TASK_NODE = (Get-Command node.exe -ErrorAction Stop).Source
+          $env:OPTIC_PRIVATE_NATIVE_CRASH_PROOF = '1'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe') --exact project_inputs::tests::private_preparation_abrupt_native_owner_exit_is_quarantined --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native owner crash quarantine proof failed' }

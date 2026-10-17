@@ -10,6 +10,8 @@
 
 #[cfg(windows)]
 mod appcontainer;
+#[cfg(all(windows, test))]
+mod debug_probe;
 #[cfg(windows)]
 mod directory;
 #[cfg(windows)]
@@ -21,12 +23,17 @@ mod job;
 #[cfg(windows)]
 mod memory;
 #[cfg(windows)]
+mod output_pipe;
+#[cfg(all(windows, test))]
+mod rust_compile_probe;
+#[cfg(windows)]
 mod workspace_grant;
 
 #[cfg(windows)]
 pub use appcontainer::{
     AppContainerProfile, AppContainerSecurityCapabilities, AppContainerStdio,
-    SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+    EphemeralAppContainerPlan, SuspendedAppContainerProcess, spawn_appcontainer_suspended,
+    spawn_appcontainer_with_environment_suspended,
 };
 #[cfg(windows)]
 pub use directory::{PinnedDirectoryChain, PinnedDirectoryError, pin_directory_chain};
@@ -35,12 +42,14 @@ pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
 pub use file::{
     OpenedWindowsDeleteFile, OpenedWindowsFile, WindowsFileError, WindowsFileIdentity,
-    WindowsPathIdentity, inspect_directory_no_reparse, open_file_for_delete_no_reparse,
-    open_file_no_reparse, replace_file_atomically,
+    WindowsPathIdentity, inspect_directory_no_reparse, open_exclusive_state_file,
+    open_file_for_delete_no_reparse, open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
-pub use job::LimitedJobObject;
+pub use job::{ContainedAppContainerProcess, LimitedJobObject};
 #[cfg(windows)]
 pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
-pub use workspace_grant::AppContainerReadFileGrant;
+pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
+#[cfg(windows)]
+pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};

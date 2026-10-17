@@ -2,6 +2,13 @@
 
 Status: LIVING DOCUMENT. Last reviewed: 2026-10-08.
 
+Near-term priorities revised2026-10-15: see
+[the active alpha reliability and autonomy plan](ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md).
+It defines diagnostics, Windows shutdown repair, reviewed main consolidation,
+bounded efficient file/module tools, proposed locally supervised renewable
+authorization and real installed-toolchain project acceptance. The requested
+stop-controlled mode is design work, not a delivered unlimited session.
+
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
 - Cargo workspace and stable internal interfaces.

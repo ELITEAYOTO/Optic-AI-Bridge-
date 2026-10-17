@@ -14,19 +14,21 @@ from lifecycle_core import Registry, TOKENS
 from forward_core import ForwardGate, ForwardError
 
 
-def structured(result):
+def structured(result, max_bytes=16384):
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 128 * 1024:
+        raise ForwardError('link.invalid_output_bound')
     if result.is_error:
         raise ForwardError('link.upstream_tool_error')
     for attr in ('structured_content', 'structuredContent'):
         value = getattr(result, attr, None)
         if isinstance(value, dict):
             encoded = json.dumps(value, allow_nan=False).encode()
-            if len(encoded) > 16384:
+            if len(encoded) > max_bytes:
                 raise ForwardError('link.output_bound')
             return value
     for item in result.content:
         text = getattr(item, 'text', None)
-        if isinstance(text, str) and len(text.encode()) <= 16384:
+        if isinstance(text, str) and len(text.encode()) <= max_bytes:
             value = json.loads(text)
             if isinstance(value, dict):
                 return value
