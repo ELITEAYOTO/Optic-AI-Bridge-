@@ -56,6 +56,13 @@ Phase 3E3 is merged and validated through PR #107 (`826f8cb3`, final head `203d7
 
 ## Cursor model
 
+The private runtime module `process/output.rs` owns the existing output storage,
+8 KiB pipe-drain chunks, shared stdout/stderr byte ceiling and stream-closure
+updates. The parent `process.rs` retains session ownership checks, cursor reads,
+admission reservations, overflow state and monitor/termination ownership. Pipe
+EOF is not confirmation that the owned process tree is empty. This internal
+split changes no limits, errors, public API, MCP schema or persistent format.
+
 process_read(job_id, stream, cursor, max_bytes) returns bounded data plus next_cursor, EOF/truncation metadata and total byte counters.
 
 ## Content references

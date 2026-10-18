@@ -53,6 +53,22 @@ pub fn open_exclusive_state_file(
         .share_mode(0)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
         .open(path)?;
+    finish_exclusive_file(file)
+}
+
+/// Exclusive existing regular file, with read access only. Never creates or
+/// truncates. The caller must pin/authorize its parent and check final identity.
+/// This primitive grants no workspace, process or artifact-publication authority.
+pub fn open_exclusive_read_file(path: &Path) -> Result<OpenedWindowsFile, WindowsFileError> {
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(path)?;
+    finish_exclusive_file(file)
+}
+
+fn finish_exclusive_file(file: File) -> Result<OpenedWindowsFile, WindowsFileError> {
     reject_reparse(&file)?;
     if !file.metadata()?.is_file() {
         return Err(io::Error::other("state target must be a file").into());
@@ -320,6 +336,47 @@ mod tests {
         drop(reopened);
         fs::hard_link(&path, root.join("alias")).unwrap();
         assert!(open_exclusive_state_file(&path, false).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exclusive_read_file_needs_no_write_right_and_never_creates() {
+        use std::io::{Read, Write};
+        let root = workspace("exclusive-read");
+        let path = root.join("artifact.bin");
+        let absent = root.join("missing.bin");
+        assert!(open_exclusive_read_file(&absent).is_err());
+        assert!(!absent.exists());
+        assert!(open_exclusive_read_file(&root).is_err());
+        fs::write(&path, b"fixed output").unwrap();
+        let observed = open_file_no_reparse(&path).unwrap();
+        let identity = observed.identity();
+        let final_path = observed.final_path().to_owned();
+        drop(observed);
+        let original_permissions = fs::metadata(&path).unwrap().permissions();
+        let mut permissions = original_permissions.clone();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions.clone()).unwrap();
+        // Existing state read/write opening is intentionally stronger.
+        assert!(open_exclusive_state_file(&path, false).is_err());
+        let mut file = open_exclusive_read_file(&path).unwrap();
+        assert_eq!(file.identity(), identity);
+        assert_eq!(file.final_path(), final_path);
+        let mut bytes = Vec::new();
+        file.file_mut().read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"fixed output");
+        assert!(file.file_mut().write_all(b"corrupt").is_err());
+        assert!(open_exclusive_read_file(&path).is_err());
+        assert!(fs::rename(&path, root.join("moved.bin")).is_err());
+        drop(file);
+
+        fs::set_permissions(&path, original_permissions).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"fixed output");
+        let writer = OpenOptions::new().write(true).open(&path).unwrap();
+        assert!(open_exclusive_read_file(&path).is_err());
+        drop(writer);
+        fs::hard_link(&path, root.join("alias.bin")).unwrap();
+        assert!(open_exclusive_read_file(&path).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

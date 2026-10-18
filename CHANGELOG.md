@@ -4,6 +4,38 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Read recovery journal records without write rights, preserving exclusive native
+  identity/alias checks and separate write requirements for locking and appends.
+
+- Retain validated start-intent fingerprints in host-only private-task recovery
+  reports, including legacy records, without new durable data or replay authority.
+
+- Add opt-in fixed std Rust app proof with copied explicit CRT/SDK resources,
+  compiler-owned linker descendant and real Vec/parse/assert/println execution.
+  Test-only ADR0029, exact validation pending; no Cargo or general execution grant.
+
+- Opt-in fixed no_std Rust native roundtrip: COFF object, direct lld with explicit
+  kernel32 import, and produced application exit42 under owned native Jobs.
+  Test-only ADR0028, exact validation pending; no Cargo/CRT/general build grant.
+
+- Add exclusive read-only native artifact opening, retaining regular-file,
+  no-reparse, single-link and identity checks without requesting write access.
+  The fixed Rust proof now collects an actual read-only compiler output;
+  native validation pending, no new application permission.
+
+- Extend the optional fixed Rust proof with one compiler-written private LLVM
+  file and bounded collection after owned-tree exit, including alias/writer/size
+  denial cases. Test-only; exact native validation pending, not build authority.
+
+- Extract existing bounded process-output storage and pipe drains into a private
+  child module. Cursor authorization, aggregate reservations, overflow handling
+  and termination ownership are unchanged; no new authority or dependency.
+
+- Operator JSON permission reductions and protected startup policy sources,
+  with default-off present sections and order-independent process-read denial.
+  No implicit scopes or live reload; exact stdio/Windows/Linux validation passed
+  in PR237 CI39041285058.
+
 - Private-task recovery reports now include bounded diagnostic lifecycle times;
   legacy records retain their original lock/capacity domain and absent times.
   Event order and monotonic live authorization remain authoritative. Native

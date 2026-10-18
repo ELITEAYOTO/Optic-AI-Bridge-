@@ -40,7 +40,7 @@ Policy files and enabled tool-profile files loaded through --config must resolve
 outside the selected writable workspace; Windows checks the opened file's final
 path. The file is read once: editing it does NOT yet hot-reload permissions.
 This section does not enable dependency egress, process writes, arbitrary GUI
-launch or a full-access bypass. Live policy change remains the ADR0016 epoch/
+launch or a full-access bypass. Live policy change remains the ADR0026 epoch/
 revocation/cleanup gate.
 
 `HardLimits::default()` currently defines:

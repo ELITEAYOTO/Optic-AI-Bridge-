@@ -3,6 +3,13 @@
 **Status:** active H-01 research target — transport feasibility proven in an isolated prototype; production auth/session semantics not yet proven.
 **Recorded:** 2026-10-08. **Updated:** 2026-10-10.
 
+**Evidence update, 2026-10-18:** the operator has since supplied authenticated
+host observations, rotation/revocation, generated-file editing, fixed Node tasks,
+pagination/truncation and interruption results. See the
+[measured evidence checkpoint](FRANCESTUDENT_HOST_EVIDENCE_2026-10-18.md).
+The original checklist below is historical where superseded; production remote
+support, general builds and conversation isolation remain unclaimed.
+
 ## Motivation
 
 Optic may expose the same application-owned security/runtime core through a remote host adapter so a cloud client such as FranceStudent (FS) can use the Optic instance running on the student's own Windows PC.

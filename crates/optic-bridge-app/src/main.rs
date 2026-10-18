@@ -1034,6 +1034,9 @@ impl AppArgs {
                 "supervised lease exceeds the configured renewal horizon",
             ));
         }
+        if !file_read {
+            process_read_grants.clear();
+        }
         Ok(Self {
             workspace: workspace.unwrap_or(std::env::current_dir()?),
             file_read,
@@ -2079,6 +2082,30 @@ mod tests {
         .expect("directory-only");
         assert!(directories.write_scopes.is_empty() && directories.delete_scopes.is_empty());
         assert_eq!(directories.directory_scopes.len(), 1);
+    }
+
+    #[test]
+    fn direct_read_denial_removes_process_source_grants_in_either_argument_order() {
+        for (first, supervised) in [(true, false), (false, false), (true, true), (false, true)] {
+            let mut flags = vec![
+                OsString::from("--allow-process-read-file"),
+                OsString::from("C:\\tool.exe"),
+                OsString::from("src/input.txt"),
+            ];
+            if first {
+                flags.insert(0, "--deny-file-read".into());
+            } else {
+                flags.push("--deny-file-read".into());
+            }
+            if supervised {
+                flags.push("--supervise-session".into());
+            }
+            flags.push("workspace".into());
+            let parsed = AppArgs::parse_from(flags).unwrap();
+            assert_eq!(parsed.supervise_session, supervised);
+            assert!(!parsed.file_read);
+            assert!(parsed.process_read_grants.is_empty());
+        }
     }
 
     #[test]

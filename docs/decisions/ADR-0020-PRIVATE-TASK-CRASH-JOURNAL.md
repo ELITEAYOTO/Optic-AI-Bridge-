@@ -93,3 +93,34 @@ Version2 and legacy lines cannot mix inside one record; header and encoding must
 agree. Unknown versions, malformed observations and transitions fail closed.
 No migration, capacity reset, automatic cleanup/replay or restored permission.
 The existing 2048-byte line/16KiB record/eight-event limits still apply.
+
+### Recovery correlation — 2026-10-17
+
+The host-only recovery report now returns optional typed fingerprints of the
+start action, process lease, pinned runtime and managed job. These values were
+already persisted in Starting; parsing now retains them instead of discarding
+that evidence. A diagnostic matches_action helper compares a retained ActionId
+using the existing domain; a match never authorizes retry. Before Starting the
+field is None. Legacy v1 and timed v2 records
+use the same unchanged encoding, domains, capacity and strict transition checks.
+No new durable bytes, raw tokens, paths, command lines or output text are added.
+
+A Starting observation means intent, not successful resume or a live job. These
+fingerprints cannot be passed to stop/adopt/relaunch APIs and never recreate a
+session, lease, profile or executable enrollment. An interrupted/corrupt journal
+still denies a report/admission; no partially trusted correlation is returned.
+Native reopen tests cover pre-start absence, legacy/timed unresolved Starting,
+closed lifecycle retention, domain separation, raw-token absence and malformed
+start fingerprints. There is no new MCP endpoint or model-readable state grant.
+
+### Read-only recovery scan — 2026-10-18
+
+Scanning records requests read rights only, while retaining exclusive sharing,
+regular-file/no-reparse/single-link and opened-final-path verification. This
+allows reports and restart scans of read-only history without permission to
+append, create or truncate it. The owner lock and actual event appends retain
+separate read/write opens. Closed-record retirement still requires explicit
+native deletion rights; read-only history is not silently unprotected or evicted.
+All corruption, transition, count and byte checks remain unchanged. A native
+regression verifies that the former write opener fails, both current/restarted
+reports succeed, and the exact record bytes remain unchanged.

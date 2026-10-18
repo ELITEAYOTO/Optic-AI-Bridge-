@@ -36,17 +36,56 @@ jobs:
           New-Item -ItemType Directory -Path $Stage | Out-Null
           $Target = Join-Path $Stage 'optic-private-rust-compile.exe'
           Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
-          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-rust-ir-only'; rust_version='1.99.0'; target='x86_64-pc-windows-msvc'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-public-rust-std-and-native-roundtrip-only'; rust_version='1.99.0'; target='x86_64-pc-windows-msvc'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Optic-Private-Rust-Compilation-${{ github.sha }}
           path: ${{ runner.temp }}/optic-private-rust-compile
           retention-days: 7
           if-no-files-found: error
-      - name: Compile public no_std library and receive actual type diagnostics
+      - name: Compile public library, collect private output and reject invalid artifacts
         shell: pwsh
         run: |
           $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc
           if ($LASTEXITCODE -ne 0) { throw 'direct compiler selection failed' }
           & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_rust_compiles_fixed_library_and_reports_real_type_error --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'private Rust compile remains unproven; inspect actual diagnostic' }
+      - name: Compile, link and execute fixed native Rust program without CRT
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc
+          if ($LASTEXITCODE -ne 0) { throw 'direct compiler selection failed' }
+          $SdkVersions = @(Get-ChildItem -LiteralPath 'C:\Program Files (x86)\Windows Kits\10\Lib' -Directory | Select-Object -First 33)
+          if ($SdkVersions.Count -gt 32) { throw 'SDK inventory exceeds proof bound' }
+          $SdkImport = @($SdkVersions | Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName 'um\x64\kernel32.lib' } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+          if ($SdkImport.Count -ne 1) { throw 'explicit kernel32 import library unavailable' }
+          $env:OPTIC_PRIVATE_KERNEL32_LIB = $SdkImport[0]
+          $Linkers = @(Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' -File | Select-Object -First 33)
+          if ($Linkers.Count -eq 0 -or $Linkers.Count -gt 32) { throw 'installed linker unavailable or inventory exceeds bound' }
+          $env:OPTIC_PRIVATE_LINKER = ($Linkers | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_rust_compiles_links_and_executes_fixed_native_program --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native Rust roundtrip unproven; retain actual diagnostic' }
+      - name: Compile standard Rust application with owned linker descendant
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc
+          if ($LASTEXITCODE -ne 0) { throw 'direct compiler selection failed' }
+          $SdkVersions = @(Get-ChildItem -LiteralPath 'C:\Program Files (x86)\Windows Kits\10\Lib' -Directory | Select-Object -First 33)
+          if ($SdkVersions.Count -gt 32) { throw 'SDK inventory exceeds proof bound' }
+          $Sdk = @($SdkVersions | Sort-Object Name -Descending | Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'um\x64\kernel32.lib')) -and (Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt\x64\ucrt.lib')) } | Select-Object -First 1)
+          if ($Sdk.Count -ne 1) { throw 'complete explicit SDK selection unavailable' }
+          $env:OPTIC_PRIVATE_KERNEL32_LIB = Join-Path $Sdk[0].FullName 'um\x64\kernel32.lib'
+          $env:OPTIC_PRIVATE_UCRT_LIB = Join-Path $Sdk[0].FullName 'ucrt\x64\ucrt.lib'
+          $Linkers = @(Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' -File | Select-Object -First 33)
+          if ($Linkers.Count -gt 32) { throw 'linker inventory exceeds bound' }
+          $Complete = @($Linkers | Sort-Object FullName -Descending | Where-Object {
+            $ToolRoot = Split-Path (Split-Path (Split-Path (Split-Path $_.FullName)))
+            $Crt = Join-Path $ToolRoot 'lib\x64'
+            (Test-Path -LiteralPath (Join-Path $Crt 'msvcrt.lib')) -and (Test-Path -LiteralPath (Join-Path $Crt 'vcruntime.lib')) -and (Test-Path -LiteralPath (Join-Path $Crt 'legacy_stdio_definitions.lib'))
+          } | Select-Object -First 1)
+          if ($Complete.Count -ne 1) { throw 'complete explicit CRT selection unavailable' }
+          $env:OPTIC_PRIVATE_LINKER = $Complete[0].FullName
+          $ToolRoot = Split-Path (Split-Path (Split-Path (Split-Path $env:OPTIC_PRIVATE_LINKER)))
+          $env:OPTIC_PRIVATE_CRT_LIB_DIR = Join-Path $ToolRoot 'lib\x64'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_rust_std_compiles_and_executes_fixed_application --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'standard Rust app remains unproven; preserve diagnostics' }
