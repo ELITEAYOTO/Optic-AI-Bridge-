@@ -103,3 +103,15 @@ still denies a report/admission; no partially trusted correlation is returned.
 Native reopen tests cover pre-start absence, legacy/timed unresolved Starting,
 closed lifecycle retention, domain separation, raw-token absence and malformed
 start fingerprints. There is no new MCP endpoint or model-readable state grant.
+
+### Read-only recovery scan — 2026-10-18
+
+Scanning records requests read rights only, while retaining exclusive sharing,
+regular-file/no-reparse/single-link and opened-final-path verification. This
+allows reports and restart scans of read-only history without permission to
+append, create or truncate it. The owner lock and actual event appends retain
+separate read/write opens. Closed-record retirement still requires explicit
+native deletion rights; read-only history is not silently unprotected or evicted.
+All corruption, transition, count and byte checks remain unchanged. A native
+regression verifies that the former write opener fails, both current/restarted
+reports succeed, and the exact record bytes remain unchanged.

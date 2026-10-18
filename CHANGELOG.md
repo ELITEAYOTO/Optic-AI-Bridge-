@@ -4,6 +4,9 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Read recovery journal records without write rights, preserving exclusive native
+  identity/alias checks and separate write requirements for locking and appends.
+
 - Retain validated start-intent fingerprints in host-only private-task recovery
   reports, including legacy records, without new durable data or replay authority.
 
