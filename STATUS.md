@@ -4,7 +4,8 @@
 
 Version-matched official symbols map the observed0x332579e breakpoint to
 Sandbox::Initialize, sandbox.cc71. The read-only owned initial-thread diagnostic
-now observes EAX12: SBOX_ERROR_CANNOT_CREATE_WINSTATION. Local ordinary native
+observes local EAX12: SBOX_ERROR_CANNOT_CREATE_WINSTATION; disposable Windows
+CI observes EAX11: SBOX_ERROR_CANNOT_CREATE_DESKTOP at the same check. Native
 tests and Clippy passed; the normal Electron test still fails0x80000003. Exact
 Win32/GetLastError cause remains unmeasured; no fallback or GUI grant. See
 [matched evidence](docs/research/ELECTRON_WINSTATION_RESULT_2026-10-18.md).

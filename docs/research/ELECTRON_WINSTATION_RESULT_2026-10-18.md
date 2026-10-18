@@ -59,3 +59,18 @@ Local ordinary Windows tests:29passed,5explicit compatibility probes ignored;
 all-target/workspace Clippy passed. Exact final-head CI and diagnostic evidence
 on disposable Windows remain required. No normal Electron success, sandbox
 fallback, dependency restore or production GUI authority is introduced.
+
+
+## Disposable Windows comparison at28d0ecf
+
+Private Application Staging39157390440/job117763318431 reproduces the same normal
+exit0x80000003 and exact breakpoint RVA0x332579e. Its owned diagnostic records
+EAX11 at both first and second chance, not the local12. Pinned enum11 is
+SBOX_ERROR_CANNOT_CREATE_DESKTOP. Thus the shared failed check is established,
+but window-station creation is not the sole universal failing step: the CI host
+reaches a desktop-creation failure instead. Exact failing Win32 call and native
+error values still need separate measurement in each environment. Do not label
+this as universal access denied or presume that an ACL/desktop switch repairs it.
+The explicit outer-only comparison passes in that same job; the normal gate
+remains red and no fallback is enabled. This comparison is evidence from the
+code head28d0ecf; later documentation commits do not imply new native execution.
