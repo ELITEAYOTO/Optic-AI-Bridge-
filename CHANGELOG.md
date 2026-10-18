@@ -4,6 +4,9 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Retain validated start-intent fingerprints in host-only private-task recovery
+  reports, including legacy records, without new durable data or replay authority.
+
 - Add opt-in fixed std Rust app proof with copied explicit CRT/SDK resources,
   compiler-owned linker descendant and real Vec/parse/assert/println execution.
   Test-only ADR0029, exact validation pending; no Cargo or general execution grant.

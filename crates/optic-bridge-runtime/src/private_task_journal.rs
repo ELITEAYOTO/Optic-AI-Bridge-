@@ -72,9 +72,30 @@ pub struct PrivateTaskRecoveryRecord {
     pub outcome: Option<PrivateTaskOutcome>,
     pub owner_fingerprint: ContentVersion,
     pub input_fingerprint: ContentVersion,
+    /// Validated start-intent evidence only, never a live job or replay token.
+    pub execution: Option<PrivateTaskRecoveryExecution>,
     /// Bounded event order is authoritative. Wall-clock observations are only
     /// diagnostic, may go backwards, and never restore authorization/deadlines.
     pub timeline: Vec<PrivateTaskRecoveryObservation>,
+}
+
+/// Fingerprints already present in a validated Starting event. No raw handle,
+/// native PID, executable path or command is returned. Starting does not prove
+/// that resume happened; even Closed does not restore any authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateTaskRecoveryExecution {
+    pub action_fingerprint: ContentVersion,
+    pub process_task_fingerprint: ContentVersion,
+    pub runtime_fingerprint: ContentVersion,
+    pub job_fingerprint: ContentVersion,
+}
+
+impl PrivateTaskRecoveryExecution {
+    /// Correlate a retained start action without exposing fingerprint encoding
+    /// to the caller. A match is diagnostic evidence, never replay permission.
+    pub fn matches_action(&self, action: &ActionId) -> bool {
+        self.action_fingerprint.to_hex() == digest("action", &action.to_token())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +158,7 @@ struct Parsed {
     outcome: Option<PrivateTaskOutcome>,
     events: usize,
     timeline: Vec<PrivateTaskRecoveryObservation>,
+    execution: Option<PrivateTaskRecoveryExecution>,
 }
 
 pub(crate) struct PrivateTaskJournalTicket {
@@ -259,6 +281,7 @@ impl PrivateTaskJournal {
                     input_fingerprint: ContentVersion::from_hex(&p.header.inputs)
                         .map_err(|_| PrivateTaskJournalError::Corrupt)?,
                     timeline: p.timeline,
+                    execution: p.execution,
                 })
             })
             .collect()
@@ -488,6 +511,7 @@ fn parse(bytes: &[u8], run: &str) -> Result<Parsed, PrivateTaskJournalError> {
         header,
         phase: PrivateTaskRecoveryPhase::Intent,
         outcome: None,
+        execution: None,
         events: 1,
         timeline: vec![PrivateTaskRecoveryObservation {
             phase: PrivateTaskRecoveryPhase::Intent,
@@ -536,7 +560,18 @@ fn advance(parsed: &mut Parsed, event: &Event) -> Result<(), PrivateTaskJournalE
                 runtime,
                 job,
             },
-        ) if [action, task, runtime, job].iter().all(|v| is_hex(v, 64)) => P::Starting,
+        ) if [action, task, runtime, job].iter().all(|v| is_hex(v, 64)) => {
+            let fingerprint = |value: &str| {
+                ContentVersion::from_hex(value).map_err(|_| PrivateTaskJournalError::Corrupt)
+            };
+            parsed.execution = Some(PrivateTaskRecoveryExecution {
+                action_fingerprint: fingerprint(action)?,
+                process_task_fingerprint: fingerprint(task)?,
+                runtime_fingerprint: fingerprint(runtime)?,
+                job_fingerprint: fingerprint(job)?,
+            });
+            P::Starting
+        }
         (P::Starting, Event::Running) => P::Running,
         (P::Allocating | P::Prepared | P::Starting | P::Running, Event::Finalizing { outcome })
             if parsed.phase != P::Running || *outcome != PrivateTaskOutcome::NoProcess =>
@@ -783,12 +818,9 @@ mod tests {
         assert!(ticket.running().is_err());
         ticket.allocating().unwrap();
         ticket.prepared().unwrap();
+        let job = JobId::generate().unwrap();
         ticket
-            .starting(
-                &action,
-                ContentVersion::from_bytes(b"runtime"),
-                &JobId::generate().unwrap(),
-            )
+            .starting(&action, ContentVersion::from_bytes(b"runtime"), &job)
             .unwrap();
         ticket.running().unwrap();
         assert!(ticket.finalizing(PrivateTaskOutcome::NoProcess).is_err());
@@ -802,6 +834,7 @@ mod tests {
             action.session.to_token(),
             action.task_lease.as_ref().unwrap().to_token(),
             action.action_id.to_token(),
+            job.to_token(),
             "private source must not be recorded".to_owned(),
         ] {
             assert!(!String::from_utf8_lossy(&bytes).contains(&secret));
@@ -817,6 +850,28 @@ mod tests {
             Some(PrivateTaskOutcome::Exited { code: 0 })
         );
         assert_eq!(report[0].input_fingerprint, manifest.fingerprint());
+        let execution = report[0].execution.as_ref().unwrap();
+        assert!(execution.matches_action(&action.action_id));
+        assert!(!execution.matches_action(&ActionId::generate().unwrap()));
+        assert_eq!(
+            execution.action_fingerprint.to_hex(),
+            digest("action", &action.action_id.to_token())
+        );
+        assert_eq!(
+            execution.process_task_fingerprint.to_hex(),
+            digest(
+                "process-task",
+                &action.task_lease.as_ref().unwrap().to_token()
+            )
+        );
+        assert_eq!(
+            execution.job_fingerprint.to_hex(),
+            digest("job", &job.to_token())
+        );
+        assert_eq!(
+            execution.runtime_fingerprint,
+            ContentVersion::from_bytes(b"runtime")
+        );
         assert_eq!(report[0].timeline.len(), 7);
         assert_eq!(
             report[0].timeline[0].phase,
@@ -894,6 +949,7 @@ mod tests {
         assert_eq!(report.len(), MAX_UNRESOLVED);
         assert!(report.iter().all(|record| {
             record.phase == PrivateTaskRecoveryPhase::Allocating
+                && record.execution.is_none()
                 && record.timeline.len() == 2
                 && record
                     .timeline
@@ -994,6 +1050,79 @@ mod tests {
             parse(&mismatched, &ticket.run),
             Err(PrivateTaskJournalError::Corrupt)
         ));
+    }
+
+    #[test]
+    fn private_journal_starting_correlation_survives_legacy_and_timed_restart() {
+        for legacy in [false, true] {
+            let fixture = Fixture::new();
+            let journal = fixture.open();
+            let (manifest, action) = input();
+            let ticket = journal
+                .begin(
+                    &manifest,
+                    &action,
+                    &EphemeralAppContainerPlan::generate().unwrap(),
+                )
+                .unwrap();
+            assert!(journal.recovery_report().unwrap()[0].execution.is_none());
+            if legacy {
+                let path = journal.path(&ticket.run);
+                let mut timed: TimedEvent =
+                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                let Event::Intent { header } = &mut timed.entry else {
+                    panic!("intent")
+                };
+                header.version = 1;
+                let mut bytes = serde_json::to_vec(&timed.entry).unwrap();
+                bytes.push(b'\n');
+                fs::write(path, bytes).unwrap();
+            }
+            ticket.allocating().unwrap();
+            ticket.prepared().unwrap();
+            let job = JobId::generate().unwrap();
+            let runtime = ContentVersion::from_bytes(b"selected runtime");
+            ticket.starting(&action, runtime, &job).unwrap();
+            let path = journal.path(&ticket.run);
+            drop(ticket);
+            drop(journal);
+            let restarted = fixture.open();
+            let report = restarted.recovery_report().unwrap();
+            assert_eq!(report[0].phase, PrivateTaskRecoveryPhase::Starting);
+            assert!(report[0].outcome.is_none());
+            let execution = report[0].execution.as_ref().unwrap();
+            assert!(execution.matches_action(&action.action_id));
+            assert!(!execution.matches_action(&ActionId::generate().unwrap()));
+            assert_eq!(
+                execution.action_fingerprint.to_hex(),
+                digest("action", &action.action_id.to_token())
+            );
+            assert_eq!(
+                execution.process_task_fingerprint.to_hex(),
+                digest(
+                    "process-task",
+                    &action.task_lease.as_ref().unwrap().to_token()
+                )
+            );
+            assert_eq!(execution.runtime_fingerprint, runtime);
+            assert_eq!(
+                execution.job_fingerprint.to_hex(),
+                digest("job", &job.to_token())
+            );
+            let bytes = fs::read(&path).unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            for secret in [
+                action.action_id.to_token(),
+                action.task_lease.as_ref().unwrap().to_token(),
+                job.to_token(),
+            ] {
+                assert!(!text.contains(&secret));
+            }
+            // Malformed start evidence never becomes a partially trusted report.
+            let corrupt = text.replace(&digest("job", &job.to_token()), &"z".repeat(64));
+            fs::write(&path, corrupt).unwrap();
+            assert!(restarted.recovery_report().is_err());
+        }
     }
 
     #[test]
