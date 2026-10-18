@@ -115,7 +115,7 @@ pub use private_project_stage::{
 };
 #[cfg(windows)]
 pub use private_task_journal::{
-    PrivateTaskJournal, PrivateTaskJournalError, PrivateTaskOutcome,
+    PrivateTaskJournal, PrivateTaskJournalError, PrivateTaskOutcome, PrivateTaskRecoveryExecution,
     PrivateTaskRecoveryObservation, PrivateTaskRecoveryPhase, PrivateTaskRecoveryRecord,
 };
 pub use process::{

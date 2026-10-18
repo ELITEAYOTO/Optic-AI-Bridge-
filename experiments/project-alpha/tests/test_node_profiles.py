@@ -29,8 +29,9 @@ class NodeProfiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'src').mkdir()
-            wrong = root / 'cmd.exe'
-            wrong.write_bytes(b'public placeholder')
-            with self.assertRaisesRegex(ValueError, 'node_executable_required'):
-                configure_node(root, wrong)
-            self.assertEqual(list((root / 'src').iterdir()), [])
+            for name in ('cmd.exe', 'electron.exe'):
+                wrong = root / name
+                wrong.write_bytes(b'public placeholder')
+                with self.assertRaisesRegex(ValueError, 'node_executable_required'):
+                    configure_node(root, wrong)
+                self.assertEqual(list((root / 'src').iterdir()), [])

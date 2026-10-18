@@ -1,5 +1,144 @@
 # Project Status
 
+## Alpha integration candidate — 2026-10-18
+
+Bring validated main throughcfecb47 into the experimental FS alpha, retaining
+its supervised session/lifetime options and main startup permission reductions.
+The source-read denial regression now covers both ordinary and supervised
+argument parsing in either order. This integrates main into alpha only; it
+does not merge the full experimental stack into main or enable general builds.
+The local full Rust suite,49 adapter unit cases, actual supervision/permission
+SDK checks, Node HTTP journey and same-project supervised resume passed.
+Exact combined-head CI remains pending.
+
+## Read-only recovery scan — candidate, 2026-10-18
+
+Recovery scans request only read rights on journal history; locking and appends
+retain their existing write requirements. Strict aliases, opened-path and
+capacity checks are unchanged. Local/exact CI validation pending.
+PR244 recovery correlation merged as5ff5ac7 after CI39063393046 and native
+preparation39063393032 passed; no restored permissions or replay authority.
+
+## Recovery correlation — candidate, 2026-10-17
+
+The host recovery report retains already-persisted start action/process-lease/
+runtime/job fingerprints for diagnostic correlation after restart. Before start
+intent they are absent. No record format, permission, replay or PID adoption
+change; ADR0020. Native local and exact CI validation precede integration.
+
+## Validated native build checkpoint — 2026-10-17
+
+This section supersedes historical candidate/pending entries below. Main now
+contains PR237–242, through `5550c64850d06c3369fb6bac41cb28b3219b35e0`.
+
+| Increment | Integrated commit | Exact validation |
+| --- | --- | --- |
+| Startup permission reductions, PR237 | ed3369f | CI39041285058; real stdio authority reductions |
+| Private process-output extraction, PR238 | f5eb8a2 | CI39041817382; native preparation39041817335 |
+| Fixed private compiler file, PR239 | 8cd453f | CI39042555326; Rust39042555195; verified local3.68s |
+| Exclusive read-only native file handle, PR240 | 002a634 | CI39043289621; Rust39043289633; read-only/alias regressions |
+| Actual no_std compile/link/run, PR241 | 4e8e94d | CI39044267972; Rust39044268008; verified local2.97s |
+| Actual std app and owned linker descendant, PR242 | 5550c64 | CI39045365602; Rust39045365611; verified local3.25s |
+
+PR237–241 post-merge main CI also passed separately (39041589805,
+39042229124,39042889372,39043653023,39044669889 respectively).
+PR242 post-merge main validation is a separate run, not implied by its PR checks.
+The std local artifact was bound to head87d2a88 and merge-source911303f;
+archive SHA25661856b9e5c9994c9ff0d98529adb36ad8e7c4484687cac7b8e4b56b257b0bdac.
+Its exact ignored test confirmed compile, real linker descendant, execution,
+known-file cleanup including the optional PDB, and profile closure. Earlier
+cleanup failures remain recorded in ADR0029.
+
+The existing VS2022 Build Tools installation supplies a complete matched CRT;
+the newer VS18 installation lacks those selected CRT files. Local proof used the
+explicit VS2022 linker/CRT and installed SDK without installing or modifying
+any toolchain. This is a fixed trusted-source compatibility result, not Cargo,
+arbitrary build scripts, dependency installation or production build authority.
+
+### Next product increment
+
+Use the existing capture, private preparation, owned process, task journal and
+publication services rather than exposing the test harness as a build API.
+Before admitting writable arbitrary builds, settle disk-growth containment,
+explicit compiler/runtime enrollment and bounded artifact receipts. Preserve
+session/lease ownership, unknown-effect recovery and independent cancellation.
+A Cargo profile must separately cover its descendants, build scripts and explicit
+dependency/network policy; successful direct rustc does not establish that.
+
+Rust and Electron remain separate tracks. Normal Electron44.7.2 startup under
+outer AppContainer still fails0x80000003; the explicit outer-only diagnostic with
+Chromium sandbox disabled is not a production fallback. Establish the actual
+startup failure before selecting a GUI architecture. Do not ask the operator to
+repeat the previous tiny FS fixtures or claim that an unrestricted full-project
+package is ready. The experimental umbrella PR is not approved wholesale.
+
+## Standard Rust application — candidate, 2026-10-17
+
+ADR0029 extends the opt-in native proof with std, explicitly selected CRT/SDK
+libraries and a compiler-owned linker descendant in a two-process Job. Actual
+fixed app output, exact CI and local reproduction are pending. No Cargo/general
+build admission or runtime disk-quota claim. PR241 no_std compile/link/run is
+merged as `4e8e94d` after exact CI and verified local execution passed.
+
+## Native Rust roundtrip — candidate, 2026-10-17
+
+ADR0028 proposes an opt-in fixed no_std COFF object, direct lld link and generated
+native executable exit42 inside owned AppContainer Jobs, without MSVC CRT.
+Exact native and local validation pending. This is a compatibility proof, not
+general Cargo/build/GUI authority or runtime disk containment.
+
+## Exclusive read-only output handle — candidate, 2026-10-17
+
+The native output reader no longer requests write rights. Unit and real compiler
+tests cover read-only output, no write-through, no creation/truncation, shared
+handle exclusion and aliases. Exact Windows/native validation pending.
+PR239 fixed private file proof merged as `8cd453f` after all exact-head CI and
+verified local reproduction passed. It remains test-only, not general build
+authority or a disk quota. Previous candidate sections are historical checkpoints.
+
+## Fixed private Rust output — candidate, 2026-10-17
+
+ADR0027 extends the test-only compiler proof to one actual private LLVM file,
+with collection after confirmed tree exit and bounded size/alias/writer checks.
+Exact native CI and local proof pending. No general build or disk-quota claim.
+PR238 output-module consolidation is merged as `f5eb8a2`; exact CI39041817382
+and native preparation39041817335 passed. Its main CI39042229124 is separate.
+
+## Current checkpoint — 2026-10-17
+
+This checkpoint supersedes earlier candidate/validation-pending entries below,
+which remain historical evidence.
+
+- PR237 startup permission reductions merged as `ed3369f`; exact head
+  `c7d14ad` passed Windows/Ubuntu/dependency CI39041285058, including the real
+  stdio authority proof. Post-merge main CI is a separate pending check.
+- PR235 fixed no_std Rust-to-LLVM proof and PR236 strict duplicate-field parser
+  are merged. Rust proof passed native CI38988945783 and verified local execution;
+  it does not provide Cargo, linking or general native application builds.
+- PR238 extracts existing process output storage/drains into a private module;
+  no limits, ownership, public API, authority or persistent format change.
+  Validation of the combined head after PR237 is pending.
+- Next: finish this small consolidation, then bounded private writable build
+  outputs, diagnostics/recovery and explicit toolchain/dependency admission.
+  Electron normal startup remains unresolved; no automatic sandbox downgrade.
+
+Canonical boundaries: [permissions](docs/specs/CONFIGURATION.md),
+[output](docs/architecture/MEMORY_OUTPUT.md),
+[security](docs/security/SECURITY_INVARIANTS.md), and
+[decisions](docs/decisions/). The entries below provide the detailed history,
+not additional grants or a claim that a complete FS build package is ready.
+
+## Local permission reductions — candidate, 2026-10-17
+
+Optional strict JSON permission bits reduce separately selected filesystem,
+process and Git authority. Present sections default omitted bits to false; true
+never creates a scope. Startup policy/profile sources must be outside writable
+project paths. Real stdio and CLI/config regressions validate actual authority
+reduction, not just tool hiding. No live reload, whole-PC bypass or new build
+permission. Exact Windows/Linux CI pending; ADR0026.
+
+## Optional Rust compilation — candidate, 2026-10-17
+
 ## Verified checkpoint — 2026-10-17
 
 PR231–236 are merged into main, including authorized artifact publication,
