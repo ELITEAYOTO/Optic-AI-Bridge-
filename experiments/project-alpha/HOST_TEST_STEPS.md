@@ -1,14 +1,28 @@
 # Alpha édition de projet — test avec FranceStudent
 
-Cette première alpha permet à Luna de créer et modifier de vrais fichiers dans
-un projet public généré, conservé après l'arrêt. Elle n'accepte pas ton dépôt
-Optic ou un dossier personnel. Pas encore de compilation, de serveur Minecraft,
-de commandes, de téléchargement ou d'exécution des tests. Ces étapes suivront.
-Tous les chats sur cette connexion partagent le même projet. Durée25minutes.
+Cette alpha conserve un projet public généré après arrêt et accepte sa reprise.
+Tous les chats de la connexion partagent le projet. Un Node installé peut être
+choisi localement pour les profils fixes check/test. Commandes arbitraires,
+installation de dépendances et Electron contrôlé par le modèle restent exclus.
+Le lecteur Electron est local et séparé. Les étapes d'édition restent un parcours
+minimal. Mode ordinaire :50minutes maximum. `-Supervised` renouvelle des baux
+bornés tant que le superviseur local reste actif, avec arrêt par l'opérateur.
+La mémoire interne du chat FS n'est pas restaurée par la reprise des fichiers.
+
+## Fichiers plus volumineux (paquet compatible requis)
+
+Ajouter `-MaxFileKiB 32` à la commande autorise32768octets UTF-8 par fichier,
+au lieu de8192par défaut. Conserver ce choix avec `-ResumeRun` si des fichiers
+dépassent8Kio. Le manifeste doit porter `file_budget: operator-file-budget-v1`.
+Les pages restent1024octets ou4096avec `-ReadPageBytes 4096`. Le corps HTTP reste
+limité à65536octets : de nombreux caractères JSON échappés peuvent nécessiter
+des petits patches versionnés. Le modèle consulte `optic_project_info.limits` ;
+il ne peut élargir les permissions. Ne pas compacter artificiellement sous8Kio
+si32Kio est autorisé. La recherche reste limitée au préfixe8Kio.
 
 ## Lectures paginées corrigées
 
-Chaque appel optic_fs_read renvoie au plus1024octets, même si max_bytes=8192.
+Chaque appel respecte le plafond local1024ou4096octets, même si max_bytes=8192.
 Lire à offset=0 puis suivre next_offset jusqu'à eof=true. Chaque bloc contient
 content_version : exiger la même version sur tous les blocs avant de modifier.
 Si la version change, reprendre la lecture complète sans écrire. Les champs de
@@ -71,7 +85,7 @@ Après confirmation, envoyer le prompt suivant.
 > sans bibliothèque, téléchargement, lien externe ni requête réseau. Crée
 > src/index.html, src/style.css et src/app.js avec les outils Optic. Interface
 > française, ajout/suppression/validation des tâches et filtre toutes/actives/
-> terminées. Garde chaque fichier sous8192octets et utilise des liens relatifs.
+> terminées. Respecte file_bytes annoncé par optic_project_info et utilise des liens relatifs.
 > Pour une création utilise expected_kind="absent". Pour modifier un fichier,
 > lis-le entièrement et utilise son content_version comme expected_version
 > avec expected_kind="content". Ne devine pas la version et ne réessaie pas

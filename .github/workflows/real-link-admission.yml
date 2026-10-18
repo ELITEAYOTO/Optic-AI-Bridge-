@@ -78,6 +78,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'generated alpha project editing failed' }
           python experiments/project-alpha/http_edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'HTTP alpha project editing failed' }
+          python experiments/project-alpha/http_edit_smoke.py $Binary 32768
+          if ($LASTEXITCODE -ne 0) { throw 'alpha selected file-budget HTTP proof failed' }
           python experiments/project-alpha/runner_edit_smoke.py $Binary
           if ($LASTEXITCODE -ne 0) { throw 'alpha project runner failed' }
           if ($IsWindows) {
@@ -91,6 +93,8 @@ jobs:
             python experiments/project-alpha/node_http_smoke.py $Binary $Node
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node task integration failed' }
             python experiments/project-alpha/runner_edit_smoke.py $Binary $Node
+            if ($LASTEXITCODE -ne 0) { throw "Default Node runner failed" }
+            python experiments/project-alpha/runner_edit_smoke.py $Binary $Node 32768
             if ($LASTEXITCODE -ne 0) { throw 'native alpha Node runner lifecycle failed' }
             python experiments/project-alpha/runner_supervised_smoke.py $Binary $Node
             if ($LASTEXITCODE -ne 0) { throw 'native supervised alpha lifecycle failed' }
@@ -105,6 +109,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Electron binary download failed' }
             python experiments/project-alpha/electron_viewer_smoke.py (Join-Path $ElectronTools 'node_modules/electron/dist/electron.exe')
             if ($LASTEXITCODE -ne 0) { throw 'native operator Electron viewer failed' }
+            python experiments/project-alpha/electron_viewer_smoke.py (Join-Path $ElectronTools 'node_modules/electron/dist/electron.exe') 32768
+            if ($LASTEXITCODE -ne 0) { throw 'native selected file-budget viewer failed' }
             # This package grants only fixed Node profiles and the operator viewer.
             # General private Electron remains an unchanged, separately failing
             # research gate in private-application-staging.yml. A viewer pass must
@@ -157,7 +163,7 @@ jobs:
           New-Item -ItemType Directory -Path $AlphaBin | Out-Null
           Copy-Item -LiteralPath 'target/debug/optic-bridge.exe' -Destination (Join-Path $AlphaBin 'optic-bridge.exe')
           Copy-Item -LiteralPath 'target/debug/optic-bridge-isolation-launcher.exe' -Destination (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe')
-          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; helper_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe') -Algorithm SHA256).Hash; viewer_main_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/electron_main.cjs')).Hash; viewer_policy_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/viewer_policy.cjs')).Hash; supervision='bounded-operator-lease-v1'; directory_creation='typed-absent-v1'; diagnostics='bounded-tool-outcomes-v1'; scope='generated-project-node-check-test-operator-electron-viewer'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
+          @{source_commit=$env:GITHUB_SHA; binary_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge.exe') -Algorithm SHA256).Hash; helper_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaBin 'optic-bridge-isolation-launcher.exe') -Algorithm SHA256).Hash; viewer_main_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/electron_main.cjs')).Hash; viewer_policy_sha256=(Get-FileHash -LiteralPath (Join-Path $AlphaStage 'experiments/project-alpha/viewer/viewer_policy.cjs')).Hash; file_budget='operator-file-budget-v1'; supervision='bounded-operator-lease-v1'; directory_creation='typed-absent-v1'; diagnostics='bounded-tool-outcomes-v1'; scope='generated-project-node-check-test-operator-electron-viewer'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $AlphaStage 'ALPHA_MANIFEST.json') -Encoding utf8
           $env:GITHUB_SHA | Set-Content -LiteralPath (Join-Path $AlphaStage 'SOURCE_COMMIT.txt') -Encoding ascii
           Copy-Item -LiteralPath 'experiments/project-alpha/SUPERVISED_HOST_TEST.md' -Destination (Join-Path $AlphaStage 'COMMENCER_ICI.md')
           $AlphaPackage = Join-Path $env:RUNNER_TEMP 'Optic-Project-Alpha.zip'

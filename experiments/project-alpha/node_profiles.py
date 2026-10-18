@@ -1,10 +1,12 @@
 """Locally selected Node and fixed generated source slots; no remote configuration."""
 from pathlib import Path
+from project_schema import MAX_CONTENT, file_limit
 
 SOURCE_FILES = ('src/model.js', 'src/app.js', 'src/tests.js')
 
 
-def configure_node(project, executable, resume=False):
+def configure_node(project, executable, resume=False, max_file_bytes=MAX_CONTENT):
+    maximum = file_limit(max_file_bytes)
     node = Path(executable).resolve(strict=True)
     if not node.is_file() or node.name.lower() != 'node.exe':
         raise ValueError('project.node_executable_required')
@@ -23,8 +25,8 @@ def configure_node(project, executable, resume=False):
             path = root / relative
             ordinary(path)
             with path.open('rb') as stream:
-                raw = stream.read(8193)
-            if not 1 <= len(raw) <= 8192:
+                raw = stream.read(maximum + 1)
+            if not 1 <= len(raw) <= maximum:
                 raise ValueError('project.resume_source_bound')
             raw.decode('utf-8', errors='strict')
     else:

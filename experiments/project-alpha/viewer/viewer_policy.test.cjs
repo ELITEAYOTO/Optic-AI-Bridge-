@@ -63,3 +63,33 @@ test('snapshot is generated-root-only; content changes refused; held bytes are c
     for (const dir of [src, path.dirname(src), root, parent]) fs.rmdirSync(dir);
   }
 });
+
+
+test('selected snapshot budget permits larger files but cannot enlarge legacy or unknown budgets', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'optic-viewer-budget-'));
+  const root = path.join(parent, 'alpha-public'), src = path.join(root, 'project', 'src');
+  fs.mkdirSync(src, {recursive: true});
+  const versions = {}, created = [];
+  try {
+    for (const name of policy.FILES) {
+      const bytes = Buffer.from(name === 'style.css' ? 'x'.repeat(12000) : 'public');
+      const file = path.join(src, name); fs.writeFileSync(file, bytes); created.push(file);
+      versions[name] = crypto.createHash('sha256').update(bytes).digest('hex');
+    }
+    const marker = path.join(root, 'viewer-ready.json'); created.push(marker);
+    const write = value => fs.writeFileSync(marker, JSON.stringify(value));
+    write({version: 2, max_file_bytes: 32768, files: versions});
+    assert.equal(policy.loadSnapshot(root, parent).assets.get('style.css').length, 12000);
+    write({version: 1, files: versions});
+    assert.throws(() => policy.loadSnapshot(root, parent), /invalid_file/);
+    for (const maximum of [8192, 32769, 65536, '32768', true]) {
+      write({version: 2, max_file_bytes: maximum, files: versions});
+      assert.throws(() => policy.loadSnapshot(root, parent));
+    }
+    write({version: 2, max_file_bytes: 32768, files: versions, extra: true});
+    assert.throws(() => policy.loadSnapshot(root, parent), /invalid_snapshot/);
+  } finally {
+    for (const file of created) if (fs.existsSync(file)) fs.unlinkSync(file);
+    for (const dir of [src, path.dirname(src), root, parent]) fs.rmdirSync(dir);
+  }
+});

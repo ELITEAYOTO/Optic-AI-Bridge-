@@ -18,7 +18,11 @@ from project_results import structured
 from lifecycle_core import TOKENS
 
 
-async def exercise(url, node_mode=False, supervised=False, directories=False):
+def fixed_source(max_file_bytes=8192):
+    return "module.exports.add=(a,b)=>a+b;" + ("/*" + "x" * 12000 + "*/" if max_file_bytes == 32768 else "")
+
+
+async def exercise(url, node_mode=False, supervised=False, directories=False, max_file_bytes=8192):
     async with asyncio.timeout(20):
         async with httpx2.AsyncClient(timeout=2) as http:
             while True:
@@ -52,6 +56,7 @@ async def exercise(url, node_mode=False, supervised=False, directories=False):
         assert created['ok'], created
         info = structured(await session.call_tool('optic_project_info', {}))
         assert info['limits']['read_page_bytes'] == 4096, info
+        assert info['limits']['file_bytes'] == max_file_bytes, info
         chunks, offset = [], 0
         for _ in range(2):
             page = structured(await session.call_tool('optic_fs_read',
@@ -85,7 +90,7 @@ async def exercise(url, node_mode=False, supervised=False, directories=False):
             if supervised:
                 assert structured(await session.call_tool('optic_task_forget', {'job_id': job}))['ok']
             fixed = structured(await session.call_tool('optic_fs_write', {
-                'path': 'src/model.js', 'content': 'module.exports.add=(a,b)=>a+b;',
+                'path': 'src/model.js', 'content': fixed_source(max_file_bytes),
                 'expected_kind': 'content', 'expected_version': broken['upstream']['content_version']}))
             assert fixed['ok'], fixed
             for profile in ('check', 'test'):
@@ -100,7 +105,7 @@ async def exercise(url, node_mode=False, supervised=False, directories=False):
                     assert structured(await session.call_tool('optic_task_forget', {'job_id': job}))['ok']
 
 
-async def exercise_resume(url):
+async def exercise_resume(url, max_file_bytes=8192):
     async with asyncio.timeout(20):
         async with httpx2.AsyncClient(timeout=2) as http:
             while True:
@@ -112,14 +117,21 @@ async def exercise_resume(url):
                 await asyncio.sleep(.1)
     async with client(url, TOKENS['A'][0]) as session:
         value = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js'}))
-        assert value['upstream']['text'] == 'module.exports.add=(a,b)=>a+b;'
+        assert value['ok'], value
+        page = value['upstream']
+        chunks = [page['text']]
+        while not page['eof']:
+            page = structured(await session.call_tool('optic_fs_read', {'path': 'src/model.js', 'offset': page['next_offset']}))['upstream']
+            assert page['content_version'] == value['upstream']['content_version']
+            chunks.append(page['text'])
+        assert ''.join(chunks) == fixed_source(max_file_bytes)
         from node_http_smoke import finished
         start = structured(await session.call_tool('optic_task_start', {'profile': 'test'}))
         result = await finished(session, start['upstream']['job_id'])
         assert result['status'] == 'exited' and result['exit_code'] == 0, result
 
 
-def run(binary, node=None):
+def run(binary, node=None, max_file_bytes=8192):
     if sys.platform != 'win32':
         print('RUNNER EDIT SKIP: Windows mutation runner only; platform refusal tested separately.')
         return
@@ -130,7 +142,7 @@ def run(binary, node=None):
         arguments = [sys.executable, str(HERE / 'project_runner.py'), '--binary',
             str(Path(binary).resolve(strict=True)), '--output-root', directory,
             '--port', str(port), '--lifetime', '90' if node else '30',
-            '--read-page-bytes', '4096']
+            '--read-page-bytes', '4096', '--max-file-bytes', str(max_file_bytes)]
         if node:
             arguments.extend(['--node', str(Path(node).resolve(strict=True))])
         child = subprocess.Popen(arguments, stdin=subprocess.PIPE,
@@ -147,7 +159,7 @@ def run(binary, node=None):
         for reader in readers:
             reader.start()
         try:
-            asyncio.run(exercise(f'http://127.0.0.1:{port}/mcp', bool(node)))
+            asyncio.run(exercise(f'http://127.0.0.1:{port}/mcp', bool(node), max_file_bytes=max_file_bytes))
             if node:
                 assert not list(Path(directory).glob('alpha-*/viewer-ready.json'))
             child.stdin.write('stop\n')
@@ -164,9 +176,11 @@ def run(binary, node=None):
             assert report['revocation_confirmed'] and report['work_drained']
             assert report['reason'] == 'operator'
             if node:
-                assert (files[0].parent / 'model.js').read_text() == 'module.exports.add=(a,b)=>a+b;'
+                assert (files[0].parent / 'model.js').read_text() == fixed_source(max_file_bytes)
                 ready = json.loads((files[0].parents[2] / 'viewer-ready.json').read_text())
-                assert ready['version'] == 1
+                assert ready['version'] == (2 if max_file_bytes == 32768 else 1)
+                if max_file_bytes == 32768:
+                    assert ready['max_file_bytes'] == 32768
                 assert set(ready['files']) == {'index.html', 'style.css', 'app.js', 'model.js', 'tests.js'}
                 for name, version in ready['files'].items():
                     assert hashlib.sha256((files[0].parent / name).read_bytes()).hexdigest() == version
@@ -175,7 +189,7 @@ def run(binary, node=None):
                 resumed = subprocess.Popen(arguments + ['--resume-run', files[0].parents[2].name],
                     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
                 try:
-                    asyncio.run(exercise_resume(f'http://127.0.0.1:{port}/mcp'))
+                    asyncio.run(exercise_resume(f'http://127.0.0.1:{port}/mcp', max_file_bytes))
                     assert not (files[0].parents[2] / 'viewer-ready.json').exists()
                     resumed.stdin.write('stop\n')
                     resumed.stdin.flush()
@@ -202,4 +216,4 @@ def run(binary, node=None):
 
 
 if __name__ == '__main__':
-    run(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None)
+    run(sys.argv[1], sys.argv[2] if len(sys.argv) >= 3 else None, int(sys.argv[3]) if len(sys.argv) == 4 else 8192)

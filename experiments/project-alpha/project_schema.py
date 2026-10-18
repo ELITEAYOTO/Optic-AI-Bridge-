@@ -5,6 +5,7 @@ import re
 TOOLS = ('optic_project_info', 'optic_fs_list', 'optic_fs_read',
          'optic_fs_write', 'optic_fs_patch', 'optic_fs_search')
 MAX_CONTENT = 8192
+FILE_LIMITS = (8192, 32768)
 DIRECTORY_TOOL = 'optic_fs_mkdir'
 MAX_READ = 8192
 PATH = re.compile(r'src(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}){0,7}\Z', re.ASCII)
@@ -48,7 +49,14 @@ def version(value):
     return value
 
 
-def normalize(tool, args):
+def file_limit(value):
+    if type(value) is not int or value not in FILE_LIMITS:
+        raise ValueError('project.invalid_file_limit')
+    return value
+
+
+def normalize(tool, args, max_file_bytes=MAX_CONTENT):
+    maximum = file_limit(max_file_bytes)
     if type(tool) is not str or tool not in (*TOOLS, DIRECTORY_TOOL) or type(args) is not dict:
         raise SchemaError('project.invalid_arguments')
     required, optional = {
@@ -75,7 +83,7 @@ def normalize(tool, args):
             'limit': integer(args.get('limit', 32), 1, 32)}
     target = path(args['path'], file=True)
     if tool == 'optic_fs_read':
-        return 'fs_read', {'path': target, 'offset': integer(args.get('offset', 0), 0, MAX_CONTENT),
+        return 'fs_read', {'path': target, 'offset': integer(args.get('offset', 0), 0, maximum),
             'max_bytes': integer(args.get('max_bytes', MAX_READ), 1, MAX_READ)}
     if tool == 'optic_fs_write':
         expected_kind = args['expected_kind']
@@ -86,12 +94,12 @@ def normalize(tool, args):
         else:
             raise SchemaError('project.invalid_arguments')
         return 'fs_write', {'path': target, 'content_base64': base64.b64encode(
-            text(args['content'], MAX_CONTENT)).decode('ascii'), 'expected': expected}
+            text(args['content'], maximum)).decode('ascii'), 'expected': expected}
     if tool == 'optic_fs_patch':
         return 'fs_apply_patch', {'path': target, 'expected_version': version(args['expected_version']),
-            'offset': integer(args['offset'], 0, MAX_CONTENT),
-            'remove_bytes': integer(args['remove_bytes'], 0, MAX_CONTENT),
-            'insert_base64': base64.b64encode(text(args['insert'], MAX_CONTENT)).decode('ascii')}
+            'offset': integer(args['offset'], 0, maximum),
+            'remove_bytes': integer(args['remove_bytes'], 0, maximum),
+            'insert_base64': base64.b64encode(text(args['insert'], maximum)).decode('ascii')}
     text(args['text'], 128, empty=False)
     integer(args.get('limit', 16), 1, 16)
     return 'fs_read', {'path': target, 'offset': 0, 'max_bytes': MAX_READ}

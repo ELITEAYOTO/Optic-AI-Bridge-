@@ -4,7 +4,7 @@ import base64
 
 from mcp.shared.exceptions import MCPError
 from forward_core import ForwardGate, ForwardError
-from project_schema import normalize, SchemaError, MAX_CONTENT, version, DIRECTORY_TOOL
+from project_schema import normalize, SchemaError, MAX_CONTENT, version, DIRECTORY_TOOL, file_limit
 
 SAFE_UPSTREAM_ERRORS = {
     'optic.precondition_failed', 'optic.policy_denied', 'optic.session_inactive',
@@ -18,9 +18,10 @@ MUTATIONS = {'optic_fs_write', 'optic_fs_patch', DIRECTORY_TOOL}
 
 
 class ProjectGate(ForwardGate):
-    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024, file_budget=None, directory_create=False):
+    def __init__(self, registry, identity, upstream, deadline=15, read_page_bytes=1024, file_budget=None, directory_create=False, max_file_bytes=MAX_CONTENT):
         if type(read_page_bytes) is not int or read_page_bytes not in (1024, 4096):
             raise ValueError("project.invalid_read_page_bytes")
+        self.max_file_bytes = file_limit(max_file_bytes)
         self.read_page_bytes = read_page_bytes
         self.file_budget = file_budget
         if type(directory_create) is not bool or directory_create and file_budget is None:
@@ -33,7 +34,7 @@ class ProjectGate(ForwardGate):
         if not self._current(identity):
             raise ForwardError('link.inactive')
         try:
-            name, args = normalize(tool, arguments)
+            name, args = normalize(tool, arguments, max_file_bytes=self.max_file_bytes)
         except SchemaError:
             raise ForwardError('project.invalid_arguments') from None
         if self.pending:
@@ -67,12 +68,12 @@ class ProjectGate(ForwardGate):
                     raise ForwardError('project.file_capacity') from None
             if tool == 'optic_fs_patch':
                 current = await self.upstream('fs_read', {'path': arguments['path'],
-                    'offset': 0, 'max_bytes': MAX_CONTENT + 1})
+                    'offset': 0, 'max_bytes': self.max_file_bytes + 1})
                 raw = base64.b64decode(current['data'], validate=True)
                 inserted = base64.b64decode(arguments['insert_base64'], validate=True)
-                if (not current['eof'] or len(raw) > MAX_CONTENT
+                if (not current['eof'] or len(raw) > self.max_file_bytes
                         or arguments['offset'] + arguments['remove_bytes'] > len(raw)
-                        or len(raw) - arguments['remove_bytes'] + len(inserted) > MAX_CONTENT):
+                        or len(raw) - arguments['remove_bytes'] + len(inserted) > self.max_file_bytes):
                     raise ForwardError('project.patch_limit')
                 # Recheck after the preparatory read; Rust still owns the exact
                 # mutation precondition and must compare the supplied version.
@@ -80,7 +81,7 @@ class ProjectGate(ForwardGate):
                     raise ForwardError('link.inactive')
             dispatched = True
             read_arguments = ({'path': arguments['path'], 'offset': 0,
-                'max_bytes': MAX_CONTENT + 1} if tool == 'optic_fs_read' else arguments)
+                'max_bytes': self.max_file_bytes + 1} if tool == 'optic_fs_read' else arguments)
             response = await self.upstream(name, read_arguments)
             if not self._current(identity):
                 raise ForwardError('project.outcome_unknown' if tool in MUTATIONS else 'link.inactive')
@@ -92,7 +93,7 @@ class ProjectGate(ForwardGate):
             if tool in ('optic_fs_read', 'optic_fs_search'):
                 raw = base64.b64decode(response['data'], validate=True)
                 if tool == 'optic_fs_read':
-                    if not response['eof'] or len(raw) > MAX_CONTENT:
+                    if not response['eof'] or len(raw) > self.max_file_bytes:
                         raise ForwardError('project.read_limit')
                     observed_version = version(response.get('content_version'))
                     offset = arguments['offset']

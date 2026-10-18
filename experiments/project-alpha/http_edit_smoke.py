@@ -15,7 +15,7 @@ for directory in ('real-link-admission', 'credential-lifecycle'):
 import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from real_smoke import structured as upstream_structured
+from project_results import upstream as upstream_structured
 from project_results import structured
 from lifecycle_core import Registry, TOKENS
 from http_smoke import client, denied
@@ -25,7 +25,9 @@ from project_http import make_project_app
 from project_schema import TOOLS
 
 
-async def run(binary):
+async def run(binary, max_file_bytes=8192):
+    from project_schema import file_limit
+    file_limit(max_file_bytes)
     logs = []
     with tempfile.TemporaryDirectory(prefix='optic-alpha-http-proof-') as directory:
         parent = Path(directory)
@@ -42,8 +44,8 @@ async def run(binary):
                 state = Registry()
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, args):
-                    return upstream_structured(await upstream.call_tool(name, args))
-                gate = ProjectGate(state, identity, forward)
+                    return upstream_structured(await upstream.call_tool(name, args), max_file_bytes)
+                gate = ProjectGate(state, identity, forward, max_file_bytes=max_file_bytes)
                 app = make_project_app(gate, state, emit=logs.append)
                 listener = socket.socket()
                 listener.bind(('127.0.0.1', 0))
@@ -62,6 +64,7 @@ async def run(binary):
                     async with client(url, TOKENS['A'][0]) as session:
                         assert {tool.name for tool in (await session.list_tools()).tools} == set(TOOLS)
                         initial = structured(await session.call_tool('optic_project_info', {}))
+                        assert initial['limits']['file_bytes'] == max_file_bytes
                         listing = structured(await session.call_tool('optic_fs_list', {}))
                         assert listing['upstream']['entries'][0]['path'] == 'src/README.txt'
                         baseline = structured(await session.call_tool('optic_fs_read', {'path': 'src/README.txt'}))
@@ -98,14 +101,16 @@ async def run(binary):
                             assert partial['upstream']['content_version'] == patched['upstream']['content_version']
                             assert partial['upstream']['next_offset'] == 2
                             assert not partial['upstream']['eof']
-                            long_text = 'a' * 1023 + 'é' + 'b' * 1400
+                            long_text = 'a' * 1023 + 'é' + 'b' * (12000 if max_file_bytes == 32768 else 1400)
                             long_write = structured(await session.call_tool('optic_fs_write', {
                                 'path': 'src/paged.txt', 'content': long_text, 'expected_kind': 'absent'}))
                             assert long_write['ok']
                             offset, chunks = 0, []
                             while True:
                                 page = structured(await session.call_tool('optic_fs_read', {
-                                    'path': 'src/paged.txt', 'offset': offset, 'max_bytes': 8192}))['upstream']
+                                    'path': 'src/paged.txt', 'offset': offset, 'max_bytes': 8192}))
+                                assert page.get('ok'), page
+                                page = page['upstream']
                                 assert page['content_version'] == long_write['upstream']['content_version']
                                 assert 'data' not in page and len(page['text'].encode()) <= 1024
                                 chunks.append(page['text'])
@@ -113,6 +118,20 @@ async def run(binary):
                                 if page['eof']:
                                     break
                             assert ''.join(chunks) == long_text
+                            if max_file_bytes == 32768:
+                                # Exercise an actual native mutation beyond the old8KiB bound.
+                                changed = structured(await session.call_tool('optic_fs_patch', {
+                                    'path': 'src/paged.txt', 'expected_version': long_write['upstream']['content_version'],
+                                    'offset': 10000, 'remove_bytes': 1, 'insert': 'Z'}))
+                                assert changed['ok'], changed
+                                stale = structured(await session.call_tool('optic_fs_patch', {
+                                    'path': 'src/paged.txt', 'expected_version': long_write['upstream']['content_version'],
+                                    'offset': 10000, 'remove_bytes': 1, 'insert': 'Q'}))
+                                assert not stale['ok'] and stale['code'] == 'optic.precondition_failed', stale
+                                tail = structured(await session.call_tool('optic_fs_read', {
+                                    'path': 'src/paged.txt', 'offset': 10000, 'max_bytes': 1}))['upstream']
+                                assert tail['text'] == 'Z' and tail['content_version'] == changed['upstream']['content_version']
+
                     await denied(url, TOKENS['B'][0])
                     await denied(url, TOKENS['A'][0], 400, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
                         'params': {'name': 'optic_fs_write', 'arguments': {'path': '../CANARY', 'content': 'x', 'expected_kind': 'absent'}}})
@@ -137,4 +156,4 @@ async def run(binary):
 
 if __name__ == '__main__':
     logging.disable(logging.CRITICAL)
-    asyncio.run(asyncio.wait_for(run(sys.argv[1]), timeout=90))
+    asyncio.run(asyncio.wait_for(run(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 8192), timeout=90))

@@ -16,11 +16,13 @@ import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from real_smoke import structured
+from project_results import upstream as decode_upstream
 from lifecycle_core import Registry, TOKENS
 from http_adapter import local_stop
 from host_runner import console
 from proof_channel import ProofChannel
 from project_gate import ProjectGate
+from project_schema import MAX_CONTENT, FILE_LIMITS
 from project_http import make_project_app
 from execution_gate import ExecutionGate
 from node_profiles import configure_node
@@ -62,13 +64,13 @@ async def serve_project(args, root, project, journal, previous=None):
     if args.node:
         if not (binary.parent / 'optic-bridge-isolation-launcher.exe').is_file():
             raise ValueError('project.isolation_helper_required')
-        profiles, process_arguments = configure_node(project, args.node, resume=bool(args.resume_run))
+        profiles, process_arguments = configure_node(project, args.node, resume=bool(args.resume_run), max_file_bytes=args.max_file_bytes)
         if not args.resume_run:
             (project / 'src/README.txt').write_text(
             'Generated Node alpha. Edit index.html/style.css and app.js for the browser.\n'
             'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
             'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
-    file_budget = ProjectFiles.inspect(project) if args.supervised else None
+    file_budget = ProjectFiles.inspect(project, max_file_bytes=args.max_file_bytes) if args.supervised else None
     channel = ProofChannel()
     outcome = {}
     stop_reason = 'service_exit'
@@ -94,10 +96,10 @@ async def serve_project(args, root, project, journal, previous=None):
                 state = Registry()
                 identity = state.authenticate(b'Bearer ' + TOKENS['A'][0])
                 async def forward(name, arguments):
-                    return structured(await upstream.call_tool(name, arguments))
+                    return decode_upstream(await upstream.call_tool(name, arguments), args.max_file_bytes)
                 if args.allow_directories and 'fs_create_directory' not in names:
                     raise ValueError('project.directory_binary_required')
-                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes, file_budget=file_budget, directory_create=args.allow_directories)
+                gate = ProjectGate(state, identity, forward, read_page_bytes=args.read_page_bytes, file_budget=file_budget, directory_create=args.allow_directories, max_file_bytes=args.max_file_bytes)
                 execution = ExecutionGate(state, identity, forward, profiles, supervised=args.supervised) if profiles else None
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
@@ -162,7 +164,7 @@ async def serve_project(args, root, project, journal, previous=None):
                     channel.emit('Local directory-create grant: src only; 128 retained directory slots, existing parent required.')
                 if args.supervised:
                     channel.emit('Operator-supervised until local stop. Core lease window: ' + str(args.lease_seconds) + ' seconds; renewal cannot revive expired/revoked authority.')
-                    channel.emit('Limits: 128 generated files / 8192 bytes each; HTTP512 per60s window; starts16 per60s window; retain16 jobs, forget terminal results to free slots.')
+                    channel.emit(f'Limits: 128 generated files / {args.max_file_bytes} bytes each; HTTP512 per60s window; starts16 per60s window; retain16 jobs, forget terminal results to free slots.')
                 else:
                     channel.emit('Session limit: ' + str(args.lifetime) + ' seconds; project_info reports remaining time. No automatic renewal.')
                 channel.emit('Project saved under output/' + root.name + '/project/src after stop. Local alpha resume only.')
@@ -174,7 +176,7 @@ async def serve_project(args, root, project, journal, previous=None):
                     channel.emit('[LOCAL] ' + json.dumps({'operation': 'stop', **outcome}, sort_keys=True))
                     if profiles and outcome.get('ok'):
                         try:
-                            ready = write_viewer_ready(root)
+                            ready = write_viewer_ready(root, max_file_bytes=args.max_file_bytes)
                         except (OSError, ValueError):
                             ready = {'viewer_ready': False, 'code': 'viewer.sources_not_ready'}
                         channel.emit('[LOCAL] ' + json.dumps({'operation': 'viewer-snapshot', **ready}, sort_keys=True))
@@ -199,6 +201,7 @@ def main():
     parser.add_argument('--supervised', action='store_true')
     parser.add_argument('--allow-directories', action='store_true')
     parser.add_argument('--lease-seconds', type=int, default=60)
+    parser.add_argument('--max-file-bytes', type=int, choices=FILE_LIMITS, default=MAX_CONTENT)
     parser.add_argument('--read-page-bytes', type=int, choices=(1024, 4096), default=1024)
     parser.add_argument('--allow-random-tunnel-host', action='store_true')
     args = parser.parse_args()

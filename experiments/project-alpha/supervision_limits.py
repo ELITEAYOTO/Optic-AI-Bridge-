@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import stat
 
-from project_schema import MAX_CONTENT, path as source_path
+from project_schema import MAX_CONTENT, path as source_path, file_limit
 
 MAX_FILES = 128
 MAX_DIRECTORIES = 128
@@ -63,7 +63,8 @@ class ProjectFiles:
         self.paths.add(key)
 
     @classmethod
-    def inspect(cls, project):
+    def inspect(cls, project, max_file_bytes=MAX_CONTENT):
+        maximum = file_limit(max_file_bytes)
         # Operator startup only, before remote admission. Do not read contents.
         root = Path(project) / 'src'
         pending, paths, directories, names = [root], [], 0, []
@@ -88,7 +89,7 @@ class ProjectFiles:
                         if len(pending) + directories >= MAX_DIRECTORIES:
                             raise ValueError('project.directory_capacity')
                         pending.append(Path(entry.path))
-                    elif stat.S_ISREG(info.st_mode) and info.st_size <= MAX_CONTENT:
+                    elif stat.S_ISREG(info.st_mode) and info.st_size <= maximum:
                         if len(paths) >= MAX_FILES:
                             raise ValueError('project.file_capacity')
                         paths.append(source_path(relative, file=True))
