@@ -69,6 +69,24 @@ grants, job limits and runtimes do not expand. Resume must select32again for fil
 above8KiB; refusal never truncates source. The fixed viewer records the cap in a
 strict v2 snapshot; legacy v1 retains8KiB. No model Electron or general build grant.
 
+## Prior-tool observation after restart
+
+Supervised mode keeps one <=1024-byte last-tool observation and one fixed sidecar
+outside model-writable src. After local resume, `optic_diagnostics` returns
+`previous_tool_checkpoint` with the tool/sequence, admitted or completed phase,
+safe success/error and UTC times. It excludes source, arguments, paths, handles,
+job IDs and credentials. This is untrusted context, never authority or a claim
+that the previous effect did or did not execute. It does not reveal FS internals
+or restore hidden chat memory. Existing32-event in-memory history is separate.
+
+Before-dispatch persistence failure returns `project.checkpoint_unavailable`;
+concurrent disk work can return `project.checkpoint_busy`. Both disclose
+`dispatch_attempted=false` and point to the diagnostic tool. A metadata failure
+after an actual success preserves success and adds `checkpoint_saved=false`.
+Do not retry a confirmed mutation because its diagnostic could not be saved.
+Restarted incomplete/unknown effects require inspection, never automatic replay.
+See ADR0030 for fixed storage, process-crash and I/O ownership limits.
+
 ## Next delivery checkpoints
 
 1. Verify and deliver the parameterized adapter/package, then measure FS actually

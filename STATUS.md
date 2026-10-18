@@ -1,5 +1,16 @@
 # Project Status
 
+## Last-tool recovery observation — candidate, 2026-10-18
+
+Generated supervised alpha records one strict <=1024-byte observation outside
+model-writable src. Explicit resume exposes it through existing diagnostics;
+admitted is not executed, unknown stays unknown and no effect is replayed.
+A fixed sidecar handles interrupted publication. One off-loop I/O slot survives
+caller cancellation; confirmed effect results survive metadata-write failure.
+No source/argument/path/job/credential data, restored grants or FS backend view.
+ADR0030 defines the experimental boundary; exact-head CI/native evidence pending.
+
+
 ## Configurable alpha file budget — candidate, 2026-10-18
 
 Operator selects8or32KiB per generated file; default8remains. Whole-file versions,

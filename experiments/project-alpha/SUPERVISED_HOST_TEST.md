@@ -81,6 +81,23 @@ Attendu : mode=supervised, remaining_seconds=null, read_page_bytes=4096,
 vide. Null signifie que la connexion n'a pas d'échéance fixe ; ce n'est pas une
 autorisation illimitée ni une indication que le noyau ne contrôle plus les délais.
 
+## Dernier appel avant une coupure
+
+Avec le paquet portant `diagnostic_checkpoint: last-tool-v1`, `optic_diagnostics`
+expose `previous_tool_checkpoint` après une reprise locale. Le champ `event`
+contient uniquement le nom de l'outil, sa séquence, les heures UTC et le résultat
+observé. `phase=admitted` n'indique pas si l'effet a commencé : ne pas relancer
+aveuglément une écriture ou une tâche. `phase=completed` décrit le résultat de
+l'appel ; un lancement réussi ne prouve pas que la tâche a réussi.
+
+Ce contexte ne remplace pas les sources et n'accorde aucune permission. Il ne
+permet pas de connaître la cause interne d'une coupure FS. L'historique courant
+reste en mémoire ; seul ce dernier appel est conservé sur disque. Si un effet
+réussit mais que son compte rendu ne peut être enregistré, `ok=true` est conservé
+avec `checkpoint_saved=false` : ne pas refaire cet effet. En cas de
+`project.checkpoint_unavailable`, consulter le diagnostic ; les nouveaux effets
+sont refusés avant envoi. L'opérateur peut alors inspecter le run local conservé.
+
 ## 5. Reconnexion et travail
 
 Après validation de l'étape4, un nouveau chat sur la même connexion peut inspecter

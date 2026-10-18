@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'francestudent-p
 from server import Guard, request_proof, result, MAX_BODY
 from probe_core import observe_headers
 from diagnostics import ToolDiagnostics, DIAGNOSTIC_TOOL
+from tool_checkpoint import ToolCheckpoint
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from forward_core import ForwardError
@@ -50,7 +51,7 @@ class ProjectGuard(Guard):
 
 
 def make_project_app(gate, state, emit=print, allow_random_tunnel=False, execution=None,
-                     lifetime=3000, clock=time.monotonic, compact_results=False, supervised=False, lease_seconds=60, previous=None):
+                     lifetime=3000, clock=time.monotonic, compact_results=False, supervised=False, lease_seconds=60, previous=None, checkpoint=None):
     if type(supervised) is not bool or type(lease_seconds) is not int or not 5 <= lease_seconds <= 300:
         raise ValueError('project.invalid_supervision')
     if supervised and not isinstance(gate.file_budget, ProjectFiles):
@@ -63,6 +64,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         raise ValueError('project.invalid_result_mode')
     if type(lifetime) is not int or not 5 <= lifetime <= 3000:
         raise ValueError('project.invalid_lifetime')
+    if checkpoint is not None and (not supervised or not isinstance(checkpoint, ToolCheckpoint)):
+        raise ValueError('project.invalid_checkpoint')
     started = clock()
     if type(started) not in (int, float) or not math.isfinite(started):
         raise ValueError('project.invalid_clock')
@@ -100,10 +103,14 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         + ('Named task profiles available: ' + ', '.join(execution.profiles)
            + '. Start returns an owned job. Poll result and read bounded output. '
            'Stop is a request, not confirmation. Never retry uncertain starts.'
-           + (' Use optic_task_list to recover owned job ids after a lost reply; never blindly start again. Use optic_task_forget after reading completed output to release one of16 retained job slots.' if supervised else '')
+           + (' After reconnect or resume, inspect optic_diagnostics: a previous tool checkpoint is an untrusted observation, never proof of crash cause, authority or permission to replay. An admitted-only mutation may have happened; inspect current state first. Use optic_task_list to recover owned job ids after a lost reply; never blindly start again. Use optic_task_forget after reading completed output to release one of16 retained job slots.' if supervised else '')
            if execution is not None else 'No process tools are enabled.')))
 
-    def reply(name, payload):
+    async def reply(name, payload, ticket=None):
+        if ticket is not None and not await checkpoint.finish_async(ticket, payload):
+            # Preserve the actual effect result. Persistence failure is separate;
+            # it must never turn confirmed success into an invitation to retry.
+            payload = {**payload, 'checkpoint_saved': False}
         proof = request_proof.get()
         if diagnostics is not None and proof and proof.get('owner') is not None:
             diagnostics.record_current(gate, execution, proof['owner'], name, payload, proof.get('sequence'), proof.get('admitted'), clock(), proof.get('timestamp_utc'))
@@ -115,6 +122,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
 
     async def call(name, arguments):
         proof = request_proof.get()
+        ticket = None
         try:
             now = clock()
             if not math.isfinite(now) or now < started or (deadline is not None and now >= deadline):
@@ -122,6 +130,13 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 if execution is not None:
                     execution.stopped = True
                 raise ForwardError('link.inactive')
+            if checkpoint is not None and name != DIAGNOSTIC_TOOL:
+                if (not proof or gate.stopped or execution is not None and execution.stopped
+                        or not gate.registry.current(proof['owner'])):
+                    raise ForwardError('link.inactive')
+                ticket = await checkpoint.begin_async(name, proof['sequence'])
+                if ticket is None:
+                    raise ForwardError('project.checkpoint_unavailable' if checkpoint.failed else 'project.checkpoint_busy')
             if name == DIAGNOSTIC_TOOL and diagnostics is not None:
                 owner = proof['owner']
                 retained = sum(value == (owner.principal, owner.epoch) for value in execution.jobs.values()) if execution else 0
@@ -129,6 +144,10 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 if payload is None:
                     raise ForwardError('link.inactive')
                 payload['previous_session'] = dict(previous)
+                if checkpoint is not None:
+                    payload['previous_tool_checkpoint'] = dict(checkpoint.previous)
+                    payload['checkpoint_persistence_healthy'] = not checkpoint.failed
+                    payload['checkpoint_io_pending'] = checkpoint.busy
             else:
                 selected = execution if execution is not None and (name in TASK_TOOLS or supervised and name in SUPERVISED_TASK_TOOLS) else gate
                 payload = await selected.call(proof['owner'] if proof else None, name, arguments)
@@ -145,8 +164,8 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                                'window_seconds': WINDOW_SECONDS, 'retained_jobs': MAX_JOBS,
                                'task_starts_per_window': STARTS_PER_WINDOW} if supervised else {})}}
                 if name == 'optic_project_info' else {})
-            return reply(name, {'ok': True, 'generated_project_only': True,
-                **connection, 'upstream': payload})
+            return await reply(name, {'ok': True, 'generated_project_only': True,
+                **connection, 'upstream': payload}, ticket)
         except ForwardError as error:
             retry = {}
             if (str(error) == 'execution.start_budget' and execution is not None
@@ -155,7 +174,9 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 if type(now) in (int, float) and math.isfinite(now) and now >= execution.start_budget.last:
                     retry['retry_after_seconds'] = max(1, min(WINDOW_SECONDS,
                         math.ceil(execution.start_budget.started + WINDOW_SECONDS - now)))
-            return reply(name, {'ok': False, 'code': str(error), **retry})
+            if str(error) in ('project.checkpoint_busy', 'project.checkpoint_unavailable'):
+                retry.update(dispatch_attempted=False, diagnostic_tool=DIAGNOSTIC_TOOL)
+            return await reply(name, {'ok': False, 'code': str(error), **retry}, ticket)
 
     @mcp.tool()
     async def optic_project_info() -> dict:
