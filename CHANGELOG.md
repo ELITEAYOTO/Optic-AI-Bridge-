@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Add a bounded test-only owned-primary-thread integer diagnostic to localize
+  Electron's existing alternate-window-station startup failure without changing
+  sandbox flags, exception handling or model authority.
+
 - Preserve one bounded safe prior-tool observation across generated-alpha restart,
   with explicit uncertain admission, no automatic replay and independent failure
   reporting when a confirmed effect cannot save its diagnostic checkpoint.
