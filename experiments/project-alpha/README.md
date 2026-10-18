@@ -144,3 +144,19 @@ Reconnect retains this ring, but restart/rotation does not. On local resume the
 operator stop report is captured under the run lock, filtered and invalidated
 before editing. Missing prior evidence is unconfirmed shutdown, not proven crash.
 Neither feature sees FS model-internal logs or restores hidden conversation state.
+
+### Core integration and package validation — 2026-10-18
+
+The integration candidate brings main through PR246 into this experimental alpha,
+retaining local supervised availability and the source-read permission reduction.
+Local combined Rust tests,49 Python cases and actual Node HTTP/supervised resume
+checks passed. Exact CI still determines the tested package identity.
+
+The package contract is generated-project Node check/test plus a fixed operator
+Electron viewer. Its workflow keeps the native viewer/renderer/network/export
+checks. The unrelated general private-Electron startup test remains unchanged
+in private-application-staging.yml, where normal outer-AppContainer startup still
+fails0x80000003 and explicit outer-only comparison is separate. Removing the
+extra duplicate invocation from package generation does not resolve that failure,
+add a model Electron profile or allow an automatic sandbox downgrade. Node profile
+selection rejects electron.exe; the experimental GUI gate remains visibly red.
