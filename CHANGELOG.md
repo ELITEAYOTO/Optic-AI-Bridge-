@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Add operator-selected8/32KiB alpha file budgets with unchanged paginated replies,
+  versioned mutations, independent64KiB HTTP body cap, resume and fixed-viewer
+  snapshot validation; no additional runtime or model-selected permissions.
+
 - Read recovery journal records without write rights, preserving exclusive native
   identity/alias checks and separate write requirements for locking and appends.
 

@@ -43,7 +43,7 @@ class ProjectGuard(Guard):
 
     def valid_arguments(self, name, args):
         try:
-            normalize(name, args)
+            normalize(name, args, max_file_bytes=getattr(self, 'max_file_bytes', MAX_CONTENT))
             return True
         except SchemaError:
             return False
@@ -81,7 +81,9 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     mcp = MCPServer('Optic-Project-Alpha', instructions=(
         'Develop a public disposable project in src using real Rust file tools. '
         'All chats on this connection share one project and grants. No '
-        f'network, delete, Git or project selection. Read returns at most {gate.read_page_bytes} bytes '
+        f'network, delete, Git or project selection. Files are limited to {gate.max_file_bytes} UTF-8 bytes. '
+        f'The complete JSON request body is limited to {MAX_BODY} bytes; escaped text may reach that earlier. '
+        f'Read returns at most {gate.read_page_bytes} bytes '
         'of UTF-8 text, without duplicate base64 for text files. Follow next_offset '
         'until eof. Every page includes the exact full-file content_version from '
         'one bounded Rust read. Require the same version on all pages; restart '
@@ -137,7 +139,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
                 'expires_soon': False if supervised else deadline - clock() <= 120,
                 **({'mode': 'supervised', 'lease_window_seconds': lease_seconds} if supervised else {})},
                 'limits': {'read_page_bytes': gate.read_page_bytes,
-                           'file_bytes': MAX_CONTENT,
+                           'file_bytes': gate.max_file_bytes, 'request_body_bytes': MAX_BODY,
                            **({'generated_files': MAX_FILES, 'http_requests_per_window': HTTP_PER_WINDOW,
                                **({'generated_directories': MAX_DIRECTORIES} if gate.directory_create else {}),
                                'window_seconds': WINDOW_SECONDS, 'retained_jobs': MAX_JOBS,
@@ -179,12 +181,12 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
 
     @mcp.tool()
     async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = gate.read_page_bytes) -> dict:
-        """Read bounded pages (operator cap 1024 or 4096 bytes); defaults to the selected cap; follow next_offset to eof. All pages must share content_version before editing. Files <=8192 bytes."""
+        """Read bounded pages (operator cap 1024 or 4096 bytes); defaults to the selected cap; follow next_offset to eof. All pages must share content_version before editing. See project_info.limits.file_bytes."""
         return await call('optic_fs_read', {'path': path, 'offset': offset, 'max_bytes': max_bytes})
 
     @mcp.tool()
     async def optic_fs_write(path: str, content: str, expected_kind: str, expected_version: str | None = None) -> dict:
-        """Write UTF-8 text <=8192bytes in src. absent=create; content requires exact expected_version."""
+        """Write UTF-8 text in src within the operator-selected project_info.limits.file_bytes. absent=create; content requires exact expected_version."""
         arguments = {'path': path, 'content': content, 'expected_kind': expected_kind}
         if expected_version is not None:
             arguments['expected_version'] = expected_version
@@ -276,6 +278,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
     guard = CombinedGuard(Recheck(sdk), header_observer=observe, emit=emit, clock=clock,
                         zero_arg_tools=(), handle_tool=None, timed_diagnostics=True, lifetime=lifetime)
 
+    guard.max_file_bytes = gate.max_file_bytes
     if supervised:
         guard.request_budget = WindowBudget(HTTP_PER_WINDOW, WINDOW_SECONDS, guard.started)
     return guard

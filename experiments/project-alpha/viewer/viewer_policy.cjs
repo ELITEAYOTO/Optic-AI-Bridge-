@@ -41,11 +41,16 @@ function loadSnapshot(run, output) {
   const source = directory(path.join(project, 'src'));
   if (path.dirname(project) !== root || path.dirname(source) !== project) throw new Error('viewer.invalid_source');
   const ready = JSON.parse(readBounded(path.join(root, 'viewer-ready.json'), 2048).toString('utf8'));
-  if (ready.version !== 1 || Object.keys(ready).sort().join(',') !== 'files,version'
+  const keys = Object.keys(ready).sort().join(',');
+  const legacy = ready.version === 1 && keys === 'files,version';
+  const selected = ready.version === 2 && keys === 'files,max_file_bytes,version'
+    && [8192, 32768].includes(ready.max_file_bytes);
+  if ((!legacy && !selected)
       || Object.keys(ready.files).sort().join(',') !== [...FILES].sort().join(',')) throw new Error('viewer.invalid_snapshot');
+  const fileLimit = legacy ? 8192 : ready.max_file_bytes;
   const assets = new Map();
   for (const name of FILES) {
-    const bytes = readBounded(path.join(source, name), 8192);
+    const bytes = readBounded(path.join(source, name), fileLimit);
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     if (digest !== ready.files[name]) throw new Error('viewer.source_changed');
     if (ASSETS.includes(name)) assets.set(name, Buffer.from(bytes));

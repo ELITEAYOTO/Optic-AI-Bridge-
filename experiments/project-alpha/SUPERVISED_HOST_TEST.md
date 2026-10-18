@@ -1,5 +1,13 @@
 # Test FS — connexion supervisée et projet conservé
 
+Fichiers plus grands : le paquet portant `file_budget: operator-file-budget-v1`
+accepte `-MaxFileKiB 32` dans la commande de démarrage. Le défaut reste8Kio.
+Conserver ce choix à la reprise si des sources dépassent8Kio. Les pages de lecture
+restent1024ou4096octets ; consulter `optic_project_info.limits` avant de coder.
+Le corps HTTP garde sa limite64Kio, donc utiliser des petits patches versionnés
+pour du texte fortement échappé. Ce choix n'ajoute aucune permission d'exécution.
+
+
 Cette alpha travaille uniquement dans son projet généré ou un run alpha conservé.
 Node garde les profils check/test et ses trois fichiers autorisés. Pas encore de
 npm install, serveur web, compilation Electron/Rust ou projet privé existant.

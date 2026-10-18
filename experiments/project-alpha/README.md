@@ -33,11 +33,12 @@ HTML-only modification because host-visible full CSS replies were truncated.
 Adapter reads return <=1024 bytes per page without duplicate base64 for UTF-8
 text. Each page derives a full-file version from one bounded Rust snapshot;
 follow next_offset until eof and require the same content_version on all pages.
-Metadata precedes text. Files over8192bytes are refused, not partially versioned.
+Metadata precedes text. Files above the locally selected cap (default8192bytes,
+opt-in32768bytes) are refused, not partially versioned.
 UTC millisecond timestamps supplement monotonic diagnostic durations.
 
 The project path is generated locally; write authority is prefix:src. File text
-and resulting patches are limited to8192UTF-8 bytes, paths are ASCII segments
+and resulting patches use the selected UTF-8 byte cap, paths are ASCII segments
 with no traversal/Windows reserved names, read pages1024bytes, list pages32entries,
 literal searches16hits within one file prefix. Mutation forwarding is serialized
 and retains its slot after caller cancellation/timeout until actual completion.
@@ -52,6 +53,21 @@ proof logging; dedicated actual HTTP/Rust and owned runner child proofs are wire
 into Windows/Linux CI (Windows mutation proof, non-Windows explicit refusal).
 The CI-built package includes its source commit and binary SHA256 manifest.
 Use HOST_TEST_STEPS.md only with the matching verified artifact.
+
+## Operator-selected larger files
+
+Use `-MaxFileKiB 32` with the matching package; default remains8KiB. This is local
+operator configuration, never a tool argument. `optic_project_info.limits` reports
+`file_bytes`, `read_page_bytes` and `request_body_bytes`. Pages remain1024bytes,
+or4096 with `-ReadPageBytes 4096`; task output pages do not change.
+
+The HTTP body cap remains65536bytes. JSON escaping can reach that cap before32KiB
+of text does; use small versioned patches when needed. Search still scans only
+the first8192bytes and reports incomplete search. Supervised inventory remains
+128files (at most4MiB source at32KiB each), not a hard runtime disk quota. Paths,
+grants, job limits and runtimes do not expand. Resume must select32again for files
+above8KiB; refusal never truncates source. The fixed viewer records the cap in a
+strict v2 snapshot; legacy v1 retains8KiB. No model Electron or general build grant.
 
 ## Next delivery checkpoints
 

@@ -2,11 +2,13 @@
 import hashlib
 import json
 from pathlib import Path
+from project_schema import MAX_CONTENT, file_limit
 
 FILES = ('index.html', 'style.css', 'app.js', 'model.js', 'tests.js')
 
 
-def write_viewer_ready(run):
+def write_viewer_ready(run, max_file_bytes=MAX_CONTENT):
+    maximum = file_limit(max_file_bytes)
     run = Path(run)
     source = run / 'project' / 'src'
     for directory in (run, run / 'project', source):
@@ -18,11 +20,13 @@ def write_viewer_ready(run):
         if path.is_symlink() or not path.is_file():
             raise ValueError('viewer.missing_source')
         with path.open('rb') as stream:
-            raw = stream.read(8193)
-        if not 1 <= len(raw) <= 8192:
+            raw = stream.read(maximum + 1)
+        if not 1 <= len(raw) <= maximum:
             raise ValueError('viewer.source_bound')
         raw.decode('utf-8', errors='strict')
         versions[name] = hashlib.sha256(raw).hexdigest()
     with (run / 'viewer-ready.json').open('x', encoding='utf-8') as stream:
-        json.dump({'version': 1, 'files': versions}, stream, sort_keys=True)
+        snapshot = {'version': 1, 'files': versions} if maximum == MAX_CONTENT else {
+            'version': 2, 'files': versions, 'max_file_bytes': maximum}
+        json.dump(snapshot, stream, sort_keys=True)
     return {'viewer_ready': True}

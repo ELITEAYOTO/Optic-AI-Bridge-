@@ -8,7 +8,9 @@ import tempfile
 from viewer_snapshot import write_viewer_ready
 
 
-def run(executable):
+def run(executable, max_file_bytes=8192):
+    from project_schema import file_limit
+    file_limit(max_file_bytes)
     with tempfile.TemporaryDirectory(prefix='optic-electron-viewer-') as directory:
         output = Path(directory)
         root = output / 'alpha-public-smoke'
@@ -18,9 +20,11 @@ def run(executable):
                     'style.css': 'body{font-family:system-ui}',
                     'app.js': 'document.body.dataset.publicProbe="yes";',
                     'model.js': 'globalThis.PublicModel={value:1};', 'tests.js': '// public probe only\n'}
+        if max_file_bytes == 32768:
+            contents['style.css'] += '/*' + 'x' * 12000 + '*/'
         for name, text in contents.items():
             (source / name).write_text(text, encoding='utf-8')
-        write_viewer_ready(root)
+        write_viewer_ready(root, max_file_bytes=max_file_bytes)
         main = Path(__file__).parent / 'viewer' / 'electron_main.cjs'
         for mode in ('--smoke', '--smoke-repeat'):
             result = subprocess.run([str(Path(executable).resolve(strict=True)), str(main), str(root), str(output), mode],
@@ -33,4 +37,4 @@ def run(executable):
 
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 8192)

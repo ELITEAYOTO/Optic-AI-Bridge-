@@ -1,5 +1,14 @@
 # Project Status
 
+## Configurable alpha file budget — candidate, 2026-10-18
+
+Operator selects8or32KiB per generated file; default8remains. Whole-file versions,
+UTF-8 pagination, patch growth, independent64KiB HTTP body cap, resume inspection,
+Node validation and strict viewer snapshots keep finite bounds. The model cannot
+select the budget. Actual large-file HTTP mutation, Node check/test then restart
+and fixed Electron viewer passed locally. No dependency/general-build/GUI grant.
+
+
 ## Alpha integration candidate — 2026-10-18
 
 Bring validated main throughcfecb47 into the experimental FS alpha, retaining
@@ -9,7 +18,9 @@ argument parsing in either order. This integrates main into alpha only; it
 does not merge the full experimental stack into main or enable general builds.
 The local full Rust suite,49 adapter unit cases, actual supervision/permission
 SDK checks, Node HTTP journey and same-project supervised resume passed.
-Exact combined-head CI remains pending.
+Combined-head CI, Rust compilation, pipes, preparation and alpha packaging passed
+atc8eb328; merged into alpha via PR247. Separate normal-Electron staging research
+still fails0x80000003; no production fallback or model GUI grant.
 
 ## Read-only recovery scan — candidate, 2026-10-18
 
