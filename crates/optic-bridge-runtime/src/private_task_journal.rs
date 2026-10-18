@@ -2,8 +2,8 @@
 use optic_bridge_core::{ActionEnvelope, ActionId, ContentVersion, JobId, ProjectInputManifest};
 use optic_bridge_windows::{
     EphemeralAppContainerPlan, OpenedWindowsFile, PinnedDirectoryChain, WindowsFileIdentity,
-    inspect_directory_no_reparse, open_exclusive_state_file, open_file_for_delete_no_reparse,
-    pin_directory_chain,
+    inspect_directory_no_reparse, open_exclusive_read_file, open_exclusive_state_file,
+    open_file_for_delete_no_reparse, pin_directory_chain,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -373,7 +373,9 @@ impl PrivateTaskJournal {
                 return Err(PrivateTaskJournalError::Capacity);
             }
             let path = self.path(run);
-            let mut file = open_exclusive_state_file(&path, false)?;
+            // A report needs no append/create rights. Keep the same exclusive,
+            // no-reparse, single-link and opened-final-path checks.
+            let mut file = open_exclusive_read_file(&path)?;
             if file.final_path() != path {
                 return Err(PrivateTaskJournalError::Boundary);
             }
@@ -1123,6 +1125,48 @@ mod tests {
             fs::write(&path, corrupt).unwrap();
             assert!(restarted.recovery_report().is_err());
         }
+    }
+
+    #[test]
+    fn private_journal_recovery_reopens_read_only_history_without_mutation() {
+        let fixture = Fixture::new();
+        let journal = fixture.open();
+        let (manifest, action) = input();
+        let ticket = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
+        ticket.closed().unwrap();
+        let path = journal.path(&ticket.run);
+        let before = fs::read(&path).unwrap();
+        drop(ticket);
+        let original_permissions = fs::metadata(&path).unwrap().permissions();
+        let mut read_only = original_permissions.clone();
+        read_only.set_readonly(true);
+        fs::set_permissions(&path, read_only).unwrap();
+        let write_denied = open_exclusive_state_file(&path, false).is_err();
+        let report = journal.recovery_report();
+        drop(journal);
+        // open() also scans existing records, so restart needs only read rights
+        // on history. Restore attributes before any assertion/fixture teardown.
+        let reopened = PrivateTaskJournal::open(&fixture.state, &fixture.workspace);
+        let after = fs::read(&path);
+        fs::set_permissions(&path, original_permissions).unwrap();
+        assert!(
+            write_denied,
+            "fixture must deny the former read/write opener"
+        );
+        let report = report.unwrap();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].phase, PrivateTaskRecoveryPhase::Closed);
+        assert_eq!(report[0].outcome, Some(PrivateTaskOutcome::NoProcess));
+        assert!(report[0].execution.is_none());
+        let restarted = reopened.unwrap();
+        assert_eq!(restarted.recovery_report().unwrap().len(), 1);
+        assert_eq!(after.unwrap(), before);
     }
 
     #[test]

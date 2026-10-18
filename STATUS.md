@@ -1,5 +1,13 @@
 # Project Status
 
+## Read-only recovery scan — candidate, 2026-10-18
+
+Recovery scans request only read rights on journal history; locking and appends
+retain their existing write requirements. Strict aliases, opened-path and
+capacity checks are unchanged. Local/exact CI validation pending.
+PR244 recovery correlation merged as5ff5ac7 after CI39063393046 and native
+preparation39063393032 passed; no restored permissions or replay authority.
+
 ## Recovery correlation — candidate, 2026-10-17
 
 The host recovery report retains already-persisted start action/process-lease/
