@@ -18,6 +18,11 @@ A separate harmless prototype supplied by the project owner has shown that the t
 
 The candidate architecture, unproven authentication questions, zero-mandatory-backend goal and future acceptance gates are recorded in [FranceStudent / Remote MCP candidate](../research/FRANCESTUDENT_REMOTE_MCP_CANDIDATE.md).
 
+Subsequent operator-reported host results and their limits are consolidated in
+the [2026-10-18 evidence checkpoint](../research/FRANCESTUDENT_HOST_EVIDENCE_2026-10-18.md).
+They cover prototype authenticated headers/lifecycle, generated files and fixed
+Node tasks; they do not make the experimental adapter a production remote path.
+
 Any future remote adapter must reuse the same application-owned sessions, policy, capabilities, task leases, resource ceilings and runtime boundaries as stdio. A tunnel/provider must remain replaceable transport infrastructure rather than authority.
 
 ## Security
