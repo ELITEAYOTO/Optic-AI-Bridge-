@@ -101,7 +101,7 @@ async def run(binary, max_file_bytes=8192):
                             assert partial['upstream']['content_version'] == patched['upstream']['content_version']
                             assert partial['upstream']['next_offset'] == 2
                             assert not partial['upstream']['eof']
-                            long_text = 'a' * 1023 + 'é' + 'b' * (12000 if max_file_bytes == 32768 else 1400)
+                            long_text = 'a' * 1023 + 'é' + 'b' * (32768 - 1025 if max_file_bytes == 32768 else 1400)
                             long_write = structured(await session.call_tool('optic_fs_write', {
                                 'path': 'src/paged.txt', 'content': long_text, 'expected_kind': 'absent'}))
                             assert long_write['ok']
@@ -119,7 +119,7 @@ async def run(binary, max_file_bytes=8192):
                                     break
                             assert ''.join(chunks) == long_text
                             if max_file_bytes == 32768:
-                                # Exercise an actual native mutation beyond the old8KiB bound.
+                                # Exercise an actual native mutation beyond the old 8KiB bound.
                                 changed = structured(await session.call_tool('optic_fs_patch', {
                                     'path': 'src/paged.txt', 'expected_version': long_write['upstream']['content_version'],
                                     'offset': 10000, 'remove_bytes': 1, 'insert': 'Z'}))
