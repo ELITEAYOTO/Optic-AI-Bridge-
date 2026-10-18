@@ -35,6 +35,15 @@ async def previous_state(url):
         return diagnostics['previous_session']
 
 
+async def prior_tool(url):
+    async with client(url, TOKENS['A'][0]) as session:
+        diagnostics = structured(await session.call_tool('optic_diagnostics', {}))['upstream']
+        assert diagnostics['checkpoint_persistence_healthy'], diagnostics
+        previous = diagnostics['previous_tool_checkpoint']
+        assert not previous['trusted_for_authorization'], previous
+        return previous
+
+
 async def cycle(url):
     await exercise(url, node_mode=True, supervised=True, directories=True)
     before = await observe(url, TOKENS['A'][0])
@@ -77,6 +86,11 @@ def run(binary, node):
                 report = json.loads((root / 'last-stop.json').read_bytes())
                 assert report['reason'] == 'operator' and report['revocation_confirmed'] and report['work_drained'], report
                 assert (root / 'viewer-ready.json').is_file()
+                from tool_checkpoint import NAME, MAX_BYTES
+                retained = (root / NAME).read_bytes()
+                assert len(retained) <= MAX_BYTES and b'content_version' not in retained
+                previous_tool = json.loads(retained)
+                assert previous_tool['phase'] == 'completed' and previous_tool['tool'] == 'optic_task_list'
             finally:
                 if child.poll() is None:
                     child.kill()
@@ -85,6 +99,8 @@ def run(binary, node):
             resumed = subprocess.Popen(arguments + ['--resume-run', root.name], stdin=subprocess.PIPE,
                                        stdout=diagnostics, stderr=diagnostics, text=True)
             try:
+                observed = asyncio.run(prior_tool(url))
+                assert observed['event'] == previous_tool, observed
                 asyncio.run(exercise_resume(url))
                 assert (root / 'project/src/components/note.txt').read_bytes() == b'retained nested source'
                 assert asyncio.run(previous_state(url))['revocation_confirmed'] is True
@@ -124,6 +140,8 @@ def run(binary, node):
                 core.require_exit()
                 assert not (root / 'viewer-ready.json').exists()
                 assert not (root / 'last-stop.json').exists()
+                crashed_tool = json.loads((root / NAME).read_bytes())
+                assert crashed_tool['phase'] == 'completed'
                 assert sources == {path.name: path.read_bytes() for path in (root / 'project/src').iterdir() if path.is_file()}
             finally:
                 if crashed.poll() is None:
@@ -137,6 +155,9 @@ def run(binary, node):
             try:
                 asyncio.run(exercise_resume(url))
                 assert asyncio.run(previous_state(url)) == {'state': 'previous_shutdown_unconfirmed'}
+                observed = asyncio.run(prior_tool(url))
+                assert observed['event'] == crashed_tool, observed
+                assert not observed['event']['outcome_uncertain']
                 recovered.stdin.write('stop\n')
                 recovered.stdin.flush()
                 assert recovered.wait(timeout=20) == 0
@@ -147,7 +168,7 @@ def run(binary, node):
                     recovered.kill()
                     recovered.wait(timeout=10)
                 recovered.stdin.close()
-    print('SUPERVISED RUNNER PASS: Node versioned fix/check/test, terminal release, real idle renewal/new transport, budget-exhausted stop, same-project resume, stdin EOF/revoke, core exit after parent death and crash recovery.')
+    print('SUPERVISED RUNNER PASS: Node versioned fix/check/test, terminal release, real idle renewal/new transport, budget-exhausted stop, same-project resume, stdin EOF/revoke, core exit after parent death and crash recovery with bounded prior-tool observation (no replay).')
 
 
 if __name__ == '__main__':

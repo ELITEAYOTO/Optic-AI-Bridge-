@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Preserve one bounded safe prior-tool observation across generated-alpha restart,
+  with explicit uncertain admission, no automatic replay and independent failure
+  reporting when a confirmed effect cannot save its diagnostic checkpoint.
+
 - Add operator-selected8/32KiB alpha file budgets with unchanged paginated replies,
   versioned mutations, independent64KiB HTTP body cap, resume and fixed-viewer
   snapshot validation; no additional runtime or model-selected permissions.

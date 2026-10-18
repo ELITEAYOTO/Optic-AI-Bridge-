@@ -29,6 +29,7 @@ from node_profiles import configure_node
 from viewer_snapshot import write_viewer_ready
 from project_resume import select_run, session_lock
 from stop_report import write_stop_report
+from tool_checkpoint import ToolCheckpoint
 from supervision_limits import ProjectFiles
 
 
@@ -71,6 +72,7 @@ async def serve_project(args, root, project, journal, previous=None):
             'Node can read model.js/app.js/tests.js only. check validates JavaScript syntax; '
             'test runs tests.js with relative model.js imports. No build output, dependencies or server.\n', encoding='utf-8')
     file_budget = ProjectFiles.inspect(project, max_file_bytes=args.max_file_bytes) if args.supervised else None
+    checkpoint = ToolCheckpoint(root) if args.supervised else None
     channel = ProofChannel()
     outcome = {}
     stop_reason = 'service_exit'
@@ -104,7 +106,7 @@ async def serve_project(args, root, project, journal, previous=None):
                 app = make_project_app(gate, state, emit=channel.emit,
                     allow_random_tunnel=args.allow_random_tunnel_host, lifetime=args.lifetime,
                     execution=execution, compact_results=bool(profiles),
-                    supervised=args.supervised, lease_seconds=args.lease_seconds, previous=previous)
+                    supervised=args.supervised, lease_seconds=args.lease_seconds, previous=previous, checkpoint=checkpoint)
                 service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                     log_config=None, access_log=False, limit_concurrency=32, timeout_keep_alive=5,
                     timeout_graceful_shutdown=5, h11_max_incomplete_event_size=16384))
