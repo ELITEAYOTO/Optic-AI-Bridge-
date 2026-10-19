@@ -1,5 +1,14 @@
 # Project Status
 
+## Core local supervision promotion — candidate, 2026-10-19
+
+Explicit CLI supervision renews only existing active session/lease scopes through
+finite monotonic windows and revokes on transport completion. Default launch stays
+timed. Native Rust stdio integration passed all three expiry/renewal/revoke/EOF
+cases; exact Windows/Linux CI remains required. No remote renewal tool, HTTP
+adapter, new process/GUI permission or automatic grant resurrection is added.
+See ADR-0031. This is a selective core integration, not the full alpha umbrella.
+
 ## Read-only recovery scan — candidate, 2026-10-18
 
 Recovery scans request only read rights on journal history; locking and appends
