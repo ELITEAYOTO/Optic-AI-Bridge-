@@ -4,10 +4,10 @@ Reviewed: 2026-10-20. [STATUS.md](STATUS.md) owns current evidence; this page ow
 the next delivery order. Earlier phase/H-track snapshots remain historical
 planning inputs, not a second statement of current completion.
 
-1. **Finish repository consolidation.** Keep `main`, the generated-project alpha
-   and the two active compatibility investigations understandable. Merge bounded
-   reviewed increments; close superseded PRs. Retire only approved, preserved
-   branches using exact expected heads.
+1. **Maintain coherent integration.** Repository consolidation and bounded
+   diagnostic scopes are recorded; keep `main` and the generated-project alpha
+   aligned through reviewed increments. Track compatibility fixes as delivery
+   gates, close completed PRs and retire only preserved exact branch heads.
 2. **Prototype optional Cargo preparation on disposable Windows.** Prove the
    fixed NUL/exact-profile contract, trusted local broker identity, revocation and
    interrupted recovery before presenting a concrete administrator change on a

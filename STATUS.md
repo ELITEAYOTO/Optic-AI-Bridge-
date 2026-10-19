@@ -7,8 +7,10 @@ contract, not general Cargo or administrator setup. Its dedicated normal and
 prepared acceptance jobs remain independent; an unsupported normal job stays
 red and cannot inherit the prepared result. Standard direct-Rust CI is unchanged.
 Earlier21ac09b hosted proof completed prepared check/test, failing assertion,
-correction, offline dependency denial, cleanup and explicit revoke. The current
-head additionally requires an unrelated profile to remain denied.
+correction, offline dependency denial, cleanup and explicit revoke. At code head282524c, dedicated CI39339416828 prepared job118356950903 also
+proved unrelated-profile denial, cleanup and revoke; normal job118356951094
+retained the actual NUL error5. Subsequent integration documentation does not
+relabel those observations as normal support.
 See docs/research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md.
 
 
@@ -18,12 +20,13 @@ production release. Detailed historical notes are retained in
 
 ## Merged and validated
 
-Current hardening work adds lossless Windows path boundary checks and a native
+PR259/`97f4098` adds lossless Windows path boundary checks and a native
 regression for a reproduced alias read across distinct non-Unicode roots.
 Git path comparisons/arguments and operator-policy placement receive the same
 representation audit. See [ADR-0033](docs/decisions/ADR-0033-LOSSLESS-NATIVE-PATH-BOUNDARIES.md)
 and the [reviewed debt register](docs/engineering/RELIABILITY_DEBT.md); this is not
-a claim that every filesystem or compatibility gate is closed.
+a claim that every filesystem or compatibility gate is closed. Exact
+CI39338661674 and preparation39338661374 passed before merge.
 
 | Track | Latest delivered increment | Evidence |
 | --- | --- | --- |
@@ -40,10 +43,12 @@ The core includes scoped/versioned filesystem mutation, separately authorized
 Git operations, bounded process lifecycle and private-service foundations.
 Not every internal service is exposed as a general MCP project/build tool.
 
-## Active research and limits
+## Compatibility evidence and remaining limits
 
-- **Electron #250:** normal isolated startup still fails `0x80000003` before app
-  startup. The separately selected outer-only diagnostic succeeds; no automatic
+- **Electron #250:** bounded diagnostic scope merged into alpha as `e62ea95`.
+  At head `62f8177`, ordinary CI/adapter/preparation/pipes/Rust passed. The
+  staging rerun job118357480984 passed both diagnostic controls and observed
+  normal exit `0x80000003` / primary result11 before app startup. The separately selected outer-only diagnostic succeeds; no automatic
   sandbox downgrade or public GUI permission follows. The baseline research
   staging workflow remains red, including run 39292952790 on #256.
 - **Cargo #255:** ordinary capability-free execution fails opening NUL, exit 101.
@@ -62,9 +67,10 @@ Not every internal service is exposed as a general MCP project/build tool.
 ## Repository consolidation
 
 41 historical PRs were closed with explicit disposition. Their work remains in
-alpha ancestry, exact GitHub pull refs or published archive tags. Only Electron
-#250 and Cargo #255 remain as open feature/research PRs at the audit snapshot.
-A maintenance PR can be temporarily open while this consolidation is reviewed.
+alpha ancestry, exact GitHub pull refs or published archive tags. The later #250
+and #255 integration completes their bounded measurement scopes; unresolved
+compatibility work remains in this status and the debt register, rather than
+indefinitely open diagnostic carriers.
 
 244 historical remote branches were removed after explicit operator approval,
 exact-head/preservation revalidation and backup hash verification. The four

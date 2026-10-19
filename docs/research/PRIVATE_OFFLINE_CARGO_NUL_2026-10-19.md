@@ -157,3 +157,10 @@ for read/write there, and closes that profile. Existing execution, bounded
 collection, explicit revoke and restored-denial assertions remain required.
 The concrete Windows preparation broker is still design-only; no local ACL
 mutation, administrator service or model-callable policy change is introduced.
+
+At code head282524ce5d22b45e5da973ca4e6ca439e727e8de, dedicated workflow
+39339416828 completed the prepared job118356950903 successfully, including the
+new unrelated-profile denial/close,21 target outputs (3,733,831bytes),4 home
+outputs (57,521bytes), explicit revoke and restored denial. Independent normal
+job118356951094 failed on the same NUL error5. Integration documentation keeps
+that failed normal acceptance visible; it is not a production fallback.

@@ -6,8 +6,10 @@
 - `alpha/generated-project-editing`: generated-project FS adapter and its proven
   bundle. Core changes arrive through ancestry-preserving alignment PRs; the
   whole research stack must not be merged backward into main.
-- `diagnostics/electron-primary-result` (#250) and
-  `experiment/private-offline-cargo` (#255): active draft compatibility research.
+- Completed diagnostic scopes #250 (alpha) and #255 (fixed Cargo research) are
+  retained in their target histories/PR refs. Their short-lived research branches
+  can be retired after exact-head integration; compatibility support remains a
+  roadmap gate, not a reason to keep the measurement PR open indefinitely.
 - `archive/*` tags: preserved historical snapshots, not release tags or active
   development branches. Only intentional version tags use the release workflow.
 
