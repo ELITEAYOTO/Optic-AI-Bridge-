@@ -1,5 +1,17 @@
 # Project Status
 
+## Completed bounded Electron diagnosis — 2026-10-20
+
+PR250 adds test-only owned primary-thread results and fixed station controls,
+not a GUI compatibility repair. Exact earlier e768463 CI39195016565 measured
+normal Electron result11 / exit0x80000003 on disposable Windows; the separate
+outer-only comparison succeeded. Parent-token and isolated station observations
+both completed. The local host distinguishes existing-station access from a
+new descriptor grant. No installed ACL or production launch behavior changed.
+The alpha-aligned head requires its own current native/CI validation before merge.
+See docs/research/ELECTRON_WINSTATION_RESULT_2026-10-18.md.
+
+
 ## Current integration candidate — 2026-10-19
 
 Main PR254/e1b8288 passed exact Windows/Linux CI, private preparation, pipes and

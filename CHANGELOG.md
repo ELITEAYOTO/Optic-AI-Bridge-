@@ -1,5 +1,11 @@
 # Changelog
 
+## Bounded Electron diagnostic integration — 2026-10-20
+
+- Keep owned thread-context sampling aligned and test-only; add fixed parent-token and isolated station controls without changing installed ACLs or public tools.
+- Retain the failing normal Electron compatibility gate; diagnostic completion does not enable GUI execution or a sandbox downgrade.
+
+
 ## Unreleased — exact isolated module reads
 
 - Derive bounded directory metadata rights from exact launcher read

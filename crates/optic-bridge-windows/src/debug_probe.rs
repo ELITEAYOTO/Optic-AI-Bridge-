@@ -20,6 +20,39 @@ use windows::Win32::{
     },
 };
 
+#[cfg(target_arch = "x86_64")]
+#[repr(C, align(16))]
+struct AlignedIntegerContext(windows::Win32::System::Diagnostics::Debug::CONTEXT);
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn integer_context_buffer_is_natively_aligned() {
+    let context = AlignedIntegerContext(Default::default());
+    assert!(align_of::<AlignedIntegerContext>() >= 16);
+    assert_eq!((&context.0 as *const _ as usize) % 16, 0);
+}
+
+#[cfg(target_arch = "x86_64")]
+fn primary_integer_result(thread: HANDLE) -> Result<u32> {
+    use windows::Win32::System::Diagnostics::Debug::{
+        CONTEXT, CONTEXT_INTEGER_AMD64, GetThreadContext,
+    };
+    let mut context = AlignedIntegerContext(CONTEXT {
+        ContextFlags: CONTEXT_INTEGER_AMD64,
+        ..CONTEXT::default()
+    });
+    // SAFETY: this is the initial-thread handle from CREATE_PROCESS_DEBUG_EVENT
+    // for our freshly created child, still stopped at its own exception event.
+    // Never opens a PID/thread chosen by a caller and never sets context.
+    unsafe { GetThreadContext(thread, &mut context.0) }.map_err(Error::other)?;
+    Ok(context.0.Rax as u32)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn primary_integer_result(_thread: HANDLE) -> Result<u32> {
+    Err(Error::other("owned context architecture unsupported"))
+}
+
 pub(crate) fn wait_owned_debug_probe(
     child: &mut SuspendedAppContainerProcess,
     timeout_ms: u32,
@@ -43,6 +76,8 @@ pub(crate) fn wait_owned_debug_probe(
     let until = Instant::now() + Duration::from_millis(u64::from(timeout_ms));
     let mut initial_breakpoint = false;
     let mut image_base = 0_usize;
+    let mut primary_thread = HANDLE::default();
+    let mut primary_thread_id = 0;
     let mut remaining_log = 32 * 1024_usize;
     for _ in 0..4096 {
         if Instant::now() >= until {
@@ -68,6 +103,8 @@ pub(crate) fn wait_owned_debug_probe(
                 CREATE_PROCESS_DEBUG_EVENT => {
                     let info = event.u.CreateProcessInfo;
                     image_base = info.lpBaseOfImage as usize;
+                    primary_thread = info.hThread;
+                    primary_thread_id = event.dwThreadId;
                     if !info.hFile.is_invalid() {
                         let _ = CloseHandle(info.hFile);
                     }
@@ -118,11 +155,21 @@ pub(crate) fn wait_owned_debug_probe(
                 EXCEPTION_DEBUG_EVENT => {
                     let info = event.u.Exception;
                     let code = info.ExceptionRecord.ExceptionCode;
+                    let primary_eax = if initial_breakpoint
+                        && code == EXCEPTION_BREAKPOINT
+                        && event.dwThreadId == primary_thread_id
+                        && !primary_thread.is_invalid()
+                    {
+                        Some(primary_integer_result(primary_thread))
+                    } else {
+                        None
+                    };
                     message = Some(format!(
-                        "exception={:08x} first_chance={} offset_from_main_image={:?}",
+                        "exception={:08x} first_chance={} offset_from_main_image={:?} primary_thread_match={} primary_eax={primary_eax:?}",
                         code.0 as u32,
                         info.dwFirstChance,
-                        (info.ExceptionRecord.ExceptionAddress as usize).checked_sub(image_base)
+                        (info.ExceptionRecord.ExceptionAddress as usize).checked_sub(image_base),
+                        event.dwThreadId == primary_thread_id
                     ));
                     if code == EXCEPTION_BREAKPOINT && !initial_breakpoint {
                         initial_breakpoint = true;

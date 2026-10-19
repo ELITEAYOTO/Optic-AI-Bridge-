@@ -597,6 +597,423 @@ mod tests {
         )
     }
 
+    // Build a descriptor for a requested test object only. Never writes an ACL
+    // onto an existing/current station or any filesystem/registry object.
+    fn station_descriptor_for_own_package(
+        mut descriptor: windows::Win32::Security::SECURITY_DESCRIPTOR,
+    ) -> std::io::Result<(
+        windows::Win32::Security::SECURITY_DESCRIPTOR,
+        super::LocalAllocation,
+    )> {
+        use std::os::windows::io::{FromRawHandle, OwnedHandle};
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Security::{
+                Authorization::{
+                    BuildTrusteeWithSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, SetEntriesInAclW,
+                    TRUSTEE_W,
+                },
+                GetTokenInformation, TOKEN_APPCONTAINER_INFORMATION, TOKEN_QUERY,
+                TokenAppContainerSid,
+            },
+            System::Threading::{GetCurrentProcess, OpenProcessToken},
+        };
+        if descriptor.Dacl.is_null() {
+            return Err(std::io::Error::other("test descriptor refuses null DACL"));
+        }
+        let mut token = HANDLE::default();
+        // SAFETY: opens only our current process token for query; no token change.
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+            .map_err(std::io::Error::other)?;
+        // SAFETY: uniquely owned real token handle, released once on every path.
+        let _token = unsafe { OwnedHandle::from_raw_handle(token.0) };
+        let mut bytes = [0u64; 1024];
+        let mut required = 0;
+        // SAFETY: fixed aligned8KiB buffer, exact size output; no sizing retry.
+        unsafe {
+            GetTokenInformation(
+                token,
+                TokenAppContainerSid,
+                Some(bytes.as_mut_ptr().cast()),
+                std::mem::size_of_val(&bytes) as u32,
+                &mut required,
+            )
+        }
+        .map_err(std::io::Error::other)?;
+        if required < std::mem::size_of::<TOKEN_APPCONTAINER_INFORMATION>() as u32 {
+            return Err(std::io::Error::other("missing owned package SID"));
+        }
+        // SAFETY: successful native query populated this aligned typed header;
+        // its SID storage remains live throughout the synchronous ACL merge.
+        let info = unsafe { &*bytes.as_ptr().cast::<TOKEN_APPCONTAINER_INFORMATION>() };
+        if info.TokenAppContainer.0.is_null() {
+            return Err(std::io::Error::other("not an AppContainer helper"));
+        }
+        let mut trustee = TRUSTEE_W::default();
+        // SAFETY: SID came from our token query and remains live.
+        unsafe { BuildTrusteeWithSidW(&mut trustee, Some(info.TokenAppContainer)) };
+        let entry = EXPLICIT_ACCESS_W {
+            // Only the station creation rights used in this experiment. No
+            // inheritance, world/package-class grant, file or network permission.
+            grfAccessPermissions: windows::Win32::Foundation::GENERIC_READ.0 | 0x8,
+            grfAccessMode: GRANT_ACCESS,
+            grfInheritance: Default::default(),
+            Trustee: trustee,
+        };
+        let mut acl = std::ptr::null_mut();
+        // SAFETY: copied DACL remains live; one SID entry is merged into a NEW
+        // ACL allocation (ACL size is a native u16), not an installed object ACL.
+        let status = unsafe {
+            SetEntriesInAclW(
+                Some(std::slice::from_ref(&entry)),
+                Some(descriptor.Dacl.cast_const()),
+                &mut acl,
+            )
+        };
+        super::win32_status(status.0, "test-only package ACL merge")?;
+        let owned = super::LocalAllocation(acl.cast());
+        descriptor.Dacl = acl;
+        Ok((descriptor, owned))
+    }
+
+    // Test-child-only API diagnostic: no shared-core switch, ACL mutation or desktop creation,
+    // default descriptor, handle inheritance, or model-facing authority.
+    fn probe_station_creation() {
+        use windows::Win32::{
+            Foundation::{GENERIC_READ, HANDLE},
+            Security::{
+                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, MakeAbsoluteSD,
+                PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
+            },
+            System::StationsAndDesktops::{
+                CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
+                GetUserObjectInformationW, SetProcessWindowStation, UOI_NAME,
+            },
+        };
+        use windows::core::PCWSTR;
+        // SAFETY: borrowed current-process station; never closed or modified.
+        let station = match unsafe { GetProcessWindowStation() } {
+            Ok(station) => station,
+            Err(error) => {
+                println!("STATION_API get_current_error={:?}", error.code());
+                return;
+            }
+        };
+        // Compare names only as diagnostic data. An unnamed create can return
+        // another reference to an existing object, not necessarily a fresh one.
+        let mut current_name = [0u16; 1024];
+        let mut current_name_bytes = 0;
+        // SAFETY: borrowed station and fixed writable buffer; read-only query.
+        let current_name_query = unsafe {
+            GetUserObjectInformationW(
+                HANDLE(station.0),
+                UOI_NAME,
+                Some(current_name.as_mut_ptr().cast()),
+                std::mem::size_of_val(&current_name) as u32,
+                Some(&mut current_name_bytes),
+            )
+        };
+        if let Err(error) = &current_name_query {
+            println!("STATION_CURRENT_NAME error={:?}", error.code());
+        }
+        // Aligned fixed buffer; retain descriptor storage through both calls.
+        let mut descriptor = [0u32; 16 * 1024];
+        let mut needed = 0;
+        // SAFETY: valid borrowed handle, writable aligned 64 KiB storage and
+        // size output. Only the DACL is requested, never SACL or its contents logged.
+        let query = unsafe {
+            GetUserObjectSecurity(
+                HANDLE(station.0),
+                &DACL_SECURITY_INFORMATION.0,
+                Some(PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast())),
+                std::mem::size_of_val(&descriptor) as u32,
+                &mut needed,
+            )
+        };
+        if let Err(error) = query {
+            println!(
+                "STATION_API query_error={:?} required_bytes={needed}",
+                error.code()
+            );
+            return;
+        }
+        // Compare the returned self-relative descriptor with its native absolute
+        // conversion. Four fixed64KiB component buffers stay alive through calls;
+        // no descriptor content is logged and no unbounded sizing retry exists.
+        let mut absolute = SECURITY_DESCRIPTOR::default();
+        let mut absolute_size = std::mem::size_of_val(&absolute) as u32;
+        let mut dacl = vec![0u32; 16 * 1024];
+        let mut sacl = vec![0u32; 16 * 1024];
+        let mut owner = vec![0u32; 16 * 1024];
+        let mut group = vec![0u32; 16 * 1024];
+        let (mut dacl_size, mut sacl_size, mut owner_size, mut group_size) =
+            (65536, 65536, 65536, 65536);
+        // SAFETY: source was filled by Windows; all aligned destination pointers
+        // have the declared capacities and remain live until both variants finish.
+        let converted = unsafe {
+            MakeAbsoluteSD(
+                PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast()),
+                Some(PSECURITY_DESCRIPTOR(
+                    (&mut absolute as *mut SECURITY_DESCRIPTOR).cast(),
+                )),
+                &mut absolute_size,
+                Some(dacl.as_mut_ptr().cast()),
+                &mut dacl_size,
+                Some(sacl.as_mut_ptr().cast()),
+                &mut sacl_size,
+                Some(PSID(owner.as_mut_ptr().cast())),
+                &mut owner_size,
+                Some(PSID(group.as_mut_ptr().cast())),
+                &mut group_size,
+            )
+        };
+        if let Err(error) = converted {
+            println!("STATION_API conversion_error={:?}", error.code());
+            return;
+        }
+        let (mut own_package, _own_package_acl) = station_descriptor_for_own_package(absolute)
+            .expect("bounded descriptor-copy package grant");
+        for (form, descriptor_pointer) in [
+            ("relative", descriptor.as_mut_ptr().cast()),
+            (
+                "absolute",
+                (&mut absolute as *mut SECURITY_DESCRIPTOR).cast(),
+            ),
+            (
+                "own-package",
+                (&mut own_package as *mut SECURITY_DESCRIPTOR).cast(),
+            ),
+        ] {
+            let attributes = SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: descriptor_pointer,
+                bInheritHandle: false.into(),
+            };
+            // Chromium's two access masks. Capture each error in this child,
+            // before another Windows call can replace thread-local last error.
+            for (label, access) in [("generic", GENERIC_READ.0 | 0x8), ("reduced", 0x2 | 0x8)] {
+                // SAFETY: OS-generated name, copied DACL, no inherited handle.
+                // Only this disposable fixed helper may switch its own station;
+                // restore its borrowed original before closing returned references.
+                match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) }
+                {
+                    Ok(created) => {
+                        // Chromium checks the generated station name before the
+                        // desktop stage. Observe only validity/size, never the name.
+                        let mut name = [0u16; 1024];
+                        let mut name_bytes = 0;
+                        // SAFETY: owned live station reference and aligned fixed
+                        // writable buffer; no station switch or security mutation.
+                        let name_query = unsafe {
+                            GetUserObjectInformationW(
+                                HANDLE(created.0),
+                                UOI_NAME,
+                                Some(name.as_mut_ptr().cast()),
+                                std::mem::size_of_val(&name) as u32,
+                                Some(&mut name_bytes),
+                            )
+                        };
+                        match name_query {
+                            Ok(()) => println!(
+                                "STATION_NAME form={form} access={label} nonempty={} required_bytes={name_bytes} current_name_bytes_equal={:?}",
+                                name.first().is_some_and(|unit| *unit != 0),
+                                current_name_query
+                                    .as_ref()
+                                    .ok()
+                                    .map(|_| name == current_name)
+                            ),
+                            Err(error) => println!(
+                                "STATION_NAME form={form} access={label} error={:?} required_bytes={name_bytes}",
+                                error.code()
+                            ),
+                        }
+                        // SAFETY: only this owned fixed helper process changes
+                        // its binding. No windows/desktops are created or shown.
+                        match unsafe { SetProcessWindowStation(created) } {
+                            Ok(()) => {
+                                // SAFETY: the original borrowed station remains
+                                // live; restore before closing the new reference.
+                                let restored = unsafe { SetProcessWindowStation(station) };
+                                println!(
+                                    "STATION_SWITCH form={form} access={label} switched=true restored={}",
+                                    restored.is_ok()
+                                );
+                                if let Err(error) = restored {
+                                    println!("STATION_RESTORE error={:?}", error.code());
+                                    // A current station cannot safely be closed.
+                                    // Exit our helper; Windows releases its refs,
+                                    // and the parent confirms the owned job empty.
+                                    std::process::exit(126);
+                                }
+                            }
+                            Err(error) => println!(
+                                "STATION_SWITCH form={form} access={label} error={:?}",
+                                error.code()
+                            ),
+                        }
+                        // SAFETY: our returned reference, not the borrowed station.
+                        let closed = unsafe { CloseWindowStation(created) };
+                        println!(
+                            "STATION_API form={form} access={label} created=true closed={}",
+                            closed.is_ok()
+                        );
+                        assert!(closed.is_ok(), "close diagnostic station reference");
+                    }
+                    Err(error) => println!(
+                        "STATION_API form={form} access={label} error={:?}",
+                        error.code()
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn station_host_api_child() {
+        if std::env::var("OPTIC_STATION_HOST_CHILD").as_deref() != Ok("1")
+            || !std::env::args().any(|arg| arg == "--exact")
+        {
+            return;
+        }
+        use windows::Win32::{
+            Foundation::{GENERIC_READ, HANDLE},
+            Security::{
+                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, PSECURITY_DESCRIPTOR,
+                SECURITY_ATTRIBUTES,
+            },
+            System::StationsAndDesktops::{
+                CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
+            },
+        };
+        use windows::core::PCWSTR;
+        // SAFETY: current process only; borrowed reference is not closed.
+        let current = unsafe { GetProcessWindowStation() }.expect("host current station");
+        let mut bytes = [0u32; 16 * 1024];
+        let mut required = 0;
+        // SAFETY: fixed aligned64KiB output buffer; readonly DACL query.
+        unsafe {
+            GetUserObjectSecurity(
+                HANDLE(current.0),
+                &DACL_SECURITY_INFORMATION.0,
+                Some(PSECURITY_DESCRIPTOR(bytes.as_mut_ptr().cast())),
+                std::mem::size_of_val(&bytes) as u32,
+                &mut required,
+            )
+        }
+        .expect("host bounded station descriptor");
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: bytes.as_mut_ptr().cast(),
+            bInheritHandle: false.into(),
+        };
+        for flags in [1, 0] {
+            // CWF_CREATE_ONLY, then Chromium's existing flags.
+            // SAFETY: OS-generated name, copied descriptor, no inheritance or
+            // existing ACL mutation. This fixed trusted helper never switches.
+            match unsafe {
+                CreateWindowStationW(
+                    PCWSTR::null(),
+                    flags,
+                    GENERIC_READ.0 | 0x8,
+                    Some(&attributes),
+                )
+            } {
+                Ok(created) => {
+                    // SAFETY: close only this returned reference.
+                    let closed = unsafe { CloseWindowStation(created) };
+                    println!(
+                        "HOST_STATION flags={flags} created_or_opened=true closed={}",
+                        closed.is_ok()
+                    );
+                    assert!(closed.is_ok(), "host station reference close");
+                }
+                Err(error) => println!("HOST_STATION flags={flags} error={:?}", error.code()),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "owned parent-token station creation control; no user desktop switch"]
+    async fn owned_host_station_api_control() {
+        use process_wrap::tokio::CommandWrap;
+        use std::process::Stdio;
+        let stdout_path = unique_temp_file();
+        let stderr_path = unique_temp_file();
+        let _stdout_cleanup = Cleanup(stdout_path.clone());
+        let _stderr_cleanup = Cleanup(stderr_path.clone());
+        let stdout = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stdout_path)
+            .expect("host control stdout");
+        let stderr = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stderr_path)
+            .expect("host control stderr");
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "workspace_grant::tests::station_host_api_child",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env_clear()
+            .env(
+                "SystemRoot",
+                std::env::var_os("SystemRoot").expect("SystemRoot"),
+            )
+            .env("OPTIC_STATION_HOST_CHILD", "1")
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr);
+        let mut command = CommandWrap::from(command);
+        command.wrap(
+            crate::LimitedJobObject::new(1, 128 * 1024 * 1024, 20)
+                .expect("owned fixed host control limits"),
+        );
+        let mut child = command.spawn().expect("spawn fixed host control in job");
+        let status =
+            match tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await {
+                Ok(status) => status.expect("host control status"),
+                Err(_) => {
+                    Box::into_pin(child.kill())
+                        .await
+                        .expect("kill owned host control");
+                    panic!("owned host control deadline");
+                }
+            };
+        // Process limit1 admits only this fixed child: confirmed exit leaves no
+        // descendant tree. No model source, argv or inherited environment used.
+        drop(child);
+        let output = read_probe_output(&stdout_path);
+        let error = read_probe_output(&stderr_path);
+        println!("{output}");
+        assert!(status.success(), "fixed host control failed: {error}");
+        assert_eq!(output.matches("HOST_STATION flags=").count(), 2);
+    }
+
+    #[test]
+    #[ignore = "native owned AppContainer station API diagnostic"]
+    fn private_station_api_diagnostic() {
+        let profile = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let private = profile.profile_storage_path_for_tests();
+        let probe = private.join("station-api-probe.exe");
+        let _probe_cleanup = Cleanup(probe.clone());
+        let _config_cleanup = Cleanup(private.join(PROBE_CONFIG));
+        fs::copy(std::env::current_exe().unwrap(), &probe).expect("copy owned probe");
+        let output = run_workspace_probe(&profile, &probe, &private, "station-api");
+        println!("{}", output.diagnostic());
+        assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
+        assert_eq!(
+            output.stdout.matches("STATION_API form=").count(),
+            6,
+            "all descriptor/access comparisons must be observed: {}",
+            output.diagnostic()
+        );
+    }
+
     #[test]
     fn appcontainer_workspace_probe_child() {
         let exact_child = std::env::args().any(|arg| arg == "--exact");
@@ -615,6 +1032,7 @@ mod tests {
         );
 
         match mode {
+            "station-api" => probe_station_creation(),
             "metadata" => {
                 // Request only the declared attribute rights. std::fs::metadata
                 // may use a broader directory-open fallback under AppContainer.
