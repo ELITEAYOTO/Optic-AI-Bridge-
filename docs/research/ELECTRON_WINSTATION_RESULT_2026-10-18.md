@@ -190,3 +190,24 @@ pairs. Adding an allow entry to the requested new object's descriptor alone
 therefore did not repair station creation in this helper on this PC. This is not
 a proposal to edit WinSta0's ACL or disable Chromium's sandbox. Disposable Windows
 results for the new copy control remain separate evidence to collect.
+
+
+### Separate owned parent-token control
+
+A fixed helper also runs with its parent-inherited token (without the AppContainer
+creation attribute), in the existing assignment-before-resume Job wrapper with
+one process,128MiB memory,20%CPU and a ten-second wait deadline. It clears the
+inherited environment except SystemRoot and its fixed marker, accepts no user
+source/arguments, only queries the current station DACL and attempts the generated
+station name with CWF_CREATE_ONLY and then flags0. It never switches a station,
+creates no desktop/window, and closes returned references. Exit of its single
+admitted process confirms no descendant tree; timeout uses the owned job kill.
+
+Local native evidence: CWF_CREATE_ONLY returns HRESULT0x800700B7 (already exists),
+while flags0 returns a reference successfully and closes it. In contrast, the
+AppContainer helper returns0x80070005 even with its own-package descriptor copy.
+This supports an existing-object access distinction locally: the descriptor
+provided for a new object cannot be assumed to replace an existing object's ACL.
+It does not directly trace Electron or authorize modification of that existing
+station. Disposable Windows measurement of this host control remains required.
+No installed station/file/registry ACL or production launch behavior is changed.

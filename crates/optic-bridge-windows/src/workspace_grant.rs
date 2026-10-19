@@ -856,6 +856,132 @@ mod tests {
     }
 
     #[test]
+    fn station_host_api_child() {
+        if std::env::var("OPTIC_STATION_HOST_CHILD").as_deref() != Ok("1")
+            || !std::env::args().any(|arg| arg == "--exact")
+        {
+            return;
+        }
+        use windows::Win32::{
+            Foundation::{GENERIC_READ, HANDLE},
+            Security::{
+                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, PSECURITY_DESCRIPTOR,
+                SECURITY_ATTRIBUTES,
+            },
+            System::StationsAndDesktops::{
+                CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
+            },
+        };
+        use windows::core::PCWSTR;
+        // SAFETY: current process only; borrowed reference is not closed.
+        let current = unsafe { GetProcessWindowStation() }.expect("host current station");
+        let mut bytes = [0u32; 16 * 1024];
+        let mut required = 0;
+        // SAFETY: fixed aligned64KiB output buffer; readonly DACL query.
+        unsafe {
+            GetUserObjectSecurity(
+                HANDLE(current.0),
+                &DACL_SECURITY_INFORMATION.0,
+                Some(PSECURITY_DESCRIPTOR(bytes.as_mut_ptr().cast())),
+                std::mem::size_of_val(&bytes) as u32,
+                &mut required,
+            )
+        }
+        .expect("host bounded station descriptor");
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: bytes.as_mut_ptr().cast(),
+            bInheritHandle: false.into(),
+        };
+        for flags in [1, 0] {
+            // CWF_CREATE_ONLY, then Chromium's existing flags.
+            // SAFETY: OS-generated name, copied descriptor, no inheritance or
+            // existing ACL mutation. This fixed trusted helper never switches.
+            match unsafe {
+                CreateWindowStationW(
+                    PCWSTR::null(),
+                    flags,
+                    GENERIC_READ.0 | 0x8,
+                    Some(&attributes),
+                )
+            } {
+                Ok(created) => {
+                    // SAFETY: close only this returned reference.
+                    let closed = unsafe { CloseWindowStation(created) };
+                    println!(
+                        "HOST_STATION flags={flags} created_or_opened=true closed={}",
+                        closed.is_ok()
+                    );
+                    assert!(closed.is_ok(), "host station reference close");
+                }
+                Err(error) => println!("HOST_STATION flags={flags} error={:?}", error.code()),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "owned parent-token station creation control; no user desktop switch"]
+    async fn owned_host_station_api_control() {
+        use process_wrap::tokio::CommandWrap;
+        use std::process::Stdio;
+        let stdout_path = unique_temp_file();
+        let stderr_path = unique_temp_file();
+        let _stdout_cleanup = Cleanup(stdout_path.clone());
+        let _stderr_cleanup = Cleanup(stderr_path.clone());
+        let stdout = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stdout_path)
+            .expect("host control stdout");
+        let stderr = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stderr_path)
+            .expect("host control stderr");
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "workspace_grant::tests::station_host_api_child",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env_clear()
+            .env(
+                "SystemRoot",
+                std::env::var_os("SystemRoot").expect("SystemRoot"),
+            )
+            .env("OPTIC_STATION_HOST_CHILD", "1")
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr);
+        let mut command = CommandWrap::from(command);
+        command.wrap(
+            crate::LimitedJobObject::new(1, 128 * 1024 * 1024, 20)
+                .expect("owned fixed host control limits"),
+        );
+        let mut child = command.spawn().expect("spawn fixed host control in job");
+        let status =
+            match tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await {
+                Ok(status) => status.expect("host control status"),
+                Err(_) => {
+                    Box::into_pin(child.kill())
+                        .await
+                        .expect("kill owned host control");
+                    panic!("owned host control deadline");
+                }
+            };
+        // Process limit1 admits only this fixed child: confirmed exit leaves no
+        // descendant tree. No model source, argv or inherited environment used.
+        drop(child);
+        let output = read_probe_output(&stdout_path);
+        let error = read_probe_output(&stderr_path);
+        println!("{output}");
+        assert!(status.success(), "fixed host control failed: {error}");
+        assert_eq!(output.matches("HOST_STATION flags=").count(), 2);
+    }
+
+    #[test]
     #[ignore = "native owned AppContainer station API diagnostic"]
     fn private_station_api_diagnostic() {
         let profile = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
