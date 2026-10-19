@@ -44,3 +44,10 @@ all-target/all-feature Clippy passed. One exploratory suite run incorrectly set
 CI-only hosted-toolchain expectations locally and rejected the newly installed
 Python shim layout; rerunning with ordinary local expectations passed. No test
 assertion or production gate was relaxed to hide that configuration mismatch.
+
+Initial CI is not a passed merge gate: run39284540811 failed Git fixture
+initialization at an already-existing hook while native compile/pipes gates
+passed. The preexisting test helper used clock-only names and create_dir_all.
+A test-only PID/sequence plus create-new-root correction now refuses shared
+roots;16 forced equal-clock parallel allocations and all six merge tests pass.
+No production Git operation or assertion was weakened; updated exact CI required.
