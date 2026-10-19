@@ -1,5 +1,11 @@
 # Changelog
 
+## Native path boundary hardening — 2026-10-20
+
+- Reject unrepresentable native Windows paths during containment comparisons; prevent distinct UTF-16 root names from collapsing to the same replacement spelling.
+- Preserve exact native Git path/hooks arguments and refuse ambiguous operator-policy placement checks.
+- Add an actual native read regression, representation/argument/policy tests and a scoped reliability-debt register. No additional permissions or runtime dependency.
+
 ## Approved branch retirement — 2026-10-20
 
 - After explicit operator approval, remove the 244 historical branches in the published ledger using exact expected heads; verify every listed branch absent afterward.

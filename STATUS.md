@@ -6,6 +6,13 @@ production release. Detailed historical notes are retained in
 
 ## Merged and validated
 
+Current hardening work adds lossless Windows path boundary checks and a native
+regression for a reproduced alias read across distinct non-Unicode roots.
+Git path comparisons/arguments and operator-policy placement receive the same
+representation audit. See [ADR-0033](docs/decisions/ADR-0033-LOSSLESS-NATIVE-PATH-BOUNDARIES.md)
+and the [reviewed debt register](docs/engineering/RELIABILITY_DEBT.md); this is not
+a claim that every filesystem or compatibility gate is closed.
+
 | Track | Latest delivered increment | Evidence |
 | --- | --- | --- |
 | Main core | Local supervision #252; pinned exact Node module metadata #254 | #254 head `837fa30` passed CI 39286806748, preparation 39286806746, native pipes 39286806756 and Rust compilation 39286806794; merged as `e1b8288` |
