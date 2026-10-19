@@ -73,7 +73,7 @@ fn require_success(value: &Compilation) {
     );
 }
 
-fn observe_null_device(owner: &OwnedProbeProfile, root: &Path, remaining: &mut u64) {
+fn observe_null_device(owner: &OwnedProbeProfile, root: &Path, remaining: &mut u64) -> Vec<String> {
     // Compare fixed null-device opens without changing device ACLs.
     let control = File::open(r"\\.\NUL");
     println!(
@@ -99,6 +99,15 @@ fn observe_null_device(owner: &OwnedProbeProfile, root: &Path, remaining: &mut u
     println!("{}", String::from_utf8_lossy(&null_result.stdout));
     assert!(String::from_utf8_lossy(&null_result.stdout).contains("PRIVATE_CARGO_NULL_DEVICE:"));
     fs::remove_file(&null_probe).unwrap();
+    let observations: Vec<_> = String::from_utf8_lossy(&null_result.stdout)
+        .lines()
+        .filter_map(|line| {
+            line.find("PRIVATE_CARGO_NULL_DEVICE:")
+                .map(|offset| line[offset..].to_owned())
+        })
+        .collect();
+    assert_eq!(observations.len(), 2);
+    observations
 }
 
 #[test]
@@ -142,7 +151,30 @@ pub(super) fn run(
     compiler_bin: &Path,
     remaining: &mut u64,
 ) {
-    observe_null_device(owner, root, remaining);
+    let before_null = observe_null_device(owner, root, remaining);
+    let null_grant = if std::env::var("OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON").as_deref()
+        == Ok("ephemeral-profile-only")
+    {
+        let grant = owner
+            .profile
+            .as_ref()
+            .unwrap()
+            .grant_null_stdio_disposable_probe()
+            .unwrap();
+        let prepared = observe_null_device(owner, root, remaining);
+        assert!(
+            prepared
+                .iter()
+                .all(|line| line.contains("read_error=None write_error=None")),
+            "exact profile NUL grant did not enable stdio: {prepared:?}"
+        );
+        println!(
+            "PRIVATE_CARGO_NULL_PREPARED: exact ephemeral profile SID only; hosted-CI comparison, no production fallback"
+        );
+        Some(grant)
+    } else {
+        None
+    };
     let selected = fs::canonicalize(PathBuf::from(
         std::env::var_os("OPTIC_PRIVATE_CARGO").expect("explicit direct Cargo selection"),
     ))
@@ -208,6 +240,17 @@ pub(super) fn run(
     }
     fs::remove_dir(project.join("src")).unwrap();
     fs::remove_dir(project).unwrap();
+    if let Some(grant) = null_grant {
+        grant.revoke().unwrap();
+        assert_eq!(
+            observe_null_device(owner, root, remaining),
+            before_null,
+            "explicit NUL revoke must restore observed profile access"
+        );
+        println!(
+            "PRIVATE_CARGO_NULL_REVOKED: explicit revoke acknowledged and original profile access restored"
+        );
+    }
     println!(
         "PRIVATE_CARGO_EXECUTION_OBSERVED: actual offline check/test, assertion failure and corrected test; missing dependency refused; known outputs removed after owned-tree quiescence"
     );

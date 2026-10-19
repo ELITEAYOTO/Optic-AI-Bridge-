@@ -35,6 +35,54 @@ const WRITE_DAC_ACCESS: u32 = 0x0004_0000;
 const READ_CONTROL_ACCESS: u32 = 0x0002_0000;
 const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
 
+/// Disposable hosted-CI comparison only. Never compiled into installed core.
+#[cfg(test)]
+pub(crate) struct NullDeviceProbeGrant<'a>(AppContainerReadFileGrant<'a>);
+
+#[cfg(test)]
+impl NullDeviceProbeGrant<'_> {
+    pub(crate) fn revoke(self) -> Result<()> {
+        self.0.revoke()
+    }
+}
+
+#[cfg(test)]
+impl AppContainerProfile {
+    pub(crate) fn grant_null_stdio_disposable_probe(&self) -> Result<NullDeviceProbeGrant<'_>> {
+        use windows::Win32::Storage::FileSystem::{
+            FILE_GENERIC_WRITE, FILE_TYPE_CHAR, GetFileType,
+        };
+        if std::env::var("OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON").as_deref()
+            != Ok("ephemeral-profile-only")
+            || std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+            || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
+            || !self.external_acl_grants_allowed()
+        {
+            return Err(Error::other(
+                "null-device mutation is restricted to the explicit disposable hosted-CI probe",
+            ));
+        }
+        // Fixed device only: no caller-provided path, Everyone/AllPackages ACE,
+        // owner/SACL change, capability minting or production setup surface.
+        let file = OpenOptions::new()
+            .access_mode(READ_CONTROL_ACCESS | WRITE_DAC_ACCESS)
+            .share_mode(FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0)
+            .open(r"\\.\NUL")?;
+        // SAFETY: this is the live handle opened above, queried synchronously.
+        if unsafe { GetFileType(HANDLE(file.as_raw_handle())) } != FILE_TYPE_CHAR {
+            return Err(Error::other("fixed null target is not a character device"));
+        }
+        let sid = self.package_sid();
+        modify_file_dacl(&file, sid, true, FILE_GENERIC_READ.0 | FILE_GENERIC_WRITE.0)?;
+        Ok(NullDeviceProbeGrant(AppContainerReadFileGrant {
+            file,
+            sid,
+            active: true,
+            _profile: PhantomData,
+        }))
+    }
+}
+
 impl AppContainerProfile {
     /// Permit metadata/traversal of one pinned directory inside a pinned root.
     /// No listing, file-content, write or inheritable permission is granted.
@@ -359,6 +407,17 @@ mod tests {
     const WAIT_MS: u32 = 10_000;
     const PROBE_CONFIG: &str = "optic-workspace-grant-probe.txt";
     const PROBE_SENTINEL: &str = "optic read grant sentinel\n";
+
+    #[test]
+    fn null_device_probe_refuses_without_explicit_disposable_comparison() {
+        // Never set process-global environment or request device write access.
+        if std::env::var_os("OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON").is_some() {
+            return;
+        }
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        assert!(profile.grant_null_stdio_disposable_probe().is_err());
+        profile.close().unwrap();
+    }
 
     fn unique_profile_name() -> String {
         format!(

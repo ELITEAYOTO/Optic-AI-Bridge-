@@ -46,8 +46,8 @@ The same restriction is discussed in Microsoft's
 A participant reports an elevated ACL workaround there; this is not a verified
 current Microsoft support contract or authority for Optic to apply it. A global
 ALL APPLICATION PACKAGES grant differs from Optic's exact ephemeral-profile file
-grants. No global device/desktop/installation ACL modification, elevated child,
-toolchain patch, arbitrary injection or sandbox fallback is implemented here.
+grants. No local device/desktop/installation ACL modification, elevated child,
+toolchain patch, arbitrary injection or production sandbox fallback has run.
 
 ## Next decision
 
@@ -65,3 +65,21 @@ owned profile closes. It requires no selected compiler or Cargo installation.
 The known-output collector regression passed unknown-name, hardlink, held writer,
 optional symlink and size-bound refusals before known-file cleanup. Ordinary
 workspace tests and all-target Clippy passed; Cargo acceptance remains failed.
+
+## Explicit disposable-host comparison (candidate, not locally executed)
+
+A separate cfg(test)-only comparison may temporarily grant NUL read/write to
+only the fresh profile SID on Microsoft-hosted CI. It requires the exact explicit
+mode, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted and a fresh profile.
+It has no caller-selected target, Everyone/AllPackages entry, owner/SACL change,
+new capability or installed core API. The fixed target must be a character device.
+It reuses the existing handle-bound DACL merge and SID-specific revoke primitive.
+Explicit revoke plus a fresh child observation must restore the original access
+result before the overall pass marker; RAII is best effort on unwind. A host crash
+could leave that disposable profile's SID entry until the VM is destroyed; this
+is not a production host-preparation/rollback design and must not run on this PC.
+
+The workflow always runs normal and prepared cases as separate fresh profiles,
+reports both exits, and keeps a normal failure red even if the comparison passes.
+It does not automatically continue the same failed task with different authority.
+No broader host changes or assumed general Cargo success follow from either case.

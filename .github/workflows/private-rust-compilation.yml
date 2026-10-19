@@ -91,5 +91,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'standard Rust app remains unproven; preserve diagnostics' }
           $env:OPTIC_PRIVATE_CARGO = rustup which --toolchain 1.99.0 cargo
           if ($LASTEXITCODE -ne 0) { throw 'direct Cargo selection failed' }
+          # Two independent fresh profiles. The normal result remains the gate;
+          # the explicit disposable-host comparison cannot turn its failure green.
           & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_cargo_checks_and_tests_fixed_offline_project --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw 'offline Cargo remains unproven; do not relax device ACL or replace the failed gate' }
+          $NormalCargoExit = $LASTEXITCODE
+          $env:OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON = 'ephemeral-profile-only'
+          & (Join-Path $env:RUNNER_TEMP 'optic-private-rust-compile/optic-private-rust-compile.exe') --exact rust_compile_probe::private_cargo_checks_and_tests_fixed_offline_project --ignored --nocapture
+          $PreparedCargoExit = $LASTEXITCODE
+          Remove-Item Env:OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON
+          @{ normal_exit=$NormalCargoExit; disposable_profile_null_comparison_exit=$PreparedCargoExit; production_fallback=$false } | ConvertTo-Json
+          if ($NormalCargoExit -ne 0) { throw 'normal offline Cargo remains unproven; the explicit comparison does not replace its failed gate' }
+          if ($PreparedCargoExit -ne 0) { throw 'disposable exact-profile NUL comparison failed; keep its actual diagnostic' }

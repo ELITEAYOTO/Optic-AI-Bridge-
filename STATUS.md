@@ -5,7 +5,9 @@
 A new fixed public offline Cargo probe reaches an actual platform blocker:
 Cargo exits101 before rustc -vV because null stdin cannot open NUL. Parent
 read succeeds; the owned capability-free child refuses both device spellings
-for read/write. No global ACL, sandbox fallback or tool installation changed.
+for read/write. No local ACL, sandbox fallback or tool installation changed. A separate
+cfg(test)-only hosted-CI comparison may temporarily grant the exact fresh
+profile SID access to NUL, then revoke; no AllPackages grant or production setup.
 Direct standard Rust compilation remains independent. Disposable Windows CI
 comparison is required; general Cargo and dependency support are not delivered.
 See docs/research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md.
