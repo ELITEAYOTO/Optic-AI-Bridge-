@@ -64,8 +64,8 @@ Headers JSON publics :
 ```
 
 Activer la connexion. Ouvrir une nouvelle conversation Luna afin d'éviter une
-ancienne liste d'outils. Six outils sont attendus : optic_project_info,
-optic_fs_list, optic_fs_read, optic_fs_write, optic_fs_patch, optic_fs_search.
+ancienne liste d'outils. Sept outils de base sont attendus : optic_project_info,
+optic_fs_list, optic_fs_read, optic_fs_write, optic_fs_patch, optic_fs_replace, optic_fs_search.
 Ces valeurs d'authentification sont publiques et ne protègent aucun projet réel.
 N'y mettre aucune donnée personnelle ; cette alpha sert au projet de test.
 
@@ -121,8 +121,8 @@ Un nouveau lancement crée un nouveau projet ; il ne reprend pas une session pas
 # Optional generated Node check/test mode
 
 Use only a package whose native runner proof passed. Default startup still
-exposes six editing tools. Adding `-NodeExecutable 'C:\Program Files\nodejs\node.exe'`
-explicitly selects that installed executable and enables ten tools, including
+exposes seven editing tools. Adding `-NodeExecutable 'C:\Program Files\nodejs\node.exe'`
+explicitly selects that installed executable and enables eleven tools, including
 fixed `check` and `test` tasks. The package verifies both bridge and helper hashes.
 No Node installation is bundled or performed.
 

@@ -3,7 +3,7 @@ import base64
 import re
 
 TOOLS = ('optic_project_info', 'optic_fs_list', 'optic_fs_read',
-         'optic_fs_write', 'optic_fs_patch', 'optic_fs_search')
+         'optic_fs_write', 'optic_fs_patch', 'optic_fs_replace', 'optic_fs_search')
 MAX_CONTENT = 8192
 FILE_LIMITS = (8192, 32768)
 DIRECTORY_TOOL = 'optic_fs_mkdir'
@@ -65,6 +65,7 @@ def normalize(tool, args, max_file_bytes=MAX_CONTENT):
         'optic_fs_read': ({'path'}, {'offset', 'max_bytes'}),
         'optic_fs_write': ({'path', 'content', 'expected_kind'}, {'expected_version'}),
         'optic_fs_patch': ({'path', 'expected_version', 'offset', 'remove_bytes', 'insert'}, set()),
+        'optic_fs_replace': ({'path', 'expected_version', 'old_text', 'new_text'}, set()),
         'optic_fs_search': ({'path', 'text'}, {'limit'}),
         DIRECTORY_TOOL: ({'path', 'expected_kind'}, set()),
     }[tool]
@@ -95,6 +96,10 @@ def normalize(tool, args, max_file_bytes=MAX_CONTENT):
             raise SchemaError('project.invalid_arguments')
         return 'fs_write', {'path': target, 'content_base64': base64.b64encode(
             text(args['content'], maximum)).decode('ascii'), 'expected': expected}
+    if tool == 'optic_fs_replace':
+        return 'fs_apply_patch', {'path': target, 'expected_version': version(args['expected_version']),
+            'old_base64': base64.b64encode(text(args['old_text'], maximum, empty=False)).decode('ascii'),
+            'insert_base64': base64.b64encode(text(args['new_text'], maximum)).decode('ascii')}
     if tool == 'optic_fs_patch':
         return 'fs_apply_patch', {'path': target, 'expected_version': version(args['expected_version']),
             'offset': integer(args['offset'], 0, maximum),
