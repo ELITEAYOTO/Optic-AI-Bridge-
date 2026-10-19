@@ -1,5 +1,16 @@
 # Project Status
 
+## Exact localized alpha replacement — candidate, 2026-10-19
+
+New adapter method optic_fs_replace composes the existing authorized read and
+versioned patch under one retained slot. Unique literal UTF-8 matches only;
+overlapping duplicates, missing text, stale versions and size overflow refuse.
+Rust retains the original version and independently enforces both permissions.
+Native HTTP32KiB proof covers UTF-8/CRLF, stale/overlap refusal, an external edit
+between read/patch, a replacement beyond8KiB and disabled core read/write grants.
+No new core effect, generic file access, build/dependency or GUI authority.
+Exact-head CI/package validation remains required before delivery.
+
 ## Last-tool recovery observation — candidate, 2026-10-18
 
 Generated supervised alpha records one strict <=1024-byte observation outside

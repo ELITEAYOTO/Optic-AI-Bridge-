@@ -4,6 +4,10 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Add generated-alpha exact text replacement with unique literal matching,
+  original-version Rust patching, independent read/write authorization and
+  retained uncertainty; no caller-computed offsets or whole-file rewrite.
+
 - Preserve one bounded safe prior-tool observation across generated-alpha restart,
   with explicit uncertain admission, no automatic replay and independent failure
   reporting when a confirmed effect cannot save its diagnostic checkpoint.

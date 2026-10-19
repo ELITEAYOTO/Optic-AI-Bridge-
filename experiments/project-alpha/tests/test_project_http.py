@@ -31,7 +31,7 @@ class Http(unittest.IsolatedAsyncioTestCase):
             calls.append((name, args))
             if name == 'fs_read':
                 raw = b'\0' * MAX_READ if args['path'] == 'src/escaped' else b'public line\n'
-                return {'path': args['path'], 'data': base64.b64encode(raw).decode(),
+                return {'path': args['path'], 'offset': args['offset'], 'data': base64.b64encode(raw).decode(),
                         'encoding': 'base64', 'eof': True, 'content_version': 'a' * 64}
             return {'public': True}
         page_bytes = getattr(self, "page_bytes", 1024)
@@ -73,6 +73,13 @@ class Http(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(escaped['upstream']['eof'])
                 self.assertNotIn('data', escaped['upstream'])
                 self.assertEqual(escaped['upstream']['content_version'], 'a' * 64)
+                replaced = structured(await session.call_tool('optic_fs_replace', {
+                    'path': 'src/Main.java', 'expected_version': 'a' * 64,
+                    'old_text': 'public', 'new_text': 'updated'}))
+                self.assertTrue(replaced['ok'])
+                self.assertEqual(calls[-1][0], 'fs_apply_patch')
+                self.assertEqual(calls[-1][1]['offset'], 0)
+
             self.assertEqual(calls[1][0], 'fs_write')
             self.assertEqual(calls[1][1]['expected'], {'kind': 'absent'})
             before = len(calls)

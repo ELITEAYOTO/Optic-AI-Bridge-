@@ -14,7 +14,7 @@ SAFE_UPSTREAM_ERRORS = {
     'optic.mutation_platform_unsupported', 'optic.invalid_mutation_target',
     'optic.directory_depth_exceeded', 'optic.unsupported_platform',
 }
-MUTATIONS = {'optic_fs_write', 'optic_fs_patch', DIRECTORY_TOOL}
+MUTATIONS = {'optic_fs_write', 'optic_fs_patch', 'optic_fs_replace', DIRECTORY_TOOL}
 
 
 class ProjectGate(ForwardGate):
@@ -66,11 +66,32 @@ class ProjectGate(ForwardGate):
                     self.file_budget.reserve(arguments['path'])
                 except ValueError:
                     raise ForwardError('project.file_capacity') from None
-            if tool == 'optic_fs_patch':
+            if tool in ('optic_fs_patch', 'optic_fs_replace'):
                 current = await self.upstream('fs_read', {'path': arguments['path'],
                     'offset': 0, 'max_bytes': self.max_file_bytes + 1})
                 raw = base64.b64decode(current['data'], validate=True)
                 inserted = base64.b64decode(arguments['insert_base64'], validate=True)
+                if tool == 'optic_fs_replace':
+                    if (current.get('path') != arguments['path']
+                            or type(current.get('offset')) is not int or current['offset'] != 0
+                            or current.get('eof') is not True or len(raw) > self.max_file_bytes):
+                        raise ForwardError('project.replace_limit')
+                    if version(current.get('content_version')) != arguments['expected_version']:
+                        raise ForwardError('optic.precondition_failed')
+                    try:
+                        raw.decode('utf-8', errors='strict')
+                    except UnicodeError:
+                        raise ForwardError('project.text_encoding') from None
+                    old = base64.b64decode(arguments['old_base64'], validate=True)
+                    start = raw.find(old)
+                    if start < 0:
+                        raise ForwardError('project.match_not_found')
+                    # Count overlapping occurrences too: aa in aaa is ambiguous.
+                    if raw.find(old, start + 1) >= 0:
+                        raise ForwardError('project.match_ambiguous')
+                    arguments = {'path': arguments['path'], 'expected_version': arguments['expected_version'],
+                                 'offset': start, 'remove_bytes': len(old),
+                                 'insert_base64': arguments['insert_base64']}
                 if (not current['eof'] or len(raw) > self.max_file_bytes
                         or arguments['offset'] + arguments['remove_bytes'] > len(raw)
                         or len(raw) - arguments['remove_bytes'] + len(inserted) > self.max_file_bytes):

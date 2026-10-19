@@ -21,8 +21,8 @@ Windows verifies the editing journey. Other platforms explicitly verify
 optic.mutation_platform_unsupported and unchanged files; no cross-platform
 mutation support is claimed. See PROJECT_TARGETS.md for website/application/
 Java Minecraft goals and their separate execution gates.
-The new project_http/project_gate/project_runner path exposes exactly six tools
-on a generated retained project: info/list/read/write/patch/literal in-file search.
+The new project_http/project_gate/project_runner path exposes exactly seven base tools
+on a generated retained project: info/list/read/write/patch/exact-text replacement/literal in-file search.
 Guard request budgets/headers/body/auth and exact schemas precede SDK dispatch.
 Core reads now include content_version only for complete offset0 reads, so edits
 use observed versions instead of guessed hashes. This is not a general user-project
@@ -194,3 +194,29 @@ fails0x80000003 and explicit outer-only comparison is separate. Removing the
 extra duplicate invocation from package generation does not resolve that failure,
 add a model Electron profile or allow an automatic sandbox downgrade. Node profile
 selection rejects electron.exe; the experimental GUI gate remains visibly red.
+
+
+## Exact localized text replacement
+
+`optic_fs_replace(path, expected_version, old_text, new_text)` replaces one
+literal passage in an existing UTF-8 file. Inspect the relevant context and use
+the observed opaque core content_version; no UTF-8 offset arithmetic or complete
+file rewrite is needed. Empty old_text, no match, multiple matches (including
+overlapping occurrences), invalid UTF-8, stale versions and selected-size overflow
+are refused. No regex, fuzzy match, replace-all or inferred new version is used.
+Whitespace and CRLF count literally; new_text may be empty for a localized removal.
+
+This is adapter composition of existing separately authorized Rust fs_read and
+fs_apply_patch actions, not a new core effect or permission. One retained gate
+slot covers both calls. The Rust mutation still receives the original expected
+version and rechecks live authorization/target state, so an external edit between
+read and patch is not overwritten. No direct Python source-file write is used.
+The complete bounded preparatory read stays internal; its text is not duplicated
+in the model response. File8/32KiB, body64KiB and all source scopes remain unchanged.
+Both independent read and write permissions are required; an unavailable upstream
+write tool can retain the existing conservative outcome_unknown error. Inspect
+state rather than blindly retrying any uncertain mutation.
+
+Supervised recovery classifies this method as a mutation and stores only the
+existing safe observation, never the matched/replacement text. The package marker
+is text_replacement=single-exact-v1. This does not add build/dependency/GUI authority.
