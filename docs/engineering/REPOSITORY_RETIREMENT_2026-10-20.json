@@ -1,6 +1,6 @@
 {
   "date": "2026-10-20",
-  "state": "planned_not_deleted_requires_explicit_operator_approval",
+  "state": "completed_after_explicit_operator_approval",
   "retained_branches": [
     "main",
     "alpha/generated-project-editing",
@@ -1480,5 +1480,30 @@
       "sha": "90a6b6460096105bdab41ddfab3d2fad9466036b",
       "retained_by": "archive/2026-10-20/validation/phase-2c1-final"
     }
-  ]
+  ],
+  "operator_approval": {
+    "date": "2026-10-20",
+    "scope": "244 historical remote branches in this exact ledger",
+    "confirmation": "Approved by operator after the automatic approval review requested explicit bulk-retirement authorization; operator requested documentation."
+  },
+  "completion": {
+    "historical_branches_deleted": 244,
+    "all_expected_heads_revalidated_before_deletion": true,
+    "all_listed_branches_confirmed_absent": true,
+    "all_original_preservation_refs_unchanged": true,
+    "backup_sha256_reverified": true,
+    "reference_heads_unchanged_during_retirement": true,
+    "reference_head_snapshot": {
+      "refs/heads/alpha/generated-project-editing": "a553645760544b65e15ad0ed65bf6099b1d3f646",
+      "refs/heads/diagnostics/electron-primary-result": "e768463ba1e3618c2e6f901c36e83b49fc239caf",
+      "refs/heads/experiment/private-offline-cargo": "2c2269332f7521340e56d590acf080d6b7f08cb5",
+      "refs/heads/main": "7bc50a35f7d7b8f2e6c973f6720eb561703bc10a"
+    },
+    "additional_completed_maintenance_branch_retired": {
+      "branch": "chore/repository-consolidation",
+      "sha": "12b832b88075597839b34cadab678cc41d94d630",
+      "merged_pr": 257
+    },
+    "temporary_report_branch": "chore/complete-branch-retirement"
+  }
 }

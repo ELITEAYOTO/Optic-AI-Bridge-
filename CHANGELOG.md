@@ -1,5 +1,11 @@
 # Changelog
 
+## Approved branch retirement — 2026-10-20
+
+- After explicit operator approval, remove the 244 historical branches in the published ledger using exact expected heads; verify every listed branch absent afterward.
+- Confirm all preserved pull/archive refs, backup hash and the four reference branches unchanged; record approval and results in the existing consolidation ledger.
+- Retire the merged #257 maintenance branch separately. No runtime or permission change.
+
 ## Repository consolidation — 2026-10-20
 
 - Replace stale root phase summaries with current overview, measured status and delivery order; retain exact historical snapshots in Git.

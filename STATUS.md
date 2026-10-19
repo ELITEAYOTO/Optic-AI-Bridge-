@@ -47,9 +47,11 @@ alpha ancestry, exact GitHub pull refs or published archive tags. Only Electron
 #250 and Cargo #255 remain as open feature/research PRs at the audit snapshot.
 A maintenance PR can be temporarily open while this consolidation is reviewed.
 
-244 old remote branches have a verified retirement plan and a complete local Git
-bundle backup. **They have not been deleted:** bulk deletion awaits explicit
-operator approval following automatic approval review. See the
+244 historical remote branches were removed after explicit operator approval,
+exact-head/preservation revalidation and backup hash verification. The four
+reference branches and all preservation refs were verified unchanged. The merged
+#257 maintenance branch was retired separately; the completion-report branch is
+temporary. Exact heads, approval and observed results are in the
 [consolidation record](docs/engineering/REPOSITORY_CONSOLIDATION_2026-10-20.md).
 
 Next delivery steps are owned by [ROADMAP.md](ROADMAP.md). Core and alpha remain
