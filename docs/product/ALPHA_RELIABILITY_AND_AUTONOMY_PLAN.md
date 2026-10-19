@@ -7,6 +7,25 @@ This is the active near-term execution plan. The broader scope roadmap remains
 canonical; this document orders delivery gates and explicitly replaces further
 ungated fixture proliferation with integration and user-visible increments.
 
+## Current execution — 2026-10-19
+
+The [real-project delivery index](REAL_PROJECT_DELIVERY.md) supersedes older
+"next gate" and "not delivered" descriptions below. Main supervision is merged
+(PR252), exact Node module metadata/intermediate pinning is merged (PR254), and
+alpha exact text replacement plus main alignment passed (PR251/253). The next
+alignment candidate retains those features and excludes Cargo/Electron research.
+
+Local native Rust std compilation works. Offline Cargo has a separately measured
+NUL-device requirement; its disposable exact-profile CI comparison does not grant
+production setup authority. Electron's normal sandbox still has its own startup
+blocker. Neither should send the user back through working UI fixtures or make
+headless Node/Rust delivery depend on a GUI workaround. Continue through runtime,
+write-storage, output-publication and dependency gates before the next FS project.
+
+The old49-test count and earlier candidate/pending wording below are historical;
+PR251's editing adapter was validated with76 cases and real packaged HTTP/Rust
+acceptance. Preserve exact source identity for every artifact and new proof.
+
 ## Latest measured execution — 2026-10-16
 
 The c8a303d Windows CI rerun passed; the earlier TEMP-only Node initialize

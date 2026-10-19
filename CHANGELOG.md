@@ -2,13 +2,17 @@
 
 ## Unreleased — exact isolated module reads
 
-- Candidate: derive bounded directory metadata rights from exact launcher read
+- Derive bounded directory metadata rights from exact launcher read
   grants, pin intermediate directories, and test real nested Node resolution
   alongside content/list/create denial. No recursive read or write grant.
 
 All notable project changes are recorded here.
 
 ## [Unreleased]
+
+- Detect broken experiment Python environments before installing dependencies;
+  explicit local rebuild preserves one backup, rejects redirects/backup overwrite
+  and leaves project output and global Python unchanged.
 
 - Add generated-alpha exact text replacement with unique literal matching,
   original-version Rust patching, independent read/write authorization and

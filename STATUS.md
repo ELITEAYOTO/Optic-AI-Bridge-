@@ -7,22 +7,29 @@ native Rust compilation. It promotes exact Node module metadata and pins every
 intermediate directory; a parallel Git-fixture collision is fixed independently.
 This alpha branch integrates that validated main while retaining the previously
 validated PR251/253 editing/recovery/session work. Exact combined CI remains
-required before this integration merges. Cargo/Null-device comparison PR255 and
+required before this integration merges. Local full Rust/Clippy,76 adapter tests,
+actual32KiB HTTP editing and Node HTTP failure/fix/test all passed. Native
+PowerShell5.1 setup checks also prove explicit environment rebuild preserves its
+backup/project, refuses backup overwrite and rejects redirected paths.
+Cargo/Null-device comparison PR255 and
 Electron investigation PR250 remain separate unmerged research; neither is
 imported by this integration. Historical candidate entries below retain context.
 
-## Core exact Node module metadata — candidate, 2026-10-19
+## Core exact Node module metadata — merged main, 2026-10-19
 
 Selective alpha promotion gives the isolated launcher metadata/traversal only
 on directories leading to existing exact source read grants. Root/intermediate
 objects remain pinned; listing, sibling content and creation remain denied.
 Native Node and boundary checks passed, as did the full local Windows Rust
-suite and Clippy. Exact Windows/Linux CI remains required before merge. No private build, dependency, Electron or HTTP authority; ADR0032.
+suite and Clippy. PR254/e1b8288 merged after exact Windows/Linux CI and native
+preparation/pipes/compiler workflows passed. No private build, dependency,
+Electron or HTTP authority; ADR0032.
 Initial Windows CI failed during an unrelated Git fixture init with an existing
 hook path. The old clock-only root names could collide across parallel tests;
 fixture allocation now uses PID/sequence plus exclusive creation. All six
 merge tests, including16 concurrent identical-clock allocations, passed locally.
-The initial failed run remains evidence; exact updated CI is still required.
+The initial failed run remains evidence; corrected exact head837fa30 passed
+CI39286806748, preparation39286806746, pipes39286806756 and compiler39286806794.
 
 ## Validated main/alpha alignment — 2026-10-19
 

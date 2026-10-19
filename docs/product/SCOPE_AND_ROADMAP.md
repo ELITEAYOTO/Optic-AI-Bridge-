@@ -1,13 +1,14 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Last reviewed: 2026-10-08.
+Status: LIVING DOCUMENT. Current delivery reviewed2026-10-19.
 
-Near-term priorities revised2026-10-15: see
-[the active alpha reliability and autonomy plan](ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md).
-It defines diagnostics, Windows shutdown repair, reviewed main consolidation,
-bounded efficient file/module tools, proposed locally supervised renewable
-authorization and real installed-toolchain project acceptance. The requested
-stop-controlled mode is design work, not a delivered unlimited session.
+Use the [real-project delivery index](REAL_PROJECT_DELIVERY.md) and
+[active alpha plan](ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md) for current integration
+and next acceptance. Local finite-window supervision is implemented in main;
+the generated alpha has opt-in supervised reconnect and explicit same-run resume.
+Default timed operation, live revocation and per-task limits remain. General
+writable builds, dependency restore and arbitrary GUI execution remain gated.
+Historical phase completion records follow; they do not override this boundary.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
