@@ -1,5 +1,10 @@
 # Scope and Roadmap
 
+This document retains long-term requirements and phase history. For current
+delivery order use [the root roadmap](../../ROADMAP.md); for merged behavior and
+measured evidence use [current status](../../STATUS.md). Historical completion
+labels below do not establish current release support or override those owners.
+
 Status: LIVING DOCUMENT. Last reviewed: 2026-10-08.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
