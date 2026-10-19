@@ -1,5 +1,18 @@
 # Generated project alpha
 
+## Local experiment Python setup
+
+Setup checks that its virtual environment actually starts, rather than merely
+finding python.exe left behind after a Python uninstall/update. A broken
+environment stops with an actionable error before dependency installation.
+Stop the experiment before rebuilding its environment.
+Explicit `Setup-ProjectAlpha.ps1 -RebuildEnvironment -PythonCommand <python.exe>`
+validates the selected installed Python, preserves the old environment as
+`.venv.previous`, and creates a new `.venv`. A prior backup, redirected path or
+invalid interpreter refuses before moving anything. There is no recursive
+deletion, automatic backup overwrite, global Python change or project/output
+cleanup. Only the local operator runs setup; it is not a model tool.
+
 Delivery target: let FranceStudent develop a small disposable project through
 Optic's actual typed Rust tools. Single locally selected session shared by all
 chats on this connection (ADR0013). Powerful models use the same policy boundaries.
