@@ -595,6 +595,7 @@ mod tests {
             },
             System::StationsAndDesktops::{
                 CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
+                GetUserObjectInformationW, UOI_NAME,
             },
         };
         use windows::core::PCWSTR;
@@ -681,6 +682,31 @@ mod tests {
                 match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) }
                 {
                     Ok(created) => {
+                        // Chromium checks the generated station name before the
+                        // desktop stage. Observe only validity/size, never the name.
+                        let mut name = [0u16; 1024];
+                        let mut name_bytes = 0;
+                        // SAFETY: owned live station reference and aligned fixed
+                        // writable buffer; no station switch or security mutation.
+                        let name_query = unsafe {
+                            GetUserObjectInformationW(
+                                HANDLE(created.0),
+                                UOI_NAME,
+                                Some(name.as_mut_ptr().cast()),
+                                std::mem::size_of_val(&name) as u32,
+                                Some(&mut name_bytes),
+                            )
+                        };
+                        match name_query {
+                            Ok(()) => println!(
+                                "STATION_NAME form={form} access={label} nonempty={} required_bytes={name_bytes}",
+                                name.first().is_some_and(|unit| *unit != 0)
+                            ),
+                            Err(error) => println!(
+                                "STATION_NAME form={form} access={label} error={:?} required_bytes={name_bytes}",
+                                error.code()
+                            ),
+                        }
                         // SAFETY: our returned reference, not the borrowed station.
                         let closed = unsafe { CloseWindowStation(created) };
                         println!(

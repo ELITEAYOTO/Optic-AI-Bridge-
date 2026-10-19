@@ -124,3 +124,19 @@ query/conversion failure cannot silently count as complete comparison evidence.
 No new desktop, process-station switch or default ACL is introduced.
 
 Conversion contract: [MakeAbsoluteSD](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-makeabsolutesd).
+
+
+### Narrow CI result11 before assuming CreateDesktop failed
+
+Pinned alternate_desktop.cc also returns result11 when the created station has
+no readable/nonempty object name, before CreateAltDesktop is called; window.cc
+can return11 if SetProcessWindowStation fails. Thus result11 alone identifies
+a broader desktop-initialization path, not the precise failed Windows API.
+
+The helper now queries UOI_NAME on each successfully returned station reference
+into a fixed2048-byte UTF-16 buffer, recording only error/required length and
+whether the name is nonempty. No raw name is logged and the buffer is never
+used to launch another process or obtain authority. This readonly check does
+not create a desktop or switch a process station. Exact CI measurement of this
+new observation remains required; the local station-creation denial means this
+success-only branch is not reached on this PC.
