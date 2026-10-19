@@ -55,3 +55,8 @@ its regular exclusive no-alias opened handle and16MiB size ceiling, then deletes
 only that file. The final STD_PASS marker is printed only after all known files,
 empty directories and the fresh profile are closed. No recursive sweep or
 reinterpretation of the original failure as success is permitted.
+
+The finalized fixed offline Cargo research has its own independent normal and
+disposable-prepared workflow. Its known NUL failure remains visible and does not
+redefine direct rustc application acceptance. No installed Cargo grant or runtime
+storage quota follows from integrating the test-only evidence harness.

@@ -140,3 +140,20 @@ resource, profile identity, rights, lifetime and recovery mechanism must be
 reviewable separately before any local privileged application. The AI, project
 processes and ordinary core must remain unelevated. The test-only CI comparison
 must not be exposed as an installer or callable MCP operation.
+
+## Completed research scope and dedicated gates — 2026-10-20
+
+The integration targets the fixed evidence harness, not production Cargo support.
+Standard private-Rust CI retains its direct compiler/linker/application assertions
+without appending an unsupported Cargo requirement. Offline Cargo now has a
+dedicated research workflow with independent normal and prepared jobs on separate
+disposable hosted Windows workers. The normal acceptance still fails on NUL and
+remains red; no continue-on-error, fallback or successful alternate result can
+replace it. The workflow is opt-in outside its own source/contract PR paths.
+
+The prepared probe also creates an unrelated capability-free profile while the
+exact owned SID's grant is active, requires both NUL spellings to remain denied
+for read/write there, and closes that profile. Existing execution, bounded
+collection, explicit revoke and restored-denial assertions remain required.
+The concrete Windows preparation broker is still design-only; no local ACL
+mutation, administrator service or model-callable policy change is introduced.

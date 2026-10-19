@@ -1,0 +1,87 @@
+name: Offline Cargo Research
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-windows/src/private_cargo_probe.rs'
+      - '.github/workflows/offline-cargo-research.yml'
+      - 'docs/research/OPTIONAL_WINDOWS_NUL_PREPARATION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-cargo-research-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-acceptance:
+    name: Cargo acceptance / ${{ matrix.mode }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, disposable-exact-profile-nul]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact test-only Cargo probe
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-windows --no-run
+          if ($LASTEXITCODE -ne 0) { throw 'native Cargo probe build failed' }
+          $Probe = @(Get-ChildItem -LiteralPath 'target/debug/deps' -Filter 'optic_bridge_windows-*.exe' -File)
+          if ($Probe.Count -ne 1) { throw 'ambiguous Cargo probe identity' }
+          $Stage = Join-Path $env:RUNNER_TEMP 'optic-offline-cargo-research'
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          $Target = Join-Path $Stage 'optic-offline-cargo-probe.exe'
+          Copy-Item -LiteralPath $Probe[0].FullName -Destination $Target
+          @{source_commit=$env:GITHUB_SHA; head_commit='${{ github.event.pull_request.head.sha }}'; binary_sha256=(Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash; scope='fixed-offline-cargo-research-only'; mode='${{ matrix.mode }}'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'PROBE_MANIFEST.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Offline-Cargo-${{ matrix.mode }}-${{ github.sha }}
+          path: ${{ runner.temp }}/optic-offline-cargo-research
+          retention-days: 7
+          if-no-files-found: error
+      - name: Run independent fixed Cargo acceptance
+        shell: pwsh
+        run: |
+          $env:OPTIC_PRIVATE_RUSTC = rustup which --toolchain 1.99.0 rustc
+          if ($LASTEXITCODE -ne 0) { throw 'direct compiler selection failed' }
+          $SdkVersions = @(Get-ChildItem -LiteralPath 'C:\Program Files (x86)\Windows Kits\10\Lib' -Directory | Select-Object -First 33)
+          if ($SdkVersions.Count -gt 32) { throw 'SDK inventory exceeds proof bound' }
+          $Sdk = @($SdkVersions | Sort-Object Name -Descending | Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'um\x64\kernel32.lib')) -and (Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt\x64\ucrt.lib')) } | Select-Object -First 1)
+          if ($Sdk.Count -ne 1) { throw 'complete explicit SDK selection unavailable' }
+          $env:OPTIC_PRIVATE_KERNEL32_LIB = Join-Path $Sdk[0].FullName 'um\x64\kernel32.lib'
+          $env:OPTIC_PRIVATE_UCRT_LIB = Join-Path $Sdk[0].FullName 'ucrt\x64\ucrt.lib'
+          $Linkers = @(Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' -File | Select-Object -First 33)
+          if ($Linkers.Count -gt 32) { throw 'linker inventory exceeds bound' }
+          $Complete = @($Linkers | Sort-Object FullName -Descending | Where-Object {
+            $ToolRoot = Split-Path (Split-Path (Split-Path (Split-Path $_.FullName)))
+            $Crt = Join-Path $ToolRoot 'lib\x64'
+            (Test-Path -LiteralPath (Join-Path $Crt 'msvcrt.lib')) -and (Test-Path -LiteralPath (Join-Path $Crt 'vcruntime.lib')) -and (Test-Path -LiteralPath (Join-Path $Crt 'legacy_stdio_definitions.lib'))
+          } | Select-Object -First 1)
+          if ($Complete.Count -ne 1) { throw 'complete explicit CRT selection unavailable' }
+          $env:OPTIC_PRIVATE_LINKER = $Complete[0].FullName
+          $ToolRoot = Split-Path (Split-Path (Split-Path (Split-Path $env:OPTIC_PRIVATE_LINKER)))
+          $env:OPTIC_PRIVATE_CRT_LIB_DIR = Join-Path $ToolRoot 'lib\x64'
+          $env:OPTIC_PRIVATE_CARGO = rustup which --toolchain 1.99.0 cargo
+          if ($LASTEXITCODE -ne 0) { throw 'direct Cargo selection failed' }
+          if ('${{ matrix.mode }}' -eq 'disposable-exact-profile-nul') {
+            $env:OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON = 'ephemeral-profile-only'
+          } else {
+            Remove-Item Env:OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON -ErrorAction SilentlyContinue
+          }
+          try {
+            & (Join-Path $env:RUNNER_TEMP 'optic-offline-cargo-research/optic-offline-cargo-probe.exe') --exact rust_compile_probe::private_cargo_checks_and_tests_fixed_offline_project --ignored --nocapture
+            $CargoExit = $LASTEXITCODE
+            @{ mode='${{ matrix.mode }}'; exit_code=$CargoExit; production_fallback=$false } | ConvertTo-Json
+            if ($CargoExit -ne 0) { throw 'this Cargo acceptance remains unproven; the other independent job cannot replace its result' }
+          } finally {
+            Remove-Item Env:OPTIC_DISPOSABLE_NULL_DEVICE_COMPARISON -ErrorAction SilentlyContinue
+          }

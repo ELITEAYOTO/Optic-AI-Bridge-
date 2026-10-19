@@ -100,11 +100,16 @@ fn open_operator_file(path: &Path) -> Result<(File, PathBuf), io::Error> {
 fn require_external_operator_file(workspace: &Path, source: &Path) -> Result<(), io::Error> {
     #[cfg(windows)]
     let within = {
+        if workspace.to_str().is_none() || source.to_str().is_none() {
+            return Err(config_error(
+                "operator policy boundaries require losslessly representable UTF-8 paths",
+            ));
+        }
         let mut source = source.components();
         workspace.components().all(|component| {
             source.next().is_some_and(|candidate| {
-                component.as_os_str().to_string_lossy().to_lowercase()
-                    == candidate.as_os_str().to_string_lossy().to_lowercase()
+                component.as_os_str().to_str().map(str::to_lowercase)
+                    == candidate.as_os_str().to_str().map(str::to_lowercase)
             })
         })
     };
@@ -545,5 +550,19 @@ mod tests {
         std::fs::write(&outside, policy.to_string()).expect("profile policy");
         assert!(load_config_file(&outside).is_err());
         std::fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn operator_policy_boundary_refuses_unrepresentable_native_paths() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let mut units: Vec<u16> = r"\\?\C:\workspace-".encode_utf16().collect();
+        units.push(0xd800);
+        let root = std::path::PathBuf::from(OsString::from_wide(&units));
+        let valid = Path::new(r"\\?\C:\operator\config.json");
+        assert!(require_external_operator_file(&root, valid).is_err());
+        assert!(require_external_operator_file(valid, &root).is_err());
+        assert!(require_external_operator_file(&root, &root.join("config.json")).is_err());
     }
 }

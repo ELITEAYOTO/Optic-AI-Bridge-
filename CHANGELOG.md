@@ -1,10 +1,30 @@
 # Changelog
 
-## Research — offline Cargo compatibility
+## Fixed offline Cargo research — 2026-10-20
 
-- Add an opt-in fixed Cargo project/real test-cycle gate and independent NUL
-  diagnostics. Local Cargo remains blocked before compiler launch; no public
-  tool, dependency authority or global Windows security modification is added.
+- Retain the test-only offline fixture, bounded known-output collector and exact-profile disposable NUL comparison; no installed core grant or general build tool.
+- Separate normal/prepared research acceptance jobs from standard direct-Rust CI; keep normal failure visible and never use a fallback.
+- Add an unrelated-profile denial control and retain the proposed optional Windows preparation/recovery contract.
+
+
+## Native path boundary hardening — 2026-10-20
+
+- Reject unrepresentable native Windows paths during containment comparisons; prevent distinct UTF-16 root names from collapsing to the same replacement spelling.
+- Preserve exact native Git path/hooks arguments and refuse ambiguous operator-policy placement checks.
+- Add an actual native read regression, representation/argument/policy tests and a scoped reliability-debt register. No additional permissions or runtime dependency.
+
+## Approved branch retirement — 2026-10-20
+
+- After explicit operator approval, remove the 244 historical branches in the published ledger using exact expected heads; verify every listed branch absent afterward.
+- Confirm all preserved pull/archive refs, backup hash and the four reference branches unchanged; record approval and results in the existing consolidation ledger.
+- Retire the merged #257 maintenance branch separately. No runtime or permission change.
+
+## Repository consolidation — 2026-10-20
+
+- Replace stale root phase summaries with current overview, measured status and delivery order; retain exact historical snapshots in Git.
+- Add documentation navigation, a branch/PR lifecycle and exact preservation/retirement ledger.
+- Close 41 superseded PRs; preserve divergent historical heads with archive tags.
+- Record the proposed 244-branch retirement as pending explicit operator approval; no remote branch deletion or runtime change.
 
 ## Unreleased — exact isolated module reads
 

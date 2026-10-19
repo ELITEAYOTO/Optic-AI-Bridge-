@@ -110,8 +110,7 @@ fn observe_null_device(owner: &OwnedProbeProfile, root: &Path, remaining: &mut u
     observations
 }
 
-#[test]
-fn private_null_device_comparison_without_toolchain() {
+fn independent_null_observation() -> Vec<String> {
     let mut owner = OwnedProbeProfile {
         profile: Some(
             crate::EphemeralAppContainerPlan::generate()
@@ -133,13 +132,19 @@ fn private_null_device_comparison_without_toolchain() {
         fs::create_dir(root.join(name)).unwrap();
     }
     let mut remaining = MAX_RUNTIME;
-    observe_null_device(&owner, &root, &mut remaining);
+    let observations = observe_null_device(&owner, &root, &mut remaining);
     assert!(!owner.uncertain.get());
     for name in ["output", "roaming", "local", "tmp"] {
         fs::remove_dir(root.join(name)).unwrap();
     }
     fs::remove_dir(&root).unwrap();
     owner.profile.take().unwrap().close().unwrap();
+    observations
+}
+
+#[test]
+fn private_null_device_comparison_without_toolchain() {
+    independent_null_observation();
     println!(
         "PRIVATE_NULL_COMPARISON_COMPLETE: observed only, no runtime selected, device ACL unchanged, owned profile closed"
     );
@@ -168,8 +173,15 @@ pub(super) fn run(
                 .all(|line| line.contains("read_error=None write_error=None")),
             "exact profile NUL grant did not enable stdio: {prepared:?}"
         );
+        let unrelated = independent_null_observation();
+        assert!(
+            unrelated
+                .iter()
+                .all(|line| line.contains("read_error=Some(5) write_error=Some(5)")),
+            "unrelated profile must retain NUL access denial: {unrelated:?}"
+        );
         println!(
-            "PRIVATE_CARGO_NULL_PREPARED: exact ephemeral profile SID only; hosted-CI comparison, no production fallback"
+            "PRIVATE_CARGO_NULL_PREPARED: exact ephemeral profile SID only; unrelated profile denied and closed; hosted-CI comparison, no production fallback"
         );
         Some(grant)
     } else {
