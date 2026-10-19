@@ -607,6 +607,23 @@ mod tests {
                 return;
             }
         };
+        // Compare names only as diagnostic data. An unnamed create can return
+        // another reference to an existing object, not necessarily a fresh one.
+        let mut current_name = [0u16; 1024];
+        let mut current_name_bytes = 0;
+        // SAFETY: borrowed station and fixed writable buffer; read-only query.
+        let current_name_query = unsafe {
+            GetUserObjectInformationW(
+                HANDLE(station.0),
+                UOI_NAME,
+                Some(current_name.as_mut_ptr().cast()),
+                std::mem::size_of_val(&current_name) as u32,
+                Some(&mut current_name_bytes),
+            )
+        };
+        if let Err(error) = &current_name_query {
+            println!("STATION_CURRENT_NAME error={:?}", error.code());
+        }
         // Aligned fixed buffer; retain descriptor storage through both calls.
         let mut descriptor = [0u32; 16 * 1024];
         let mut needed = 0;
@@ -699,8 +716,12 @@ mod tests {
                         };
                         match name_query {
                             Ok(()) => println!(
-                                "STATION_NAME form={form} access={label} nonempty={} required_bytes={name_bytes}",
-                                name.first().is_some_and(|unit| *unit != 0)
+                                "STATION_NAME form={form} access={label} nonempty={} required_bytes={name_bytes} current_name_bytes_equal={:?}",
+                                name.first().is_some_and(|unit| *unit != 0),
+                                current_name_query
+                                    .as_ref()
+                                    .ok()
+                                    .map(|_| name == current_name)
                             ),
                             Err(error) => println!(
                                 "STATION_NAME form={form} access={label} error={:?} required_bytes={name_bytes}",

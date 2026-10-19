@@ -140,3 +140,11 @@ used to launch another process or obtain authority. This readonly check does
 not create a desktop or switch a process station. Exact CI measurement of this
 new observation remains required; the local station-creation denial means this
 success-only branch is not reached on this PC.
+
+
+The name observation also compares its fixed-buffer bytes with a readonly query
+of the borrowed current station. The optional equality is diagnostic only: no
+name is logged, used for authorization or passed to a launch/switch API. This
+helps distinguish an existing-object reference from an assumed fresh station;
+equality/inequality is not itself a proof of how Electron obtained its handle.
+Both name buffers are fixed2048bytes. A failed current-name query yields unknown.
