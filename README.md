@@ -147,3 +147,16 @@ Multi-session support is a first-class architecture requirement. Two chats must 
 - **OPEN** — unresolved question.
 
 Research baseline: **2026-10-03**.
+
+
+## Optional local session supervision
+
+A locally configured stdio host may add `--supervise-session` and
+`--session-lifetime-seconds 60` to the bridge's existing workspace/config argv.
+The bridge then renews the same active grants in finite windows while its stdio
+service is alive. Defaults remain timed; this is an explicit operator option,
+not a remote tool or a permission increase. Stop/cancel, transport EOF, expiry
+across a long stall and policy/lease rejection remain terminal. Task timeouts,
+resource ceilings and all permission checks still apply. See
+[ADR-0031](docs/decisions/ADR-0031-OPERATOR_SESSION_SUPERVISION.md).
+This foundation does not install an HTTP/FS adapter or restore a conversation.
