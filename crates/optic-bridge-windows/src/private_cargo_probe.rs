@@ -283,6 +283,7 @@ fn known_name(name: &str, directory: bool, home: bool) -> bool {
             | ".rustc_info.json"
             | ".cargo-lock"
             | ".cargo-artifact-lock"
+            | ".cargo-build-lock"
             | "invoked.timestamp"
             | "dep-lib-optic_private_cargo_probe"
             | "lib-optic_private_cargo_probe"
@@ -431,6 +432,7 @@ fn fixed_cargo_collection_rejects_unknown_aliases_and_oversize_before_deletion()
     fs::write(&known, b"fixed").unwrap();
     let artifact_lock = root.join(".cargo-artifact-lock");
     fs::write(&artifact_lock, b"").unwrap();
+    fs::write(root.join(".cargo-build-lock"), b"").unwrap();
     clean_fixed_tree(&root, false).unwrap();
     assert!(!root.exists());
 }

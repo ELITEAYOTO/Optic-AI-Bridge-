@@ -102,3 +102,11 @@ subdirectories. Entry count includes unknown names. The native collector
 regression passes with the new lock while retaining all negative cases. Exact
 updated CI remains required. Main PR254/e1b8288 is merged into this research
 history; no Node/runtime production change is carried as research-only code.
+
+At28059e7, native CI39288416438/job118182413707 again passed the prepared Cargo
+execution assertions and stopped before deletion on `.cargo-build-lock` in the
+host/target debug directories. That second exact Cargo-owned lock name is now
+recorded too. Unknown names remain a refusal, with no recursive cleanup fallback;
+normal Cargo failure remains separate and red. Updated cleanup/revoke proof is
+still required. The lock split is also discussed in Cargo issue16853, but native
+observations, rather than an assumed version layout, determine this fixture set.
