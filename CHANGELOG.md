@@ -1,15 +1,28 @@
 # Changelog
 
+## Bounded Electron diagnostic integration — 2026-10-20
+
+- Keep owned thread-context sampling aligned and test-only; add fixed parent-token and isolated station controls without changing installed ACLs or public tools.
+- Retain the failing normal Electron compatibility gate; diagnostic completion does not enable GUI execution or a sandbox downgrade.
+
+
+## Unreleased — exact isolated module reads
+
+- Derive bounded directory metadata rights from exact launcher read
+  grants, pin intermediate directories, and test real nested Node resolution
+  alongside content/list/create denial. No recursive read or write grant.
+
 All notable project changes are recorded here.
 
 ## [Unreleased]
 
-- Add an owned test-only station API observation with bounded descriptor storage
-  and same-thread native errors, without changing user-desktop permissions.
+- Detect broken experiment Python environments before installing dependencies;
+  explicit local rebuild preserves one backup, rejects redirects/backup overwrite
+  and leaves project output and global Python unchanged.
 
-- Add a bounded test-only owned-primary-thread integer diagnostic to localize
-  Electron's existing alternate-window-station startup failure without changing
-  sandbox flags, exception handling or model authority.
+- Add generated-alpha exact text replacement with unique literal matching,
+  original-version Rust patching, independent read/write authorization and
+  retained uncertainty; no caller-computed offsets or whole-file rewrite.
 
 - Preserve one bounded safe prior-tool observation across generated-alpha restart,
   with explicit uncertain admission, no automatic replay and independent failure
@@ -18,6 +31,9 @@ All notable project changes are recorded here.
 - Add operator-selected8/32KiB alpha file budgets with unchanged paginated replies,
   versioned mutations, independent64KiB HTTP body cap, resume and fixed-viewer
   snapshot validation; no additional runtime or model-selected permissions.
+
+- Add explicit local CLI supervision of existing finite session/lease windows,
+  with terminal revoke/expiry and transport-EOF cleanup; default launches remain timed.
 
 - Read recovery journal records without write rights, preserving exclusive native
   identity/alias checks and separate write requirements for locking and appends.

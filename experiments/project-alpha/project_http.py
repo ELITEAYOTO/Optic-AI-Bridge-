@@ -1,4 +1,4 @@
-"""Six parameterized generated-project tools, behind bounded auth/schema guard."""
+"""Parameterized generated-project tools, behind bounded auth/schema guard."""
 import json
 import math
 import sys
@@ -87,19 +87,19 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         f'network, delete, Git or project selection. Files are limited to {gate.max_file_bytes} UTF-8 bytes. '
         f'The complete JSON request body is limited to {MAX_BODY} bytes; escaped text may reach that earlier. '
         f'Read returns at most {gate.read_page_bytes} bytes '
-        'of UTF-8 text, without duplicate base64 for text files. Follow next_offset '
+        'of UTF-8 text, without duplicate base64 for text files. For a complete read follow next_offset '
         'until eof. Every page includes the exact full-file content_version from '
         'one bounded Rust read. Require the same version on all pages; restart '
         'reading if it changes. Binary pages use base64 and text=null. '
         'Create with expected_kind=absent; replace with expected_kind=content '
-        'and exact expected_version. Never retry an outcome_unknown write blindly. '
+        'and exact expected_version after reading the complete current file. Localized exact replacement needs the inspected passage and observed version, not a whole-file rewrite. Never retry an outcome_unknown write blindly. '
         + ('Operator-supervised connection until local stop; no remote renewal tool. '
            'project_info reports mode and bounded file/request/job limits. '
            if supervised else 'project_info reports connection.remaining_seconds and expires_soon; '
            'when expiry is near, finish verification rather than begin a long edit. ')
         + 'Send calls one at a time; link.busy means the request was not admitted. '
         + ('Directory creation is enabled: optic_fs_mkdir requires expected_kind=absent and an existing parent. Directory slots are bounded; inspect after an uncertain result. ' if gate.directory_create else '')
-        + 'Patch offsets/removals count UTF-8 bytes, not characters. '
+        + 'For a localized edit use optic_fs_replace with exact old_text appearing once and the observed version; no byte-offset calculation or whole-file rewrite is needed. No fuzzy match, replace-all or retry after outcome_unknown. Patch offsets/removals count UTF-8 bytes, not characters. '
         + ('Named task profiles available: ' + ', '.join(execution.profiles)
            + '. Start returns an owned job. Poll result and read bounded output. '
            'Stop is a request, not confirmation. Never retry uncertain starts.'
@@ -202,7 +202,7 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
 
     @mcp.tool()
     async def optic_fs_read(path: str, offset: int = 0, max_bytes: int = gate.read_page_bytes) -> dict:
-        """Read bounded pages (operator cap 1024 or 4096 bytes); defaults to the selected cap; follow next_offset to eof. All pages must share content_version before editing. See project_info.limits.file_bytes."""
+        """Read bounded pages (operator cap 1024 or 4096 bytes); defaults to the selected cap; follow next_offset to eof. Combine pages only at the same content_version; read fully before a whole-file rewrite. See project_info.limits.file_bytes."""
         return await call('optic_fs_read', {'path': path, 'offset': offset, 'max_bytes': max_bytes})
 
     @mcp.tool()
@@ -218,6 +218,12 @@ def make_project_app(gate, state, emit=print, allow_random_tunnel=False, executi
         """Replace one byte range with UTF-8 text, requiring the file's exact expected_version."""
         return await call('optic_fs_patch', {'path': path, 'expected_version': expected_version,
             'offset': offset, 'remove_bytes': remove_bytes, 'insert': insert})
+
+    @mcp.tool()
+    async def optic_fs_replace(path: str, expected_version: str, old_text: str, new_text: str) -> dict:
+        """Replace exactly one literal UTF-8 passage in an existing text file at expected_version. Empty old_text, missing/overlapping/multiple matches and stale versions are refused. No fuzzy search or replace-all. Requires independent core read and patch permissions; max file/body limits still apply. Never blindly retry outcome_unknown."""
+        return await call('optic_fs_replace', {'path': path, 'expected_version': expected_version,
+            'old_text': old_text, 'new_text': new_text})
 
     @mcp.tool()
     async def optic_fs_search(path: str, text: str, limit: int = 16) -> dict:

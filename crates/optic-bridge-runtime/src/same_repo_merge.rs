@@ -326,6 +326,7 @@ mod tests {
         env, fs,
         path::{Path, PathBuf},
         process::Command,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -338,6 +339,39 @@ mod tests {
     };
 
     const TARGET_REF: &str = "refs/optic/integration/session-merge";
+    static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+    fn fresh_fixture_directory(nonce: u128) -> PathBuf {
+        let sequence = FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let base = env::temp_dir().join(format!(
+            "optic-session-merge-publish-{}-{nonce}-{sequence}",
+            std::process::id()
+        ));
+        // Clock resolution cannot guarantee uniqueness between parallel tests.
+        // Never reuse a preexisting tree: cleanup must own the exact new root.
+        fs::create_dir(&base).expect("new exclusive fixture root");
+        base
+    }
+
+    #[test]
+    fn fixture_roots_are_unique_even_when_parallel_clock_samples_match() {
+        let tick = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let threads: Vec<_> = (0..16)
+            .map(|_| std::thread::spawn(move || fresh_fixture_directory(tick)))
+            .collect();
+        let roots: Vec<_> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        let distinct: BTreeSet<_> = roots.iter().collect();
+        assert_eq!(distinct.len(), 16);
+        for root in roots {
+            fs::remove_dir(root).unwrap();
+        }
+    }
 
     struct RepoFixture {
         base: PathBuf,
@@ -354,13 +388,13 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock")
                 .as_nanos();
-            let base = env::temp_dir().join(format!("optic-session-merge-publish-{nonce}"));
+            let base = fresh_fixture_directory(nonce);
             let repo = base.join("repo");
             let worktrees = base.join("worktrees");
             let integration = base.join("integration");
-            fs::create_dir_all(&repo).expect("repo");
-            fs::create_dir_all(&worktrees).expect("worktrees");
-            fs::create_dir_all(&integration).expect("integration");
+            fs::create_dir(&repo).expect("repo");
+            fs::create_dir(&worktrees).expect("worktrees");
+            fs::create_dir(&integration).expect("integration");
             run_git(&git, &repo, &["init", "--quiet"]);
             run_git(
                 &git,

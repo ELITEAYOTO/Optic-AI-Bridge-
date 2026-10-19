@@ -53,9 +53,19 @@ impl AppContainerProfile {
         }
         let root = open_metadata_directory(workspace_root)?;
         let root_path = query_final_path(&root).map_err(Error::other)?;
-        let directory = open_metadata_directory(path)?;
+        let relative = path
+            .strip_prefix(workspace_root)
+            .or_else(|_| path.strip_prefix(&root_path))
+            .map_err(|_| Error::other("metadata directory resolves outside workspace"))?;
+        if relative.components().count() > 64 {
+            return Err(Error::other("metadata directory depth limit"));
+        }
+        // Pin every intervening object, not just the root and final directory.
+        // The chain rejects parent components and intermediate reparse points.
+        let chain = crate::pin_directory_chain(&root_path, Some(relative)).map_err(Error::other)?;
+        let directory = open_metadata_directory(chain.final_path())?;
         let final_path = query_final_path(&directory).map_err(Error::other)?;
-        if !final_path.starts_with(&root_path) {
+        if !final_path.starts_with(&root_path) || final_path != chain.final_path() {
             return Err(Error::other(
                 "metadata directory resolves outside workspace",
             ));
@@ -70,6 +80,7 @@ impl AppContainerProfile {
         Ok(AppContainerDirectoryMetadataGrant {
             directory,
             _root: root,
+            _chain: chain,
             sid,
             active: true,
             _profile: PhantomData,
@@ -174,6 +185,7 @@ impl Drop for AppContainerReadFileGrant<'_> {
 pub struct AppContainerDirectoryMetadataGrant<'a> {
     directory: File,
     _root: File,
+    _chain: crate::PinnedDirectoryChain,
     sid: PSID,
     active: bool,
     _profile: PhantomData<&'a AppContainerProfile>,
@@ -340,6 +352,7 @@ mod tests {
     use crate::{
         AppContainerProfile, AppContainerStdio, spawn_appcontainer_with_environment_suspended,
     };
+
     use windows::Win32::Storage::FileSystem::{
         FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
     };
@@ -1481,6 +1494,50 @@ app.whenReady().then(async()=>{
         fs::rename(&moved, &root).expect("restore fixture name");
         fs::remove_file(&sentinel).expect("remove owned sentinel");
         fs::remove_dir(&root).expect("remove empty owned root");
+    }
+
+    #[test]
+    fn metadata_grant_pins_intermediate_directories_and_rejects_aliases() {
+        let root = unique_temp_file();
+        fs::create_dir(&root).unwrap();
+        let middle = root.join("middle");
+        fs::create_dir(&middle).unwrap();
+        let leaf = middle.join("leaf");
+        fs::create_dir(&leaf).unwrap();
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let grant = profile
+            .grant_directory_metadata_within(&leaf, &root)
+            .unwrap();
+        let moved = root.join("moved");
+        assert!(fs::rename(&middle, &moved).is_err());
+        grant.revoke().unwrap();
+        fs::rename(&middle, &moved).unwrap();
+        fs::rename(&moved, &middle).unwrap();
+        assert!(
+            profile
+                .grant_directory_metadata_within(&middle.join(".."), &root)
+                .is_err()
+        );
+        let alias = root.join("alias");
+        if std::os::windows::fs::symlink_dir(&middle, &alias).is_ok() {
+            assert!(
+                profile
+                    .grant_directory_metadata_within(&alias.join("leaf"), &root)
+                    .is_err()
+            );
+            fs::remove_dir(&alias).unwrap();
+        }
+        let sibling = root.with_extension("sibling");
+        fs::create_dir(&sibling).unwrap();
+        assert!(
+            profile
+                .grant_directory_metadata_within(&sibling, &root)
+                .is_err()
+        );
+        fs::remove_dir(&sibling).unwrap();
+        fs::remove_dir(&leaf).unwrap();
+        fs::remove_dir(&middle).unwrap();
+        fs::remove_dir(&root).unwrap();
     }
 
     #[test]

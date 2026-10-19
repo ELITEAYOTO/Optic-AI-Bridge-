@@ -146,3 +146,15 @@ comme preuve de succès. Pour reprendre après arrêt, relancer avec le même Re
 Une vraie panne/expiration du noyau ferme l'adaptateur ; il ne recrée pas les droits.
 Les coupures de génération signalées à FS sont un incident distinct ; ce mode
 n'affirme pas corriger le flux FS-vers-modèle.
+
+
+## Modification locale sans calcul d'offset
+
+Un paquet portant `text_replacement=single-exact-v1` ajoute `optic_fs_replace`.
+L'IA fournit le chemin, la version observée, le passage exact `old_text` et son
+remplacement `new_text`. Le passage doit apparaître une seule fois ; les doublons,
+versions périmées et dépassements de taille sont refusés. Une modification locale
+ne nécessite plus de renvoyer tout le fichier. Les droits de lecture et d'écriture
+restent contrôlés séparément par Rust. Après `outcome_unknown`, inspecter l'état
+avant de décider de la suite ; aucune répétition automatique n'est effectuée.
+Ce nouvel outil ne débloque pas à lui seul npm, Cargo ou le lancement Electron.

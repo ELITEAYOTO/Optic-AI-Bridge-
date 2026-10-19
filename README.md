@@ -1,5 +1,19 @@
 # Optic AI Bridge
 
+## Current delivery — 2026-10-19
+
+This is tested pre-alpha source, not a production-supported release. Main now
+includes local session supervision and exact isolated Node module reads. The
+separate generated-project FS alpha adds editing, Node check/test and explicit
+same-project resume. General dependency installation, writable builds and
+arbitrary Electron GUI execution remain gated.
+
+Use the [current real-project delivery index](docs/product/REAL_PROJECT_DELIVERY.md)
+for what is available, where it lives and the next goal-only project acceptance.
+Older phase notes below record how the implementation reached this point.
+
+### Earlier implementation record
+
 **Status:** pre-alpha - Phase 2D3, Phase 3A through Phase 3B3, Phase 3C1 bounded process termination, Phase 3C2 bounded process CPU governance, Phase 3C3A pinned executable identity, Phase 3C3B explicit process execution classification, and Phase 3C3C1 fail-closed high-risk execution gating are merged and post-merge validated. Phase 3C3C1 merged in PR #63 as `148f4720` from exact green final head `3b63e05d`; exact-head CI #291 and post-merge `main` CI #292 passed Ubuntu, Windows and dependency policy. `Interpreter` and `RepositoryCode` execution are currently denied until a stronger isolation profile is implemented and proven; `FixedTool` remains available under the existing bounded process runtime. Later Phase 3C safety gates remain open: evidence-backed Windows isolation for high-risk classes, truthful OS network containment and broader sandboxing.
 **Target:** Windows-first, Rust, local-first, lightweight MCP bridge for AI-assisted development.
 
@@ -147,3 +161,16 @@ Multi-session support is a first-class architecture requirement. Two chats must 
 - **OPEN** — unresolved question.
 
 Research baseline: **2026-10-03**.
+
+
+## Optional local session supervision
+
+A locally configured stdio host may add `--supervise-session` and
+`--session-lifetime-seconds 60` to the bridge's existing workspace/config argv.
+The bridge then renews the same active grants in finite windows while its stdio
+service is alive. Defaults remain timed; this is an explicit operator option,
+not a remote tool or a permission increase. Stop/cancel, transport EOF, expiry
+across a long stall and policy/lease rejection remain terminal. Task timeouts,
+resource ceilings and all permission checks still apply. See
+[ADR-0031](docs/decisions/ADR-0031-OPERATOR_SESSION_SUPERVISION.md).
+This foundation does not install an HTTP/FS adapter or restore a conversation.

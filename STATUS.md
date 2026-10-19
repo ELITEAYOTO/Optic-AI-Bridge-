@@ -1,15 +1,68 @@
 # Project Status
 
-## Owned Electron failure attribution — research candidate, 2026-10-18
+## Completed bounded Electron diagnosis — 2026-10-20
 
-Version-matched official symbols map the observed0x332579e breakpoint to
-Sandbox::Initialize, sandbox.cc71. The read-only owned initial-thread diagnostic
-observes local EAX12: SBOX_ERROR_CANNOT_CREATE_WINSTATION; disposable Windows
-CI observes EAX11: SBOX_ERROR_CANNOT_CREATE_DESKTOP at the same check. Native
-tests and Clippy passed; the normal Electron test still fails0x80000003. Exact
-Win32/GetLastError cause remains unmeasured; no fallback or GUI grant. See
-[matched evidence](docs/research/ELECTRON_WINSTATION_RESULT_2026-10-18.md).
+PR250 adds test-only owned primary-thread results and fixed station controls,
+not a GUI compatibility repair. Exact earlier e768463 CI39195016565 measured
+normal Electron result11 / exit0x80000003 on disposable Windows; the separate
+outer-only comparison succeeded. Parent-token and isolated station observations
+both completed. The local host distinguishes existing-station access from a
+new descriptor grant. No installed ACL or production launch behavior changed.
+The alpha-aligned head requires its own current native/CI validation before merge.
+See docs/research/ELECTRON_WINSTATION_RESULT_2026-10-18.md.
 
+
+## Current integration candidate — 2026-10-19
+
+Main PR254/e1b8288 passed exact Windows/Linux CI, private preparation, pipes and
+native Rust compilation. It promotes exact Node module metadata and pins every
+intermediate directory; a parallel Git-fixture collision is fixed independently.
+This alpha branch integrates that validated main while retaining the previously
+validated PR251/253 editing/recovery/session work. Exact combined CI remains
+required before this integration merges. Local full Rust/Clippy,76 adapter tests,
+actual32KiB HTTP editing and Node HTTP failure/fix/test all passed. Native
+PowerShell5.1 setup checks also prove explicit environment rebuild preserves its
+backup/project, refuses backup overwrite and rejects redirected paths.
+Cargo/Null-device comparison PR255 and
+Electron investigation PR250 remain separate unmerged research; neither is
+imported by this integration. Historical candidate entries below retain context.
+
+## Core exact Node module metadata — merged main, 2026-10-19
+
+Selective alpha promotion gives the isolated launcher metadata/traversal only
+on directories leading to existing exact source read grants. Root/intermediate
+objects remain pinned; listing, sibling content and creation remain denied.
+Native Node and boundary checks passed, as did the full local Windows Rust
+suite and Clippy. PR254/e1b8288 merged after exact Windows/Linux CI and native
+preparation/pipes/compiler workflows passed. No private build, dependency,
+Electron or HTTP authority; ADR0032.
+Initial Windows CI failed during an unrelated Git fixture init with an existing
+hook path. The old clock-only root names could collide across parallel tests;
+fixture allocation now uses PID/sequence plus exclusive creation. All six
+merge tests, including16 concurrent identical-clock allocations, passed locally.
+The initial failed run remains evidence; corrected exact head837fa30 passed
+CI39286806748, preparation39286806746, pipes39286806756 and compiler39286806794.
+
+## Validated main/alpha alignment — 2026-10-19
+
+Main PR252/b33b1f9 promotes the finite-window local supervisor; exact PR and
+post-merge CI passed. Alpha PR251/13ffc50 adds exact localized text replacement;
+76 adapter cases and actual packaged32KiB HTTP/Rust acceptance passed. This
+ancestry-preserving integration keeps existing alpha runtime sources unchanged
+and adds the independently validated Rust stdio tests/ADR0031 and documentation.
+Combined exact-head CI remains required before integration. It does not promote
+the full experimental alpha or failed private-Electron research into main.
+
+## Exact localized alpha replacement — candidate, 2026-10-19
+
+New adapter method optic_fs_replace composes the existing authorized read and
+versioned patch under one retained slot. Unique literal UTF-8 matches only;
+overlapping duplicates, missing text, stale versions and size overflow refuse.
+Rust retains the original version and independently enforces both permissions.
+Native HTTP32KiB proof covers UTF-8/CRLF, stale/overlap refusal, an external edit
+between read/patch, a replacement beyond8KiB and disabled core read/write grants.
+No new core effect, generic file access, build/dependency or GUI authority.
+Exact-head CI/package validation remains required before delivery.
 
 ## Last-tool recovery observation — candidate, 2026-10-18
 
@@ -43,6 +96,15 @@ SDK checks, Node HTTP journey and same-project supervised resume passed.
 Combined-head CI, Rust compilation, pipes, preparation and alpha packaging passed
 atc8eb328; merged into alpha via PR247. Separate normal-Electron staging research
 still fails0x80000003; no production fallback or model GUI grant.
+
+## Core local supervision promotion — candidate, 2026-10-19
+
+Explicit CLI supervision renews only existing active session/lease scopes through
+finite monotonic windows and revokes on transport completion. Default launch stays
+timed. Native Rust stdio integration passed all three expiry/renewal/revoke/EOF
+cases; exact Windows/Linux CI remains required. No remote renewal tool, HTTP
+adapter, new process/GUI permission or automatic grant resurrection is added.
+See ADR-0031. This is a selective core integration, not the full alpha umbrella.
 
 ## Read-only recovery scan — candidate, 2026-10-18
 
@@ -1173,13 +1235,3 @@ Interrupted batches return verified prior receipts and a failed index, without
 claiming rollback or that a failed write had no effect. Private build output
 capture, writable process grants and hard disk quotas are not implemented here.
 No MCP tool is added. Exact main-candidate CI/native proof required.
-
-
-### 2026-10-19: isolated station API diagnostic
-
-Owned test-only native helper collected HRESULT0x80070005 for both station
-creation access masks after a successful bounded DACL read locally. This is a
-separate probe, not Electron's own GetLastError or a compatibility repair.
-No user-station ACL, sandbox flags or production authority changed. Ordinary
-Windows suite29passed/6ignored and workspace all-target Clippy passed. Exact
-head CI remains required; normal private Electron gate remains failed.

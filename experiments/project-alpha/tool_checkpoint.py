@@ -13,7 +13,7 @@ from project_resume import ordinary
 MAX_BYTES = 1024
 NAME = 'last-tool.json'
 PENDING = '.last-tool.pending'
-MUTATING = {'optic_fs_write', 'optic_fs_patch', 'optic_fs_mkdir', 'optic_task_start', 'optic_task_stop', 'optic_task_forget'}
+MUTATING = {'optic_fs_write', 'optic_fs_patch', 'optic_fs_replace', 'optic_fs_mkdir', 'optic_task_start', 'optic_task_stop', 'optic_task_forget'}
 KEYS = {'version', 'bridge_instance', 'sequence', 'tool', 'phase', 'ok', 'code',
         'outcome_uncertain', 'received_utc', 'finished_utc'}
 

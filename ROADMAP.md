@@ -1,5 +1,13 @@
 # Roadmap
 
+## Current delivery index — 2026-10-19
+
+The [real-project delivery index](docs/product/REAL_PROJECT_DELIVERY.md) is the
+current status and acceptance order for main, generated FS alpha and native
+research. Local supervision and exact Node module reads are merged in main;
+private writable builds/dependencies/GUI remain separate gates. Earlier phase
+and H-track snapshots below are preserved history, not current release claims.
+
 **Active near-term delivery plan (2026-10-15):**
 [Alpha reliability, autonomy and integration](docs/product/ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md).
 Order: correlated failure diagnosis and clean shutdown; reviewed main integration;

@@ -211,3 +211,20 @@ provided for a new object cannot be assumed to replace an existing object's ACL.
 It does not directly trace Electron or authorize modification of that existing
 station. Disposable Windows measurement of this host control remains required.
 No installed station/file/registry ACL or production launch behavior is changed.
+
+## Completed hosted observations and integration scope — 2026-10-20
+
+The earlier e768463 CI39195016565/job117875812801 completed both the parent-token
+control and all six isolated descriptor/access observations. On that hosted
+Windows machine the host control created/closed with both flags, and the isolated
+name/switch/restore observations passed. The unchanged normal Electron path still
+failed0x80000003 with owned primary result11; the explicit outer-only comparison
+passed separately. Earlier pending statements above describe their snapshot,
+not missing final e768463 evidence.
+
+This completes the bounded measurement scope, not the compatibility repair.
+Align with current alpha and rerun the exact diagnostics and ordinary checks
+before merging. Keep the normal gate visible and do not add a fallback or turn
+this test harness into a model-facing station/desktop API.
+
+The alpha-aligned local rerun passed the ordinary native Windows suite, the fixed parent-token control and all six isolated observations. The local control again returned B7 for create-only and closed a reference for flags0; the isolated comparisons all returned access-denied. No installed ACL was changed. Exact hosted validation of the aligned head remains required before integration.
