@@ -1,6 +1,6 @@
 # Contributing
 
-Optic AI Bridge is currently in Phase 0. Architecture and security invariants take precedence over feature count.
+Optic AI Bridge is an executable Rust pre-alpha. Architecture and security invariants take precedence over feature count. Read [current status](STATUS.md) and the [branch/PR workflow](docs/engineering/REPOSITORY_WORKFLOW.md) before choosing a target branch.
 
 Before changing code, read:
 1. `AI_HANDOFF.md`

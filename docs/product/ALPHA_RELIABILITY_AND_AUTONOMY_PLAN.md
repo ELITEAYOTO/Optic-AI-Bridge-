@@ -1,5 +1,12 @@
 # Alpha reliability, project autonomy and integration plan
 
+Current source alignment (2026-10-20) includes main's native-path correction
+(PR259), completed Electron measurements (PR250) and fixed Cargo research/optional
+preparation contract (PR255). Measurement completion does not grant GUI, Cargo,
+dependency or administrator authority. The root status/roadmap/debt register own
+current delivery; dated action sequences below retain their historical context.
+
+
 Status: APPROVED USER DIRECTION / IMPLEMENTATION PLAN, not delivered capabilities.
 Date: 2026-10-15. Owner: current Optic development track.
 

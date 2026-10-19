@@ -9,10 +9,9 @@
 .env
 .env.*
 !.env.example
-**/__pycache__/
-experiments/host-probe/.venv/
+__pycache__/
+.venv/
+/experiments/francestudent-probe/.venv.previous/
+/work-probe-env/
 .venv-host-probe/
-experiments/francestudent-probe/.venv/
-experiments/francestudent-probe/.venv.previous/
-work-probe-env/
 experiments/persistent-auth/.fixture-state/

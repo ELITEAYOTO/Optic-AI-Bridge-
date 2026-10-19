@@ -1,14 +1,11 @@
 # Scope and Roadmap
 
-Status: LIVING DOCUMENT. Current delivery reviewed2026-10-19.
+This document retains long-term requirements and phase history. For current
+delivery order use [the root roadmap](../../ROADMAP.md); for merged behavior and
+measured evidence use [current status](../../STATUS.md). Historical completion
+labels below do not establish current release support or override those owners.
 
-Use the [real-project delivery index](REAL_PROJECT_DELIVERY.md) and
-[active alpha plan](ALPHA_RELIABILITY_AND_AUTONOMY_PLAN.md) for current integration
-and next acceptance. Local finite-window supervision is implemented in main;
-the generated alpha has opt-in supervised reconnect and explicit same-run resume.
-Default timed operation, live revocation and per-task limits remain. General
-writable builds, dependency restore and arbitrary GUI execution remain gated.
-Historical phase completion records follow; they do not override this boundary.
+Status: LIVING DOCUMENT. Last reviewed: 2026-10-08.
 
 ## Phase 0 — Architecture freeze (COMPLETED BASELINE)
 
