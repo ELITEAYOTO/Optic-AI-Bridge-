@@ -590,8 +590,8 @@ mod tests {
         use windows::Win32::{
             Foundation::{GENERIC_READ, HANDLE},
             Security::{
-                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, PSECURITY_DESCRIPTOR,
-                SECURITY_ATTRIBUTES,
+                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, MakeAbsoluteSD,
+                PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
             },
             System::StationsAndDesktops::{
                 CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
@@ -627,27 +627,73 @@ mod tests {
             );
             return;
         }
-        let attributes = SECURITY_ATTRIBUTES {
-            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: descriptor.as_mut_ptr().cast(),
-            bInheritHandle: false.into(),
+        // Compare the returned self-relative descriptor with its native absolute
+        // conversion. Four fixed64KiB component buffers stay alive through calls;
+        // no descriptor content is logged and no unbounded sizing retry exists.
+        let mut absolute = SECURITY_DESCRIPTOR::default();
+        let mut absolute_size = std::mem::size_of_val(&absolute) as u32;
+        let mut dacl = vec![0u32; 16 * 1024];
+        let mut sacl = vec![0u32; 16 * 1024];
+        let mut owner = vec![0u32; 16 * 1024];
+        let mut group = vec![0u32; 16 * 1024];
+        let (mut dacl_size, mut sacl_size, mut owner_size, mut group_size) =
+            (65536, 65536, 65536, 65536);
+        // SAFETY: source was filled by Windows; all aligned destination pointers
+        // have the declared capacities and remain live until both variants finish.
+        let converted = unsafe {
+            MakeAbsoluteSD(
+                PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast()),
+                Some(PSECURITY_DESCRIPTOR(
+                    (&mut absolute as *mut SECURITY_DESCRIPTOR).cast(),
+                )),
+                &mut absolute_size,
+                Some(dacl.as_mut_ptr().cast()),
+                &mut dacl_size,
+                Some(sacl.as_mut_ptr().cast()),
+                &mut sacl_size,
+                Some(PSID(owner.as_mut_ptr().cast())),
+                &mut owner_size,
+                Some(PSID(group.as_mut_ptr().cast())),
+                &mut group_size,
+            )
         };
-        // Chromium's two access masks. Capture each error in the calling child,
-        // before another Windows call can replace its thread-local last error.
-        for (label, access) in [("generic", GENERIC_READ.0 | 0x8), ("reduced", 0x2 | 0x8)] {
-            // SAFETY: OS-generated name, copied current DACL, no inherited handle.
-            // Never SetProcessWindowStation; successful handles are closed here.
-            match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) } {
-                Ok(created) => {
-                    // SAFETY: only our returned reference, not the borrowed station.
-                    let closed = unsafe { CloseWindowStation(created) };
-                    println!(
-                        "STATION_API access={label} created=true closed={}",
-                        closed.is_ok()
-                    );
-                    assert!(closed.is_ok(), "close diagnostic station reference");
+        if let Err(error) = converted {
+            println!("STATION_API conversion_error={:?}", error.code());
+            return;
+        }
+        for (form, descriptor_pointer) in [
+            ("relative", descriptor.as_mut_ptr().cast()),
+            (
+                "absolute",
+                (&mut absolute as *mut SECURITY_DESCRIPTOR).cast(),
+            ),
+        ] {
+            let attributes = SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: descriptor_pointer,
+                bInheritHandle: false.into(),
+            };
+            // Chromium's two access masks. Capture each error in this child,
+            // before another Windows call can replace thread-local last error.
+            for (label, access) in [("generic", GENERIC_READ.0 | 0x8), ("reduced", 0x2 | 0x8)] {
+                // SAFETY: OS-generated name, copied DACL, no inherited handle.
+                // Never switch process station; close successful references here.
+                match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) }
+                {
+                    Ok(created) => {
+                        // SAFETY: our returned reference, not the borrowed station.
+                        let closed = unsafe { CloseWindowStation(created) };
+                        println!(
+                            "STATION_API form={form} access={label} created=true closed={}",
+                            closed.is_ok()
+                        );
+                        assert!(closed.is_ok(), "close diagnostic station reference");
+                    }
+                    Err(error) => println!(
+                        "STATION_API form={form} access={label} error={:?}",
+                        error.code()
+                    ),
                 }
-                Err(error) => println!("STATION_API access={label} error={:?}", error.code()),
             }
         }
     }
@@ -664,9 +710,11 @@ mod tests {
         let output = run_workspace_probe(&profile, &probe, &private, "station-api");
         println!("{}", output.diagnostic());
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
-        assert!(
-            output.stdout.contains("STATION_API "),
-            "missing native observation"
+        assert_eq!(
+            output.stdout.matches("STATION_API form=").count(),
+            4,
+            "both descriptor formats and access masks must be observed: {}",
+            output.diagnostic()
         );
     }
 

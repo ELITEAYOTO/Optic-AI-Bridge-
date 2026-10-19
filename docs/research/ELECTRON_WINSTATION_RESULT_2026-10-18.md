@@ -103,3 +103,24 @@ The feature is a Windows test-only dependency. The dedicated Windows workflow
 collects this observation before its unchanged Electron compatibility gate.
 
 API contract: [CreateWindowStationW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw).
+
+
+### CI comparison and descriptor-format control
+
+At d8ea38b, Windows CI39193400918/job117870855666 successfully created and closed
+station references for both access masks, while the unchanged Electron test
+still failed0x80000003 and the owned debugger observed result11. The outer-only
+comparison passed. Local station access denial is therefore not portable to CI.
+
+A subsequent probe revision compares the self-relative DACL descriptor against
+its native MakeAbsoluteSD conversion, retaining all component storage through
+the calls. Memory is bounded to the64KiB query buffer, four64KiB conversion
+buffers and one fixed SECURITY_DESCRIPTOR; there is no dynamic sizing retry.
+The local run again observed HRESULT0x80070005 for all four format/access pairs.
+This rules out descriptor representation as the sole cause in this helper on
+this PC, but still does not capture Electron's own native error or identify a
+safe permission repair. The parent now requires all four observations, so a
+query/conversion failure cannot silently count as complete comparison evidence.
+No new desktop, process-station switch or default ACL is introduced.
+
+Conversion contract: [MakeAbsoluteSD](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-makeabsolutesd).
