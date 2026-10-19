@@ -20,6 +20,7 @@
 - [Specifications](specs/)
 - [Architectural decisions](decisions/)
 - [Test and CI strategy](engineering/TEST_AND_CI_STRATEGY.md)
+- [Reliability debt and reviewed boundaries](engineering/RELIABILITY_DEBT.md)
 
 ## Operations and maintenance
 

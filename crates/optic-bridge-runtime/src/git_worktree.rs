@@ -74,8 +74,8 @@ fn parse_worktree_record(fields: &[&[u8]]) -> Result<RegisteredWorktree, Worktre
 }
 
 #[cfg(windows)]
-fn normalized_windows_path(path: &Path) -> String {
-    let mut value = path.as_os_str().to_string_lossy().replace('/', "\\");
+fn normalized_windows_path(path: &Path) -> Option<String> {
+    let mut value = path.to_str()?.replace('/', "\\");
     if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
         value = format!(r"\\{rest}");
     } else if let Some(rest) = value.strip_prefix(r"\\?\") {
@@ -84,12 +84,18 @@ fn normalized_windows_path(path: &Path) -> String {
     while value.len() > 3 && value.ends_with('\\') {
         value.pop();
     }
-    value.to_lowercase()
+    Some(value.to_lowercase())
 }
 
 #[cfg(windows)]
 pub(crate) fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
-    normalized_windows_path(left) == normalized_windows_path(right)
+    match (
+        normalized_windows_path(left),
+        normalized_windows_path(right),
+    ) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
 }
 
 #[cfg(not(windows))]
@@ -99,8 +105,12 @@ pub(crate) fn paths_lexically_equal(left: &Path, right: &Path) -> bool {
 
 #[cfg(windows)]
 pub(crate) fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
-    let root = normalized_windows_path(root);
-    let candidate = normalized_windows_path(candidate);
+    let (Some(root), Some(candidate)) = (
+        normalized_windows_path(root),
+        normalized_windows_path(candidate),
+    ) else {
+        return false;
+    };
     candidate == root
         || candidate
             .strip_prefix(&root)
@@ -114,8 +124,7 @@ pub(crate) fn path_is_lexically_within(root: &Path, candidate: &Path) -> bool {
 
 pub(crate) fn git_path_arg(path: &Path) -> OsString {
     #[cfg(windows)]
-    {
-        let value = path.as_os_str().to_string_lossy();
+    if let Some(value) = path.to_str() {
         if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
             return OsString::from(format!(r"\\{rest}"));
         }
@@ -127,6 +136,8 @@ pub(crate) fn git_path_arg(path: &Path) -> OsString {
 }
 
 pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString> {
+    let mut hooks = OsString::from("core.hooksPath=");
+    hooks.push(git_path_arg(disabled_hooks_root));
     vec![
         OsString::from("--no-pager"),
         OsString::from("--literal-pathspecs"),
@@ -135,10 +146,7 @@ pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString
         OsString::from("-c"),
         OsString::from("core.untrackedCache=false"),
         OsString::from("-c"),
-        OsString::from(format!(
-            "core.hooksPath={}",
-            git_path_arg(disabled_hooks_root).to_string_lossy()
-        )),
+        hooks,
         OsString::from("-c"),
         OsString::from("commit.gpgSign=false"),
     ]
@@ -227,5 +235,28 @@ mod tests {
             Some(&OsString::from("0"))
         );
         assert!(!env.contains_key(OsStr::new("PATH")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_path_comparisons_refuse_lossy_aliases_and_arguments_keep_exact_units() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let native = |unit: u16| {
+            let mut units: Vec<u16> = r"\\?\C:\work-".encode_utf16().collect();
+            units.push(unit);
+            PathBuf::from(OsString::from_wide(&units))
+        };
+        let root = native(0xd800);
+        let other = native(0xd801);
+        assert_eq!(root.to_string_lossy(), other.to_string_lossy());
+        assert!(!paths_lexically_equal(&root, &other));
+        assert!(!paths_lexically_equal(&root, &root));
+        assert!(!path_is_lexically_within(&root, &other.join("file")));
+        assert!(!path_is_lexically_within(&root, &root.join("file")));
+        assert_eq!(git_path_arg(&root), root.as_os_str());
+        let mut expected = OsString::from("core.hooksPath=");
+        expected.push(root.as_os_str());
+        assert!(git_mutation_base_args(&root).contains(&expected));
     }
 }
