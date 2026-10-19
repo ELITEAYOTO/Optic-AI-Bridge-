@@ -167,3 +167,26 @@ the parent requires an empty owned job. Original source/DACL data remains read
 only. Local station creation denial prevents reaching this new branch; disposable
 Windows CI remains required for its result. This experiment supersedes the
 no-switch description of earlier probe revisions, not production policy.
+
+
+### Descriptor-copy own-package control
+
+At89a8f93 CI39194385861/job117873864600, all four station/name queries and each
+helper station-switch/restore succeeded. Normal Electron still reported11. This
+narrows the helper's remaining desktop path but is not a trace of Electron's
+actual API failures; application state differs.
+
+A third descriptor variant merges one noninherited GENERIC_READ|WINSTA_CREATEDESKTOP
+allow entry for the fixed helper's own queried AppContainer SID into a NEW ACL
+copy. Original station/descriptors are never installed or changed. The token is
+query-only and uniquely closed; SID data stays in a fixed aligned8KiB buffer
+through the native ACL copy and is never logged. The returned ACL allocation is
+native-size-bounded and freed after calls. No world/package-class grant, runtime
+filesystem grant, network authority or model-selected SID is accepted. Original
+format controls run before this copy variant; the parent requires six observations.
+
+The local exact owned run still records0x80070005 for all six descriptor/access
+pairs. Adding an allow entry to the requested new object's descriptor alone
+therefore did not repair station creation in this helper on this PC. This is not
+a proposal to edit WinSta0's ACL or disable Chromium's sandbox. Disposable Windows
+results for the new copy control remain separate evidence to collect.

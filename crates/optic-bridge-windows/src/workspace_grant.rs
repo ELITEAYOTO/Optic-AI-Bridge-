@@ -584,6 +584,85 @@ mod tests {
         )
     }
 
+    // Build a descriptor for a requested test object only. Never writes an ACL
+    // onto an existing/current station or any filesystem/registry object.
+    fn station_descriptor_for_own_package(
+        mut descriptor: windows::Win32::Security::SECURITY_DESCRIPTOR,
+    ) -> std::io::Result<(
+        windows::Win32::Security::SECURITY_DESCRIPTOR,
+        super::LocalAllocation,
+    )> {
+        use std::os::windows::io::{FromRawHandle, OwnedHandle};
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Security::{
+                Authorization::{
+                    BuildTrusteeWithSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, SetEntriesInAclW,
+                    TRUSTEE_W,
+                },
+                GetTokenInformation, TOKEN_APPCONTAINER_INFORMATION, TOKEN_QUERY,
+                TokenAppContainerSid,
+            },
+            System::Threading::{GetCurrentProcess, OpenProcessToken},
+        };
+        if descriptor.Dacl.is_null() {
+            return Err(std::io::Error::other("test descriptor refuses null DACL"));
+        }
+        let mut token = HANDLE::default();
+        // SAFETY: opens only our current process token for query; no token change.
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+            .map_err(std::io::Error::other)?;
+        // SAFETY: uniquely owned real token handle, released once on every path.
+        let _token = unsafe { OwnedHandle::from_raw_handle(token.0) };
+        let mut bytes = [0u64; 1024];
+        let mut required = 0;
+        // SAFETY: fixed aligned8KiB buffer, exact size output; no sizing retry.
+        unsafe {
+            GetTokenInformation(
+                token,
+                TokenAppContainerSid,
+                Some(bytes.as_mut_ptr().cast()),
+                std::mem::size_of_val(&bytes) as u32,
+                &mut required,
+            )
+        }
+        .map_err(std::io::Error::other)?;
+        if required < std::mem::size_of::<TOKEN_APPCONTAINER_INFORMATION>() as u32 {
+            return Err(std::io::Error::other("missing owned package SID"));
+        }
+        // SAFETY: successful native query populated this aligned typed header;
+        // its SID storage remains live throughout the synchronous ACL merge.
+        let info = unsafe { &*bytes.as_ptr().cast::<TOKEN_APPCONTAINER_INFORMATION>() };
+        if info.TokenAppContainer.0.is_null() {
+            return Err(std::io::Error::other("not an AppContainer helper"));
+        }
+        let mut trustee = TRUSTEE_W::default();
+        // SAFETY: SID came from our token query and remains live.
+        unsafe { BuildTrusteeWithSidW(&mut trustee, Some(info.TokenAppContainer)) };
+        let entry = EXPLICIT_ACCESS_W {
+            // Only the station creation rights used in this experiment. No
+            // inheritance, world/package-class grant, file or network permission.
+            grfAccessPermissions: windows::Win32::Foundation::GENERIC_READ.0 | 0x8,
+            grfAccessMode: GRANT_ACCESS,
+            grfInheritance: Default::default(),
+            Trustee: trustee,
+        };
+        let mut acl = std::ptr::null_mut();
+        // SAFETY: copied DACL remains live; one SID entry is merged into a NEW
+        // ACL allocation (ACL size is a native u16), not an installed object ACL.
+        let status = unsafe {
+            SetEntriesInAclW(
+                Some(std::slice::from_ref(&entry)),
+                Some(descriptor.Dacl.cast_const()),
+                &mut acl,
+            )
+        };
+        super::win32_status(status.0, "test-only package ACL merge")?;
+        let owned = super::LocalAllocation(acl.cast());
+        descriptor.Dacl = acl;
+        Ok((descriptor, owned))
+    }
+
     // Test-child-only API diagnostic: no shared-core switch, ACL mutation or desktop creation,
     // default descriptor, handle inheritance, or model-facing authority.
     fn probe_station_creation() {
@@ -679,11 +758,17 @@ mod tests {
             println!("STATION_API conversion_error={:?}", error.code());
             return;
         }
+        let (mut own_package, _own_package_acl) = station_descriptor_for_own_package(absolute)
+            .expect("bounded descriptor-copy package grant");
         for (form, descriptor_pointer) in [
             ("relative", descriptor.as_mut_ptr().cast()),
             (
                 "absolute",
                 (&mut absolute as *mut SECURITY_DESCRIPTOR).cast(),
+            ),
+            (
+                "own-package",
+                (&mut own_package as *mut SECURITY_DESCRIPTOR).cast(),
             ),
         ] {
             let attributes = SECURITY_ATTRIBUTES {
@@ -784,8 +869,8 @@ mod tests {
         assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
         assert_eq!(
             output.stdout.matches("STATION_API form=").count(),
-            4,
-            "both descriptor formats and access masks must be observed: {}",
+            6,
+            "all descriptor/access comparisons must be observed: {}",
             output.diagnostic()
         );
     }
