@@ -233,6 +233,7 @@ pub(super) fn run(
     assert_eq!(fs::read(&manifest).unwrap(), MANIFEST.as_bytes());
     assert_eq!(fs::read(&lock).unwrap(), LOCK.as_bytes());
     assert!(!owner.uncertain.get());
+    report_fixed_home_metadata(&root.join("cargo-home")).unwrap();
     clean_fixed_tree(&root.join("cargo-target"), false).unwrap();
     clean_fixed_tree(&root.join("cargo-home"), true).unwrap();
     for file in [&source, &lock, &manifest, &cargo] {
@@ -265,10 +266,13 @@ fn hash_name(value: &str, prefix: &str, suffix: &str) -> bool {
 
 fn known_name(name: &str, directory: bool, home: bool) -> bool {
     if home {
+        if directory {
+            return name == "registry";
+        }
         return !directory
             && matches!(
                 name,
-                ".package-cache" | ".package-cache-mutate" | ".global-cache"
+                ".package-cache" | ".package-cache-mutate" | ".global-cache" | "CACHEDIR.TAG"
             );
     }
     if directory {
@@ -297,6 +301,42 @@ fn known_name(name: &str, directory: bool, home: bool) -> bool {
         || [".rlib", ".rmeta"]
             .iter()
             .any(|suffix| hash_name(name, &format!("lib{PACKAGE}-"), suffix))
+}
+
+// Metadata-only discovery in this fixed fresh profile. Does not authorize
+// cleanup: the separate collector still refuses every unrecorded name.
+fn report_fixed_home_metadata(root: &Path) -> io::Result<()> {
+    let mut pending = vec![(root.to_path_buf(), 0_usize)];
+    let mut names = Vec::new();
+    while let Some((directory, depth)) = pending.pop() {
+        if depth > 4 {
+            return Err(io::Error::other("fixed Cargo home diagnostic depth"));
+        }
+        let _pin = pin_directory_chain(root, Some(directory.strip_prefix(root).unwrap()))
+            .map_err(io::Error::other)?;
+        for entry in fs::read_dir(&directory)? {
+            if names.len() == 16 {
+                return Err(io::Error::other("fixed Cargo home diagnostic count"));
+            }
+            let entry = entry?;
+            let meta = fs::symlink_metadata(entry.path())?;
+            names.push(
+                entry
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .chars()
+                    .take(160)
+                    .collect::<String>(),
+            );
+            if meta.is_dir() {
+                pending.push((entry.path(), depth + 1));
+            }
+        }
+    }
+    println!("PRIVATE_CARGO_HOME_METADATA: <=16 names, no file contents: {names:?}");
+    Ok(())
 }
 
 fn clean_fixed_tree(root: &Path, home: bool) -> io::Result<()> {
@@ -434,5 +474,12 @@ fn fixed_cargo_collection_rejects_unknown_aliases_and_oversize_before_deletion()
     fs::write(&artifact_lock, b"").unwrap();
     fs::write(root.join(".cargo-build-lock"), b"").unwrap();
     clean_fixed_tree(&root, false).unwrap();
+    assert!(!root.exists());
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(root.join("registry")).unwrap();
+    fs::write(root.join("registry/CACHEDIR.TAG"), b"fixed tag").unwrap();
+    fs::write(root.join(".package-cache"), b"").unwrap();
+    report_fixed_home_metadata(&root).unwrap();
+    clean_fixed_tree(&root, true).unwrap();
     assert!(!root.exists());
 }

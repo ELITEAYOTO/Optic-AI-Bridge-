@@ -110,3 +110,12 @@ recorded too. Unknown names remain a refusal, with no recursive cleanup fallback
 normal Cargo failure remains separate and red. Updated cleanup/revoke proof is
 still required. The lock split is also discussed in Cargo issue16853, but native
 observations, rather than an assumed version layout, determine this fixture set.
+
+At855be31, native CI39289488345/job118186101602 collected and removed21 known
+target files totaling3,733,832bytes, then refused the previously unrecorded
+Cargo-home registry directory. The fixture now records that exact directory and
+its standard CACHEDIR.TAG name. A separate read-only post-exit home diagnostic
+lists at most16 relative names/depth4 with no contents; it does not authorize
+cleanup. Collector traversal still refuses other unknown directories/products.
+Local home/target boundary fixtures and standalone NUL diagnostics pass. Overall
+prepared cleanup/revoke acceptance remains pending the updated CI run.
