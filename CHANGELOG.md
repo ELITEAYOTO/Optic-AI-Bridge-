@@ -16,6 +16,9 @@ All notable project changes are recorded here.
   versioned mutations, independent64KiB HTTP body cap, resume and fixed-viewer
   snapshot validation; no additional runtime or model-selected permissions.
 
+- Add explicit local CLI supervision of existing finite session/lease windows,
+  with terminal revoke/expiry and transport-EOF cleanup; default launches remain timed.
+
 - Read recovery journal records without write rights, preserving exclusive native
   identity/alias checks and separate write requirements for locking and appends.
 

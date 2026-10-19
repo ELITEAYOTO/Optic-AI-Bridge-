@@ -1,5 +1,15 @@
 # Project Status
 
+## Validated main/alpha alignment — 2026-10-19
+
+Main PR252/b33b1f9 promotes the finite-window local supervisor; exact PR and
+post-merge CI passed. Alpha PR251/13ffc50 adds exact localized text replacement;
+76 adapter cases and actual packaged32KiB HTTP/Rust acceptance passed. This
+ancestry-preserving integration keeps existing alpha runtime sources unchanged
+and adds the independently validated Rust stdio tests/ADR0031 and documentation.
+Combined exact-head CI remains required before integration. It does not promote
+the full experimental alpha or failed private-Electron research into main.
+
 ## Exact localized alpha replacement — candidate, 2026-10-19
 
 New adapter method optic_fs_replace composes the existing authorized read and
@@ -43,6 +53,15 @@ SDK checks, Node HTTP journey and same-project supervised resume passed.
 Combined-head CI, Rust compilation, pipes, preparation and alpha packaging passed
 atc8eb328; merged into alpha via PR247. Separate normal-Electron staging research
 still fails0x80000003; no production fallback or model GUI grant.
+
+## Core local supervision promotion — candidate, 2026-10-19
+
+Explicit CLI supervision renews only existing active session/lease scopes through
+finite monotonic windows and revokes on transport completion. Default launch stays
+timed. Native Rust stdio integration passed all three expiry/renewal/revoke/EOF
+cases; exact Windows/Linux CI remains required. No remote renewal tool, HTTP
+adapter, new process/GUI permission or automatic grant resurrection is added.
+See ADR-0031. This is a selective core integration, not the full alpha umbrella.
 
 ## Read-only recovery scan — candidate, 2026-10-18
 
