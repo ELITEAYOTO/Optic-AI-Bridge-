@@ -119,3 +119,24 @@ lists at most16 relative names/depth4 with no contents; it does not authorize
 cleanup. Collector traversal still refuses other unknown directories/products.
 Local home/target boundary fixtures and standalone NUL diagnostics pass. Overall
 prepared cleanup/revoke acceptance remains pending the updated CI run.
+
+## Completed disposable comparison at21ac09b
+
+Native CI39291321987/job118192403768 completed the prepared case with exit0.
+The actual offline check/test, deliberately failing assertion and corrected test,
+missing dependency refusal, source/lock verification, owned-tree quiescence,
+known output cleanup and explicit NUL revoke all passed. A fresh child observed
+the original profile access denial again after revoke. The collector removed21
+target files (3,733,831bytes) and4 Cargo-home files (57,521bytes).
+
+The independent normal case still returned101 for the same NUL denial. The
+workflow therefore remains red by design; this is a completed prepared research
+comparison, not a normal Windows Cargo acceptance or production setup feature.
+No device permissions were changed on the operator's PC.
+
+The operator approved developing an optional Windows preparation path on
+2026-10-19. That direction does not authorize applying a host change: the precise
+resource, profile identity, rights, lifetime and recovery mechanism must be
+reviewable separately before any local privileged application. The AI, project
+processes and ordinary core must remain unelevated. The test-only CI comparison
+must not be exposed as an installer or callable MCP operation.
