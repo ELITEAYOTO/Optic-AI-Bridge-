@@ -12,7 +12,7 @@ policy authorizes effects and Windows isolation contains supported processes.
 | --- | --- | --- |
 | Validated core | `main` | Scoped/versioned file operations, directory creation, Git primitives, owned process lifecycle, permissions and local session supervision |
 | FS generated-project alpha | [`alpha/generated-project-editing`](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/tree/alpha/generated-project-editing) | Remote editing, isolated Node check/test, explicit same-run resume and bounded diagnostic evidence on generated projects |
-| Active research | [Electron #250](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/250), [Cargo #255](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/255) | Native compatibility investigations; not general GUI/build/dependency permissions |
+| Compatibility evidence | [Electron #250](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/250), [Cargo #255](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/255) | Completed diagnostic scopes; remaining GUI/build/dependency gates are tracked in the roadmap |
 
 The core requires neither an embedded LLM nor Node, Python, Docker or Electron.
 An optional execution profile uses a separately installed runtime selected by

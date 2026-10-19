@@ -1,5 +1,12 @@
 # Changelog
 
+## Fixed offline Cargo research — 2026-10-20
+
+- Retain the test-only offline fixture, bounded known-output collector and exact-profile disposable NUL comparison; no installed core grant or general build tool.
+- Separate normal/prepared research acceptance jobs from standard direct-Rust CI; keep normal failure visible and never use a fallback.
+- Add an unrelated-profile denial control and retain the proposed optional Windows preparation/recovery contract.
+
+
 ## Native path boundary hardening — 2026-10-20
 
 - Reject unrepresentable native Windows paths during containment comparisons; prevent distinct UTF-16 root names from collapsing to the same replacement spelling.
