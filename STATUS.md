@@ -7,6 +7,11 @@ on directories leading to existing exact source read grants. Root/intermediate
 objects remain pinned; listing, sibling content and creation remain denied.
 Native Node and boundary checks passed, as did the full local Windows Rust
 suite and Clippy. Exact Windows/Linux CI remains required before merge. No private build, dependency, Electron or HTTP authority; ADR0032.
+Initial Windows CI failed during an unrelated Git fixture init with an existing
+hook path. The old clock-only root names could collide across parallel tests;
+fixture allocation now uses PID/sequence plus exclusive creation. All six
+merge tests, including16 concurrent identical-clock allocations, passed locally.
+The initial failed run remains evidence; exact updated CI is still required.
 
 ## Core local supervision promotion — candidate, 2026-10-19
 
