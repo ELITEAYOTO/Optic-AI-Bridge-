@@ -1173,3 +1173,13 @@ Interrupted batches return verified prior receipts and a failed index, without
 claiming rollback or that a failed write had no effect. Private build output
 capture, writable process grants and hard disk quotas are not implemented here.
 No MCP tool is added. Exact main-candidate CI/native proof required.
+
+
+### 2026-10-19: isolated station API diagnostic
+
+Owned test-only native helper collected HRESULT0x80070005 for both station
+creation access masks after a successful bounded DACL read locally. This is a
+separate probe, not Electron's own GetLastError or a compatibility repair.
+No user-station ACL, sandbox flags or production authority changed. Ordinary
+Windows suite29passed/6ignored and workspace all-target Clippy passed. Exact
+head CI remains required; normal private Electron gate remains failed.

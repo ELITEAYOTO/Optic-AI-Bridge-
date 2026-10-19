@@ -584,6 +584,92 @@ mod tests {
         )
     }
 
+    // Test-only API diagnostic: no switch, ACL mutation, desktop creation,
+    // default descriptor, handle inheritance, or model-facing authority.
+    fn probe_station_creation() {
+        use windows::Win32::{
+            Foundation::{GENERIC_READ, HANDLE},
+            Security::{
+                DACL_SECURITY_INFORMATION, GetUserObjectSecurity, PSECURITY_DESCRIPTOR,
+                SECURITY_ATTRIBUTES,
+            },
+            System::StationsAndDesktops::{
+                CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
+            },
+        };
+        use windows::core::PCWSTR;
+        // SAFETY: borrowed current-process station; never closed or modified.
+        let station = match unsafe { GetProcessWindowStation() } {
+            Ok(station) => station,
+            Err(error) => {
+                println!("STATION_API get_current_error={:?}", error.code());
+                return;
+            }
+        };
+        // Aligned fixed buffer; retain descriptor storage through both calls.
+        let mut descriptor = [0u32; 16 * 1024];
+        let mut needed = 0;
+        // SAFETY: valid borrowed handle, writable aligned 64 KiB storage and
+        // size output. Only the DACL is requested, never SACL or its contents logged.
+        let query = unsafe {
+            GetUserObjectSecurity(
+                HANDLE(station.0),
+                &DACL_SECURITY_INFORMATION.0,
+                Some(PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast())),
+                std::mem::size_of_val(&descriptor) as u32,
+                &mut needed,
+            )
+        };
+        if let Err(error) = query {
+            println!(
+                "STATION_API query_error={:?} required_bytes={needed}",
+                error.code()
+            );
+            return;
+        }
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor.as_mut_ptr().cast(),
+            bInheritHandle: false.into(),
+        };
+        // Chromium's two access masks. Capture each error in the calling child,
+        // before another Windows call can replace its thread-local last error.
+        for (label, access) in [("generic", GENERIC_READ.0 | 0x8), ("reduced", 0x2 | 0x8)] {
+            // SAFETY: OS-generated name, copied current DACL, no inherited handle.
+            // Never SetProcessWindowStation; successful handles are closed here.
+            match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) } {
+                Ok(created) => {
+                    // SAFETY: only our returned reference, not the borrowed station.
+                    let closed = unsafe { CloseWindowStation(created) };
+                    println!(
+                        "STATION_API access={label} created=true closed={}",
+                        closed.is_ok()
+                    );
+                    assert!(closed.is_ok(), "close diagnostic station reference");
+                }
+                Err(error) => println!("STATION_API access={label} error={:?}", error.code()),
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "native owned AppContainer station API diagnostic"]
+    fn private_station_api_diagnostic() {
+        let profile = AppContainerProfile::create_ephemeral().expect("ephemeral profile");
+        let private = profile.profile_storage_path_for_tests();
+        let probe = private.join("station-api-probe.exe");
+        let _probe_cleanup = Cleanup(probe.clone());
+        let _config_cleanup = Cleanup(private.join(PROBE_CONFIG));
+        fs::copy(std::env::current_exe().unwrap(), &probe).expect("copy owned probe");
+        let output = run_workspace_probe(&profile, &probe, &private, "station-api");
+        println!("{}", output.diagnostic());
+        assert_eq!(output.exit_code, 0, "{}", output.diagnostic());
+        assert!(
+            output.stdout.contains("STATION_API "),
+            "missing native observation"
+        );
+    }
+
     #[test]
     fn appcontainer_workspace_probe_child() {
         let exact_child = std::env::args().any(|arg| arg == "--exact");
@@ -602,6 +688,7 @@ mod tests {
         );
 
         match mode {
+            "station-api" => probe_station_creation(),
             "metadata" => {
                 // Request only the declared attribute rights. std::fs::metadata
                 // may use a broader directory-open fallback under AppContainer.

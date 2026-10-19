@@ -74,3 +74,32 @@ this as universal access denied or presume that an ACL/desktop switch repairs it
 The explicit outer-only comparison passes in that same job; the normal gate
 remains red and no fallback is enabled. This comparison is evidence from the
 code head28d0ecf; later documentation commits do not imply new native execution.
+
+
+## Separate native station API observation (2026-10-19)
+
+A new ignored test runs a fixed helper in its own ephemeral AppContainer and
+kill-on-close job, with the existing bounded output and ten-second deadline.
+It reads only the current station DACL into an aligned fixed64KiB buffer, then
+attempts the two Chromium access masks with that copied self-relative descriptor.
+It records each Windows HRESULT in the calling child, not the debugger thread.
+This is a separate API experiment: Chromium reconstructs an absolute descriptor;
+this helper does not reproduce Electron's full token/startup/security state.
+
+The local native run observed successful current-station/DACL queries, followed
+by HRESULT0x80070005 (Win32 access denied) for both GENERIC_READ|WINSTA_CREATEDESKTOP
+and WINSTA_READATTRIBUTES|WINSTA_CREATEDESKTOP. The child exited0 and the job was
+drained. A passing observation test only means its evidence was collected; the
+normal Electron compatibility gate remains failed. These results support an
+access-denial hypothesis locally but do not directly capture Electron's native
+GetLastError, explain CI's desktop-stage failure, or establish a safe repair.
+
+No current-station ACL is changed. No default descriptor, desktop creation,
+SetProcessWindowStation, inherited station handle or production GUI authority is
+introduced. Any returned station reference is closed immediately; the borrowed
+current-station handle is never closed. Windows generates the requested name;
+existing-object references, if returned, are not treated as newly owned objects.
+The feature is a Windows test-only dependency. The dedicated Windows workflow
+collects this observation before its unchanged Electron compatibility gate.
+
+API contract: [CreateWindowStationW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw).

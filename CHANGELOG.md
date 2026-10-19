@@ -4,6 +4,9 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+- Add an owned test-only station API observation with bounded descriptor storage
+  and same-thread native errors, without changing user-desktop permissions.
+
 - Add a bounded test-only owned-primary-thread integer diagnostic to localize
   Electron's existing alternate-window-station startup failure without changing
   sandbox flags, exception handling or model authority.
