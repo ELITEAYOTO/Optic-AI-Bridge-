@@ -1,0 +1,1509 @@
+{
+  "date": "2026-10-20",
+  "state": "completed_after_explicit_operator_approval",
+  "retained_branches": [
+    "main",
+    "alpha/generated-project-editing",
+    "diagnostics/electron-primary-result",
+    "experiment/private-offline-cargo"
+  ],
+  "baseline_main": "e1b82888dcf9c079740777be27341ca943758859",
+  "baseline_alpha": "a553645760544b65e15ad0ed65bf6099b1d3f646",
+  "backup_bundle": "optic-before-cleanup-2026-10-20.bundle",
+  "backup_sha256": "9dcc080fe0459cd45c51aa7f3f4cfb160bedee1916d3b7843d296ddec8c6bf5c",
+  "closed_prs": [
+    {
+      "number": 223,
+      "head": "a553645760544b65e15ad0ed65bf6099b1d3f646",
+      "branch": "alpha/generated-project-editing",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 222,
+      "head": "fa8ec2cccbf46ae2a38ea9c93ec13f387c645d9f",
+      "branch": "experiment/public-root-identity-check",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 221,
+      "head": "691d8bf932c3f1bc88bbd0feb54556a9be73897d",
+      "branch": "experiment/public-root-selection-proof",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 220,
+      "head": "10195c22c6df89b50e275728e17a986defc51da5",
+      "branch": "experiment/root-relative-public-pair",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 219,
+      "head": "9f7dd2d20d92ad24516cb190dad26e25aef27954",
+      "branch": "experiment/native-public-pair-pin",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 218,
+      "head": "30204c1f7cc86f676f07ef0e8e64343906164993",
+      "branch": "experiment/public-confirmed-work-scope",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 217,
+      "head": "40388b711987051a5c813276dc008d7ed690e24f",
+      "branch": "experiment/public-successor-admission",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 216,
+      "head": "e9b4cc133f69a331c436c0227271d438daf550a5",
+      "branch": "experiment/public-successor-seal-reader",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 215,
+      "head": "c7e87923a22a930234e1e8f1fac4b6e24d43ea31",
+      "branch": "experiment/create-only-successor-election",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 214,
+      "head": "952d4235500e2404eb0a61edf241f2820a310b8d",
+      "branch": "experiment/native-replacement-gap-proof",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 213,
+      "head": "a64d21bb60c63fe37db8943ac67932e5082cd4f9",
+      "branch": "experiment/native-initial-publication",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 212,
+      "head": "85c0c1b7e45fd927ce28adb365e11e3a6cea87f0",
+      "branch": "experiment/native-private-scratch-composition",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 211,
+      "head": "1f8591e1ec0dc6d0e65b28a381e434b6638aa480",
+      "branch": "experiment/native-root-relative-pending",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 210,
+      "head": "1b3bf39ed8c6d061c1b76bb0cd8f86a27a06d910",
+      "branch": "experiment/native-fixed-pending-create",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 209,
+      "head": "c254719cddb7f8933dbf0c074fb4b511ad237388",
+      "branch": "experiment/native-fixed-writer-pin",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 208,
+      "head": "427ae35cfad2243017ccc4adb8d738aec463f9e8",
+      "branch": "research/fixed-read-francestudent-evidence",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 207,
+      "head": "de50e50bcf63bb2b9075eecae9058ff4ad9df417",
+      "branch": "experiment/fixed-read-host-package",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 206,
+      "head": "f3ab4fed12bdb8509c848d531f9216d0da546de5",
+      "branch": "experiment/fixed-read-http-link",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 205,
+      "head": "c827f7adf55ee095233bf9c1edbf40c701c34809",
+      "branch": "experiment/bounded-real-link-forward",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 204,
+      "head": "1b450c2fb4b55d764c2c2aac549fecbaa2261455",
+      "branch": "design/single-session-alpha-scope",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 203,
+      "head": "1cf092f0fa43ea40ac2e26189fcfefee753d4e2c",
+      "branch": "experiment/private-dummy-fixture-creation",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 202,
+      "head": "8b8a7d80ff06e31184310e077fe8fa39f5e0643c",
+      "branch": "experiment/native-fixture-security-observation",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 201,
+      "head": "fec8456f4f78b7f86130037c42cf9a7fc6e82c17",
+      "branch": "research/francestudent-sdk-contract",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 200,
+      "head": "ad127fa67340d25e4600151cc546b8445ae2c1ff",
+      "branch": "experiment/native-protected-fixture-read",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 199,
+      "head": "baa42115ee29f9cdbc22bb715e79676f7788b58a",
+      "branch": "experiment/dummy-protection-purpose",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 198,
+      "head": "8b17b88617e7949c43211b4f1e9e7fa1db664c10",
+      "branch": "experiment/protected-registry-state-validation",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 197,
+      "head": "fc0e8c320eff91b437d9bac1dfcb820beaf5500e",
+      "branch": "experiment/protected-dummy-registry",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 196,
+      "head": "0ab2916cc55f7c1e0e621319747f9185ef76a26a",
+      "branch": "experiment/windows-dummy-protection",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 195,
+      "head": "de3ea457d81e241b6aa2c5208442b9198b2f1f2e",
+      "branch": "experiment/grouped-parallel-probe",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 194,
+      "head": "8db9a889f4c247dffaa4a62de9f9aec2a6e8d449",
+      "branch": "experiment/bounded-proof-channel",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 193,
+      "head": "ac2025482b9821e59119a7f0fec927ef8ac30363",
+      "branch": "experiment/idempotent-session-probe",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 192,
+      "head": "1b82333225e491da44c61d38fc740e51a671fd55",
+      "branch": "experiment/synthetic-session-resolver",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 191,
+      "head": "a12ad5d1bad7e83e1db32d4a3470c5852713b1b7",
+      "branch": "experiment/rate-host-probe",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 190,
+      "head": "f2216befe6c0c5e3fc373763b8c87da3e1fbd35e",
+      "branch": "experiment/bounded-rate-proof",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 189,
+      "head": "99bdeeca7fbe7dd88c1c3e4c30756d1b124c8e76",
+      "branch": "experiment/persistent-dummy-auth",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 188,
+      "head": "c9f00d9deaa28056107cb05c2d9e0d1524710978",
+      "branch": "experiment/epoch-bound-handle-probe",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 187,
+      "head": "d27500b79a1ca4206bde602b2109cb43a7517e93",
+      "branch": "experiment/dummy-credential-lifecycle",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 186,
+      "head": "106c98939c2c463fea0b2c984d6087b017993017",
+      "branch": "experiment/francestudent-header-handle",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 178,
+      "head": "ef5bc84144670135d13f55a59a782611aeae762f",
+      "branch": "experiment/real-optic-mcp-link",
+      "contained_in_alpha": false
+    },
+    {
+      "number": 170,
+      "head": "d8ebc0b5d7f46ce61a9aad737bc64690b7ca584b",
+      "branch": "h01/host-capability-probe",
+      "contained_in_alpha": true
+    },
+    {
+      "number": 169,
+      "head": "bb3ff5b5fccf25654b43b32674b93ec0a2966a29",
+      "branch": "docs/host-autonomy-roadmap-2026-10-10",
+      "contained_in_alpha": false
+    }
+  ],
+  "branch_retirement_plan": [
+    {
+      "branch": "a05a-handle-first-file-read",
+      "sha": "0fe7604438b75a11c329a1065f4ad40e19fb8d68",
+      "retained_by": "merged PR#134; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a05b-pin-process-cwd",
+      "sha": "0e7858175ef07ee8add2e4b27a7ceeb12a0c8a87",
+      "retained_by": "merged PR#135; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a06a-session-renewal-primitives",
+      "sha": "5046864b55a9d7f9823e5789ea95963cf664b95b",
+      "retained_by": "merged PR#136; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a07-approval-broker",
+      "sha": "8f0188055cd0e0c2a49049931871b4cc8ad0b975",
+      "retained_by": "merged PR#113; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a07b-approval-lifecycle",
+      "sha": "c68cc5cff460272c08eb7d60e9b7aeac7acb8685",
+      "retained_by": "merged PR#114; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a07c-approval-elicitation",
+      "sha": "6d67eba2e965f9377462b8cd95e0bac3de2df465",
+      "retained_by": "merged PR#115; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a07d-approval-binding",
+      "sha": "bd2ab6a24d0d482df7eb79e8dc29d19848da74ff",
+      "retained_by": "merged PR#116; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08b-reusable-approval-broker",
+      "sha": "e9536ff6552e156e66a8d79aad2ea1f7c9505137",
+      "retained_by": "merged PR#157; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08b2-session-reusable-approval-lifecycle",
+      "sha": "5f17f25e386e3ed4268d9f50f00198a092617bfb",
+      "retained_by": "merged PR#158; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08b3-reusable-approval-lifecycle-cleanup",
+      "sha": "98cc022e126a63e9262838522032c77b1cd3543d",
+      "retained_by": "merged PR#159; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08c1-reusable-profile-admission",
+      "sha": "4c002c481561d443049022a99c2f67229983d22e",
+      "retained_by": "merged PR#161; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08c2-profiled-process-reuse",
+      "sha": "6305413c45ed2dfa1fbe2e28264022460150d88d",
+      "retained_by": "merged PR#162; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08d0-strict-jsonrpc-framing",
+      "sha": "415a13e190cb6033c362d94b9be47cc799a3957d",
+      "retained_by": "merged PR#164; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08d1-profile-approval-choice",
+      "sha": "79cfbca06427afd6932b62a783954c47e24a0abd",
+      "retained_by": "merged PR#165; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08d2-issue-session-profile-approval",
+      "sha": "30d4d82ca830e8d66337fbfc3715343c32f73652",
+      "retained_by": "merged PR#166; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a08e-desktop-reusable-approval-proof",
+      "sha": "3536dcb770bc504db6c0b1502f4e2182d061eb21",
+      "retained_by": "merged PR#168; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a09a-read-search-scope-types",
+      "sha": "1d3aa5ca9e3eb505e60a4e1c010b563908184345",
+      "retained_by": "merged PR#126; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a09b-read-search-authority",
+      "sha": "349716b4f283666aa336d84840f12f9fa44f3e34",
+      "retained_by": "merged PR#127; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a09c-enforce-read-search-leases",
+      "sha": "4223f31becb7aa34beae16e5e943057d2c253705",
+      "retained_by": "merged PR#128; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a10a-hardened-command-runner-foundation",
+      "sha": "66401c627b0f1502f0cd70fcd5d726d92898963e",
+      "retained_by": "merged PR#129; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a10b-harden-git-integration",
+      "sha": "b87a9b6041397733c7d45f2d9fbef7d50c51a7c8",
+      "retained_by": "merged PR#130; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a11a-bounded-blocking-io",
+      "sha": "1453beebd26eaf9e89368873fe352004cbba77d6",
+      "retained_by": "merged PR#133; exact GitHub pull head retained"
+    },
+    {
+      "branch": "a12a-versioned-persistent-config",
+      "sha": "28cc164bd30b9af3a88324fe7d4fca550caf9e03",
+      "retained_by": "merged PR#137; exact GitHub pull head retained"
+    },
+    {
+      "branch": "alpha/configurable-file-budget",
+      "sha": "1ee52a332f011c9ae65d5ba1a072f5a9d371665d",
+      "retained_by": "merged PR#248; exact GitHub pull head retained"
+    },
+    {
+      "branch": "alpha/persisted-tool-checkpoint",
+      "sha": "fc1a58f059b5aa4c37d09c8b5d95c0977d74f53d",
+      "retained_by": "merged PR#249; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01a-tool-profile-model",
+      "sha": "1d49512626f60aada7cc5a76c332370d02039af0",
+      "retained_by": "merged PR#117; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01b-tool-profile-policy",
+      "sha": "b51087370b4fd61cf66ee0895244a0048a402b53",
+      "retained_by": "merged PR#118; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01c-tool-profile-resolution",
+      "sha": "9ce5fcc21cf75b365e29083130853c07848f6cc7",
+      "retained_by": "merged PR#119; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01d-mcp-profiled-process",
+      "sha": "5a2c9e206135bc17644276152513c239bb1d44d8",
+      "retained_by": "merged PR#120; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01e-tool-profile-config",
+      "sha": "b5b8beb4b77df41f4cf79cbe6b1fb5da79237b83",
+      "retained_by": "merged PR#121; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b01f-profiled-node-smoke",
+      "sha": "426b32033929a4466bb78dba20c97c2c2b0520a1",
+      "retained_by": "merged PR#123; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b02-network-containment-characterization",
+      "sha": "4a96ff09b95d98eb9ddba905224570ee48842bc8",
+      "retained_by": "merged PR#109; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b02b-fixedtool-network-containment",
+      "sha": "632db6d455f07d6d1e3e12a917b487f85a665c91",
+      "retained_by": "merged PR#112; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b08-strict-mcp-schemas",
+      "sha": "98941ea4e2a383e0ba698ee782b887dc9597d7d3",
+      "retained_by": "merged PR#122; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b09-realistic-mutation-frame-limit",
+      "sha": "4f50f6b7fc9a3966c4a5c142dc489319fc3d242f",
+      "retained_by": "merged PR#124; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b10-bounded-response-serializer",
+      "sha": "75002dfa7060837355b859e731862486cf7ee4e8",
+      "retained_by": "merged PR#125; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b14a-classified-environment-grants",
+      "sha": "34d0ecc3265ea38ec6484163c478067a8aa1f322",
+      "retained_by": "merged PR#131; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b14b-operator-environment-grants",
+      "sha": "4bb98a05f74b1d58dad1b61d7aa50ed6f62f824a",
+      "retained_by": "merged PR#132; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b15-read-target-observation",
+      "sha": "6045e29419ab74300dda6f61498f2d388d0c7046",
+      "retained_by": "merged PR#140; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b16-pin-github-actions",
+      "sha": "d741aa67f9a603d12e2b524cabd662e634f126b9",
+      "retained_by": "merged PR#138; exact GitHub pull head retained"
+    },
+    {
+      "branch": "b17-version-source-of-truth",
+      "sha": "f12f7d78c01a4c37b2fdb60e8c5fd0708228af97",
+      "retained_by": "merged PR#139; exact GitHub pull head retained"
+    },
+    {
+      "branch": "bootstrap/phase-0-foundation",
+      "sha": "7f7c211d2732c7c4b7a099d66562e405d62e6dd5",
+      "retained_by": "merged PR#1; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/artifact-publication",
+      "sha": "1e332e971749f347a128f0f659eb77470351ba5b",
+      "retained_by": "merged PR#232; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/directory-creation",
+      "sha": "5d563e9216ff1962b232ff0fd79f2308252ebcd2",
+      "retained_by": "merged PR#234; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/exclusive-read-output-file",
+      "sha": "767b8e7f3934130a0445f8621a4d05e4e7a73141",
+      "retained_by": "merged PR#240; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/explicit-native-environment",
+      "sha": "388de9b40028c207263e70cc2c8827227f92ce74",
+      "retained_by": "merged PR#230; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/journaled-private-node",
+      "sha": "134f905575e3e18729b7c744f6cd57119ed0e35e",
+      "retained_by": "merged PR#231; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/operator-permission-switches",
+      "sha": "c7d14adc81d0303969a37cf305bf93925ac4524b",
+      "retained_by": "merged PR#237; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/owned-native-process-pipes",
+      "sha": "4121515b321fbfc8204c67e73d4b9bb0f642940b",
+      "retained_by": "merged PR#227; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/owned-native-watchdog",
+      "sha": "017242ea96574ef3882effe9ed9e1f2aa898fc71",
+      "retained_by": "merged PR#229; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/private-project-input-preparation",
+      "sha": "78a45aa1e390af5a2aa2ab08caff6dbc6f7ca11e",
+      "retained_by": "merged PR#225; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/private-project-owner-worker",
+      "sha": "2baa1385e2ab42a365dfa666ad957bf0b381e38c",
+      "retained_by": "merged PR#226; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/private-rust-ir",
+      "sha": "c03a6ac54644ede0b344a6aece650d7130058663",
+      "retained_by": "merged PR#235; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/private-state-primitives",
+      "sha": "dc0bc181d43d743818bf8b5c8473259d4367448f",
+      "retained_by": "merged PR#228; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/project-input-capture",
+      "sha": "72c06c4681769bf873b817cc67d976407c14a81a",
+      "retained_by": "merged PR#224; exact GitHub pull head retained"
+    },
+    {
+      "branch": "core/task-event-timeline",
+      "sha": "a0e5fb9cdf37f1ab56c42f5653926336c8f3f06d",
+      "retained_by": "merged PR#233; exact GitHub pull head retained"
+    },
+    {
+      "branch": "design/single-session-alpha-scope",
+      "sha": "1b450c2fb4b55d764c2c2aac549fecbaa2261455",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "docs-a08b-closure",
+      "sha": "046806c2b00ee8e94e6a39cae5a3382ec06d3ff8",
+      "retained_by": "merged PR#160; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-a08c-closure",
+      "sha": "c7bbedca14cde60246291b63739e05332d4a57c2",
+      "retained_by": "merged PR#163; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-a08d-closure",
+      "sha": "e44df55b6d92faedb98d1ba1c72cce684bf404ab",
+      "retained_by": "merged PR#167; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-b02a-network-characterization",
+      "sha": "46d069e609ab7538fe578a582df22342ecaa3dc0",
+      "retained_by": "merged PR#110; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-close-phase2d3-desktop-smoke",
+      "sha": "c7264c3819a972e63d3c30937d079926a853cc55",
+      "retained_by": "merged PR#49; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-close-phase3b3",
+      "sha": "275173f1e1c37f00cdd15b1b9c4885ba79d8598c",
+      "retained_by": "merged PR#54; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-close-phase3c1",
+      "sha": "0b3ca84740184219035d6328b29b48242db58b24",
+      "retained_by": "merged PR#56; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-close-phase3c2",
+      "sha": "610aa28920eddd04b0cf220e7815e537fdd52913",
+      "retained_by": "merged PR#58; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs-phase3e3-heavy-workload-slots",
+      "sha": "66583d2d96c46a8a84e75de039af07e4b871d3c3",
+      "retained_by": "merged PR#108; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/audit-followup-2026-10-08",
+      "sha": "92132f9211ac9c3eb0aa093ae73bbf3908331898",
+      "retained_by": "merged PR#81; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2b",
+      "sha": "fcf560701c256855a525adfc0904ec8c7a0ac7d4",
+      "retained_by": "merged PR#14; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c1",
+      "sha": "21fe350231bcd945e6af18ffd8ec6fce696313e7",
+      "retained_by": "merged PR#17; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c2",
+      "sha": "4d50af3ee24f7ed93dc009bab1b2cd4ae8d8cc5d",
+      "retained_by": "merged PR#19; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3a",
+      "sha": "2a14c31729267be616f4372ce3769687730d7ba4",
+      "retained_by": "merged PR#21; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3b1",
+      "sha": "55b64451e2d9e3738e45781f6bbf6fd4e915b5cf",
+      "retained_by": "merged PR#23; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3b2",
+      "sha": "7bc01ae67cfa850968e59d446c8e92e492ca92ac",
+      "retained_by": "merged PR#25; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3c",
+      "sha": "476cbdbfc765802e973161d3c5194bdc716ec204",
+      "retained_by": "merged PR#31; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3c1",
+      "sha": "7ec717481b2776dce53f8033d02ef6046b35e477",
+      "retained_by": "merged PR#28; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase-2c3c2",
+      "sha": "75477c3beec7df8ebab6fe83221f7def594f5437",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "docs/close-phase-2d1",
+      "sha": "1cb3cc03e44a40b98e2b047b31695fe29b490171",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "docs/close-phase-2d2",
+      "sha": "b6afc075c0a55bda4e531355acc5283dfd1ac507",
+      "retained_by": "merged PR#34; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-phase2d3-packaging",
+      "sha": "1054e3dda158b8cbe38054c43cff9568ebea3428",
+      "retained_by": "merged PR#48; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/close-windows-smoke-2026-10-04",
+      "sha": "84d3831aa6124ece503928269da6de55e12d9d60",
+      "retained_by": "merged PR#39; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/fix-quick-install-headings",
+      "sha": "0d4b7920a977297a91120b7c031b6c79480cc4f2",
+      "retained_by": "merged PR#38; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/francestudent-measured-evidence",
+      "sha": "bbc195aef694f3b0e85d4395b9a3f3cda04b850b",
+      "retained_by": "merged PR#246; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/host-autonomy-roadmap-2026-10-10",
+      "sha": "bb3ff5b5fccf25654b43b32674b93ec0a2966a29",
+      "retained_by": "archive/pr-169-2026-10-20"
+    },
+    {
+      "branch": "docs/native-build-checkpoint",
+      "sha": "a15225bdaaa574481cb1c7e081191a3309d33397",
+      "retained_by": "merged PR#243; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/phase-0-1-complete",
+      "sha": "3332540961703202548ac0881f23bbf29193ae9c",
+      "retained_by": "merged PR#3; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/phase-1-complete",
+      "sha": "991ecf29c973f5bd1d1df0eff3fd0320d2d0b73b",
+      "retained_by": "merged PR#8; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/phase-2a-complete",
+      "sha": "991c4f83b50e047246218f68cd285255733fc67c",
+      "retained_by": "merged PR#11; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/sync-runtime-2026-10-04",
+      "sha": "4d69afa42f5cba2922baa2775c8d2c5fd5e7a8d2",
+      "retained_by": "merged PR#36; exact GitHub pull head retained"
+    },
+    {
+      "branch": "docs/windows-smoke-readiness",
+      "sha": "379b8b9e3d6f8517e7dacabd41fc8d4cd5b7a16d",
+      "retained_by": "merged PR#35; exact GitHub pull head retained"
+    },
+    {
+      "branch": "experiment/bounded-proof-channel",
+      "sha": "8db9a889f4c247dffaa4a62de9f9aec2a6e8d449",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/bounded-rate-proof",
+      "sha": "f2216befe6c0c5e3fc373763b8c87da3e1fbd35e",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/bounded-real-link-forward",
+      "sha": "c827f7adf55ee095233bf9c1edbf40c701c34809",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/create-only-successor-election",
+      "sha": "c7e87923a22a930234e1e8f1fac4b6e24d43ea31",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/dummy-credential-lifecycle",
+      "sha": "d27500b79a1ca4206bde602b2109cb43a7517e93",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/dummy-protection-purpose",
+      "sha": "baa42115ee29f9cdbc22bb715e79676f7788b58a",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/epoch-bound-handle-probe",
+      "sha": "c9f00d9deaa28056107cb05c2d9e0d1524710978",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/fixed-read-host-package",
+      "sha": "de50e50bcf63bb2b9075eecae9058ff4ad9df417",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/fixed-read-http-link",
+      "sha": "f3ab4fed12bdb8509c848d531f9216d0da546de5",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/francestudent-header-handle",
+      "sha": "106c98939c2c463fea0b2c984d6087b017993017",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/grouped-parallel-probe",
+      "sha": "de3ea457d81e241b6aa2c5208442b9198b2f1f2e",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/idempotent-session-probe",
+      "sha": "ac2025482b9821e59119a7f0fec927ef8ac30363",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-fixed-pending-create",
+      "sha": "1b3bf39ed8c6d061c1b76bb0cd8f86a27a06d910",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-fixed-writer-pin",
+      "sha": "c254719cddb7f8933dbf0c074fb4b511ad237388",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-fixture-security-observation",
+      "sha": "8b8a7d80ff06e31184310e077fe8fa39f5e0643c",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-initial-publication",
+      "sha": "a64d21bb60c63fe37db8943ac67932e5082cd4f9",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-private-scratch-composition",
+      "sha": "85c0c1b7e45fd927ce28adb365e11e3a6cea87f0",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-protected-fixture-read",
+      "sha": "ad127fa67340d25e4600151cc546b8445ae2c1ff",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-public-pair-pin",
+      "sha": "9f7dd2d20d92ad24516cb190dad26e25aef27954",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-replacement-gap-proof",
+      "sha": "952d4235500e2404eb0a61edf241f2820a310b8d",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/native-root-relative-pending",
+      "sha": "1f8591e1ec0dc6d0e65b28a381e434b6638aa480",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/persistent-dummy-auth",
+      "sha": "99bdeeca7fbe7dd88c1c3e4c30756d1b124c8e76",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/private-dummy-fixture-creation",
+      "sha": "1cf092f0fa43ea40ac2e26189fcfefee753d4e2c",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/private-rust-native-roundtrip",
+      "sha": "b1347863bec2b04d0361771bc56fa6a4f927e2e2",
+      "retained_by": "merged PR#241; exact GitHub pull head retained"
+    },
+    {
+      "branch": "experiment/private-rust-output-proof",
+      "sha": "bac1a8c6e4f6f3c52e077a5b044613ed20d7eee2",
+      "retained_by": "merged PR#239; exact GitHub pull head retained"
+    },
+    {
+      "branch": "experiment/private-rust-std-roundtrip",
+      "sha": "87d2a88d3ffd4dcdbb35e0fbfa2211de2ac39554",
+      "retained_by": "merged PR#242; exact GitHub pull head retained"
+    },
+    {
+      "branch": "experiment/protected-dummy-registry",
+      "sha": "fc0e8c320eff91b437d9bac1dfcb820beaf5500e",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/protected-registry-state-validation",
+      "sha": "8b17b88617e7949c43211b4f1e9e7fa1db664c10",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/public-confirmed-work-scope",
+      "sha": "30204c1f7cc86f676f07ef0e8e64343906164993",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/public-root-identity-check",
+      "sha": "fa8ec2cccbf46ae2a38ea9c93ec13f387c645d9f",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/public-root-selection-proof",
+      "sha": "691d8bf932c3f1bc88bbd0feb54556a9be73897d",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/public-successor-admission",
+      "sha": "40388b711987051a5c813276dc008d7ed690e24f",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/public-successor-seal-reader",
+      "sha": "e9b4cc133f69a331c436c0227271d438daf550a5",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/rate-host-probe",
+      "sha": "a12ad5d1bad7e83e1db32d4a3470c5852713b1b7",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/real-optic-mcp-link",
+      "sha": "ef5bc84144670135d13f55a59a782611aeae762f",
+      "retained_by": "archive/pr-178-2026-10-20"
+    },
+    {
+      "branch": "experiment/root-relative-public-pair",
+      "sha": "10195c22c6df89b50e275728e17a986defc51da5",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/synthetic-session-resolver",
+      "sha": "1b82333225e491da44c61d38fc740e51a671fd55",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "experiment/windows-dummy-protection",
+      "sha": "0ab2916cc55f7c1e0e621319747f9185ef76a26a",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "feat/alpha-exact-text-replace",
+      "sha": "07dc246b083feeb2f909953f9bd0cb5e4763fb83",
+      "retained_by": "merged PR#251; exact GitHub pull head retained"
+    },
+    {
+      "branch": "feat/chatgpt-desktop-quick-install",
+      "sha": "e33ae8cd0fe04ff64497ef00816c8583a881bc3f",
+      "retained_by": "merged PR#37; exact GitHub pull head retained"
+    },
+    {
+      "branch": "feat/core-node-metadata",
+      "sha": "837fa30c0251f7b577a0251dc34080ad78718ffb",
+      "retained_by": "merged PR#254; exact GitHub pull head retained"
+    },
+    {
+      "branch": "feat/core-operator-supervision",
+      "sha": "2b9badf6050fb446f1471393f42b975f5dda1ca4",
+      "retained_by": "merged PR#252; exact GitHub pull head retained"
+    },
+    {
+      "branch": "feature/private-task-recovery-correlation",
+      "sha": "cbf545563afa421bd1fa3183884328b96e015583",
+      "retained_by": "merged PR#244; exact GitHub pull head retained"
+    },
+    {
+      "branch": "fix/fs-list-canonical-authority",
+      "sha": "156653a406f01383e2fc14cada513963453b04f3",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "fix/read-only-recovery-scan",
+      "sha": "d317c1ee9d072b09d3580b570066e208c61e0e01",
+      "retained_by": "merged PR#245; exact GitHub pull head retained"
+    },
+    {
+      "branch": "h01/host-capability-probe",
+      "sha": "d8ebc0b5d7f46ce61a9aad737bc64690b7ca584b",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "hardening-doctor-startup-timeout",
+      "sha": "206017c2bc31aaa579f95cd5ebb99724364a1741",
+      "retained_by": "merged PR#111; exact GitHub pull head retained"
+    },
+    {
+      "branch": "hardening/phase-0-1-contracts",
+      "sha": "99dbcf2305c87991e91064fb17e334e1dccdab9d",
+      "retained_by": "merged PR#2; exact GitHub pull head retained"
+    },
+    {
+      "branch": "integration/alpha-main-recovery",
+      "sha": "c8eb32860a20ba6f6fbc883546eb0db5138499ca",
+      "retained_by": "merged PR#247; exact GitHub pull head retained"
+    },
+    {
+      "branch": "integration/alpha-node-metadata",
+      "sha": "d00e212b95d0839a37ae0646ae438e6b0231afb7",
+      "retained_by": "merged PR#256; exact GitHub pull head retained"
+    },
+    {
+      "branch": "integration/main-supervision-alpha",
+      "sha": "581442e1a99a22b73fb18ac860f417c7ec632fe0",
+      "retained_by": "merged PR#253; exact GitHub pull head retained"
+    },
+    {
+      "branch": "noop-check",
+      "sha": "aee4f1680caed967d4677cd4ff635f3fce9f1f6a",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "phase-1/mcp-readonly-adapter",
+      "sha": "d61ff2128257ec6e7e6857106c68f7a66a9b9959",
+      "retained_by": "merged PR#5; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-1/process-lifecycle",
+      "sha": "3be92c8cdc9de8ee4c7682222461bacbb63f687a",
+      "retained_by": "merged PR#6; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-1/runtime-foundation",
+      "sha": "c631884d08a5fca6d388bc89dbde62cfec522697",
+      "retained_by": "merged PR#4; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-1/windows-job-limits",
+      "sha": "40f6eec7e67200df9215abc376231ed2eabb0746",
+      "retained_by": "merged PR#7; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/action-id-binding",
+      "sha": "ae05d6a25f7eeec18a7c0f1339fede96d709e5cb",
+      "retained_by": "merged PR#27; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/atomic-mutation-commit",
+      "sha": "45c1a11783a7e581ee330a2de5f780a5d9db9175",
+      "retained_by": "merged PR#13; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/authorized-file-mutations",
+      "sha": "fcd1a6aa3a15762fbfb8bd7933e6ea758471d8fe",
+      "retained_by": "merged PR#26; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/git-read-adapter",
+      "sha": "54951225f70a95dd736ed863029ff122db7e0aa3",
+      "retained_by": "merged PR#33; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/git-read-foundation",
+      "sha": "ed3b5c43acb967b9ad54fb6291dfb8f139bd9e67",
+      "retained_by": "merged PR#32; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/journaled-commit-crash",
+      "sha": "fdfc3ace00a95c7cf71f907fa22e38ddb691a9f0",
+      "retained_by": "merged PR#18; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/mcp-file-mutations",
+      "sha": "f70e520becf8acfff46cce15a1b015edf9d675e5",
+      "retained_by": "merged PR#30; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/mutation-authority-provisioning",
+      "sha": "650ebc1cec4841efb9fb9033f2ecbdab3f110ff4",
+      "retained_by": "merged PR#29; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/mutation-foundation",
+      "sha": "c5bba2bed2b07aa5dffd2798a2e942954b65572b",
+      "retained_by": "merged PR#9; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/recovery-intended-state-v2",
+      "sha": "fe025f461326ddcda116060d6817ec2775b61a81",
+      "retained_by": "merged PR#22; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/recovery-journal",
+      "sha": "90a6b6460096105bdab41ddfab3d2fad9466036b",
+      "retained_by": "merged PR#15; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/transactional-file-services",
+      "sha": "531f0e3851618013a1f8ddafec7047814f572815",
+      "retained_by": "merged PR#20; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase-2/windows-transactional-delete",
+      "sha": "e74cc0cf7b5bd957bcd25e476a4ddafcc8011da0",
+      "retained_by": "merged PR#24; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3-chatgpt-integration-optin",
+      "sha": "4ff720b2f550d0c3f0b953da7d09158504df5494",
+      "retained_by": "merged PR#47; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3-closure-smoke",
+      "sha": "fa7602131af0d267d010c7da26292e3e6672fee8",
+      "retained_by": "merged PR#45; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3a-git-integrate-runtime",
+      "sha": "96b30f945932e0c21b7d84fbf1dd7f87ce8627d6",
+      "retained_by": "merged PR#40; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3b-git-integrate-authority",
+      "sha": "be3ffd97c37faf58f37692d9dc7ebcb5a80b0993",
+      "retained_by": "merged PR#41; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3b2-git-worktree-recovery",
+      "sha": "0ff95b8258bad0dd0533e9744b843094ae62b004",
+      "retained_by": "merged PR#42; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3b3-git-integration-startup",
+      "sha": "c82059eb44ba8f8bb9f5608e30b922be1924a47e",
+      "retained_by": "merged PR#43; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3c-git-integrate-mcp",
+      "sha": "55c4f3f203391b91ecf19ab7e0d5c1988b3834b6",
+      "retained_by": "merged PR#44; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase2d3d-integration-status",
+      "sha": "f4d04c30176c23c96f3efbac942e07e4ec1f44be",
+      "retained_by": "merged PR#46; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3a-session-resource-quotas",
+      "sha": "3c0c4448adebd5673e1ae29198a57e048640ed41",
+      "retained_by": "merged PR#50; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3b1-session-lifecycle",
+      "sha": "db20e4f7091f8df5dc5fb4c57b3d7bea46fe43a0",
+      "retained_by": "merged PR#51; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3b2-session-admission-reap",
+      "sha": "c44c89ec11967f9a98c16abd774b428d83c994b7",
+      "retained_by": "merged PR#52; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3b3-lifecycle-closure",
+      "sha": "2337651906ba68f0ca78befb26dfcc599a12ae80",
+      "retained_by": "merged PR#53; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c1-bounded-termination",
+      "sha": "bfb38a5e07807d1053c775e3eda04b03334135c2",
+      "retained_by": "merged PR#55; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c2-resource-governor",
+      "sha": "444dab2eb64c480480736d4fe5b70582c4728175",
+      "retained_by": "merged PR#57; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3a-docs-closure",
+      "sha": "0a9b4f28e81a16f3bd5e586d9256fcf74803918d",
+      "retained_by": "merged PR#60; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3a-pinned-tool-identity",
+      "sha": "85a7d92c46fd331d98f33a9d23ffd9c5c8217abd",
+      "retained_by": "merged PR#59; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3b-docs-closure",
+      "sha": "fe98887e924716d5fff6ee3aab97ab4affcde6c2",
+      "retained_by": "merged PR#62; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3b-process-classification",
+      "sha": "506e1f7e69db917e5560e1259051abf5f484143c",
+      "retained_by": "merged PR#61; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c1-docs-closure",
+      "sha": "cfd41aab36f44cebcec136adf3b48e98ca6e93b5",
+      "retained_by": "merged PR#64; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c1-high-risk-process-gate",
+      "sha": "3b63e05dd0936bc75c18f3c7118dbe5c0a99db9e",
+      "retained_by": "merged PR#63; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2a-appcontainer-foundation",
+      "sha": "4f5e3f7a7b0405496358058ad3094bf1e16b9969",
+      "retained_by": "merged PR#65; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2a-docs-closure",
+      "sha": "aa25839550ce1e0ed131602cfcc79636a214a6a1",
+      "retained_by": "merged PR#66; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2b1-runtime-class-binding",
+      "sha": "e249e99fd740617c377abce13e217abc29ac84aa",
+      "retained_by": "merged PR#67; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2b2-appcontainer-stdio-primitive",
+      "sha": "a48258c1f03bf18741b1a50119a92502674147c3",
+      "retained_by": "merged PR#68; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2b2-docs-closure",
+      "sha": "e9aee7fcd9dd41fa45731b23da359fb56b841ed0",
+      "retained_by": "merged PR#69; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c1-docs-closure",
+      "sha": "1b3c49d0b0f14e383b7fdf93f266013594c8b49a",
+      "retained_by": "merged PR#71; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c1-internal-launcher",
+      "sha": "fdefc1996128a61060e9298afd0b2eab06227643",
+      "retained_by": "merged PR#70; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2a-docs-closure",
+      "sha": "f0d7d10942b94ba14be73e9502f772a6463a635c",
+      "retained_by": "merged PR#73; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2a-runtime-launcher-wiring",
+      "sha": "49ffa3057bdb3edd871f09396bf0d82ac0ac601c",
+      "retained_by": "merged PR#72; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2b-workspace-grants",
+      "sha": "0c82f0c30c654b5f1c95e8e5e946d78e462fefec",
+      "retained_by": "merged PR#74; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2b1-docs-closure",
+      "sha": "f03136adb2fa2fa771b8c416702fd4e62f29ba2b",
+      "retained_by": "merged PR#75; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2b2-docs-closure",
+      "sha": "c782ad217e632d331853cc1e131e2b4d4227b931",
+      "retained_by": "merged PR#77; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2b2-grant-wiring",
+      "sha": "5aaf3957e0327e3883e41f63e1455f7af546b08b",
+      "retained_by": "merged PR#76; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2c1-docs-closure",
+      "sha": "ee7625a7e75b49bdeb488e99638f8c4025b88f4f",
+      "retained_by": "merged PR#79; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c2c1-operator-read-grants",
+      "sha": "3b871bdf8908cb95ae6fc41ae64f1d5f13beaf3a",
+      "retained_by": "merged PR#78; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c3-toolchain-compat",
+      "sha": "915b38f4cf03ab3ddb0570af05b9fc08c21a8122",
+      "retained_by": "merged PR#82; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c3b-runtime-dependencies",
+      "sha": "25d2eed7ca9825c2f8a4314abc35a269f7d7b864",
+      "retained_by": "merged PR#83; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c4-docs-closure",
+      "sha": "eb38c1dd9df5375a4b955e00143e102517a418e4",
+      "retained_by": "merged PR#86; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c4-node-network-isolation",
+      "sha": "6fcc25d17a6ab7d7e9421ee69c723408d30a90ad",
+      "retained_by": "merged PR#85; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5a-isolation-eligibility-domain",
+      "sha": "f08af322d1e149fba45b4252a2d3b6a65ffa5f80",
+      "retained_by": "merged PR#87; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5b-isolation-eligibility-provisioning",
+      "sha": "02f977f5a6e411353e7b99bdffe113cda17685d0",
+      "retained_by": "merged PR#88; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5c-policy-readmission",
+      "sha": "a96fc58f269e3880908ca60d4755e10993f9b85b",
+      "retained_by": "merged PR#89; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5d-helper-packaging",
+      "sha": "815a73c89b6865d590ecabfa1dcc06428373d7c8",
+      "retained_by": "merged PR#90; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5e-node-operator-optin",
+      "sha": "f89cd7f6e69f1a8919a180190c57b69d0c070648",
+      "retained_by": "merged PR#91; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5f-node-installer-profile",
+      "sha": "df6742f3d2ee9bc48a023519970ca846fad54171",
+      "retained_by": "merged PR#92; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5g1-artifact-hidden-manifest",
+      "sha": "137f2058fa0b9d101639e3f5471e05b4f1d25446",
+      "retained_by": "merged PR#95; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5g1-proof-hardening",
+      "sha": "001c86a14571ac4c6588f37e861bd700bf6ad55d",
+      "retained_by": "merged PR#94; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5g3-temp-env-fallback",
+      "sha": "4e27bce6553d859cf19516455033017d25a2803d",
+      "retained_by": "merged PR#97; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3c3c2c5g4-desktop-proof",
+      "sha": "589f9c799fffa585a50de958f72f1017c1f51120",
+      "retained_by": "merged PR#98; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3d-adversarial-multisession",
+      "sha": "fdccf3a420992cc0539e7f28d7f5af45cda4bb2d",
+      "retained_by": "merged PR#99; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3d-docs-closure",
+      "sha": "efc68e411d0fb6e9816f953aa416e1a9b04014ce",
+      "retained_by": "merged PR#100; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e-process-memory-governor",
+      "sha": "b8447deb04b5d39c45182439b5a086765221198b",
+      "retained_by": "merged PR#101; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e1-memory-governor-docs",
+      "sha": "605701ef4b4480115a2363784af3f4f63ee10207",
+      "retained_by": "merged PR#102; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e2a-host-memory-docs",
+      "sha": "e9abc42c0be67039503a490060a92d7af979aa04",
+      "retained_by": "merged PR#104; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e2a-host-memory-observation",
+      "sha": "3c765d9eac4cb8d78addf30177cecd9d056af47f",
+      "retained_by": "merged PR#103; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e2b-host-memory-docs",
+      "sha": "12934ed7f2b13c603c4abbda52d7647f88470898",
+      "retained_by": "merged PR#106; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e2b-host-memory-headroom",
+      "sha": "9cb0516fd6343b06b10219712bc68305250ad6ae",
+      "retained_by": "merged PR#105; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase3e3-heavy-workload-slots",
+      "sha": "203d729cba9366dfbe0a798975f5d92e1f2ad010",
+      "retained_by": "merged PR#107; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4a-session-worktree-manager",
+      "sha": "592bd7493808516cbdc6e56fabd6905f131317dc",
+      "retained_by": "merged PR#141; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4ao-shared-base-noop",
+      "sha": "95ec0d6b62bca36e97b632c4fc5e2611d8c0d490",
+      "retained_by": "merged PR#154; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4ap-shared-changed-head",
+      "sha": "76d34ecc847d7fb2d164e7232362987a0d27a26e",
+      "retained_by": "merged PR#155; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4b-same-repo-coordinator",
+      "sha": "e2c89f2233dd5f50184b0293da2004630393ead8",
+      "retained_by": "merged PR#142; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4c-session-tree-manifest",
+      "sha": "c0271b472262150cfb0d8e65d2200fad91f4e82b",
+      "retained_by": "merged PR#143; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4d-safe-blob-materialization",
+      "sha": "be8a7eb37b32abd3a1462d195efc7d55ff5ac448",
+      "retained_by": "merged PR#144; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4e-session-conflict-gate",
+      "sha": "1d59e28fe83d0fd489d1366f1ea5ccb604efb064",
+      "retained_by": "merged PR#145; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4f-deterministic-merge-plan",
+      "sha": "aa4f09e56e77b29e2f5c56b3f32b39c0a2cb57d6",
+      "retained_by": "merged PR#146; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4g-write-merge-tree",
+      "sha": "599d6bc032522613abe75843c5b528fcbc8262aa",
+      "retained_by": "merged PR#147; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4h-write-merge-commit",
+      "sha": "29bd06c6519af55125c33e8fe4f1c8accdb1cfb8",
+      "retained_by": "merged PR#148; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4i-session-ancestry-gate",
+      "sha": "02af4ce3e4a3922def02c2bc226f02257f9818d5",
+      "retained_by": "merged PR#149; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4j-quiescent-session-seal",
+      "sha": "ffd9971c71eb09a09858b90319fb993adf5d884e",
+      "retained_by": "merged PR#150; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4k-idempotent-merge-publisher",
+      "sha": "da9fd40091b6735caeeda9091b59c06a789ac236",
+      "retained_by": "merged PR#151; exact GitHub pull head retained"
+    },
+    {
+      "branch": "phase4l-merge-lifecycle-orchestration",
+      "sha": "6bcb27cc9ec8b12ed430918251646fe83a2dacc4",
+      "retained_by": "merged PR#153; exact GitHub pull head retained"
+    },
+    {
+      "branch": "refactor/process-output-boundary",
+      "sha": "411ba1adaa6abec32c768f76df93a10a66d52504",
+      "retained_by": "merged PR#238; exact GitHub pull head retained"
+    },
+    {
+      "branch": "research/fixed-read-francestudent-evidence",
+      "sha": "427ae35cfad2243017ccc4adb8d738aec463f9e8",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "research/francestudent-remote-mcp-candidate",
+      "sha": "75674cc38aab97bc0d0fc5bf7c9579bb74f51cdd",
+      "retained_by": "merged PR#80; exact GitHub pull head retained"
+    },
+    {
+      "branch": "research/francestudent-sdk-contract",
+      "sha": "fec8456f4f78b7f86130037c42cf9a7fc6e82c17",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "roadmap-conversation-authorization",
+      "sha": "183ff64b2c0bbf173df362c94deb0ac6edc76176",
+      "retained_by": "merged PR#156; exact GitHub pull head retained"
+    },
+    {
+      "branch": "security/read-boundary-hardening",
+      "sha": "1e7695f12d214c504f84870dfe1f861f5d7d6792",
+      "retained_by": "merged PR#184; exact GitHub pull head retained"
+    },
+    {
+      "branch": "security/strict-config-fields",
+      "sha": "d7e389340afa61b57f78114c12b5dfff50e8807c",
+      "retained_by": "merged PR#236; exact GitHub pull head retained"
+    },
+    {
+      "branch": "tmp-check",
+      "sha": "dbcdc6f74a435484082a5a1f1cc6a899e0f94d05",
+      "retained_by": "exact ancestor of retained alpha a553645"
+    },
+    {
+      "branch": "phase-2/windows-mutation-containment",
+      "sha": "07047b0eeb771fd49df3ec0116190664cd785b27",
+      "retained_by": "archive/2026-10-20/phase-2/windows-mutation-containment"
+    },
+    {
+      "branch": "phase3c3c2c5g-chatgpt-node-smoke",
+      "sha": "b3e117f1ab7091f0b626ef5744872ff0d65d4bc8",
+      "retained_by": "archive/2026-10-20/phase3c3c2c5g-chatgpt-node-smoke"
+    },
+    {
+      "branch": "phase3c3c2c5g2-bundle-hidden",
+      "sha": "9801991c5fa78cb271064b5d76b79558ec47f647",
+      "retained_by": "archive/2026-10-20/phase3c3c2c5g2-bundle-hidden"
+    },
+    {
+      "branch": "phase3c3c2c5g3-optional-tmp",
+      "sha": "69ac5f67e00c2d0b0388b9af30a5f07f179cf916",
+      "retained_by": "archive/2026-10-20/phase3c3c2c5g3-optional-tmp"
+    },
+    {
+      "branch": "validation/phase-2a-final",
+      "sha": "c5bba2bed2b07aa5dffd2798a2e942954b65572b",
+      "retained_by": "archive/2026-10-20/validation/phase-2a-final"
+    },
+    {
+      "branch": "validation/phase-2c1-final",
+      "sha": "90a6b6460096105bdab41ddfab3d2fad9466036b",
+      "retained_by": "archive/2026-10-20/validation/phase-2c1-final"
+    }
+  ],
+  "operator_approval": {
+    "date": "2026-10-20",
+    "scope": "244 historical remote branches in this exact ledger",
+    "confirmation": "Approved by operator after the automatic approval review requested explicit bulk-retirement authorization; operator requested documentation."
+  },
+  "completion": {
+    "historical_branches_deleted": 244,
+    "all_expected_heads_revalidated_before_deletion": true,
+    "all_listed_branches_confirmed_absent": true,
+    "all_original_preservation_refs_unchanged": true,
+    "backup_sha256_reverified": true,
+    "reference_heads_unchanged_during_retirement": true,
+    "reference_head_snapshot": {
+      "refs/heads/alpha/generated-project-editing": "a553645760544b65e15ad0ed65bf6099b1d3f646",
+      "refs/heads/diagnostics/electron-primary-result": "e768463ba1e3618c2e6f901c36e83b49fc239caf",
+      "refs/heads/experiment/private-offline-cargo": "2c2269332f7521340e56d590acf080d6b7f08cb5",
+      "refs/heads/main": "7bc50a35f7d7b8f2e6c973f6720eb561703bc10a"
+    },
+    "additional_completed_maintenance_branch_retired": {
+      "branch": "chore/repository-consolidation",
+      "sha": "12b832b88075597839b34cadab678cc41d94d630",
+      "merged_pr": 257
+    },
+    "temporary_report_branch": "chore/complete-branch-retirement"
+  }
+}

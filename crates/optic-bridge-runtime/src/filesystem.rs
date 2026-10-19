@@ -581,6 +581,41 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn native_read_rejects_distinct_roots_with_the_same_lossy_spelling() {
+        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+
+        let base = workspace("non-unicode-root-boundary");
+        let root = base.join(OsString::from_wide(&[b'r' as u16, 0xd800]));
+        let outside = base.join(OsString::from_wide(&[b'r' as u16, 0xd801]));
+        fs::create_dir(&root).expect("create native root");
+        fs::create_dir(&outside).expect("create different native sibling");
+        fs::write(outside.join("public.txt"), b"PUBLIC_OUTSIDE_FIXTURE")
+            .expect("write public fixture");
+        std::os::windows::fs::symlink_dir(&outside, root.join("alias"))
+            .expect("create disposable directory alias");
+        let filesystem =
+            BoundedFileSystem::new(&root, 64, 4, 16).expect("open native workspace root");
+        let result = filesystem.read(
+            &WorkspacePath::parse("alias/public.txt").expect("portable input"),
+            0,
+            Some(64),
+        );
+
+        // Remove only the known link and fixed fixture names before asserting,
+        // including when this regression reproduces the old successful read.
+        fs::remove_dir(root.join("alias")).expect("remove alias only");
+        fs::remove_file(outside.join("public.txt")).expect("remove fixture file");
+        fs::remove_dir(&outside).expect("remove empty sibling");
+        fs::remove_dir(&root).expect("remove empty root");
+        fs::remove_dir(&base).expect("remove empty fixture parent");
+        assert!(
+            matches!(result, Err(FileSystemError::OutsideWorkspace)),
+            "unexpected native containment result: {result:?}"
+        );
+    }
+
     #[test]
     fn prepared_read_exposes_observed_target_and_reads_from_that_handle() {
         let root = workspace("prepared-read");

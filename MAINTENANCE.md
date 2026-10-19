@@ -2,6 +2,13 @@
 
 Optic AI Bridge is documentation-first but documentation must never drift from code.
 
+## Repository lifecycle
+
+Follow [the branch and PR workflow](docs/engineering/REPOSITORY_WORKFLOW.md).
+Close superseded drafts with preservation evidence; integrate bounded validated
+changes instead of maintaining indefinitely stacked experimental PRs. Bulk
+branch retirement uses a reviewed exact-head inventory and explicit approval.
+
 ## Source of truth
 
 One canonical owner per subject. Do not duplicate normative limits or security rules across multiple documents. Other files link to the canonical owner.

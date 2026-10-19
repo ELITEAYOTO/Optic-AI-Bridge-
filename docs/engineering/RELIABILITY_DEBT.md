@@ -1,0 +1,40 @@
+# Reliability and implementation debt
+
+Reviewed: 2026-10-20. This is a bounded source review and delivery register, not
+a claim of a complete security audit. STATUS owns delivered evidence; this page
+owns concrete unfinished implementation/verification work.
+
+## Findings addressed in the current hardening change
+
+Native path comparison used replacement-character conversion in runtime scope
+checks. A Windows fixture reproduced an actual read from a distinct sibling root.
+The fix refuses unrepresentable native paths, audits analogous Git and operator
+policy placement checks, and preserves Git's native argument units.
+See [ADR-0033](../decisions/ADR-0033-LOSSLESS-NATIVE-PATH-BOUNDARIES.md).
+The regression exercises the boundary, not a string implementation detail.
+
+## Remaining work, ordered by the boundary it unlocks
+
+| Work | Current evidence or debt | Completion criterion |
+| --- | --- | --- |
+| Native path identity | Lossy comparison is addressed; Unicode case folding and Windows case-sensitive directories are not fully characterized | Native fixtures and a documented canonical comparison/identity contract; no guessed equivalence |
+| Cargo #255 | Fixed offline prepared fixture passed only on disposable CI; ordinary profile still cannot open NUL | Finish optional broker/profile provenance, preview, exact SID grant, interrupted recovery and revoke before any local privileged setup |
+| Electron #250 | Bounded diagnostics identify startup failure; normal sandboxed GUI still fails | Close diagnostic scope independently of a compatibility fix; keep normal failure visible and never silently select the outer-only comparison |
+| Private writable builds | Core has input capture, staging, owned tasks and publication services, but no general MCP build profile | Proven writable-storage/cleanup contract, authorized host composition and real native goal-driven acceptance |
+| Dependencies | Installed runtime presence does not authorize downloads, package scripts or egress | Operator-selected restore scope, package/script policy, credentials and network boundaries |
+| Private-task journal retention | Finite record/unresolved ceilings intentionally refuse admission when full; no host retention/retirement workflow is delivered | Explicit bounded retention and safe retirement of terminal evidence without deleting unresolved work or replaying effects |
+| Filesystem enumeration and sensitive metadata | Older read-boundary review deferred prepared enumeration and classification | Bind authorization to the observed enumeration target and settle content/listing/Git-control policy with native alias tests |
+| Research PR integration | #250 and #255 have older bases and experimental native observations | Preserve exact evidence, review only the intended delta, align the target and validate that exact head; no blanket merge of the old stack |
+
+## Source review coverage
+
+Reviewed the two open PR deltas, native path helpers, project input manifests and
+capture, artifact publication, private task launch and journal validation.
+Finite byte/entry/event bounds, exact snapshot hashes, staged publication progress
+and explicit unknown outcomes already exist in those services; they should be
+retained rather than rewritten merely to reduce file count.
+
+Do not equate absence of TODO markers with completion. Internal service APIs are
+not a delivered end-to-end project workflow, and test-only compatibility helpers
+are not operator installation features. Prefer regression-backed corrections and
+one coherent PR over another chain of small unmerged drafts.

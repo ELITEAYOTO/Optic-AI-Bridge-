@@ -1,36 +1,33 @@
 # Changelog
 
-## Bounded Electron diagnostic integration — 2026-10-20
+## Native path boundary hardening — 2026-10-20
 
-- Keep owned thread-context sampling aligned and test-only; add fixed parent-token and isolated station controls without changing installed ACLs or public tools.
-- Retain the failing normal Electron compatibility gate; diagnostic completion does not enable GUI execution or a sandbox downgrade.
+- Reject unrepresentable native Windows paths during containment comparisons; prevent distinct UTF-16 root names from collapsing to the same replacement spelling.
+- Preserve exact native Git path/hooks arguments and refuse ambiguous operator-policy placement checks.
+- Add an actual native read regression, representation/argument/policy tests and a scoped reliability-debt register. No additional permissions or runtime dependency.
 
+## Approved branch retirement — 2026-10-20
+
+- After explicit operator approval, remove the 244 historical branches in the published ledger using exact expected heads; verify every listed branch absent afterward.
+- Confirm all preserved pull/archive refs, backup hash and the four reference branches unchanged; record approval and results in the existing consolidation ledger.
+- Retire the merged #257 maintenance branch separately. No runtime or permission change.
+
+## Repository consolidation — 2026-10-20
+
+- Replace stale root phase summaries with current overview, measured status and delivery order; retain exact historical snapshots in Git.
+- Add documentation navigation, a branch/PR lifecycle and exact preservation/retirement ledger.
+- Close 41 superseded PRs; preserve divergent historical heads with archive tags.
+- Record the proposed 244-branch retirement as pending explicit operator approval; no remote branch deletion or runtime change.
 
 ## Unreleased — exact isolated module reads
 
-- Derive bounded directory metadata rights from exact launcher read
+- Candidate: derive bounded directory metadata rights from exact launcher read
   grants, pin intermediate directories, and test real nested Node resolution
   alongside content/list/create denial. No recursive read or write grant.
 
 All notable project changes are recorded here.
 
 ## [Unreleased]
-
-- Detect broken experiment Python environments before installing dependencies;
-  explicit local rebuild preserves one backup, rejects redirects/backup overwrite
-  and leaves project output and global Python unchanged.
-
-- Add generated-alpha exact text replacement with unique literal matching,
-  original-version Rust patching, independent read/write authorization and
-  retained uncertainty; no caller-computed offsets or whole-file rewrite.
-
-- Preserve one bounded safe prior-tool observation across generated-alpha restart,
-  with explicit uncertain admission, no automatic replay and independent failure
-  reporting when a confirmed effect cannot save its diagnostic checkpoint.
-
-- Add operator-selected8/32KiB alpha file budgets with unchanged paginated replies,
-  versioned mutations, independent64KiB HTTP body cap, resume and fixed-viewer
-  snapshot validation; no additional runtime or model-selected permissions.
 
 - Add explicit local CLI supervision of existing finite session/lease windows,
   with terminal revoke/expiry and transport-EOF cleanup; default launches remain timed.
@@ -66,11 +63,6 @@ All notable project changes are recorded here.
   with default-off present sections and order-independent process-read denial.
   No implicit scopes or live reload; exact stdio/Windows/Linux validation passed
   in PR237 CI39041285058.
-
-- Private-task recovery reports now include bounded diagnostic lifecycle times;
-  legacy records retain their original lock/capacity domain and absent times.
-  Event order and monotonic live authorization remain authoritative. Native
-  validation pending; no durable output capture or automatic task replay.
 - Reject duplicated operator JSON authority fields before generic map parsing can
   collapse them. Valid version1 configuration and capability scopes are unchanged.
 
@@ -87,9 +79,7 @@ All notable project changes are recorded here.
   or restore tasks; native and Windows/Linux validation pending.
 
 ### Added
-- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
-
-- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
+- Authorized private project input preparation under the existing read/ownership boundary, with finite capacity and nonrecursive recorded-only cleanup. No process, MCP or dependency permission is added. Exact-head validation pending; see ADR-0018.
 
 
 - Bounded session/task/epoch-bound project input manifests and immutable snapshots, with exact path/version/size validation. Windows capture preflights typed read authority, preserves native path identity and existing ceilings, and discards data on revocation or deadline expiry. No process or MCP authority is added; native branch validation pending (ADR-0012).
@@ -103,59 +93,8 @@ All notable project changes are recorded here.
 - See `docs/security/READ_BOUNDARY_HARDENING_2026-10-12.md` for tests and deferred decisions. Classifier, canonical list authorization, Git sensitivity and repository-control namespace remain unresolved.
 
 ### Added
-- Unwired authorized private input preparation: versioned capture copied to a fresh AppContainer, four retained live/uncertain slots, attached owner binding and recorded-only cleanup. No process/GUI authority or durable recovery claim; native follow-up validation pending.
+- Authorized private project input preparation under the existing read/ownership boundary, with finite capacity and nonrecursive recorded-only cleanup. No process, MCP or dependency permission is added. Exact-head validation pending; see ADR-0018.
 
-- Native explicit outer-AppContainer Electron comparison119cca0 passed CI and local Windows: hidden renderer, denied source access, controlled loopback unreachable while parent control connects, sampled exact tokens and owned cleanup. Normal inner-sandbox startup remains incompatible; no new public GUI authority. PR224 input capture merged to main with passing pre/post-merge CI.
-
-- Follow-up validation: native project input capture and explicit child environment pass Windows/Linux Rust CI at5ac8cbd. Normal private Electron startup remains incompatible (0x80000003), reproduced locally without FS/tunnel. Bounded diagnostic tail fix623e003 is under CI; optional GUI/build authority remains gated. Main-based capture candidate is PR224.
-
-- Explicit native private Electron compatibility gate: selected runtime copied into ephemeral AppContainer storage, hidden sandboxed renderer and external source denial probes, with owned Job Object tree confirmation before cleanup. Validation pending; no new GUI tool or dependency authority.
-- Bounded immutable project input manifest/snapshot domain types: session/task/epoch binding, exact version/size checks, portable Windows collision rejection and finite multi-module input budgets. No new read/process authority, filesystem capture or MCP build tool; follow-up validation pending.
-- Supervised model-readable diagnostics: bounded current-epoch tool outcomes/timings/uncertainty and a filtered previous stop summary captured under the run lock. No raw arguments, sources, credentials or FS backend logs; live event history is not durable across restart.
-- Explicit local JSON permission switches reduce file read/search/write/delete/directory, process and Git integration authority. Present sections default omitted booleans to denied; true requires preselected scopes/profiles. Duplicate/unknown/non-boolean fields fail closed; config/profile sources cannot reside in the writable workspace. Startup snapshot only; live reload and general dependency/build authority remain gated.
-- Opt-in generated HTTP directory creation with128 conservative directory slots, bounded startup inventory and exact absent intent. Real Windows supervised runner proves nested source creation and same-run resume;46 Python tests pass. Exact follow-up CI pending.
-- Separately authorized single absent-directory creation for Windows, with typed effect, scoped lease, explicit MCP precondition, pinned ancestors and native root identity. CLI/JSON selection defaults off; native validation pending. This is the first Electron/Rust development-environment increment, not general dependency/build/GUI authority.
-- Opt-in supervised generated alpha with locally renewed bounded core leases, fixed request/start windows, bounded source/job accounting and owned job list/terminal release. Native Windows idle/reconnect/stop/revoke/crash/resume proof added; exact-head CI and packaged acceptance pending. Default timed mode remains available; no remote permission renewal or general build environment.
-- Generated-data-only connection diagnostic server/client with verified payload receipt, correlated markers, bounded reports and optional idle-gap tests; no project authority or claim of FS outage attribution.
-- Operator last-stop.json separates confirmed core revocation/drain from best-effort diagnostic delivery. Default native proof sink avoids Python BufferedWriter ownership during shutdown; actual Windows blocked/broken-output and expiry regression tests added.
-- Agenda/budget/subscription FS test kit and optional fixed operator Electron viewer after confirmed session stop, with source versions, immutable asset protocol, sandboxed no-Node renderer and bounded fixed-directory JSON export (ADR0015). Native local close/reopen/network/export proof and23 Python/3 policy tests pass; CI pending. No MCP GUI process, npm/build or installer grant.
-- FS Luna Node22 host acceptance: correlated source modification, real failing assertion, versioned restoration and successful check/test. Sonnet runtime custom-header omission recorded separately from successful configuration discovery and Luna transport; no general FS component diagnosis asserted.
-- Generated Node check/test milestone validated at4b5ca2e: all nine workflows, native metadata deny/revoke tests, pinned Node22.15.1 runner and matching downloaded package on the local installed Node pass. SYNCHRONIZE enables synchronous attribute handles without list/data/write rights. First FS process exercise pending; no dependencies/build/server or personal project enrollment claim.
-- Optional generated Node runner with explicit installed executable selection, fixed check/test profiles and three source-read slots; matching hashed helper package and native runner lifecycle proof added (21 local tests; native runner validation pending).
-- Native relative Node module proof passed at3c0228 with list/read/write denials. Outside-root helper regression now uses an owned test root rather than System32; execution adapter preserves native stopped status (19 local alpha tests pass; full corrected Windows CI pending).
-- Gated source-directory metadata grants for isolated Node module resolution, with pinned roots, bounded non-inheritable attribute/traversal ACEs and native denial/revocation tests (ADR0014; native validation pending).
-- Optional compact model replies preserving operator proof logs, connection time remaining/expiry warning, and native Node module-resolution characterization. Relative module lookup remains blocked locally despite direct granted-file reads; full application build is not claimed.
-- Experimental named-profile process forwarding preparation with bounded owned jobs, retained cancellation accounting and six synthetic tests; disabled in the editing HTTP runner until native Node/enrollment integration gates pass.
-- Alpha read pagination with full observed versions on each bounded page and no duplicated text/base64; UTC millisecond diagnostic timestamps. FS generated-app browser acceptance recorded separately from incomplete final counter edit.
-- Generated-project six-tool HTTP editing alpha, strict bounded schemas, retained serialized forwarding, uncertainty-aware mutation replies, saved generated projects and matching CI package/manual steps. Complete offset0 Rust reads now expose observed content versions; partial reads return null. No process/Git/delete or real-project enrollment grant.
-- Generated project alpha delivery track and actual Rust MCP create/read/edit mini-project proof with narrow operator write scope, exact preconditions and negative/revocation checks; Windows/Linux workflow coverage. FS parameterized editing and isolated execution remain separate delivery checkpoints.
-- Volatile expected public-root identity comparison on the actual owned reference before child opens, with unchanged reopen and actual substitution refusal regressions. No trusted enrollment, snapshot authenticity/persistence or antirollback selected.
-- Negative native root-selection characterization: actual valid same-name substitution before root open is accepted, while held-root rename is denied. Two public-only regressions; no security fix or production enrollment selected.
-- Explicit held-root NT fixed public-pair read candidate: open-existing only, exact completion ownership checks, no leaf path fallback and five native regressions. No initial-root containment or production authentication claim.
-- Native fixed public-pair read pins retained during harmless computation, with actual separate-process write denial/release, invalid-entry cleanup and explicit admission/close-uncertainty composition tests. No root containment, memory-mapping exclusion, credential authority or production integration claim.
-- Fixed confirmed public-work probe under one-object ownership,32-attempt ceiling, busy-close refusal and six regressions including the negative external-mutation boundary. No arbitrary callback, effect authorization, process lock or production integration.
-- Public successor one-object admission coordinator: immediate busy refusal during publication, own-completion-only volatile confirmation, sticky uncertainty/change/restart refusal and seven regressions. No durable/auth commit, process-wide lock or production integration.
-- Explicit native public seal variant: held-root no-replace link, owned-source disposition at close, single non-inherited CRT descriptor ownership and sharing denial until NT close; eleven native failure/ownership/abrupt-exit cases. No path unlink/fallback or production auth authority.
-- Optional closed staged public seal publication: fixed exclusive hard-link target, reader refusal until staged unlink, eight error/abrupt-exit regressions, and no false ACK or automatic repair. Path-based disposable proof only; no durable auth commit or production authority.
-- Bounded public successor/seal observer with empty/reserved/validated classifications and zero authority; exact finite pair validation, no adoption/repair, and actual abrupt-exit/failed-flush evidence distinguishing readable data from ACK/durability. No auth journal or production integration.
-- Draft one-slot create-only public successor election: actual two-thread/two-process competing claims, late-competitor preservation, fixed payloads/capacity, bounded readback and no repair of partial/existing slots. No journal, auth commit or production replacement selected.
-- Native negative replacement-gap characterization: actual read-pin sharing refusal, uncooperative write after release and protected dummy revocation overwritten after the precheck. Production replacement remains gated; no runtime API or replacement authority added.
-- Draft fresh public-marker initial publication fixture: explicit NT relative no-replace rename, fixed same-handle validation and close-before-success; eleven regressions including collision preservation, actual abrupt exits before/after ACK and post-rename uncertainty. No production registry initialization or replacement.
-- Native private-root/writer-pin/relative-scratch descriptor composition regression; administrator reply recorded with conversation identity and cancellation ambiguity kept separate. No published state or production storage change.
-- Draft explicit root-relative native public scratch candidate: fixed Unicode leaf under held directory handle, create-only NT completion checks, no path fallback and native/simulated regressions. No final replacement, Store integration or production persistence claim.
-- Draft fixed public pending-file creation: held native fixture lock, create-only absence precondition, non-shared same-handle write/flush/identity checks and failure/preservation tests. No state promotion, Store integration, ancestor containment or production persistence claim.
-- Draft native fixed writer-lock pin: existing public marker only, zero-sharing handle, root/file identity checks, cross-process exclusion and sticky cleanup/re-entry regressions. No Store integration, real credentials or production storage claim.
-- Draft FranceStudent real fixed-read measurement: five console-correlated Rust metadata/list/read successes, rotation/reconnect/revocation and local stop acknowledgement on a generated fixture; stop-path code audit found no network configuration mutation.
-- Draft generated-fixture manual host runner and exact tested Windows binary package: fixed local controls, bounded lifetime/proof output, binary/commit manifest and stepwise FranceStudent test guide. Dedicated Windows/Linux startup/read/stop proof plus local downloaded-binary validation; no production release or user-project enrollment.
-- Draft generated-fixture HTTP composition: exact three zero-argument read/info tools, dummy principal/epoch ingress checks, reconnect proof and local bounded drain followed by actual Rust session cancellation; four local SDK/stop regressions. Public host packaging and user projects remain excluded.
-- Draft fixed read-link admission: retained bounded upstream slots after caller timeout/cancellation, local stop/late-result suppression and dummy epoch checks; seven async contract tests plus actual generated-fixture Rust stdio proof on Windows/Linux. No HTTP or user-project exposure.
-- Draft creation-time ACL fixture candidate: one new fixed temporary directory with explicit process-user/System/Administrators ACL, native inheritance and protected dummy lifecycle tests; no existing ACL repair or production enrollment.
-- Draft read-only native fixture owner/DACL characterization: bounded handle/token metadata queries, fixed ACE category counters and pointer/size regressions. No ACL modification, effective-access verdict or production authority.
-- Draft native fixed-fixture prepared read: root/file handle observation, same-handle bounded ciphertext read and pins retained during dummy decryption. Native write/rename/link/cleanup tests; no production exposure or general filesystem security guarantee.
-- Draft public-dummy DPAPI purpose separation: finite fixed fixture/registry labels, unknown-purpose refusal and native wrong-purpose/relabelled-prefix negative tests. No migration fallback, real credential input or production integration.
-- Draft protected dummy metadata validation: reject unreachable decoded states and preserve changed valid disk state when a live instance attempts a stale commit. Seven portable/native regression cases; no production storage or atomic hostile-writer guarantee.
-- Draft protected public-dummy registry composition: Windows-protected bounded metadata, replace-before-ack lifecycle and fail-closed commit errors in disposable fixtures; explicit characterization that old valid ciphertext replay is not prevented. No real credential or production integration.
-- Draft H-02 public dummy Windows protection experiment (#196): bounded CurrentUser DPAPI wrapper, exact fixed-fixture verification, real Windows roundtrip/fresh-process tests and portable native-failure cleanup tests. No real credentials, production integration or new MCP surface. H-01 grouped host evidence (#195) records sequential execution only; positive host overlap remains unmeasured.
 - B-02A direct `FixedTool` TCP/IPv4 loopback characterization (PR #109, merge `0d05959a`, exact green head `4a96ff09`, PR CI #426, post-merge CI #427): the existing zero-capability AppContainer Node regression still reaches its network attempt without any accepted loopback connection, while a direct `FixedTool` launched outside AppContainer with only server-allowlisted `SystemRoot` restored reaches `FIXED_TOOL_NETWORK_CONNECTED`, exits 0 and is accepted by the host listener. The earlier empty-environment Winsock 10106 result is explicitly not treated as containment evidence. No network capability, scope or enforcement changed; B-02B must add truthful direct-path containment.
 - Phase 3E3 bounded heavy-workload admission (PR #107, merge `826f8cb3`, final head `203d729c`, final-head CI #421, post-merge CI #422): `TaskLease` now carries application-owned `WorkloadClass::{Standard, Heavy}` metadata independent of caller budgets and `ProcessExecutionClass`. Production process leases are `Heavy`; mutation/Git-integration leases remain `Standard`. `HardLimits` defaults to 2 active heavy process jobs bridge-wide and 1 per session; `Running` / `TerminationUncertain` retain a slot and proven-terminal state releases it. MCP derives workload class from the active server-owned lease and cannot choose or downgrade it. Global/per-session heavy-capacity failures have distinct stable MCP codes. No filesystem/network authority, process eligibility, sandbox semantics or public MCP schema was widened.
 - Phase 3E2B Windows host-memory emergency-headroom admission (PR #105, merge `aaaf4e17`, exact green head `9cb0516f`, PR CI #414, post-merge CI #415): Windows `ProcessManager` now admits a process only when the validated host snapshot can cover `max(1 GiB, 10% total physical RAM)` plus all active/uncertain Phase 3E1 declared-memory reservations plus the new job budget. The provider is testable, malformed/unavailable telemetry fails closed, 3E1 capacity errors retain precedence, and headroom denial cannot evict retained terminal history. Distinct MCP codes report unavailable telemetry versus insufficient headroom. No MCP schema or process authority changes; heavy-task slots/classes and optional I/O/pressure feedback remain separate A-02 work.
@@ -349,21 +288,10 @@ All notable project changes are recorded here.
 - Git integration recovery executes before MCP serve when the complete integration runtime configuration is present; `--allow-git-integrate` is separately required before a `GitIntegrate` capability/lease exists, and the MCP server rejects runtime/authority mismatch.
 - Git integration MCP execution retains its transport permit until a started blocking integration reaches a known outcome; stale target and non-fast-forward failures are explicit, while a successful ref update followed by unverifiable post-update state is reported as `optic.git_integration_outcome_uncertain` rather than a safe retry.
 
-## Main private-preparation integration — 2026-10-16
-
-PR225 exacthead78a45aa passed CI38899856537, preparation38899856368 and local
-three-test native reproduction. Squash merge3a89f4060fb9ba2512db211e9922e28654980924
-confirmed. Sourcecapture/readpolicy remains mandatory; no public process, GUI,
-dependency or artifact permission is added. This alpha retains its newer owner
-worker/cancellation controller; main's SID-query negative test and ADR0018 remain.
-Equivalent native storage helpers/imports were deduplicated during integration.
-Exact merge-head validation remains required; prior CI is not its validation.
-- Prototype host-only managed private Node tasks with sealed multi-module inputs, shared bounded output/job admission, stop/revocation/deadline handling and retained-action lookup for lost start replies. No public MCP mode or durable task recovery is claimed.
 - Keep private preparation profiles on bounded native owner workers through async caller cancellation; acknowledge cleanup before releasing a successful stage reservation. No new process or MCP authority.
 
 - Add owned suspended-AppContainer tree containment and single-reader bounded stdout/stderr polling, with native lifecycle regressions and no temporary disk spool.
 
-- Prototype bounded private-task crash evidence using an exclusive workspace-bound state journal, strict pre-effect transitions and retained unresolved capacity after restart. No task replay or new MCP authority.
 - Add data-only input fingerprints and narrow native state/profile planning primitives; acknowledge private profile close before releasing preparation capacity.
 
 - Add an owned-job watchdog armed before resume, with a nonrenewable deadline and bounded atomic stop observation independent of owner-worker I/O. No new MCP authority.
