@@ -20,24 +20,29 @@ retirement. Its name/hash and all exact PR/branch heads are in the
 [machine-readable retirement ledger](REPOSITORY_RETIREMENT_2026-10-20.json).
 The bundle is an additional local recovery copy, not a downloadable release.
 
-## Branch retirement remains pending
+## Approved retirement completed
 
-The plan covers **244 historical remote branches**. Each is either an exact
-ancestor of retained alpha, an exact merged PR head still advertised by GitHub's
-pull refs, or one of the published archive tags. The four reference branches are
-excluded. A temporary maintenance branch may also exist during this cleanup.
+Automatic approval review initially refused bulk deletion because the generic
+cleanup instruction did not explicitly cover 244 remote branches. Nothing was
+deleted under that rejected request. The operator then explicitly approved the
+exact ledger and requested documentation.
 
-Automatic approval review rejected the attempted bulk operation because generic
-cleanup authorization did not explicitly cover deleting 244 remote branches.
-**No remote branch was deleted.** The ledger is a proposal requiring the
-operator's explicit approval before application. Do not split it into smaller
-operations as a workaround for that rejection.
+Before application, all 244 heads, their preservation refs, the backup hash and
+the open-PR exclusions were revalidated. Atomic pushes used per-branch expected
+heads; a changed head would refuse the affected batch. The completed pushes
+removed all 244 listed historical branches. A fresh remote inventory confirmed
+every listed branch absent, all original pull/archive refs unchanged and the
+four reference branches still present at their original commits.
 
-On approval, refresh refs and refuse any branch whose head moved, gained an open
-PR or lost its documented preservation ref. Use expected-head checks for each
-removal. Keep the ledger and completed results; never infer successful deletion
-from a planned list or a failed push. Do not remove main, alpha, the active
-research branches, release tags or unrelated repositories.
+The separately created #257 maintenance branch was also retired after confirming
+that its exact head was merged and retained by its PR. The remote inventory then
+contained only main, alpha and the two research branches. A temporary branch for
+this completion report can exist until its own PR is merged and retired.
+
+The [ledger](REPOSITORY_RETIREMENT_2026-10-20.json) retains the original plan and
+adds approval, observed completion and a verification snapshot. This is evidence
+of completed cleanup, not an authorization for future bulk deletion. No release
+tags, source files, runtime authority or unrelated repositories were changed.
 
 ## Recovery and history
 
