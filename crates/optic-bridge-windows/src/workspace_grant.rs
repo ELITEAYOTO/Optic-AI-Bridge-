@@ -584,7 +584,7 @@ mod tests {
         )
     }
 
-    // Test-only API diagnostic: no switch, ACL mutation, desktop creation,
+    // Test-child-only API diagnostic: no shared-core switch, ACL mutation or desktop creation,
     // default descriptor, handle inheritance, or model-facing authority.
     fn probe_station_creation() {
         use windows::Win32::{
@@ -595,7 +595,7 @@ mod tests {
             },
             System::StationsAndDesktops::{
                 CloseWindowStation, CreateWindowStationW, GetProcessWindowStation,
-                GetUserObjectInformationW, UOI_NAME,
+                GetUserObjectInformationW, SetProcessWindowStation, UOI_NAME,
             },
         };
         use windows::core::PCWSTR;
@@ -695,7 +695,8 @@ mod tests {
             // before another Windows call can replace thread-local last error.
             for (label, access) in [("generic", GENERIC_READ.0 | 0x8), ("reduced", 0x2 | 0x8)] {
                 // SAFETY: OS-generated name, copied DACL, no inherited handle.
-                // Never switch process station; close successful references here.
+                // Only this disposable fixed helper may switch its own station;
+                // restore its borrowed original before closing returned references.
                 match unsafe { CreateWindowStationW(PCWSTR::null(), 0, access, Some(&attributes)) }
                 {
                     Ok(created) => {
@@ -725,6 +726,30 @@ mod tests {
                             ),
                             Err(error) => println!(
                                 "STATION_NAME form={form} access={label} error={:?} required_bytes={name_bytes}",
+                                error.code()
+                            ),
+                        }
+                        // SAFETY: only this owned fixed helper process changes
+                        // its binding. No windows/desktops are created or shown.
+                        match unsafe { SetProcessWindowStation(created) } {
+                            Ok(()) => {
+                                // SAFETY: the original borrowed station remains
+                                // live; restore before closing the new reference.
+                                let restored = unsafe { SetProcessWindowStation(station) };
+                                println!(
+                                    "STATION_SWITCH form={form} access={label} switched=true restored={}",
+                                    restored.is_ok()
+                                );
+                                if let Err(error) = restored {
+                                    println!("STATION_RESTORE error={:?}", error.code());
+                                    // A current station cannot safely be closed.
+                                    // Exit our helper; Windows releases its refs,
+                                    // and the parent confirms the owned job empty.
+                                    std::process::exit(126);
+                                }
+                            }
+                            Err(error) => println!(
+                                "STATION_SWITCH form={form} access={label} error={:?}",
                                 error.code()
                             ),
                         }

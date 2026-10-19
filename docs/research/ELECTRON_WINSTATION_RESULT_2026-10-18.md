@@ -148,3 +148,22 @@ name is logged, used for authorization or passed to a launch/switch API. This
 helps distinguish an existing-object reference from an assumed fresh station;
 equality/inequality is not itself a proof of how Electron obtained its handle.
 Both name buffers are fixed2048bytes. A failed current-name query yields unknown.
+
+
+### Owned-helper station-switch measurement
+
+At1a38fb9 CI39194121929/job117873063789, all four station/access cases create and
+close successfully; their queried names are nonempty (40bytes) and differ from
+the queried current station bytes. Electron still stops with result11. This
+helper evidence does not prove Electron has identical handles or security state.
+
+The next revision measures SetProcessWindowStation in the disposable fixed
+helper only, then restores the borrowed original before closing each returned
+reference. It never switches the shared core process or another process, creates
+no desktop/window, runs no user/repository code and grants no GUI authority. A
+restore failure logs its native error and exits the owned helper126 without
+trying to close its current station; Windows releases its references on exit and
+the parent requires an empty owned job. Original source/DACL data remains read
+only. Local station creation denial prevents reaching this new branch; disposable
+Windows CI remains required for its result. This experiment supersedes the
+no-switch description of earlier probe revisions, not production policy.
