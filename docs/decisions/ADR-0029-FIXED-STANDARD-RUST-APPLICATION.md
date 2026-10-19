@@ -1,5 +1,14 @@
 # ADR0029 — Fixed standard-library Rust application proof
 
+Separate follow-up2026-10-19: the opt-in fixed offline Cargo project is research,
+not an extension of the std application's success claim. Locally Cargo returns101
+before rustc startup because its null-stdin open is denied. A parent/isolated-child
+comparison reproduces the device difference without local ACL changes. A separate
+explicit hosted-CI comparison tests a temporary exact-profile NUL grant and revoke. The added
+three-process Cargo phase, private environment and bounded known-output collector
+are test-only; no general build/dependency or disk quota authority is enabled.
+See [Cargo evidence](../research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md).
+
 Status: TEST-ONLY / EXACT NATIVE VALIDATION REQUIRED
 Date: 2026-10-17
 
@@ -46,3 +55,8 @@ its regular exclusive no-alias opened handle and16MiB size ceiling, then deletes
 only that file. The final STD_PASS marker is printed only after all known files,
 empty directories and the fresh profile are closed. No recursive sweep or
 reinterpretation of the original failure as success is permitted.
+
+The finalized fixed offline Cargo research has its own independent normal and
+disposable-prepared workflow. Its known NUL failure remains visible and does not
+redefine direct rustc application acceptance. No installed Cargo grant or runtime
+storage quota follows from integrating the test-only evidence harness.

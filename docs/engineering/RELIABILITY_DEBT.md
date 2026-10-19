@@ -24,7 +24,7 @@ The regression exercises the boundary, not a string implementation detail.
 | Dependencies | Installed runtime presence does not authorize downloads, package scripts or egress | Operator-selected restore scope, package/script policy, credentials and network boundaries |
 | Private-task journal retention | Finite record/unresolved ceilings intentionally refuse admission when full; no host retention/retirement workflow is delivered | Explicit bounded retention and safe retirement of terminal evidence without deleting unresolved work or replaying effects |
 | Filesystem enumeration and sensitive metadata | Older read-boundary review deferred prepared enumeration and classification | Bind authorization to the observed enumeration target and settle content/listing/Git-control policy with native alias tests |
-| Research PR integration | #250 and #255 have older bases and experimental native observations | Preserve exact evidence, review only the intended delta, align the target and validate that exact head; no blanket merge of the old stack |
+| Research integration follow-up | Bounded measurements from #250 and #255 are integrated on their target tracks; normal compatibility remains unavailable | Implement the support/recovery contracts rather than retaining completed measurement PRs; do not import the whole alpha into main |
 
 ## Source review coverage
 
