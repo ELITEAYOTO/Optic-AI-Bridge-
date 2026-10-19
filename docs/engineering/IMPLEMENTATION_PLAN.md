@@ -1,5 +1,10 @@
 # Implementation Plan
 
+Historical implementation breakdown. The current delivery sequence is owned by
+[ROADMAP.md](../../ROADMAP.md), and measured completion by
+[STATUS.md](../../STATUS.md). Earlier phase steps below are retained as design
+context, not a second current-status checklist.
+
 ## Phase 0 — freeze contracts
 
 Create Cargo workspace, core traits/types, SessionContext, typed errors, configuration ceilings and ADRs. No broad feature work before these compile.

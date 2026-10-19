@@ -1,5 +1,12 @@
 # Changelog
 
+## Repository consolidation — 2026-10-20
+
+- Replace stale root phase summaries with current overview, measured status and delivery order; retain exact historical snapshots in Git.
+- Add documentation navigation, a branch/PR lifecycle and exact preservation/retirement ledger.
+- Close 41 superseded PRs; preserve divergent historical heads with archive tags.
+- Record the proposed 244-branch retirement as pending explicit operator approval; no remote branch deletion or runtime change.
+
 ## Unreleased — exact isolated module reads
 
 - Candidate: derive bounded directory metadata rights from exact launcher read
