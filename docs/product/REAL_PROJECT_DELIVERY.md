@@ -14,9 +14,11 @@ This is the current delivery index; older phase/candidate entries retain history
 
 Main PR252/b33b1f9 delivered the finite-window local supervisor; PR254/e1b8288
 promoted exact Node module metadata and intermediate path pinning. Alpha PR251
-and PR253 passed exact CI and packaged/native editing acceptance. The current
-alpha/main alignment requires its own exact CI before merging. A previous package
-must keep its original source identity; this document does not relabel it.
+and PR253 passed exact CI and packaged/native editing acceptance. The alpha alignment now incorporates the lossless native-path correction from
+main PR259 and the completed test-only Cargo research from PR255, together with
+the bounded Electron measurements integrated by PR250. Each combined source
+head still requires its own exact CI and package acceptance. A previous package
+keeps its original source identity; this document does not relabel it.
 
 The alpha's opt-in supervised mode retains bounded renewable authorization while
 the local supervisor remains active. Default timed mode is retained. Stop/revoke,
@@ -57,7 +59,9 @@ sandbox downgrade. Its research stays outside main.
 
 The offline Cargo experiment reproduces a separate NUL-device access failure
 before rustc startup. A temporary exact-profile NUL permission comparison is
-restricted to disposable hosted CI and requires its own cleanup/revoke proof.
+restricted to disposable hosted CI. The exact-profile, unrelated-profile denial,
+cleanup and revoke proof completed; ordinary Cargo still fails on NUL. These
+independent results remain visible in the dedicated research workflow.
 It is not an installed setup feature, a global AllPackages grant or a change to
 the user's PC. See research PR255; keep normal and prepared results distinct.
 

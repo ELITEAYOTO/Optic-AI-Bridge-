@@ -31,8 +31,8 @@ CI39338661674 and preparation39338661374 passed before merge.
 | Track | Latest delivered increment | Evidence |
 | --- | --- | --- |
 | Main core | Local supervision #252; pinned exact Node module metadata #254 | #254 head `837fa30` passed CI 39286806748, preparation 39286806746, native pipes 39286806756 and Rust compilation 39286806794; merged as `e1b8288` |
-| Generated FS alpha | Exact replacement #251; ancestry alignment #253/#256; isolated Python environment repair #256 | #256 head `d00e212` passed CI 39292953084, adapter/package 39292952943, preparation 39292952592, pipes 39292952775 and direct Rust 39292952891; merged as `a553645` |
-| Downloaded alpha package | Source CI merge `75ace2e`, artifact 12206671614 | 85 archive entries and 80 source files verified; native packaged 32 KiB HTTP editing and Node fail/fix/check/test passed |
+| Generated FS alpha | Exact replacement #251; environment repair #256; alignment with native-path fix #259 and completed research #250/#255 | #256 head `d00e212` passed CI 39292953084, adapter/package 39292952943, preparation 39292952592, pipes 39292952775 and direct Rust 39292952891; merged as `a553645` |
+| Earlier verified alpha package | Source CI merge `75ace2e`, artifact 12206671614 | 85 archive entries and 80 source files verified; native packaged 32 KiB HTTP editing and Node fail/fix/check/test passed |
 
 The alpha ZIP SHA256 is
 `b2b34a47e22357b1e6a49d2f721b471060932ab5c538791a28afca3024ae8b14`.
@@ -81,3 +81,11 @@ temporary. Exact heads, approval and observed results are in the
 
 Next delivery steps are owned by [ROADMAP.md](ROADMAP.md). Core and alpha remain
 separate until their applicable release gates are satisfied.
+
+## Combined alpha source and package provenance
+
+This alpha integrates main through the native-path correction and completed
+Cargo measurement scope, retaining the generated adapter and owned Electron
+diagnostics. Rebuild and validate a fresh bundle for this source. The earlier
+verified package entry above is historical and does not contain the new path
+correction; it must not be relabeled or used as evidence for this source.

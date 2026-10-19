@@ -1,5 +1,10 @@
 # Changelog
 
+## Alpha hardening alignment — 2026-10-20
+
+- Integrate validated main ancestry, including lossless Windows path boundaries and completed test-only Cargo measurement, while retaining generated FS editing/Node flows and completed Electron diagnostics.
+- Adopt canonical current documentation and preserve alpha-specific environment/fixture ignores. No automatic sandbox downgrade or new model authority.
+
 ## Fixed offline Cargo research — 2026-10-20
 
 - Retain the test-only offline fixture, bounded known-output collector and exact-profile disposable NUL comparison; no installed core grant or general build tool.
