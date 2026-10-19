@@ -83,3 +83,22 @@ The workflow always runs normal and prepared cases as separate fresh profiles,
 reports both exits, and keeps a normal failure red even if the comparison passes.
 It does not automatically continue the same failed task with different authority.
 No broader host changes or assumed general Cargo success follow from either case.
+
+## Native CI observation at bcb459f
+
+Run39287609437/job118179187087 reproduced normal Cargo exit101 and isolated
+NUL error5. The separate exact-profile SID comparison successfully changed
+only that profile's observed NUL opens to read/write success. It then passed
+check, failing/corrected unit-test assertions, offline missing-dependency refusal,
+restored check and source/lock comparisons, reaching the collector. Collection
+correctly refused the previously unrecorded exact `.cargo-artifact-lock` name.
+The final cleanup/revoke/overall pass marker was not reached, so that run is not
+a completed Cargo acceptance or an acknowledged explicit revoke proof.
+
+The fixture now records only that observed additional lock name; all unknown
+products still refuse before any deletion. Bounded diagnostics list at most eight
+unknown relative names without reading file contents or traversing unknown
+subdirectories. Entry count includes unknown names. The native collector
+regression passes with the new lock while retaining all negative cases. Exact
+updated CI remains required. Main PR254/e1b8288 is merged into this research
+history; no Node/runtime production change is carried as research-only code.

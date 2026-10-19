@@ -282,6 +282,7 @@ fn known_name(name: &str, directory: bool, home: bool) -> bool {
         "CACHEDIR.TAG"
             | ".rustc_info.json"
             | ".cargo-lock"
+            | ".cargo-artifact-lock"
             | "invoked.timestamp"
             | "dep-lib-optic_private_cargo_probe"
             | "lib-optic_private_cargo_probe"
@@ -305,6 +306,8 @@ fn clean_fixed_tree(root: &Path, home: bool) -> io::Result<()> {
     let mut files = Vec::new();
     let mut pins = Vec::new();
     let mut bytes = 0_u64;
+    let mut entries = 1_usize;
+    let mut unknown = Vec::new();
     // Validate the whole bounded known-name inventory before deleting any file.
     while let Some((directory, depth)) = pending.pop() {
         if depth > 8 || directories.len() + files.len() >= 256 {
@@ -313,9 +316,10 @@ fn clean_fixed_tree(root: &Path, home: bool) -> io::Result<()> {
         let relative = directory.strip_prefix(root).unwrap();
         let pin = pin_directory_chain(root, Some(relative)).map_err(io::Error::other)?;
         for entry in fs::read_dir(&directory)? {
-            if files.len() + directories.len() + pending.len() + 1 >= 256 {
+            if entries == 256 {
                 return Err(io::Error::other("fixed Cargo inventory bound"));
             }
+            entries += 1;
             let entry = entry?;
             let path = entry.path();
             let meta = fs::symlink_metadata(&path)?;
@@ -324,9 +328,22 @@ fn clean_fixed_tree(root: &Path, home: bool) -> io::Result<()> {
                 .into_string()
                 .map_err(|_| io::Error::other("Cargo non-Unicode name"))?;
             if !known_name(&name, meta.is_dir(), home) {
-                return Err(io::Error::other(format!(
-                    "unrecorded fixed Cargo product: {name}"
-                )));
+                unknown.push(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .chars()
+                        .take(120)
+                        .collect::<String>(),
+                );
+                if unknown.len() == 8 {
+                    return Err(io::Error::other(format!(
+                        "unrecorded fixed Cargo products: home={home} first8={unknown:?}"
+                    )));
+                }
+                // Unknown directories are never traversed and unknown file
+                // contents are not opened. No deletion occurs on this path.
+                continue;
             }
             if meta.is_dir() {
                 pending.push((path, depth + 1));
@@ -347,6 +364,11 @@ fn clean_fixed_tree(root: &Path, home: bool) -> io::Result<()> {
         }
         pins.push(pin);
         directories.push(directory);
+    }
+    if !unknown.is_empty() {
+        return Err(io::Error::other(format!(
+            "unrecorded fixed Cargo products: home={home} names={unknown:?}"
+        )));
     }
     for (path, identity) in &files {
         let file = open_file_for_delete_no_reparse(path).map_err(io::Error::other)?;
@@ -407,6 +429,8 @@ fn fixed_cargo_collection_rejects_unknown_aliases_and_oversize_before_deletion()
     assert!(clean_fixed_tree(&root, false).is_err());
     assert!(known.exists());
     fs::write(&known, b"fixed").unwrap();
+    let artifact_lock = root.join(".cargo-artifact-lock");
+    fs::write(&artifact_lock, b"").unwrap();
     clean_fixed_tree(&root, false).unwrap();
     assert!(!root.exists());
 }
