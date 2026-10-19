@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — exact isolated module reads
+
+- Candidate: derive bounded directory metadata rights from exact launcher read
+  grants, pin intermediate directories, and test real nested Node resolution
+  alongside content/list/create denial. No recursive read or write grant.
+
 All notable project changes are recorded here.
 
 ## [Unreleased]
