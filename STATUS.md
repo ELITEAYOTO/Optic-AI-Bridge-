@@ -1,5 +1,13 @@
 # Project Status
 
+## Core exact Node module metadata — candidate, 2026-10-19
+
+Selective alpha promotion gives the isolated launcher metadata/traversal only
+on directories leading to existing exact source read grants. Root/intermediate
+objects remain pinned; listing, sibling content and creation remain denied.
+Native Node and boundary checks passed, as did the full local Windows Rust
+suite and Clippy. Exact Windows/Linux CI remains required before merge. No private build, dependency, Electron or HTTP authority; ADR0032.
+
 ## Core local supervision promotion — candidate, 2026-10-19
 
 Explicit CLI supervision renews only existing active session/lease scopes through

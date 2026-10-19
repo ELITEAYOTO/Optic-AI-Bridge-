@@ -195,7 +195,75 @@ fn launcher_preserves_ungranted_file_denial() {
 }
 
 #[test]
+fn launcher_node_resolves_exact_nested_modules_without_directory_data_or_write() {
+    let located = Command::new("where.exe").arg("node.exe").output().unwrap();
+    let node = String::from_utf8_lossy(&located.stdout)
+        .lines()
+        .find_map(|line| fs::canonicalize(line.trim()).ok().filter(|p| p.is_file()));
+    if std::env::var("OPTIC_REQUIRE_HOSTED_TOOLCHAINS").as_deref() == Ok("1")
+        || std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+    {
+        assert!(node.is_some(), "Windows CI must provide Node");
+    }
+    let Some(node) = node else { return };
+    let root = unique_temp_path("node-metadata");
+    fs::create_dir(&root).unwrap();
+    let _root_cleanup = DirectoryCleanup(root.clone());
+    let src = root.join("src");
+    fs::create_dir(&src).unwrap();
+    let _src_cleanup = DirectoryCleanup(src.clone());
+    let lib = src.join("lib");
+    fs::create_dir(&lib).unwrap();
+    let _lib_cleanup = DirectoryCleanup(lib.clone());
+    let model = lib.join("model.js");
+    fs::write(&model, "module.exports = 42;\n").unwrap();
+    let _model_cleanup = Cleanup(model.clone());
+    let sibling = lib.join("ungranted.txt");
+    fs::write(&sibling, b"ungranted sentinel").unwrap();
+    let _sibling_cleanup = Cleanup(sibling.clone());
+    let entry = src.join("app.js");
+    fs::write(
+        &entry,
+        r#"
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+assert.equal(require('./lib/model.js'), 42);
+const denied = f => assert.throws(f, e => ['EACCES','EPERM'].includes(e.code));
+denied(() => fs.readFileSync(__dirname + '/lib/ungranted.txt'));
+denied(() => fs.readdirSync(__dirname + '/lib'));
+denied(() => fs.writeFileSync(__dirname + '/lib/forbidden.txt', 'no'));
+console.log('EXACT_MODULES_METADATA_PASS');
+"#,
+    )
+    .unwrap();
+    let _entry_cleanup = Cleanup(entry.clone());
+    let entry_arg = entry.to_string_lossy().into_owned();
+    let output = run_launcher(launcher_request_with_read_files(
+        &node,
+        &[
+            "--preserve-symlinks",
+            "--preserve-symlinks-main",
+            &entry_arg,
+        ],
+        &root,
+        &[&entry, &model],
+        &root,
+    ));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("EXACT_MODULES_METADATA_PASS"));
+    assert_eq!(fs::read(&sibling).unwrap(), b"ungranted sentinel");
+    assert!(!lib.join("forbidden.txt").exists());
+}
+
+#[test]
 fn launcher_rejects_read_grant_outside_workspace_root() {
+    let workspace = unique_temp_path("workspace");
+    fs::create_dir(&workspace).expect("create owned workspace");
+    let _workspace_cleanup = DirectoryCleanup(workspace.clone());
     let sentinel = unique_temp_path("outside-workspace-sentinel.txt");
     fs::write(&sentinel, b"optic outside workspace sentinel").expect("write sentinel");
     let _cleanup = Cleanup(sentinel.clone());
@@ -208,13 +276,12 @@ fn launcher_rejects_read_grant_outside_workspace_root() {
         &["/c:optic outside workspace sentinel", &sentinel_arg],
         &cwd,
         &[sentinel.as_path()],
-        &cwd,
+        &workspace,
     ));
 
     assert_eq!(output.status.code(), Some(LAUNCHER_FAILURE_EXIT));
     assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("workspace grant target resolves outside the configured workspace"),
+        String::from_utf8_lossy(&output.stderr).contains("read-grant ancestor escapes workspace"),
         "out-of-workspace grant did not fail at the helper boundary: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -256,6 +323,14 @@ fn unique_temp_path(suffix: &str) -> PathBuf {
 }
 
 struct Cleanup(PathBuf);
+
+struct DirectoryCleanup(PathBuf);
+
+impl Drop for DirectoryCleanup {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.0);
+    }
+}
 
 impl Drop for Cleanup {
     fn drop(&mut self) {

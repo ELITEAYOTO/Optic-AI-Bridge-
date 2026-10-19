@@ -51,4 +51,4 @@ pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
 pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
 #[cfg(windows)]
-pub use workspace_grant::AppContainerReadFileGrant;
+pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};
