@@ -19,6 +19,9 @@ const MAX_RUNTIME: u64 = 512 * 1024 * 1024;
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 const MAX_OUTPUT: usize = 128 * 1024;
 
+#[path = "private_cargo_probe.rs"]
+mod cargo_probe;
+
 fn copy_exact(source: &Path, destination: &Path, remaining: &mut u64) -> io::Result<()> {
     let mut source = open_file_no_reparse(source).map_err(io::Error::other)?;
     let size = source.file_mut().metadata()?.len();
@@ -167,7 +170,7 @@ fn run_native_with_process_limit(
     args: &[OsString],
     process_limit: u32,
 ) -> io::Result<Compilation> {
-    if !(1..=2).contains(&process_limit) {
+    if !(1..=3).contains(&process_limit) {
         return Err(io::Error::other("fixed proof process bound"));
     }
     let input = File::open("NUL")?;
@@ -183,8 +186,20 @@ fn run_native_with_process_limit(
         ("LOCALAPPDATA".into(), root.join("local").into_os_string()),
         ("APPDATA".into(), root.join("roaming").into_os_string()),
     ];
-    if process_limit == 2 {
+    if process_limit >= 2 {
         environment.push(("LIB".into(), root.join("std-libs").into_os_string()));
+    }
+    if executable
+        .file_name()
+        .is_some_and(|name| name == "cargo.exe")
+    {
+        cargo_probe::fixed_environment(root, &mut environment);
+    }
+    if executable
+        .file_name()
+        .is_some_and(|name| name == "cargo-null-probe.exe")
+    {
+        environment.push(("OPTIC_CARGO_NULL_PROBE".into(), "1".into()));
     }
     owner.uncertain.set(true);
     let child = spawn_appcontainer_with_environment_suspended(
@@ -299,22 +314,38 @@ fn collect_fixed_output(
 #[test]
 #[ignore = "requires an explicitly selected installed direct Rust compiler"]
 fn private_rust_compiles_fixed_library_and_reports_real_type_error() {
-    run_rust_probe(false, false);
+    run_rust_probe(FixedRustProbe::Library);
 }
 
 #[test]
 #[ignore = "requires direct rustc and explicit Windows SDK kernel32 import library"]
 fn private_rust_compiles_links_and_executes_fixed_native_program() {
-    run_rust_probe(true, false);
+    run_rust_probe(FixedRustProbe::Native);
 }
 
 #[test]
 #[ignore = "requires explicit direct Rust, MSVC linker, CRT libraries and SDK"]
 fn private_rust_std_compiles_and_executes_fixed_application() {
-    run_rust_probe(true, true);
+    run_rust_probe(FixedRustProbe::Standard);
 }
 
-fn run_rust_probe(native_program: bool, standard_library: bool) {
+#[test]
+#[ignore = "requires explicit direct Cargo/Rust, MSVC linker, CRT libraries and SDK"]
+fn private_cargo_checks_and_tests_fixed_offline_project() {
+    run_rust_probe(FixedRustProbe::Cargo);
+}
+
+#[derive(Clone, Copy)]
+enum FixedRustProbe {
+    Library,
+    Native,
+    Standard,
+    Cargo,
+}
+
+fn run_rust_probe(mode: FixedRustProbe) {
+    let native_program = !matches!(mode, FixedRustProbe::Library);
+    let standard_library = matches!(mode, FixedRustProbe::Standard | FixedRustProbe::Cargo);
     let compiler = PathBuf::from(
         std::env::var_os("OPTIC_PRIVATE_RUSTC").expect("select installed direct rustc.exe"),
     );
@@ -734,6 +765,9 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
             assert_eq!(app.stdout, b"PRIVATE_RUST_STD_APP_PASS\n");
             assert!(app.stderr.is_empty());
             assert_eq!(fs::read(&source).unwrap(), standard_source);
+            if matches!(mode, FixedRustProbe::Cargo) {
+                cargo_probe::run(&owner, &root, bin, &mut remaining);
+            }
             // rustc's Windows link step can emit this exact named PDB even
             // with source debuginfo disabled. It is now an explicit output,
             // not permission to enumerate/delete arbitrary compiler products.
@@ -789,6 +823,11 @@ fn run_rust_probe(native_program: bool, standard_library: bool) {
     if standard_library {
         println!(
             "PRIVATE_RUST_STD_PASS: std compile/link/run and exact known executable/PDB/runtime cleanup confirmed; profile closed"
+        );
+    }
+    if matches!(mode, FixedRustProbe::Cargo) {
+        println!(
+            "PRIVATE_CARGO_OFFLINE_PASS: fixed Cargo check, real failing test and corrected test, unavailable dependency refused offline, bounded known outputs cleaned, owned profile closed; no general Cargo/dependency grant or runtime disk quota"
         );
     }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## Research — offline Cargo compatibility
+
+- Add an opt-in fixed Cargo project/real test-cycle gate and independent NUL
+  diagnostics. Local Cargo remains blocked before compiler launch; no public
+  tool, dependency authority or global Windows security modification is added.
+
 ## Unreleased — exact isolated module reads
 
 - Candidate: derive bounded directory metadata rights from exact launcher read

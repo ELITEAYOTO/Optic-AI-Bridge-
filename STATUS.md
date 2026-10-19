@@ -1,5 +1,15 @@
 # Project Status
 
+## Offline Cargo compatibility — research, 2026-10-19
+
+A new fixed public offline Cargo probe reaches an actual platform blocker:
+Cargo exits101 before rustc -vV because null stdin cannot open NUL. Parent
+read succeeds; the owned capability-free child refuses both device spellings
+for read/write. No global ACL, sandbox fallback or tool installation changed.
+Direct standard Rust compilation remains independent. Disposable Windows CI
+comparison is required; general Cargo and dependency support are not delivered.
+See docs/research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md.
+
 ## Core exact Node module metadata — candidate, 2026-10-19
 
 Selective alpha promotion gives the isolated launcher metadata/traversal only
