@@ -1,21 +1,26 @@
 # Filesystem Safety and Transactions
 
-## Recovery journal publication must not replace durable evidence
+## Recovery journal directory sync after publication (Linux GNU candidate)
 
-A `prepared` record is fsynced to a create-new temporary journal before
-publishing its stable name. The prior sequence checked destination absence,
-then called a potentially **replacing** `fs::rename`; an actor creating the
-stable name between those calls could have its evidence overwritten. The
-bounded `fix/recovery-journal-publish-no-replace` proposal uses a single
-native no-replace rename on supported Windows and Linux GNU systems: Windows
-`MoveFileExW` without replacement/copy flags, and Linux `renameat2` with
-`RENAME_NOREPLACE` scoped to an opened recovery directory. It does not create
-an intermediate hard-link pair requiring special interrupted recovery. Tests
-cover a preexisting destination and two competing publishers. Unsupported
-targets fail closed; this is not parent-directory pinning, directory fsync or
-a complete sudden-power-loss guarantee. Inspect exact-head PR checks and
-integration state before describing it as delivered.
+After the temporary prepared record has been synced and published via Linux
+`renameat2(RENAME_NOREPLACE)`, the recovery directory needs a separate
+`sync_all` to request durability of its new name. A scoped candidate calls
+it on the same opened directory used for rename. Failure of directory sync
+returns an error with **published stable evidence retained**, so recovery
+may reconcile the prepared intent; the caller is never told admission
+succeeded when this barrier fails. An injected-failure Linux regression
+checks this state. Windows behavior and guarantees are unchanged. A
+directory fsync is not a guarantee against every storage device or power
+loss, and the path-to-directory open remains unpinned against all races.
+Check exact-head hosted PR CI and merge before treating this as delivered.
 
+## Recovery journal publication must not replace durable evidence — PR #286
+
+[PR #286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/286) was squash-merged as `67c65a5d78a2921cee826184a2ad8bc573e4fb88` (exact head `7007ad3d202e42f642cece5f8df131035806ff35`). Hosted Windows/Linux Rust, dependency policy and the three native checks passed on that head; independent [post-merge CI #39385303625](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39385303625) passed Windows/Linux/dependencies on first attempt.
+A prepared journal is synced before publishing its stable name; no-clobber
+publication refuses existing destinations on Windows and Linux GNU.
+Neither the rename syscall nor file-only sync is itself a full crash
+persistence guarantee.
 
 ## State-root creation preflight and confinement
 

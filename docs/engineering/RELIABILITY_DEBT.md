@@ -1,9 +1,12 @@
 # Reliability and implementation debt
 
-## Journal publication no-clobber invariant — scoped candidate, 2026-10-20
+## Linux published-journal directory entry synchronization (candidate)
 
-Before the candidate change, after `ensure_action_path_absent` the recovery journal used replacing `fs::rename(temp, stable)`. A stable journal created after that absence check could be overwritten. The proposed bounded fix uses kernel-enforced no-replace rename on the two tested platforms (Win32 MoveFileExW without replacement, Linux GNU renameat2 RENAME_NOREPLACE via already locked nix); direct existing-evidence and competing-publisher tests verify neither silently overwrites. Keeping a single rename avoids introducing a new two-hardlink interrupted-recovery state. Unsupported targets now fail closed; platform support beyond hosted Windows/Linux GNU is not demonstrated. Confirm PR exact-head CI and merge. Open questions: parent directory identity/ancestor races, directory flush after rename, unexpected journal entries and sudden power loss. Windows Node/AppContainer and MCP first-response intermittencies remain separate debt.
+After [merged PR #286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/286), Linux GNU uses an opened directory and `renameat2(RENAME_NOREPLACE)` but did not call `sync_all` on that directory. Only the temporary journal file was fsynced. Proposed small change synchronizes that same directory after publication, and returns an error *while retaining the stable journal* if the directory sync fails. A Linux injected-failure test verifies the existing journal can still be inspected and reconciled. This addresses one concrete persistence barrier, **not** full power-loss guarantees or hardware cache behavior; Windows directory persistence, ancestor races and journal retirement persistence are still separate unknowns. Verify exact branch PR/CI before calling it delivered.
 
+## Journal publication no-clobber invariant — integrated by #286
+
+[PR #286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/286) was squash-merged as `67c65a5d78a2921cee826184a2ad8bc573e4fb88` (exact head `7007ad3d202e42f642cece5f8df131035806ff35`). Hosted Windows/Linux Rust, dependency policy and the three native checks passed on that head; independent [post-merge CI #39385303625](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39385303625) passed Windows/Linux/dependencies on first attempt. Preexisting evidence and concurrent publisher regressions passed; Linux uses `renameat2` no-replace, Windows uses no-replace `MoveFileExW`. Other platforms fail closed. Parent directory identity, directory synchronization and sudden-power-loss guarantees were explicitly outside #286.
 
 ## Setup-time state-root creation before denial — scoped correction under review
 
