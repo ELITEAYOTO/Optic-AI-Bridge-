@@ -8,11 +8,13 @@
   handle, while Unix checks descriptor identity and single-link count. Exact
   head `825bcdb` passed all four hosted CI checks. No general power-loss
   recovery or adversarial directory replacement proof follows.
-- **Retire #278 (proposed)**: the original `remove_regular_file` accepted
+- **Retire #278 (merged)**: the original `remove_regular_file` accepted
   a hard link as regular and then removed its directory entry, losing evidence
-  of a foreign alias. Proposed correction rejects linked objects, deletes by
-  validated exclusive handle on Windows and adds a negative preservation
-  regression. Require exact-head Windows/Linux CI before merging.
+  of a foreign alias. Merged `main` `b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`
+  rejects linked objects, deletes by validated exclusive handle on Windows
+  and has a cross-platform negative preservation regression. Exact head
+  `9778b49` passed four hosted checks in CI 39369331802 and 39369331816.
+  This does not prove Unix concurrent pathname removal safety.
 - **Still open**: journal append uses a pathname metadata check followed by
   a separate append opener; Windows staging cleanup validates, reads, closes
   and removes via separate pathname operations. Both need isolated assessment,
