@@ -56,11 +56,42 @@ impl TaskLeaseRegistry {
     }
 
     pub fn register(&self, lease: TaskLease) -> Result<(), TaskLeaseRegistryError> {
+        // Reject known duplicates and exhausted capacity before opening and
+        // hashing an executable. Never hold the registry lock during file IO.
+        {
+            let leases = self
+                .leases
+                .lock()
+                .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+            self.validate_registration(&leases, &lease)?;
+        }
+
         let process_authorities = capture_process_authorities(&lease)?;
+
         let mut leases = self
             .leases
             .lock()
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        // Concurrent registrations/removals may have changed the result since
+        // preflight. Only this locked second check authorizes insertion.
+        self.validate_registration(&leases, &lease)?;
+        leases.insert(
+            lease.id.clone(),
+            LeaseRecord {
+                lease,
+                revoked: false,
+                revocation_signal: Arc::new(AtomicBool::new(false)),
+                process_authorities,
+            },
+        );
+        Ok(())
+    }
+
+    fn validate_registration(
+        &self,
+        leases: &HashMap<TaskLeaseId, LeaseRecord>,
+        lease: &TaskLease,
+    ) -> Result<(), TaskLeaseRegistryError> {
         if leases.contains_key(&lease.id) {
             return Err(TaskLeaseRegistryError::AlreadyRegistered);
         }
@@ -78,15 +109,6 @@ impl TaskLeaseRegistry {
         if session_count >= max_leases_per_session {
             return Err(TaskLeaseRegistryError::SessionCapacityExceeded);
         }
-        leases.insert(
-            lease.id.clone(),
-            LeaseRecord {
-                lease,
-                revoked: false,
-                revocation_signal: Arc::new(AtomicBool::new(false)),
-                process_authorities,
-            },
-        );
         Ok(())
     }
 
@@ -435,6 +457,59 @@ mod tests {
                 .expect_err("global ceiling must fail closed"),
             TaskLeaseRegistryError::CapacityExceeded
         );
+    }
+
+    #[test]
+    fn denied_registration_does_not_observe_an_unavailable_executable() {
+        let root = workspace("preflight");
+        let absent_executable = root.join("missing-tool.bin");
+        let owner = SessionHandle::generate().expect("owner");
+        let foreign = SessionHandle::generate().expect("foreign");
+        let limits = HardLimits {
+            max_task_leases: 2,
+            max_task_leases_per_session: 1,
+            ..HardLimits::default()
+        };
+        let registry = TaskLeaseRegistry::from_hard_limits(limits).expect("limits");
+        let first = lease(owner.clone(), 100);
+        registry.register(first.clone()).expect("first lease");
+
+        let mut duplicate = absolute_process_lease(owner.clone(), &absent_executable, 100);
+        duplicate.id = first.id.clone();
+        assert_eq!(
+            registry.register(duplicate).expect_err("duplicate without file IO"),
+            TaskLeaseRegistryError::AlreadyRegistered
+        );
+
+        let exhausted_session = absolute_process_lease(owner, &absent_executable, 100);
+        assert_eq!(
+            registry
+                .register(exhausted_session)
+                .expect_err("session capacity before file IO"),
+            TaskLeaseRegistryError::SessionCapacityExceeded
+        );
+
+        registry.register(lease(foreign.clone(), 100)).expect("second lease");
+        let exhausted_global = absolute_process_lease(foreign, &absent_executable, 100);
+        assert_eq!(
+            registry
+                .register(exhausted_global)
+                .expect_err("global capacity before file IO"),
+            TaskLeaseRegistryError::CapacityExceeded
+        );
+
+        assert_eq!(
+            registry
+                .register(absolute_process_lease(
+                    SessionHandle::generate().expect("unoccupied session"),
+                    &absent_executable,
+                    100,
+                ))
+                .expect_err("global capacity still applies"),
+            TaskLeaseRegistryError::CapacityExceeded
+        );
+
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
