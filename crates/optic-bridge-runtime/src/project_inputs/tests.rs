@@ -879,9 +879,8 @@ assert.equal(denied,true);console.log('PRIVATE_NODE_TASK_PASS');"#;
         .await
         .unwrap();
     let root = prepared.input_root().to_path_buf();
-    let processes = Arc::new(
-        ProcessManager::new(&fixture.root, HardLimits::default(), Vec::new()).unwrap(),
-    );
+    let processes =
+        Arc::new(ProcessManager::new(&fixture.root, HardLimits::default(), Vec::new()).unwrap());
     let authority =
         Arc::new(ProcessAuthority::capture(process_task.id.clone(), &selected, class).unwrap());
     let action = ActionEnvelope {
