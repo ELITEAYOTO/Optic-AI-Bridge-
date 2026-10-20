@@ -216,6 +216,7 @@ struct JobRecord {
     state: Mutex<JobState>,
     stop_requested: Arc<AtomicBool>,
     output_overflow: AtomicBool,
+    output_read_failed: AtomicBool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -487,6 +488,7 @@ impl ProcessManager {
             }),
             stop_requested: Arc::new(AtomicBool::new(false)),
             output_overflow: AtomicBool::new(false),
+            output_read_failed: AtomicBool::new(false),
         });
 
         #[cfg(windows)]
@@ -654,7 +656,8 @@ impl ProcessManager {
             offset: cursor,
             next_offset,
             eof: closed && end == bytes.len(),
-            truncated: record.output_overflow.load(Ordering::Acquire),
+            truncated: record.output_overflow.load(Ordering::Acquire)
+                || record.output_read_failed.load(Ordering::Acquire),
         })
     }
 
@@ -685,7 +688,8 @@ impl ProcessManager {
         Ok(ProcessResult {
             status: state.status,
             exit_code: state.exit_code,
-            output_truncated: record.output_overflow.load(Ordering::Acquire),
+            output_truncated: record.output_overflow.load(Ordering::Acquire)
+                || record.output_read_failed.load(Ordering::Acquire),
         })
     }
 
@@ -1103,6 +1107,7 @@ impl ProcessManager {
             }),
             stop_requested: Arc::new(AtomicBool::new(false)),
             output_overflow: AtomicBool::new(false),
+            output_read_failed: AtomicBool::new(false),
         });
         let mut store = self
             .jobs
@@ -1391,6 +1396,8 @@ async fn monitor_child(
             Some(ProcessStatus::Failed)
         } else if record.stop_requested.load(Ordering::Acquire) {
             Some(ProcessStatus::Stopped)
+        } else if record.output_read_failed.load(Ordering::Acquire) {
+            Some(ProcessStatus::Failed)
         } else if record.output_overflow.load(Ordering::Acquire) {
             Some(ProcessStatus::OutputLimitExceeded)
         } else if Instant::now() >= deadline {
@@ -1429,12 +1436,7 @@ async fn monitor_child(
         mark_stream_closed(&record, ProcessStream::Stdout);
         mark_stream_closed(&record, ProcessStream::Stderr);
     }
-    let status =
-        if status == ProcessStatus::Exited && record.output_overflow.load(Ordering::Acquire) {
-            ProcessStatus::OutputLimitExceeded
-        } else {
-            status
-        };
+    let status = reconcile_drained_output_status(status, &record);
     if status != ProcessStatus::TerminationUncertain {
         #[cfg(windows)]
         if let Ok(mut cwd_pin) = record.cwd_pin.lock() {
@@ -1443,6 +1445,23 @@ async fn monitor_child(
     }
     if let Ok(mut state) = record.state.lock() {
         *state = JobState { status, exit_code };
+    }
+}
+
+// Drain tasks are complete before this check. A failed pipe read must never
+// turn an incomplete diagnostic stream into an apparently successful exit.
+// A separate flag preserves the distinction from an output-budget overflow.
+fn reconcile_drained_output_status(status: ProcessStatus, record: &JobRecord) -> ProcessStatus {
+    if status == ProcessStatus::Exited {
+        if record.output_read_failed.load(Ordering::Acquire) {
+            ProcessStatus::Failed
+        } else if record.output_overflow.load(Ordering::Acquire) {
+            ProcessStatus::OutputLimitExceeded
+        } else {
+            status
+        }
+    } else {
+        status
     }
 }
 
