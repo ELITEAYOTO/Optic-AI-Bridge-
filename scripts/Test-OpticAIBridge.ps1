@@ -219,6 +219,7 @@ if ($StartupTiming) {
 $process = New-Object System.Diagnostics.Process
 $process.StartInfo = $psi
 $startupClock = [Diagnostics.Stopwatch]::StartNew()
+$doctorCompleted = $false
 
 try {
     if (-not $process.Start()) { throw 'Failed to start Optic AI Bridge.' }
@@ -351,6 +352,7 @@ try {
         }
     }
 
+    $doctorCompleted = $true
     [pscustomobject]@{
         Ok = $true
         ProtocolVersion = [string]$initResponse.result.protocolVersion
@@ -367,6 +369,42 @@ finally {
     if ($process -and -not $process.HasExited) {
         try { $process.Kill() } catch { }
         try { $process.WaitForExit(2000) | Out-Null } catch { }
+    }
+    # The bridge already emits fixed, opt-in startup phase timings to
+    # stderr. Previously successful doctor runs discarded them, leaving no
+    # phase baseline for comparing intermittent slow initialization.
+    # Consume at most 4096 characters after stopping the owned bridge,
+    # never print arbitrary stderr or project data, and never block cleanup
+    # for longer than 400ms on an inherited or unexpectedly live pipe.
+    if ($StartupTiming -and $doctorCompleted -and $process -and $process.HasExited) {
+        try {
+            $chars = New-Object char[] 4096
+            $used = 0
+            $readClock = [Diagnostics.Stopwatch]::StartNew()
+            while ($used -lt $chars.Length -and $readClock.ElapsedMilliseconds -lt 400) {
+                $remaining = [Math]::Max(1, 400 - [int]$readClock.ElapsedMilliseconds)
+                $readTask = $process.StandardError.ReadAsync($chars, $used, $chars.Length - $used)
+                if (-not $readTask.Wait($remaining)) { break }
+                if ($readTask.Result -eq 0) { break }
+                $used += $readTask.Result
+            }
+            if ($used -gt 0) {
+                $startupLines = [string]::new($chars, 0, $used) -split "\r?\n"
+                $seenPhases = New-Object 'System.Collections.Generic.HashSet[string]'
+                foreach ($startupLine in $startupLines) {
+                    if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})
+) {
+                        if ($seenPhases.Add($Matches[1])) {
+                            Write-Host "OPTIC_DOCTOR_CHILD_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            # Observability is best effort; never reinterpret a successful
+            # MCP functional proof as a failure due to timing collection.
+        }
     }
     if ($process) { $process.Dispose() }
 }
