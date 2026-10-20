@@ -1,5 +1,16 @@
 # Changelog
 
+## Linux prepared-journal directory synchronization — 2026-10-20
+
+- Candidate `fix/recovery-linux-directory-sync`: after no-replace publication,
+  sync the already-open Linux GNU recovery directory before reporting success.
+- Injected failure test proves a failed directory sync returns an error while
+  the newly published `prepared` journal stays available for reconciliation.
+- Does not alter Windows behavior, filesystem grants or journal schema, nor
+  claim complete power-loss durability. Check exact-head CI and PR merge.
+- Previous #286 was merged at `67c65a5`; its post-merge main CI #39385303625
+  succeeded on its first attempt.
+
 ## Atomic no-clobber prepared journal publication — 2026-10-20
 
 - Candidate `fix/recovery-journal-publish-no-replace`: replace ordinary

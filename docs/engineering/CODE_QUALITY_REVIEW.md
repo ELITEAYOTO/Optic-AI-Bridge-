@@ -319,3 +319,14 @@ machine. No conclusion is drawn about folder identity under replacement,
 power-loss directory durability, other unsupported OSes or unrelated process
 isolation. Exact branch CI/merge must be checked live.
 
+
+## Prepared-journal Linux directory persistence (2026-10-20)
+
+A focused follow-up after #286 found `renameat2(RENAME_NOREPLACE)` did not
+sync the containing directory after publication, even though the prepared
+file had been synced. The candidate adds `sync_all` on the already-open
+Linux recovery directory, and injects sync failure to prove stable journal
+evidence remains recoverable while admission returns an error. This is a
+limited Linux filesystem persistence barrier, not a sudden-power-loss
+certification, Windows flush guarantee or ancestor pinning fix. Verify the
+source PR's exact CI/merge state separately.

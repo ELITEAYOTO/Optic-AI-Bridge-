@@ -169,33 +169,7 @@ impl MutationRecoveryJournal {
         }
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
-            use nix::fcntl::{RenameFlags, renameat2};
-
-            // Resolve both names relative to one opened directory; the
-            // kernel checks destination absence as part of the rename.
-            let dir = File::open(&self.root)?;
-            let temp_name = temp_path.strip_prefix(&self.root).map_err(|_| {
-                RecoveryJournalError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "prepared journal path must be within the recovery root",
-                ))
-            })?;
-            let journal_name = journal_path.strip_prefix(&self.root).map_err(|_| {
-                RecoveryJournalError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "published journal path must be within the recovery root",
-                ))
-            })?;
-            renameat2(
-                &dir,
-                temp_name,
-                &dir,
-                journal_name,
-                RenameFlags::RENAME_NOREPLACE,
-            )
-            .map_err(|errno| {
-                RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32))
-            })
+            self.publish_prepared_linux_with_sync(temp_path, journal_path, File::sync_all)
         }
         #[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
         {
@@ -205,6 +179,47 @@ impl MutationRecoveryJournal {
                 "atomic no-replace journal publication is unsupported on this platform",
             )))
         }
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn publish_prepared_linux_with_sync(
+        &self,
+        temp_path: &Path,
+        journal_path: &Path,
+        sync_directory: impl FnOnce(&File) -> std::io::Result<()>,
+    ) -> Result<(), RecoveryJournalError> {
+        use nix::fcntl::{RenameFlags, renameat2};
+
+        // Both names are resolved relative to the same open recovery root.
+        // Atomic no-replace publication is only a namespace change: the
+        // prepared file sync does not persist the new directory entry.
+        let dir = File::open(&self.root)?;
+        let temp_name = temp_path.strip_prefix(&self.root).map_err(|_| {
+            RecoveryJournalError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "prepared journal path must be within the recovery root",
+            ))
+        })?;
+        let journal_name = journal_path.strip_prefix(&self.root).map_err(|_| {
+            RecoveryJournalError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "published journal path must be within the recovery root",
+            ))
+        })?;
+        renameat2(
+            &dir,
+            temp_name,
+            &dir,
+            journal_name,
+            RenameFlags::RENAME_NOREPLACE,
+        )
+        .map_err(|errno| RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32)))?;
+
+        // Treat a failed directory sync as an uncertain *published* state:
+        // never remove the stable name or claim the operation was admitted.
+        // Recovery can inspect the durable intent on subsequent startup.
+        sync_directory(&dir)?;
+        Ok(())
     }
 
     pub fn mark_committing(&self, ticket: &JournalTicket) -> Result<(), RecoveryJournalError> {
@@ -1008,6 +1023,46 @@ mod tests {
             b"writer-two"
         };
         assert_eq!(fs::read(&dest).expect("one stable winner"), expected);
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    #[test]
+    fn failed_directory_sync_keeps_published_journal_for_reconciliation() {
+        let (workspace, state) = fixture("publish-dir-sync-error");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let action_id = ActionId::generate().expect("action id");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = JournalTicket {
+            action_id: action_id.clone(),
+            canonical_path: plan.canonical_path().clone(),
+            previous: plan.expected_state(),
+            intended: ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+        };
+        let prepared = serialize_line(&ticket.entry(JournalState::Prepared))
+            .expect("prepared journal bytes");
+        let temp_path = journal.prepared_temp_path(&action_id);
+        let stable_path = journal.journal_path(&action_id);
+        fs::write(&temp_path, &prepared).expect("write prepared fixture");
+
+        let error = journal
+            .publish_prepared_linux_with_sync(&temp_path, &stable_path, |_| {
+                Err(std::io::Error::other("injected directory sync failure"))
+            })
+            .expect_err("directory sync failure must not be accepted");
+        assert!(matches!(error, RecoveryJournalError::Io(_)));
+        assert!(!temp_path.exists(), "rename already published the journal");
+        assert_eq!(fs::read(&stable_path).expect("stable intent retained"), prepared);
+        let pending = journal.inspect_pending(atomic.filesystem()).expect("recover intent");
+        assert_eq!(pending.records.len(), 1);
+        assert_eq!(pending.records[0].action_id, action_id);
+        assert_eq!(
+            pending.records[0].outcome,
+            RecoveryOutcome::PreparedNotCommitted
+        );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
