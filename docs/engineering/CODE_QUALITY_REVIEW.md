@@ -133,11 +133,7 @@ The **crate-root module names remain unchanged** through explicit
 boundaries retain their module identities without a new `git` API facade.
 No Git behavior or security rules were intentionally altered.
 
-This is a mechanical layout operation, not a claim of a comprehensive Git
-security audit. In particular, test names and path-relative resources should
-be verified on the exact PR head under hosted Windows/Linux CI, rather than
-assuming that a textual identity check proves Rust module discovery. Do not
-repeat this sort of relocation in an unbounded repository-wide PR.
+The source blobs were verified identical on both Git trees. [PR #268](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/268) merged as `d79d60b` after the exact PR head `b2b5207` passed hosted Windows/Linux Rust, native preparation and dependency-policy checks. This proves the chosen layout passed the exercised tests, not a comprehensive Git security audit. Do not repeat such relocation in one unbounded repository-wide PR.
 
 ## Intermittent Windows MCP smoke observation — 2026-10-20
 
