@@ -7,12 +7,16 @@ sur leurs têtes exactes. La CI post-fusion de #277
 [#39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
 a réussi. La CI post-fusion de #278
 [#39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
-était encore en cours lors de ce point de contrôle : vérifier son résultat
-réel. Zéro PR ouverte après #278. **Ce relevé est daté, pas une instruction
+a échoué à la première tentative Windows, sur le test Node/AppContainer déjà
+intermittent (`TimedOut` à 10s, sans sortie) ; les trois diagnostics ciblés ont
+réussi. Une réexécution du seul job Windows échoué sur le même commit a été
+demandée : **vérifier le résultat de la tentative 2**. Ne pas effacer l'échec
+initial ni assimiler les diagnostics à un correctif. Zéro PR ouverte après #278. **Ce relevé est daté, pas une instruction
 de repartir de ce SHA.** Vérifier d'abord GitHub. Ne pas refaire #277/#278.
-Prochain incrément envisagé : analyser l'ouverture append du journal de
-récupération, puis séparément le nettoyage des staging, ou enquêter sur
-l'intermittence native Node/AppContainer conservée dans RELIABILITY_DEBT.md.
+Prochaine priorité recommandée : analyser l'intermittence native récurrente
+Node/AppContainer et conserver des diagnostics bornés, sans augmenter les délais
+ni réduire l'isolation. Ensuite analyser l'ouverture append du journal de
+récupération et, séparément, le nettoyage des staging.
 
 Copier le texte ci-dessous dans un nouveau chat disposant du connecteur GitHub.
 Le dépôt contient le contexte nécessaire ; aucun ancien fichier local ni
