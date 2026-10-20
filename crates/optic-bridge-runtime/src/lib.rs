@@ -9,6 +9,7 @@
 
 mod approval_broker;
 mod artifact_publication;
+#[path = "mutation/authorized.rs"]
 mod authorized_file_mutation;
 mod authorized_git_integration;
 mod blocking_io;
@@ -36,8 +37,11 @@ mod git_tree_write;
 #[path = "git/worktree.rs"]
 mod git_worktree;
 mod hardened_command;
+#[path = "mutation/journaled.rs"]
 mod journaled_mutation;
+#[path = "mutation/atomic.rs"]
 mod mutation;
+#[path = "mutation/authority.rs"]
 mod mutation_authority;
 #[cfg(windows)]
 mod private_node_task;
@@ -48,6 +52,7 @@ mod process;
 mod process_authority;
 mod project_inputs;
 mod read_authority;
+#[path = "mutation/recovery.rs"]
 mod recovery;
 mod reusable_approval_broker;
 mod same_repo_coordinator;
@@ -62,6 +67,7 @@ mod session_reusable_approval;
 mod session_worktree;
 mod task_lease_registry;
 mod tool_profile_registry;
+#[path = "mutation/transactional.rs"]
 mod transactional_file;
 mod transport;
 #[cfg(windows)]

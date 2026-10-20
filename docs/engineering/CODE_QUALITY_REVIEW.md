@@ -201,3 +201,30 @@ This is not full concurrency, platform, whole-file or source-wide assurance.
 Future work: adversarial lock-order stress, exact authority provenance,
 process monitor shutdown and MCP TEMP-only intermittent first-response failure
 without a timeout waiver or unsupported compatibility claims.
+
+## Mutation/recovery domain organization — 2026-10-20
+
+The existing runtime mutation and recovery sources are grouped in
+`crates/optic-bridge-runtime/src/mutation/` as the exact unchanged Git
+blobs `atomic.rs` (`mutation`), `journaled.rs` (`journaled_mutation`),
+`recovery.rs` (`recovery`), `authorized.rs`
+(`authorized_file_mutation`), `authority.rs` (`mutation_authority`)
+and `transactional.rs` (`transactional_file`). This is a six-file
+**physical relocation only**, not a journal format, permission, scope,
+type, recovery, file IO, timeout, precondition or public API change.
+
+`src/lib.rs` preserves the six original crate-root Rust module identities
+with explicit path declarations; existing `pub use`, `crate::...` call
+sites and inline test namespaces are intentionally unchanged. The reviewed
+sources include 63 unit-test attributes, which remain attached to their
+original modules. Other file/domain services (`filesystem`,
+`directory_create`, `artifact_publication`, `project_inputs`) were
+deliberately left untouched pending separate ownership review.
+
+Git blob identity establishes unchanged source bytes, **not** runtime
+correctness. A merge requires exact-head hosted Windows and Linux Rust
+format/Clippy/tests, dependency policy and any applicable native preparation
+checks; follow the linked PR and live checks. This is not a completed
+line-by-line audit of these modules or an endorsement of the journal schema
+for arbitrary crash/power-loss conditions. Do not re-run this as a broad
+repository-wide relocation.
