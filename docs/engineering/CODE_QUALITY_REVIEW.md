@@ -14,9 +14,10 @@ config/data files. Sizes alone do not establish defects.
 Measured large Rust files on that tree included `runtime/process.rs` (2,679
 lines), `app/main.rs` (2,320), and `runtime/project_inputs.rs` (1,524).
 The latter contained approximately 1,250 lines of inline test content. This
-increment extracts those existing tests into `src/project_inputs/tests.rs`
-and leaves production capture logic unchanged. The test relocation is not
-itself proof of test success: consult the exact PR head and hosted jobs.
+extraction was merged by PR263 into `src/project_inputs/tests.rs`
+without changing production capture logic. Its exact head `2d8a410` passed
+Windows/Linux Rust, dependency policy and native preparation before squash
+into main `bcb5e8a`. This is not an exhaustive file audit or a behavioral fix.
 
 ## Review order and completion rules
 
