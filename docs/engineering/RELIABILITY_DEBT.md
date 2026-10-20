@@ -1,10 +1,10 @@
 # Reliability and implementation debt
 
-## Windows initialization timing — diagnostic candidate, not a fix
+## Windows initialization timing — integrated diagnostic, root cause open
 
 The Windows TEMP-only doctor has intermittently failed on its first MCP response after 30 seconds while the bridge remained alive ([CI 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735), [CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039), both successful after exact-head failed-job-only reruns). In a distinct native proof, the AppContainer Node loopback test intermittently returned `TimedOut` at 10 seconds with no child output ([CI 39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900), [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)). Neither is proven related to the journal hardening.
 
-Proposed branch `diag/windows-mcp-startup-phases` adds an opt-in monotonic stderr-only static phase timeline to the Rust server and corresponding host spawn/initialization timestamps to the existing CI TEMP-only doctor. The objective is to narrow where the **next occurrence** stalls. It is not an established causal fix; Windows CI validation and eventual integration must be checked separately. No timeout increase or relaxed gate is authorized. Other surfaces remain uninstrumented.
+Merged PR #280 (`main` `8b6ccdc`, exact final head `ce15d03`, hosted CI 39373512931 passed) adds an opt-in monotonic stderr-only static phase timeline to the Rust server and corresponding host spawn/initialization timestamps to the existing CI TEMP-only doctor. The objective is to narrow where the **next occurrence** stalls. The hosted Windows TEMP-only diagnostic smoke passed and measured 7ms process start, 30ms initialize send, and 4823ms initialize response on one successful run. This is not an established causal fix. Separate post-merge main CI 39373992973 was in progress at this checkpoint. No timeout increase or relaxed gate is authorized. Other surfaces remain uninstrumented.
 
 
 ## Journal evidence lifecycle — targeted corrections, not a full audit

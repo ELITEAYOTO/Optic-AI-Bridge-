@@ -1,5 +1,7 @@
 # Prompt de reprise — GitHub uniquement
 
+Point de contrôle du 20 octobre 2026, plus récent que les observations historiques ci-dessous : `main` = `8b6ccdc2270f8fa130df5d182d728d07466df908`, PR #280 fusionnée avec CI native Windows/Linux/dépendances [39373512931](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39373512931) réussie sur sa tête exacte `ce15d03`. La CI post-fusion [39373992973](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39373992973) était encore en cours : vérifier sa conclusion réelle. L'option de diagnostic `OPTIC_STARTUP_TIMING=1` n'est activée que sur le bridge enfant du doctor Windows TEMP-only et écrit des phases fixes avec horloge monotone sur stderr. Le dernier essai réussi mesurait 7ms (démarrage processus), 30ms (initialize envoyé), 4823ms (initialize reçu). Ces nombres ne prouvent pas la cause des expirations historiques et aucun timeout/isolation n'a été assoupli. Ne pas refaire les PR #277 à #280 : analyser une occurrence réelle de l'intermittence Windows, puis traiter distinctement l'ouverture append des journaux de récupération.
+
 Dernier point de contrôle vérifié le 20 octobre 2026 : `main`
 `b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`, PR #277 et #278
 fusionnées après quatre checks Windows/Linux/dépendances/préparation native
