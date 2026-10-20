@@ -129,7 +129,86 @@ fn synthetic_record_with_workload(
         }),
         stop_requested: Arc::new(AtomicBool::new(false)),
         output_overflow: AtomicBool::new(false),
+        output_read_failed: AtomicBool::new(false),
     })
+}
+
+struct BrokenPipeReader;
+
+impl tokio::io::AsyncRead for BrokenPipeReader {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        _buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Err(std::io::Error::other("synthetic pipe read failure")))
+    }
+}
+
+#[tokio::test]
+async fn pipe_read_failure_is_not_silent_clean_eof_or_success() {
+    let root = workspace("failed-pipe-read");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap();
+    let owner = SessionHandle::generate().unwrap();
+    let record = synthetic_record(
+        owner.clone(),
+        0,
+        ProcessStatus::Running,
+        64 * 1024 * 1024,
+        25,
+    );
+    let job = JobId::generate().unwrap();
+    manager
+        .jobs
+        .lock()
+        .unwrap()
+        .jobs
+        .insert(job.clone(), record.clone());
+
+    drain_output(BrokenPipeReader, ProcessStream::Stdout, record.clone()).await;
+    assert!(record.output_read_failed.load(Ordering::Acquire));
+    assert!(!record.output_overflow.load(Ordering::Acquire));
+    let chunk = manager
+        .read(&owner, &job, ProcessStream::Stdout, 0, 1024)
+        .unwrap();
+    assert!(chunk.eof);
+    assert!(
+        chunk.truncated,
+        "read error cannot masquerade as complete output"
+    );
+
+    let final_status = reconcile_drained_output_status(ProcessStatus::Exited, &record);
+    assert_eq!(final_status, ProcessStatus::Failed);
+    assert_eq!(
+        reconcile_drained_output_status(ProcessStatus::TimedOut, &record),
+        ProcessStatus::TimedOut,
+        "a bounded timeout must retain its original reason"
+    );
+    record.state.lock().unwrap().status = final_status;
+    let result = manager.result(&owner, &job).unwrap();
+    assert_eq!(result.status, ProcessStatus::Failed);
+    assert!(result.output_truncated);
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn clean_output_eof_retains_success_status() {
+    let record = synthetic_record(
+        SessionHandle::generate().unwrap(),
+        0,
+        ProcessStatus::Running,
+        64 * 1024 * 1024,
+        25,
+    );
+    drain_output(tokio::io::empty(), ProcessStream::Stdout, record.clone()).await;
+    assert!(!record.output_read_failed.load(Ordering::Acquire));
+    assert!(!record.output_overflow.load(Ordering::Acquire));
+    assert!(record.output.lock().unwrap().stdout_closed);
+    assert_eq!(
+        reconcile_drained_output_status(ProcessStatus::Exited, &record),
+        ProcessStatus::Exited
+    );
 }
 
 async fn await_terminal(
@@ -878,6 +957,7 @@ async fn termination_uncertain_holds_capacity_and_cannot_be_reaped() {
                 }),
                 stop_requested: Arc::new(AtomicBool::new(true)),
                 output_overflow: AtomicBool::new(true),
+                output_read_failed: AtomicBool::new(false),
             }),
         );
     }

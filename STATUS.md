@@ -21,6 +21,15 @@ and [agent entry point](AGENTS.md) do not require old chat memory or local files
 
 ## Merged and validated
 
+PR265 merged into main as `a9d9a31`: the `process.rs` test body
+was moved unchanged into `process/tests.rs`; production logic remained
+byte-identical, with 27 tests preserved. Exact head `f65f69b` passed four
+hosted Windows/Linux Rust, dependency-policy and native-preparation checks.
+This is structural code quality, not a runtime security fix. The separate
+process-output diagnostic issue and its regression work are tracked by
+[CODE_QUALITY_REVIEW](docs/engineering/CODE_QUALITY_REVIEW.md); an unmerged
+fix is not counted as shipped behavior.
+
 PR263 merged into main as `bcb5e8a` after exact head `2d8a410` passed four applicable hosted checks (Windows/Linux Rust, dependency policy, native preparation). It extracts unchanged inline project-input test logic into a child test module and introduces the scoped [code quality register](docs/engineering/CODE_QUALITY_REVIEW.md); it is **not** an exhaustive file audit or a behavioral improvement. [PR #263](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/263).
 
 PR262 merged into main as `bca2eae` after its exact head `14b978b` passed all six applicable hosted checks (Windows/Linux Rust, dependency policy, native preparation, lifecycle and direct Rust). It adds a host-only, version-pinned retirement API for strictly closed private task evidence, with no model-visible deletion, automatic replay or operator workflow. This does **not** solve general retention UX or eliminate unresolved recovery capacity. [PR #262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262). No operator-PC execution. A separate source-organization review is tracked in [the quality register](docs/engineering/CODE_QUALITY_REVIEW.md); extracted tests require their own exact-head CI proof.
