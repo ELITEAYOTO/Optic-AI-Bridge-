@@ -1,5 +1,9 @@
 # Reliability and implementation debt
 
+## Exact identity-capture cost still unproven — 2026-10-20
+
+[PR #295](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/295) is merged on `main` `615e62194d3c28c01530ff8993adab2447a12c19`; independent post-merge [CI #39499240897](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39499240897) passed on its exact SHA first attempt. The native Windows TEMP-only doctor measured 5737ms after read scopes finished and before process leases completed; it has **not** yet distinguished native pinned executable canonicalization/opening/hashing from other process-lease operations. Candidate `diag/process-identity-startup-phases` records only opt-in numeric path, pin, hash and total timing at existing `ProcessAuthority::capture_with_pin`, with strict output allowlisting by the Windows doctor and unchanged security checks. **No production performance issue or improvement is claimed until exact-head CI logs validate the observation.** The 10s isolated Node loopback and rare 30s MCP first-response intermittencies remain open; do not increase timeouts or bypass pinned identity to hide either.
+
 ## MCP startup latency subphase characterization (open; 2026-10-20)
 
 [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) **merged** as `da3ab6f19a9b2544eef997cdf7edb987360c7553`: actual source-head CI #39487022400 proved opt-in child markers; post-merge main CI #39487831596 only turned green on Windows failed-job **attempt 2**, preserving the first attempt's 10s Node timeout and the first similarly failed serial reproduction. The successful second attempt and two measured MCP starts place ~5.4–7.8 seconds in the block from profile checked to process leases provisioned. That block includes multiple candidate operations; do not equate apparent slowness with defective hashing, or weaken pinned identity verification.
