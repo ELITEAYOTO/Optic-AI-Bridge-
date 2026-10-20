@@ -151,17 +151,23 @@ not research-baseline failures. The host-only retirement does not grant replay,
 MCP deletion, automatic authorizations or production retention enrollment.
 The post-merge main push CI is independent and should be checked.
 
-The operator additionally requested gradual file-size reduction, repository
+The operator also requested gradual file-size reduction, repository
 organization and an eventual file-by-file bug/security review. The inventory,
 scope and review criteria live in [CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md).
-Starting from merged main, branch `refactor/extract-project-input-tests`
-mechanically extracts the inline tests from `runtime/project_inputs.rs`
-into its child `tests.rs` file, leaving production capture code in place.
-No audit of every file has yet been performed. Do not confuse a source-count
-improvement with a product/behavior fix, and do not weaken Windows CI to pass.
+[PR #263](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/263) has
+**merged into main** as `bcb5e8afdf8b07b0757819b07fc93cd62078c620`.
+Its final head `2d8a410ac268735c2a4074e698cb755abc9bc420` passed hosted
+Windows/Linux Rust, dependency policy and native preparation before merge;
+a previous head failed rustfmt and was corrected. The project input test
+body was moved mechanically into a child module; capture production code is
+unchanged. The quality tracker is a staged review plan, **not** a completed
+audit of every file. Post-merge main CI run 39353667299 is separate.
 
-Next agent action: inspect the new refactor PR on its exact head, Rust format,
-clippy and native Windows/Linux tests, address actual failures, then merge only
-with applicable results. Keep code-audit status scoped and historically measured.
-There is no approved operator-PC testing and no need to revisit mass branch
-cleanup or close independent normal Cargo/Electron research failure gates.
+Next agent action: check the latest main push CI, then choose one bounded
+refactor or begin the file-by-file review at the highest-risk native
+process/lease boundaries. Every confirmed defect needs a regression and
+applicable Windows-native proof. No operator-PC testing is approved. The
+connected GitHub tools currently lack a branch-deletion action, so the two
+integrated work-branch heads remain; only exact verified heads should later
+be retired, not archive/preservation refs or a mass cleanup. Normal
+Cargo/Electron research baselines remain unresolved.
