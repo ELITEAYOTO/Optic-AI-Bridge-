@@ -1431,8 +1431,20 @@ async fn monitor_child(
         stderr_task.abort();
     }
     let intentional_abort = status == ProcessStatus::TerminationUncertain;
-    join_output_drain(&record, ProcessStream::Stdout, stdout_task, intentional_abort).await;
-    join_output_drain(&record, ProcessStream::Stderr, stderr_task, intentional_abort).await;
+    join_output_drain(
+        &record,
+        ProcessStream::Stdout,
+        stdout_task,
+        intentional_abort,
+    )
+    .await;
+    join_output_drain(
+        &record,
+        ProcessStream::Stderr,
+        stderr_task,
+        intentional_abort,
+    )
+    .await;
     if intentional_abort {
         mark_stream_closed(&record, ProcessStream::Stdout);
         mark_stream_closed(&record, ProcessStream::Stderr);
