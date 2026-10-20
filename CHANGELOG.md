@@ -1,5 +1,20 @@
 # Changelog
 
+## Recovery journal append alias review — 2026-10-20
+
+- Proposed short change `fix/recovery-journal-append-identity`: check opened
+  journal file identity and single-link ownership before persisting additional
+  journal states, with an alias-preservation regression.
+- Windows reuses the existing exclusive no-reparse state-file handle; Unix
+  checks actual descriptor identity and single-link count. The append size
+  ceiling is evaluated on the opened file. Schema, state machine and grants
+  are untouched.
+- **Delivery/validation pending** at documentation authoring time: inspect the
+  live PR/checks and merge state before claiming integration; staging cleanup,
+  directory pinning, Unix concurrent namespace races and power-loss durability
+  remain separate.
+
+
 ## Opt-in Windows MCP startup evidence — 2026-10-20
 
 - [PR #280](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/280) merged as `8b6ccdc`: bounded diagnostics for the intermittent Windows TEMP-only doctor initialization, without altering production permission/isolation or timeouts. Exact head `ce15d03` passed hosted Windows/Linux Rust and dependency policy in CI 39373512931.

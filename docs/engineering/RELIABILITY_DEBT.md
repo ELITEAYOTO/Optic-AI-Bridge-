@@ -1,5 +1,10 @@
 # Reliability and implementation debt
 
+## Journal append opened-file identity — bounded next increment (2026-10-20)
+
+On `main` `4b66fd0ca5e0ed397c589548d3fbf331e067df6a`, `MutationRecoveryJournal::append` used pathname `symlink_metadata` and then a distinct append open without verifying its link count or identity. This permitted a deterministic hard-link alias of valid journal evidence to receive new bytes, although #277 read and #278 retirement deliberately refuse that alias. The new `fix/recovery-journal-append-identity` branch refuses multi-link files before writes: existing Windows exclusive no-reparse/single-link state handle, and Unix opened descriptor link/device/inode validation against pre-open metadata; both remeasure the opened length before appending. A cross-platform regression preserves original bytes on an aliased journal. **This review is not a completed delivery until the branch PR is merged with exact-head Windows/Linux checks.** Unix concurrent pathname and size races, Windows unpinned directory replacement, journal publication and staging cleanup remain separate open items. This does not establish full power-loss durability.
+
+
 ## Windows initialization timing — integrated diagnostic, root cause open
 
 The Windows TEMP-only doctor has intermittently failed on its first MCP response after 30 seconds while the bridge remained alive ([CI 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735), [CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039), both successful after exact-head failed-job-only reruns). In a distinct native proof, the AppContainer Node loopback test intermittently returned `TimedOut` at 10 seconds with no child output ([CI 39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900), [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)). Neither is proven related to the journal hardening.

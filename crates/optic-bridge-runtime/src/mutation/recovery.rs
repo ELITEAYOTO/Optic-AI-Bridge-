@@ -10,6 +10,8 @@ use optic_bridge_core::{
 };
 #[cfg(not(windows))]
 use std::fs::File;
+#[cfg(windows)]
+use std::io::{Seek, SeekFrom};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -252,8 +254,35 @@ impl MutationRecoveryJournal {
         }
 
         let bytes = serialize_line(&ticket.entry(state))?;
-        self.ensure_file_size(metadata.len(), bytes.len())?;
+
+        // The pathname-only check above is not evidence that the subsequent
+        // opener targets that same single-link journal. Validate the opened
+        // object before the first append byte can reach durable evidence.
+        #[cfg(windows)]
+        let mut opened = optic_bridge_windows::open_exclusive_state_file(&path, false)
+            .map_err(RecoveryJournalError::NativeJournalFile)?;
+        #[cfg(windows)]
+        let file = opened.file_mut();
+        #[cfg(not(windows))]
         let mut file = OpenOptions::new().append(true).open(&path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+
+            let actual = file.metadata()?;
+            if !actual.is_file()
+                || actual.nlink() != 1
+                || actual.dev() != metadata.dev()
+                || actual.ino() != metadata.ino()
+            {
+                return Err(RecoveryJournalError::UnexpectedJournalEntry);
+            }
+        }
+        // Use the actual open handle's length, not just the earlier pathname
+        // observation. Windows' exclusive handle pins this file through sync.
+        self.ensure_file_size(file.metadata()?.len(), bytes.len())?;
+        #[cfg(windows)]
+        file.seek(SeekFrom::End(0))?;
         file.write_all(&bytes)?;
         file.sync_all()?;
         Ok(())
@@ -1033,6 +1062,40 @@ mod tests {
         );
         assert_eq!(fs::read(&outside).expect("external evidence"), original);
         assert_eq!(fs::read(&journal_path).expect("journal evidence"), original);
+
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn append_rejects_hard_linked_journal_without_changing_external_evidence() {
+        let (workspace, state) = fixture("append-hardlink");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let path = WorkspacePath::parse("new.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = journal
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        let journal_path = journal.journal_path(ticket.action_id());
+        let outside = state
+            .parent()
+            .expect("fixture base")
+            .join("external-append-evidence");
+        let before = fs::read(&journal_path).expect("original journal");
+
+        fs::rename(&journal_path, &outside).expect("move journal outside state");
+        fs::hard_link(&outside, &journal_path).expect("link external journal");
+
+        assert!(
+            journal.mark_committing(&ticket).is_err(),
+            "aliased recovery journal must not be appended"
+        );
+        assert_eq!(fs::read(&outside).expect("external evidence"), before);
+        assert_eq!(fs::read(&journal_path).expect("journal evidence"), before);
 
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
