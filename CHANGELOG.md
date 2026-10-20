@@ -1,5 +1,10 @@
 # Changelog
 
+## Stabilization diagnostics — MCP startup subphase investigation (2026-10-20)
+
+- [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) **merged** as `da3ab6f19a9b2544eef997cdf7edb987360c7553`. Hosted exact-source CI #39487022400 passed first attempt, while independent post-merge main CI #39487831596 succeeded only on attempt 2: the first Windows test reproduced the old 10-second Node AppContainer timeout (plus one failed serial diagnostic). Passing MCP child phases showed a ~5.4–7.8s span between profile check and process lease completion. The original failure remains in GitHub, and neither startup defect is fixed.
+- Scoped **candidate** `diag/mcp-lease-startup-subphases`: additional fixed, opt-in Git/session/read authority phase markers, emitted only as bounded numeric timing lines by the existing Windows doctor. No authorization, identity hashing, timeout, runtime capability, MCP protocol or native isolation change. Do not call delivered until exact-head CI and merge are confirmed.
+
 ## Candidate: retain unpublished evidence across full recovery validation (2026-10-20)
 
 - The integrated #288 journal-only preflight and #291 staging-only preflight still left full Windows recovery able to remove unpublished prepared journal files before rejecting unrelated corrupt staged content. Candidate branch `fix/recovery-cross-phase-evidence` defers that deletion until both journal and staging validation have passed, while preserving standalone journal reconcile semantics.
