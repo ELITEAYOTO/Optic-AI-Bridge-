@@ -284,3 +284,15 @@ regression preserves both original external and journal evidence bytes.
 This review does not establish safe concurrent Unix pathname/size mutation,
 full parent-directory pinning, staging cleanup or power-loss durability.
 
+
+## Staging cleanup evidence and deletion identity (PR #284, 2026-10-20)
+
+Scoped source review of Windows `journaled.rs::cleanup_recovered_staging`:
+the reader was closed before a separate pathname delete. The bytes/hash
+check allowed a foreign hard-link alias with matching content. PR #284
+reuses existing native no-reparse single-link exclusive delete handle and
+tests rejection with **both** file links and the durable journal preserved.
+This is a targeted recovery-evidence boundary correction, not a complete
+file-by-file code review, parent-directory race solution, or proof of
+sudden-power-loss durability. Its exact validation and merger are recorded
+on the PR, not presumed by this review note.

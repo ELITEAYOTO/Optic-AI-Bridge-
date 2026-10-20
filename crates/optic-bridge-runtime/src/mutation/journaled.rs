@@ -1,7 +1,7 @@
 use std::path::Path;
 
 #[cfg(windows)]
-use std::fs::{self, File};
+use std::fs;
 
 use optic_bridge_core::{
     ActionId, ContentVersion, ContentVersionReadError, ExpectedState, HardLimits, WorkspacePath,
@@ -334,30 +334,47 @@ impl JournaledMutationService {
                 });
             }
 
-            let mut file = File::open(&staging).map_err(|source| {
+            // Use the same exclusively opened, no-reparse, single-link handle
+            // for bounded verification and deletion. Opening a second pathname
+            // after checking bytes would permit a namespace swap, and a hard
+            // link would turn foreign evidence into a plausible staging file.
+            let mut opened = optic_bridge_windows::open_exclusive_file_for_delete_no_reparse(
+                &staging,
+            )
+            .map_err(|source| JournaledMutationError::StagingCleanupFailed {
+                action_id: record.action_id.clone(),
+                source: std::io::Error::other(source),
+            })?;
+            let opened_size = opened.file_mut().metadata().map_err(|source| {
                 JournaledMutationError::StagingCleanupFailed {
                     action_id: record.action_id.clone(),
                     source,
                 }
             })?;
-            let observed = ContentVersion::from_reader_bounded(&mut file, self.max_mutation_bytes)
-                .map_err(|source| JournaledMutationError::StagingObservationFailed {
+            if opened_size.len() > self.max_mutation_bytes {
+                return Err(JournaledMutationError::StagingArtifactTooLarge {
                     action_id: record.action_id.clone(),
-                    source,
-                })?;
+                    limit: self.max_mutation_bytes,
+                });
+            }
+            let observed =
+                ContentVersion::from_reader_bounded(opened.file_mut(), self.max_mutation_bytes)
+                    .map_err(|source| JournaledMutationError::StagingObservationFailed {
+                        action_id: record.action_id.clone(),
+                        source,
+                    })?;
             if observed != intended_version {
                 return Err(JournaledMutationError::StagingContentMismatch {
                     action_id: record.action_id.clone(),
                 });
             }
-            drop(file);
 
-            fs::remove_file(&staging).map_err(|source| {
-                JournaledMutationError::StagingCleanupFailed {
+            opened
+                .delete()
+                .map_err(|source| JournaledMutationError::StagingCleanupFailed {
                     action_id: record.action_id.clone(),
-                    source,
-                }
-            })?;
+                    source: std::io::Error::other(source),
+                })?;
         }
         Ok(())
     }
@@ -675,6 +692,53 @@ mod tests {
                 .expect("journal root")
                 .count(),
             1
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_rejects_hard_linked_staging_and_preserves_both_evidence_files() {
+        let (workspace, state) = fixture("staging-hard-link");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = service
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = service
+            .journal()
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        service
+            .journal()
+            .mark_committing(&ticket)
+            .expect("committing");
+
+        let staging = staging_path_for(service.atomic().filesystem(), &path, ticket.action_id());
+        let external_evidence = state.join("outside-staging-evidence");
+        fs::write(&external_evidence, b"new").expect("external evidence");
+        fs::hard_link(&external_evidence, &staging).expect("hard link at staging name");
+
+        assert!(matches!(
+            service.recover(),
+            Err(JournaledMutationError::StagingCleanupFailed { .. })
+        ));
+        assert_eq!(
+            fs::read(&external_evidence).expect("external retained"),
+            b"new"
+        );
+        assert_eq!(fs::read(&staging).expect("staging retained"), b"new");
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("journal root")
+                .count(),
+            1,
+            "recovery must retain durable intent if staging cleanup is unsafe"
         );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }

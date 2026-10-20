@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Scoped Windows staging recovery evidence — 2026-10-20
+
+GitHub bootstrap: `main` `d11d27c8efb1048f504d96024e4015ec60fd1535`, zero open PRs, and [post-merge CI #39376986248](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376986248) success on first attempt for Windows Rust, Linux Rust and dependency policy. The current work is [PR #284](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284) on `fix/recovery-staging-handle-delete`. **Its eventual merge and checks are not pre-asserted**: re-open GitHub and validate exact head, reviews, hosted Windows/Linux and post-merge `main` before declaring success.
+
+The defect was demonstrated in source: Windows `cleanup_recovered_staging` accepted a staging hard link if bytes matched the journal, closed the validation file handle then independently deleted the pathname. The targeted replacement uses the existing native exclusive, non-reparse, single-hard-link delete opener; verifies bounded content and deletes with the same live handle. One native regression asserts hard-linked external evidence, staging bytes and durable journal all survive a rejected recovery. No change to mutation contracts, new rights or byte ceilings.
+
+Remain explicit: the root/parent directory is not pinned by this increment; full ancestor-reparse or namespace replacement resistance and power-loss durability are not proved. Separate Windows Node/AppContainer/MCP cold-start intermittencies remain active debt. Next follow-up should investigate only a demonstrable flaw in remaining temporary journal publication or root identity, not another broad refactor. No PC execution, self-hosted runner, release or mass branch cleanup. Preserve main/alpha separation.
+
+
 ## Current GitHub continuation — journal append integrated, 2026-10-20
 
 Fresh verified `main`: `bf79b320b4e7aa04a02c87fe448d589296bc8bb2`. [PR #282](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/282) was squash-merged from final head `c837cead816fb59c5d3a94b8d9b5fe1926987644`. That head passed all hosted Windows Rust, Linux Rust and dependency policy checks in [CI #39375905332](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39375905332), plus Windows [native preparation #39375905331](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39375905331). Its first head failed a Windows-only Clippy `unused_mut` warning; the final head corrected it without suppressing Clippy. The post-merge [main run #39376336498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376336498) had started on that SHA and was still executing when this note was drafted. **Verify live status**, not this time-stamped text, before describing post-merge CI as passed. GitHub showed zero open PRs after #282.
