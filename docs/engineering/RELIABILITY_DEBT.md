@@ -1,5 +1,9 @@
 # Reliability and implementation debt
 
+## Cross-phase recovery cleanup ordering — under test (2026-10-20)
+
+A distinct Windows failure mode was identified from source at `main` `1019fae055993c11348e99a361be1eae04ea206b`: when full recovery had valid stable journal records plus an unrelated valid unpublished `*.prepared.tmp`, but a later staged artifact mismatched durable intended bytes, `inspect_pending` first removed the unpublished file and only then `cleanup_recovered_staging` rejected the staged content. Previous #288 and #291 fixed ordering *within* each respective validation phase, not across them. The scoped candidate `fix/recovery-cross-phase-evidence` retains scanned unpublished names during a no-cleanup journal pass and validates staging before unpublished deletion. Native Windows negative regression requires both evidence sources retained and verifies successful cleanup after repair. **Pending PR, exact-head native CI and merge**, not yet delivered. Unchanged risks: partially completed multi-file removal under later failures/races, ancestor pathname replacement and unproven power-loss durability. Do not confuse this with separate Windows Node/MCP startup intermittencies.
+
 ## Verified closure and remaining limitations — 2026-10-20
 
 `main` was verified at `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02` with no open PRs; [post-merge CI #39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) passed hosted Windows Rust, Linux Rust and dependency checks on its exact SHA, first attempt.
