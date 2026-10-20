@@ -774,8 +774,18 @@ mod tests {
         );
 
         fs::write(&staging, b"expected").expect("repair staging");
-        assert_eq!(service.recover().expect("successful recovery").records.len(), 1);
-        assert!(!unpublished.exists(), "unpublished cleanup after full validation");
+        assert_eq!(
+            service
+                .recover()
+                .expect("successful recovery")
+                .records
+                .len(),
+            1
+        );
+        assert!(
+            !unpublished.exists(),
+            "unpublished cleanup after full validation"
+        );
         assert!(!staging.exists(), "staging cleanup after full validation");
         assert_eq!(
             fs::read_dir(service.journal().root())
