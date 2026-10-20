@@ -477,7 +477,9 @@ mod tests {
         let mut duplicate = absolute_process_lease(owner.clone(), &absent_executable, 100);
         duplicate.id = first.id.clone();
         assert_eq!(
-            registry.register(duplicate).expect_err("duplicate without file IO"),
+            registry
+                .register(duplicate)
+                .expect_err("duplicate without file IO"),
             TaskLeaseRegistryError::AlreadyRegistered
         );
 
@@ -489,7 +491,9 @@ mod tests {
             TaskLeaseRegistryError::SessionCapacityExceeded
         );
 
-        registry.register(lease(foreign.clone(), 100)).expect("second lease");
+        registry
+            .register(lease(foreign.clone(), 100))
+            .expect("second lease");
         let exhausted_global = absolute_process_lease(foreign, &absent_executable, 100);
         assert_eq!(
             registry
