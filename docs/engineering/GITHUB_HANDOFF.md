@@ -21,14 +21,25 @@ passed hosted Windows/Linux Rust and dependency policy;
 [native preparation 39369331816](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369331816)
 passed. The independent `main` CI
 [39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
-was in progress at this checkpoint; verify its live conclusion. The original
+failed Windows Rust Test on attempt 1 for the known intermittent native
+AppContainer/Node network probe (`TimedOut` at 10s, no output); three serial
+reruns of the single diagnostic passed. The original failure remains retained
+and the failed-Windows-job-only second attempt on exact `main` SHA `b15fe76`
+was requested; **check the live rerun conclusion**. Linux/dependency passed.
+The original
 #278 head failed rustfmt, corrected on a new exact head without waiver.
 There were zero open PRs following the observed merge. Previous handoff
 checkpoints below are historical and must not be treated as reset targets.
 Branch retirement tooling is unavailable through this connector; the integrated
 work branches remain without bulk cleanup.
 
-**Next specific review:** journal append path in
+**Next specific review:** prioritize the now-repeated Windows
+`capability_free_appcontainer_denies_node_loopback_connection` failure
+(run 39363540900 and again 39369706540 attempt 1). Inspect bounded isolation
+launch/scheduling/start-of-script timestamps and deterministic diagnostics;
+do not extend the 10s watchdog, disable the native gate or interpret diagnostic
+passes as a production fix. In a separate subsequent increment, review the
+journal append path in
 `crates/optic-bridge-runtime/src/mutation/recovery.rs`: it checks pathname
 metadata then opens for append separately, without the equivalent alias/
 opened-file identity protection now used for reading or retirement.
