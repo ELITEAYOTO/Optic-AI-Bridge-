@@ -1000,7 +1000,9 @@ mod tests {
         contents.extend_from_slice(b"{\"version\":");
         fs::write(&journal_path, contents).expect("torn append");
 
-        let report = journal.inspect_pending(atomic.filesystem()).expect("inspect");
+        let report = journal
+            .inspect_pending(atomic.filesystem())
+            .expect("inspect");
         assert_eq!(report.records.len(), 1);
         assert_eq!(
             report.records[0].outcome,
