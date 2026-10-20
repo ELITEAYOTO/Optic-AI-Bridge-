@@ -1,5 +1,10 @@
 # Reliability and implementation debt
 
+## Windows Node loopback timing evidence (bounded follow-up, 2026-10-20)
+
+The original Windows hosted attempts [39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900) and [39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540) each reported `TimedOut` after the unchanged 10s process deadline in `capability_free_appcontainer_denies_node_loopback_connection`, with no child stdout/stderr or accepted host connection. Each was followed by three successful serialized diagnostics showing a Node connection attempt denied with exit 42. Empty output does not prove the child never entered user code; process preparation and spool drainage could also matter. A strictly diagnostic-only candidate on `diag/windows-node-probe-phases` instruments the *existing* Windows test's monotonic host phases and an early script-entry marker; it does not assert a root cause or relax any acceptance requirement. Inspect its PR and native exact-head checks before claiming delivery. Distinct 30s MCP first-response failures remain a separate debt entry; a 7580ms successful initialize observation on [main CI #39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) is not causal proof.
+
+
 ## Recovery scan eager unpublished cleanup — corrected by PR #288
 
 [PR #288](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/288) was squash-merged at `b1edc83438571867bd164ea0b2b9653304eed752` from source `60206dcadbf2efb57800ca93f0bd226acf16f6fb`. Its hosted [CI #39388280621](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388280621) passed Windows Rust, Linux Rust and dependency policy; [native preparation #39388280521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388280521) passed too. Independent [post-merge CI #39388749406](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388749406) succeeded on the same merge SHA, first attempt (Windows, Linux, dependencies). GitHub showed zero open PRs at verification.
