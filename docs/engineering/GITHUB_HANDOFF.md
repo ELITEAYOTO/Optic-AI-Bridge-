@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Fresh GitHub reconciliation and Windows Node phase investigation — 2026-10-20
+
+[PR #289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/289) was merged as `aba3f9c182a052c909b287531611854dd89d2f76`. Independent [main CI #39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) passed on that exact SHA, first attempt (hosted Windows Rust, Linux Rust, dependency policy); there were zero open PRs at the inspection. The user's **stabilization-only** restriction is unchanged.
+
+Read-only comparison of first-attempt Windows logs found two native Node network-denial test expirations: [39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900) and [39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540). Both showed `TimedOut`, empty stdout/stderr and no accepted connection, followed by three passing serialized diagnostics with `NETWORK_ATTEMPT` and `NETWORK_DENIED:ETIMEDOUT` (exit 42). These observations distinguish a runtime timeout from a demonstrated network escape but **do not identify the stalled phase**. The old MCP [39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039) first-response failure had no #280 opt-in timing markers because it preceded that increment; the later successful [39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) doctor responded at 7580ms after start, not 30s.
+
+A *test-only* follow-up on `diag/windows-node-probe-phases` adds monotonic timings for host setup, request to launch, return from launch, and terminal observation; Node prints `NODE_PROBE_STARTED` before loading `net`. Existing output ceilings, 10s process budget, 1500ms in-script timer, native assertions and network denial stay unchanged. The code may only be counted as integrated after its PR's exact-head CI and merge are verified. If another ordinary Windows run fails, correlate the first-attempt elapsed phases and script-entry marker before proposing a narrow causal fix; never increase timeouts or mask the gate. Do not conflate the separate MCP and Node failure modes.
+
+
 ## Current operator handoff — stabilization freeze (2026-10-20)
 
 **Temporary delivery policy (operator decision, 2026-10-20): stabilization only.** Pause new features, product expansion, experimental merges, architectural reshuffles and broad refactors. Work exclusively on verified defects, security and recovery boundaries, flaky-test root causes, focused regressions, and accurate status/debt documents. Do not create code changes merely to keep PRs moving; when no defect can be demonstrated, record the evidence and stop. Preserve all existing permissions, isolation, deadlines, budgets and CI gates. Resuming feature development requires fresh operator direction.

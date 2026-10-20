@@ -321,6 +321,8 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
     let Some(node) = node else {
         return;
     };
+    // Diagnostic clock is observational only; the process budget is unchanged.
+    let probe_clock = Instant::now();
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind loopback listener");
     listener
@@ -346,9 +348,11 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
     )
     .expect("process manager with isolation launcher");
     let session = SessionHandle::generate().expect("session");
+    let manager_ready_ms = probe_clock.elapsed().as_millis();
 
     let script = format!(
-        "const net=require('net');\n\
+        "console.log('NODE_PROBE_STARTED');\n\
+         const net=require('net');\n\
          console.log('NETWORK_ATTEMPT');\n\
          const socket=net.createConnection({{host:'127.0.0.1',port:{}}});\n\
          const timer=setTimeout(()=>{{console.error('NETWORK_TIMEOUT');socket.destroy();process.exit(43);}},1500);\n\
@@ -357,6 +361,7 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
         address.port()
     );
 
+    let launch_requested_ms = probe_clock.elapsed().as_millis();
     let job = manager
         .start(ProcessStartSpec {
             session: session.clone(),
@@ -376,8 +381,10 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
             },
         })
         .expect("start isolated Node network probe");
+    let launch_returned_ms = probe_clock.elapsed().as_millis();
 
     let result = await_terminal(&manager, &session, &job).await;
+    let terminal_observed_ms = probe_clock.elapsed().as_millis();
     let stdout = manager
         .read(&session, &job, ProcessStream::Stdout, 0, OUTPUT_BYTES)
         .expect("read network probe stdout");
@@ -389,7 +396,7 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
     let accepted = accept_within(&listener, Duration::from_millis(500));
 
     println!(
-        "OPTIC_NETWORK_ISOLATION executable={node:?} status={:?} exit={:?} accepted={accepted:?} stdout={stdout:?} stderr={stderr:?}",
+        "OPTIC_NETWORK_ISOLATION executable={node:?} manager_ready_ms={manager_ready_ms} launch_requested_ms={launch_requested_ms} launch_returned_ms={launch_returned_ms} terminal_observed_ms={terminal_observed_ms} status={:?} exit={:?} accepted={accepted:?} stdout={stdout:?} stderr={stderr:?}",
         result.status, result.exit_code
     );
 

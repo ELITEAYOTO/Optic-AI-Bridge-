@@ -1,5 +1,12 @@
 # Current project status
 
+## Latest GitHub verification and Windows diagnostic-only increment — 2026-10-20
+
+[PR #289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/289) was squash-merged as `aba3f9c182a052c909b287531611854dd89d2f76`. Its independent hosted [post-merge CI #39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) passed on the **exact main SHA**, first attempt: Windows Rust, Linux Rust and dependency policy; no PR was open at the verification checkpoint. The stabilization-only operator direction below remains binding.
+
+The separate Windows Node/AppContainer loopback intermittency was re-examined against first-attempt failure logs in [CI #39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900) and [CI #39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540). Both failed with a 10s process `TimedOut`, empty stdout/stderr and no accepted connection, while three subsequent serial diagnostic attempts in each case exited 42 with actual denial markers. No root cause follows from this. A bounded test-only diagnostic increment records monotonic parent preparation/launch/terminal phases and a child script-entry marker in the **existing** native Windows proof; it does not change the deadline, network authority, assertions, process implementation or CI gate. Verify the increment's PR and exact-head Windows CI before treating the instrumented test as integrated; it is not a fix for the intermittent timeout. MCP first-response timing remains a separate issue.
+
+
 ## Stabilization-only baseline — 2026-10-20
 
 **Temporary delivery policy (operator decision, 2026-10-20): stabilization only.** Pause new features, product expansion, experimental merges, architectural reshuffles and broad refactors. Work exclusively on verified defects, security and recovery boundaries, flaky-test root causes, focused regressions, and accurate status/debt documents. Do not create code changes merely to keep PRs moving; when no defect can be demonstrated, record the evidence and stop. Preserve all existing permissions, isolation, deadlines, budgets and CI gates. Resuming feature development requires fresh operator direction.
