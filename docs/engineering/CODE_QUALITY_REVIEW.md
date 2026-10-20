@@ -108,10 +108,12 @@ could be returned as `Exited` with `output_truncated=false` even if stdout
 or stderr had become unreadable. This is a concrete source-level reliability
 finding, not an observed production incident.
 
-A separate targeted change `fix/process-output-read-errors` tracks a distinct
-bounded read-failure flag in the private job record and refuses an otherwise
-successful process result after an incomplete drain. It preserves the existing
-output-budget signal, ownership, CPU/memory reservations, deadlines and native
-stop uncertainty. Two synthetic async reader regressions cover failed reads
-and clean EOF, while hosted Windows and Linux CI must confirm compilation,
-format, and native behavior before support can be claimed.
+PR266 delivered the correction on main as `5a8157e`, from source head
+`4e4c712` with all four applicable hosted Windows/Linux Rust, dependency
+policy and native-preparation checks passing. It tracks a distinct bounded
+read-failure flag in the private job record and refuses an otherwise
+successful result after incomplete drain. It retains the original budget,
+ownership, CPU/memory reservation, deadline and termination-uncertainty
+contracts. Two synthetic async-reader regressions cover failed reads and
+clean EOF; these do not establish full end-to-end failure injection or
+power-loss durability.
