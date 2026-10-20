@@ -1,5 +1,11 @@
 # Changelog
 
+## GitHub-only continuity — 2026-10-20
+
+- Add agent entry instructions, a repository-owned GitHub handoff and a complete reusable French continuation prompt.
+- Link current docs to hosted validation and the operator's no-PC-testing direction; preserve native Windows gates and known research failures.
+- Refresh source/package provenance after #259, #255 and alpha alignment #260; mark the older read-boundary audit as historical.
+
 ## Fixed offline Cargo research — 2026-10-20
 
 - Retain the test-only offline fixture, bounded known-output collector and exact-profile disposable NUL comparison; no installed core grant or general build tool.

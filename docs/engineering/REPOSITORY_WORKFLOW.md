@@ -1,5 +1,10 @@
 # Repository workflow
 
+For the current GitHub-only continuation, follow [GITHUB_HANDOFF.md](GITHUB_HANDOFF.md):
+no operator-PC execution or self-hosted testing. Canonical handoff documentation
+lives on main; read it from main even when changing the alpha adapter. New agent
+sessions must inspect live PRs/heads rather than assume a dated inventory persists.
+
 ## Reference branches
 
 - `main`: reviewed Rust core, operator integration and canonical current docs.

@@ -22,6 +22,8 @@ context; it is not production authentication or per-conversation isolation.
 
 ## Start here
 
+- [Resume in another AI chat](PROJECT_CONTINUITY_PROMPT.md) — complete GitHub-only prompt, no operator-PC testing.
+- [Agent entry point](AGENTS.md) and [current handoff](docs/engineering/GITHUB_HANDOFF.md) — live-state bootstrap, CI map and open limits.
 - [Current status](STATUS.md) — merged work, exact evidence and remaining gates.
 - [Delivery order](ROADMAP.md) — the next real-project acceptance steps.
 - [Documentation map](docs/README.md) — architecture, security, tools and operations.
@@ -35,6 +37,10 @@ The default profile does not grant arbitrary process execution. Optional Node
 and Git-integration profiles require explicit operator configuration.
 
 ## Build and verify
+
+For the current GitHub-only continuation, run checks in the agent's own isolated
+environment or on GitHub-hosted runners, not on the operator's PC. The commands
+below describe contributor checks; they are not a request for local execution.
 
 Use the Rust version pinned in `rust-toolchain.toml`. Native Windows builds also
 need the matching Windows SDK and MSVC toolchain; other systems cannot validate

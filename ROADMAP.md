@@ -4,6 +4,11 @@ Reviewed: 2026-10-20. [STATUS.md](STATUS.md) owns current evidence; this page ow
 the next delivery order. Earlier phase/H-track snapshots remain historical
 planning inputs, not a second statement of current completion.
 
+Execution mode for the current continuation: agent-owned isolated environment
+and GitHub-hosted CI only; no operator-PC tests or runtime changes. See the
+[handoff](docs/engineering/GITHUB_HANDOFF.md). This does not remove native Windows
+acceptance gates or imply they can be established on Linux.
+
 1. **Maintain coherent integration.** Repository consolidation and bounded
    diagnostic scopes are recorded; keep `main` and the generated-project alpha
    aligned through reviewed increments. Track compatibility fixes as delivery

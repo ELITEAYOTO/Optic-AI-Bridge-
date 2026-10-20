@@ -2,6 +2,9 @@
 
 ## Current project entry points
 
+- [Reusable new-chat prompt](../PROJECT_CONTINUITY_PROMPT.md)
+- [Agent instructions](../AGENTS.md)
+- [GitHub-only handoff and validation map](engineering/GITHUB_HANDOFF.md)
 - [Repository overview](../README.md)
 - [Current status and evidence](../STATUS.md)
 - [Delivery roadmap](../ROADMAP.md)

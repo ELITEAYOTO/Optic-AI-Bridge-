@@ -11,6 +11,12 @@ branch retirement uses a reviewed exact-head inventory and explicit approval.
 
 ## Source of truth
 
+Keep [AGENTS.md](AGENTS.md), [the handoff](docs/engineering/GITHUB_HANDOFF.md) and
+[the reusable prompt](PROJECT_CONTINUITY_PROMPT.md) aligned with current operator
+direction. Record exact evidence and next actions in repository-owned documents,
+not only in chat memory or untracked local output files. Verify live GitHub state
+before turning a dated handoff snapshot into a current-state claim.
+
 One canonical owner per subject. Do not duplicate normative limits or security rules across multiple documents. Other files link to the canonical owner.
 
 ## Required update matrix
