@@ -9,6 +9,20 @@ and GitHub-hosted CI only; no operator-PC tests or runtime changes. See the
 [handoff](docs/engineering/GITHUB_HANDOFF.md). This does not remove native Windows
 acceptance gates or imply they can be established on Linux.
 
+## Temporary stabilization gate (operator directive, 2026-10-20)
+
+**The feature roadmap below is paused, not cancelled.** Do not start new
+features, optional integrations, GUI work, broad refactors or experimental
+alpha-to-main merges. Prioritize reproducible defects in the existing
+permission/isolation/recovery/process boundaries, reliable diagnostics for
+intermittent hosted Windows gates, targeted regressions and documentation
+accuracy. A corrective PR requires a demonstrated failure and exact-head
+native checks where applicable. If no defect is demonstrated, do not create
+a change merely to show activity. Feature work resumes only on a new operator
+decision. This freeze does not relax any existing security or CI requirement.
+
+## Deferred feature delivery sequence (not currently authorized)
+
 1. **Maintain coherent integration.** Repository consolidation and bounded
    diagnostic scopes are recorded; keep `main` and the generated-project alpha
    aligned through reviewed increments. Track compatibility fixes as delivery
