@@ -213,7 +213,9 @@ impl MutationRecoveryJournal {
             journal_name,
             RenameFlags::RENAME_NOREPLACE,
         )
-        .map_err(|errno| RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32)))?;
+        .map_err(|errno| {
+            RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32))
+        })?;
 
         // Treat a failed directory sync as an uncertain *published* state:
         // never remove the stable name or claim the operation was admitted.
@@ -1042,8 +1044,8 @@ mod tests {
             previous: plan.expected_state(),
             intended: ExpectedState::Content(ContentVersion::from_bytes(b"new")),
         };
-        let prepared = serialize_line(&ticket.entry(JournalState::Prepared))
-            .expect("prepared journal bytes");
+        let prepared =
+            serialize_line(&ticket.entry(JournalState::Prepared)).expect("prepared journal bytes");
         let temp_path = journal.prepared_temp_path(&action_id);
         let stable_path = journal.journal_path(&action_id);
         fs::write(&temp_path, &prepared).expect("write prepared fixture");
@@ -1055,8 +1057,13 @@ mod tests {
             .expect_err("directory sync failure must not be accepted");
         assert!(matches!(error, RecoveryJournalError::Io(_)));
         assert!(!temp_path.exists(), "rename already published the journal");
-        assert_eq!(fs::read(&stable_path).expect("stable intent retained"), prepared);
-        let pending = journal.inspect_pending(atomic.filesystem()).expect("recover intent");
+        assert_eq!(
+            fs::read(&stable_path).expect("stable intent retained"),
+            prepared
+        );
+        let pending = journal
+            .inspect_pending(atomic.filesystem())
+            .expect("recover intent");
         assert_eq!(pending.records.len(), 1);
         assert_eq!(pending.records[0].action_id, action_id);
         assert_eq!(
