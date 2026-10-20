@@ -28,11 +28,6 @@ owns concrete unfinished implementation/verification work.
 
 Continuation mode: [GitHub-only handoff](GITHUB_HANDOFF.md), with no operator-PC
 execution. Hosted native proof remains required where the boundary is Windows.
-
-## Mutation recovery journal read boundary — PR #277 (pending CI)
-
-Source review of `src/mutation/recovery.rs` on main `b7ab450a0b31c779f3f9ae975425e0dc18f3449c` found that a pathname-only `symlink_metadata` check followed by a separate `File::open` could accept a hard-linked copy of otherwise valid journal bytes as recovery evidence. PR #277 narrows the read boundary to opened-object checks (Windows exclusive no-reparse/single-link read; Unix opened device/inode/link-count validation), retains the bounded byte reader and adds hard-link rejection regression. **Unmerged pending exact-head Windows/Linux validation**; do not count this as shipped behavior until merged. Separate unreviewed journal append, retirement and directory pinning risks are not claimed resolved. The test is a deterministic negative fixture, not a complete concurrent namespace race proof.
-
 ## Findings addressed in the current hardening change
 
 Native path comparison used replacement-character conversion in runtime scope
