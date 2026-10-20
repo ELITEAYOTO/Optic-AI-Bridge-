@@ -19,6 +19,25 @@ Current continuation is [GitHub-only](docs/engineering/GITHUB_HANDOFF.md): no
 operator-PC testing or runtime changes. The [new-chat prompt](PROJECT_CONTINUITY_PROMPT.md)
 and [agent entry point](AGENTS.md) do not require old chat memory or local files.
 
+## Current Git runtime organization and CI observation
+
+The source revision associated with `refactor/runtime-git-modules`
+relocates ten `git_*.rs` modules into `crates/optic-bridge-runtime/src/git/`
+without changing their contents or public module names. This is **layout
+only**: it is not a new user capability or a completed per-file security audit.
+The exact PR head still requires hosted Linux and native Windows CI before
+merging; refer to the [quality register](docs/engineering/CODE_QUALITY_REVIEW.md)
+for the file map.
+
+The post-merge `main` CI run
+[39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
+initially **failed** its Windows TEMP-only Node MCP doctor smoke on a 30-second
+response timeout (bridge still alive). The failed Windows job was rerun
+unchanged and **succeeded**. Root cause remains unknown; treat as an
+intermittent test/runtime diagnostic issue, not a defect proven repaired.
+The failure is retained in the reliability register; no workaround or
+`continue-on-error` was added.
+
 ## Merged and validated
 
 PR266 merged into main as `5a8157e`: a targeted process stdout/stderr

@@ -15,15 +15,25 @@ mod blocking_io;
 mod clock;
 mod directory_create;
 mod filesystem;
+#[path = "git/blob_batch.rs"]
 mod git_blob_batch;
+#[path = "git/change_set.rs"]
 mod git_change_set;
+#[path = "git/integrate.rs"]
 mod git_integrate;
+#[path = "git/integration_authority.rs"]
 mod git_integration_authority;
+#[path = "git/merge_commit.rs"]
 mod git_merge_commit;
+#[path = "git/merge_plan.rs"]
 mod git_merge_plan;
+#[path = "git/read.rs"]
 mod git_read;
+#[path = "git/tree_manifest.rs"]
 mod git_tree_manifest;
+#[path = "git/tree_write.rs"]
 mod git_tree_write;
+#[path = "git/worktree.rs"]
 mod git_worktree;
 mod hardened_command;
 mod journaled_mutation;
