@@ -1,5 +1,20 @@
 # Filesystem Safety and Transactions
 
+## Windows recovery staging file identity at cleanup
+
+During recovery, after a durable `committing` record, an operation-owned
+staging artifact may be removed only if its exact intended bytes have been
+verified. A pathname metadata check followed by an independent unlink cannot
+establish that the validated file is the one removed, and hard-link aliases
+can represent external evidence. The scoped [PR #284](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284)
+requires opening an existing Windows staging artifact through the native
+exclusive, no-reparse and single-link checked delete handle; bounded hash and
+delete then operate on **that same handle**. Any failure must retain the
+journal and staged bytes for explicit reconciliation. See the PR's checks for
+delivery status. This change does not establish directory pinning or
+power-loss guarantees; the base mutation/state contract is unchanged.
+
+
 ## Recovery journal append identity (PR #282)
 
 The append operation is part of the durable mutation state machine: callers
