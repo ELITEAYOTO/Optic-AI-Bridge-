@@ -263,8 +263,10 @@ interaction. A constructed valid hard-linked journal was accepted by the
 read path; #277 fixed that narrow defect with descriptor/native-handle checks
 and passed four exact-source hosted checks before squash into `c2282ff`.
 The subsequent retire path still unlinked a hard-linked entry by pathname.
-The #278 proposal adds an explicit rejection regression, native handle deletion
-on Windows and descriptor link/identity checking before Unix unlink.
+PR #278 merged as `b15fe76` after exact head `9778b49` passed all
+four hosted checks. The change adds an explicit rejection regression,
+native handle deletion on Windows and descriptor link/identity checking
+before Unix unlink.
 Source inspection does **not** prove that Unix concurrent pathname replacement,
 journal appends, directory identity or staging cleanup are fully safe. Those
 are independent review candidates; avoid combining them into a large refactor.
