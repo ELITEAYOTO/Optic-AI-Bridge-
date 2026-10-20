@@ -13,7 +13,8 @@
   An earlier head failed rustfmt and was corrected; canceled intermediate runs
   are not counted as passing. The independent post-merge `main` CI
   [39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
-  was in progress at this written checkpoint: verify its live conclusion.
+  completed successfully on exact post-merge `main` (Windows Rust, Linux Rust,
+  dependency policy).
 - Read hardening rejects hard-link journal aliases on both hosted platforms:
   Windows uses the existing exclusive no-reparse, single-link read primitive;
   Unix validates the opened descriptor's identity and link count against
@@ -24,11 +25,6 @@
   Append, staging cleanup, directory identity and Unix pathname deletion races
   remain separate review areas. Experimental alpha is unchanged.
   No operator-PC or self-hosted execution occurred.
-
-
-## In-progress recovery journal read hardening — 2026-10-20
-
-At new-session bootstrap, `main` remained `b7ab450a0b31c779f3f9ae975425e0dc18f3449c`; post-fusion CI [39366933339](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39366933339) passed all three hosted jobs (Windows Rust, Linux Rust and dependency policy). The separate alpha was unchanged. [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277) addresses a demonstrated hard-link alias acceptance in mutation recovery journal **reads** with an opened-file validation and regression. This entry is **in-progress, not merged/proven**: inspect exact-head CI/reviews and update the status on actual outcome. Journal append/retire races, directory pinning and power-loss durability are not resolved by this increment. No operator-PC activity or self-hosted runs.
 
 ## Final GitHub-verified continuation checkpoint — 2026-10-20
 
