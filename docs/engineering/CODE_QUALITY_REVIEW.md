@@ -147,3 +147,21 @@ the same source revision, without modifying tests or security settings.
 This characterizes an intermittent failure, **not** a proven root cause or
 permanent fix. Preserve both attempts and investigate bounded startup/stdio
 diagnostics if it recurs. A green rerun must never erase the first failure.
+
+## Session-domain physical layout — 2026-10-20
+
+Source base: `main` `e98c2010d5ed9a5f452259ab85721f2a65a79ddf`. A bounded layout change groups four
+session-owned modules under `crates/optic-bridge-runtime/src/session/`:
+`lifecycle.rs`, `registry.rs`, `reusable_approval.rs` and `worktree.rs`.
+The previous `session_*.rs` files are represented by their **unchanged Git blob
+identities** in the new directory. The crate root uses explicit `#[path]`
+declarations to preserve the existing `session_*` Rust module names,
+private intra-crate references, nested test identities and public exports.
+No policies, expiry clocks, authorization or worktree effects are modified.
+
+This is a physical organization improvement only, **not** a completed security
+review of sessions, leases or worktrees. The PR's exact-head Linux/Windows
+format, Clippy, tests, native preparation and review outcomes must be checked
+before merging; test results are not implied by blob identity. The separate
+TaskLeaseRegistry, ToolProfileRegistry, approval brokers and Git modules remain
+at their current locations pending their own scope-specific review.
