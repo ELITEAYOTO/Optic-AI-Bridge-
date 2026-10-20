@@ -1,5 +1,12 @@
 # Reliability and implementation debt
 
+## Windows initialization timing — diagnostic candidate, not a fix
+
+The Windows TEMP-only doctor has intermittently failed on its first MCP response after 30 seconds while the bridge remained alive ([CI 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735), [CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039), both successful after exact-head failed-job-only reruns). In a distinct native proof, the AppContainer Node loopback test intermittently returned `TimedOut` at 10 seconds with no child output ([CI 39363540900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39363540900), [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)). Neither is proven related to the journal hardening.
+
+Proposed branch `diag/windows-mcp-startup-phases` adds an opt-in monotonic stderr-only static phase timeline to the Rust server and corresponding host spawn/initialization timestamps to the existing CI TEMP-only doctor. The objective is to narrow where the **next occurrence** stalls. It is not an established causal fix; Windows CI validation and eventual integration must be checked separately. No timeout increase or relaxed gate is authorized. Other surfaces remain uninstrumented.
+
+
 ## Journal evidence lifecycle — targeted corrections, not a full audit
 
 - **Read #277 (merged)**: `main` `c2282ff5eba85d2a7480dd353db638a0623bd06d`.
