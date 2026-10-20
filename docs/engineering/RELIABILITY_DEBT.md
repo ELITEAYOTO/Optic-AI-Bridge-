@@ -1,5 +1,11 @@
 # Reliability and implementation debt
 
+## MCP startup latency subphase characterization (open; 2026-10-20)
+
+[PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) **merged** as `da3ab6f19a9b2544eef997cdf7edb987360c7553`: actual source-head CI #39487022400 proved opt-in child markers; post-merge main CI #39487831596 only turned green on Windows failed-job **attempt 2**, preserving the first attempt's 10s Node timeout and the first similarly failed serial reproduction. The successful second attempt and two measured MCP starts place ~5.4–7.8 seconds in the block from profile checked to process leases provisioned. That block includes multiple candidate operations; do not equate apparent slowness with defective hashing, or weaken pinned identity verification.
+
+Candidate `diag/mcp-lease-startup-subphases` adds 3 exact static opt-in markers in Rust and the restricted success-log observer to separate optional Git, session, read and process stages. **Not proven/merged** until exact-head hosted Windows CI displays those markers and applicable checks pass. Root causes of Windows native AppContainer/Node 10s stalls and rare MCP 30s first-response timeouts remain **OPEN**. No timeout, budget or security policy change authorized.
+
 ## Windows MCP diagnostic visibility — opt-in CI candidate (2026-10-20)
 
 Six recent successful Windows main CI jobs took 3973–7580ms to return initial MCP response; process startup was reported at 6–9ms. This variation cannot be attributed to an internal phase from current successful logs because the doctor script discards the bridge's opt-in static `OPTIC_STARTUP` stderr phase markers on success. A test-only candidate `diag/mcp-startup-phase-visibility` collects at most 4096 characters after bounded stop, within 400ms, emitting only fixed whitelisted startup phases and numeric elapsed times. Until PR validation and actual emitted CI evidence, this is **candidate observability**. It neither fixes the historic 30s first-response timeout nor the independent 10s AppContainer/Node timeout; neither deadline nor runtime authority may be relaxed. Source state `main` `de973989a30a28f561da27532582bca8c63e9309` / CI #39399746917 remained green before candidate.
