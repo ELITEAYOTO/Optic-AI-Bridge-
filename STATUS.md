@@ -1,5 +1,9 @@
 # Current project status
 
+## In-progress recovery journal read hardening — 2026-10-20
+
+At new-session bootstrap, `main` remained `b7ab450a0b31c779f3f9ae975425e0dc18f3449c`; post-fusion CI [39366933339](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39366933339) passed all three hosted jobs (Windows Rust, Linux Rust and dependency policy). The separate alpha was unchanged. [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277) addresses a demonstrated hard-link alias acceptance in mutation recovery journal **reads** with an opened-file validation and regression. This entry is **in-progress, not merged/proven**: inspect exact-head CI/reviews and update the status on actual outcome. Journal append/retire races, directory pinning and power-loss durability are not resolved by this increment. No operator-PC activity or self-hosted runs.
+
 ## Final GitHub-verified continuation checkpoint — 2026-10-20
 
 - At this checkpoint, `main` = `e222ff912ac784eb7ae29d09e74ae1780f8a051b` (squash merge
