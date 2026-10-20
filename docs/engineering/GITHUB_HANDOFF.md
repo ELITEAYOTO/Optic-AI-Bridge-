@@ -1,5 +1,12 @@
 # GitHub-only project handoff
 
+## Latest Windows staging evidence-preservation candidate — 2026-10-20
+
+The [PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) diagnostic-only Windows Node test change was squash-merged at `0c2a125537d020e3a3aff4124d12745d7a8c5c4c` and verified by independent [main CI #39392829136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392829136), first attempt Windows Rust/Linux Rust/dependency policy success. Zero PRs were open before this new increment. Node/AppContainer and MCP first-response intermittencies remain **unexplained**; do not loosen their tests.
+
+The next scoped Windows-only `fix/recovery-staging-preflight-all` candidate addresses a source-demonstrable flaw *distinct from* PR #288: `JournaledMutationService::cleanup_recovered_staging` could delete an earlier valid staging file, then refuse recovery on a later corrupt staging artifact, losing earlier evidence. The change performs a bounded verification pass across the full report before any deletion, then reopens/revalidates each artifact through its exclusive native delete handle before deleting. A Windows-native regression uses two ordered durable committing records and valid/mismatched staging; requires **both** files and **both** journals intact after rejection and confirms cleanup after repairing the second. No permission, journal schema, record ceiling, or runtime semantics outside the cleanup order change. Remaining: second-phase multi-file removal is not atomic if a later delete/revalidation fails; ancestor namespace replacement and sudden power-loss durability are not addressed. Inspect candidate PR and exact-head Windows/Linux/dependency/native checks before merging or claiming integration. Preserve operator-PC prohibition, feature freeze and all original failure evidence.
+
+
 ## Fresh GitHub reconciliation and Windows Node phase investigation — 2026-10-20
 
 [PR #289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/289) was merged as `aba3f9c182a052c909b287531611854dd89d2f76`. Independent [main CI #39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) passed on that exact SHA, first attempt (hosted Windows Rust, Linux Rust, dependency policy); there were zero open PRs at the inspection. The user's **stabilization-only** restriction is unchanged.
