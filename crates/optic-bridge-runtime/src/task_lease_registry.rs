@@ -513,6 +513,46 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_registration_cannot_bypass_final_capacity_check() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        const WORKERS: usize = 8;
+        let limits = HardLimits {
+            max_task_leases: 2,
+            max_task_leases_per_session: 2,
+            ..HardLimits::default()
+        };
+        let registry = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("limits"));
+        let start = Arc::new(Barrier::new(WORKERS));
+        let mut workers = Vec::new();
+        for _ in 0..WORKERS {
+            let registry = Arc::clone(&registry);
+            let start = Arc::clone(&start);
+            workers.push(thread::spawn(move || {
+                let owned = lease(SessionHandle::generate().expect("session"), 100);
+                start.wait();
+                registry.register(owned)
+            }));
+        }
+
+        let mut accepted = 0;
+        for worker in workers {
+            match worker.join().expect("worker thread") {
+                Ok(()) => accepted += 1,
+                Err(TaskLeaseRegistryError::CapacityExceeded) => {}
+                Err(other) => panic!("unexpected admission error: {other}"),
+            }
+        }
+        assert_eq!(accepted, 2, "at most the configured global limit may enter");
+        assert_eq!(
+            registry.leases.lock().expect("registry state").len(),
+            2,
+            "failed racing admissions must not modify the registry"
+        );
+    }
+
+    #[test]
     fn relative_fixture_scope_remains_registry_compatible() {
         let registry = TaskLeaseRegistry::new();
         let owner = SessionHandle::generate().expect("owner session");
