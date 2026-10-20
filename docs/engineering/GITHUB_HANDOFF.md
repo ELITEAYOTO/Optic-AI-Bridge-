@@ -182,3 +182,39 @@ remain until individually verified and retired; preserve archive tags,
 historical proof refs and `alpha/generated-project-editing`. Do not start
 another mass cleanup. New agent should inspect current heads/checks/PRs,
 especially the post-merge run and any later changes, before proceeding.
+
+## Ongoing Git-domain layout consolidation — 2026-10-20
+
+Latest verified `main` at work start:
+`24a40e106ced2e66c373ec7787ad077eb16fc9b8`, zero open PRs.
+The associated push CI 39356540735 initially failed Windows on the
+TEMP-only Node MCP doctor smoke (30-second first-response timeout with bridge
+still alive). Re-running **only the failed job** 118412524278 at the same
+commit succeeded; Linux and dependency jobs were already successful.
+This is unresolved intermittency, not a proven fix. Preserve the original
+failure, follow [RELIABILITY_DEBT](RELIABILITY_DEBT.md), and do not relax
+checks.
+
+Current short branch `refactor/runtime-git-modules` moves precisely ten
+`git_*.rs` Rust modules from the runtime source root to `src/git/`.
+Each destination was checked against the original full text before the
+old path was removed. `lib.rs` retains the identical crate-root module names
+via `#[path = "git/..."]`, leaving `pub use` and other call sites untouched.
+Nested test modules and tests retain their parent namespace.
+[CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) records the file inventory
+and explicit limitations. No architecture/ADR change, new crate, new
+runtime, security permission or model authority is intended.
+
+**Next-agent action:** inspect the live branch and its PR, exact head,
+check suites, comments and possible merge. Do not interpret content equality
+as a successful compile until hosted Windows/Linux tests actually pass.
+If they pass and branch protections allow, merge/squash against verified
+`main`; follow with post-merge CI observation. If CI fails, fix the concrete
+regression without deleting tests. Only then consider another
+responsibility-based directory move (e.g. session/recovery vs mutation)
+as a *separate* PR, or investigate the intermittent TEMP-only MCP timeout.
+Never move everything in a single PR or merge the complete generated alpha.
+
+Operator's PC, local permission changes, tunnels and self-hosted runners
+remain prohibited. The currently exposed GitHub tool surface has no exact
+branch-delete action; do not try a mass cleanup or touch preservation refs.
