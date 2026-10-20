@@ -25,7 +25,12 @@ where
         match reader.read(&mut chunk).await {
             Ok(0) => break,
             Ok(read) => append_output(&record, stream, &chunk[..read]),
-            Err(_) => break,
+            Err(_) => {
+                // A pipe read failure is not clean EOF. Preserve the diagnostic
+                // uncertainty even when the child exits with code zero.
+                record.output_read_failed.store(true, Ordering::Release);
+                break;
+            },
         }
     }
     mark_stream_closed(&record, stream);
