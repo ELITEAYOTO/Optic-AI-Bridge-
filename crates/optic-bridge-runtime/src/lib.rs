@@ -117,6 +117,7 @@ pub use private_project_stage::{
 pub use private_task_journal::{
     PrivateTaskJournal, PrivateTaskJournalError, PrivateTaskOutcome, PrivateTaskRecoveryExecution,
     PrivateTaskRecoveryObservation, PrivateTaskRecoveryPhase, PrivateTaskRecoveryRecord,
+    PrivateTaskRetirementCandidate,
 };
 pub use process::{
     EnvironmentGrant, EnvironmentVariableClass, ProcessError, ProcessManager, ProcessReadChunk,

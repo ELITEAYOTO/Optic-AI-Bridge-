@@ -2,8 +2,9 @@
 use optic_bridge_core::{ActionEnvelope, ActionId, ContentVersion, JobId, ProjectInputManifest};
 use optic_bridge_windows::{
     EphemeralAppContainerPlan, OpenedWindowsFile, PinnedDirectoryChain, WindowsFileIdentity,
-    inspect_directory_no_reparse, open_exclusive_read_file, open_exclusive_state_file,
-    open_file_for_delete_no_reparse, pin_directory_chain,
+    inspect_directory_no_reparse, open_exclusive_file_for_delete_no_reparse,
+    open_exclusive_read_file, open_exclusive_state_file, open_file_for_delete_no_reparse,
+    pin_directory_chain,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -77,6 +78,14 @@ pub struct PrivateTaskRecoveryRecord {
     /// Bounded event order is authoritative. Wall-clock observations are only
     /// diagnostic, may go backwards, and never restore authorization/deadlines.
     pub timeline: Vec<PrivateTaskRecoveryObservation>,
+}
+
+/// Operator-only retention precondition. The fingerprint covers all persisted
+/// bytes, not the diagnostic run id or a mutable timestamp.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateTaskRetirementCandidate {
+    pub run_id: String,
+    pub version: ContentVersion,
 }
 
 /// Fingerprints already present in a validated Starting event. No raw handle,
@@ -285,6 +294,76 @@ impl PrivateTaskJournal {
                 })
             })
             .collect()
+    }
+
+    /// Snapshot candidates for an operator's explicit retention decision.
+    /// No cleanup, replay or authority is performed by this read.
+    pub fn closed_retirement_candidates(
+        &self,
+    ) -> Result<Vec<PrivateTaskRetirementCandidate>, PrivateTaskJournalError> {
+        let _gate = self
+            .gate
+            .lock()
+            .map_err(|_| PrivateTaskJournalError::Unavailable)?;
+        let records = self.scan()?;
+        let mut result = Vec::new();
+        for parsed in records {
+            if parsed.phase == PrivateTaskRecoveryPhase::Closed {
+                let path = self.path(&parsed.header.run);
+                let mut file = open_exclusive_read_file(&path)?;
+                if file.final_path() != path {
+                    return Err(PrivateTaskJournalError::Boundary);
+                }
+                let bytes = read_bounded(file.file_mut(), MAX_BYTES)?;
+                let check = parse(&bytes, &parsed.header.run)?;
+                if check.header.workspace != self.workspace_digest
+                    || check.phase != PrivateTaskRecoveryPhase::Closed
+                {
+                    return Err(PrivateTaskJournalError::Corrupt);
+                }
+                result.push(PrivateTaskRetirementCandidate {
+                    run_id: parsed.header.run,
+                    version: ContentVersion::from_bytes(&bytes),
+                });
+            }
+        }
+        Ok(result)
+    }
+
+    /// Explicit host-only retirement; never exposed as an MCP/model effect.
+    /// The exact opened record must still be closed and match its observed bytes.
+    /// Unresolved records and any unexpected state fail without deletion.
+    pub fn retire_closed(
+        &self,
+        candidate: &PrivateTaskRetirementCandidate,
+    ) -> Result<(), PrivateTaskJournalError> {
+        if !is_hex(&candidate.run_id, 64) {
+            return Err(PrivateTaskJournalError::Corrupt);
+        }
+        let _gate = self
+            .gate
+            .lock()
+            .map_err(|_| PrivateTaskJournalError::Unavailable)?;
+        // Fail closed on *all* journal corruption before removing any evidence.
+        self.scan()?;
+        let path = self.path(&candidate.run_id);
+        let mut opened = open_exclusive_file_for_delete_no_reparse(&path)?;
+        if opened.final_path() != path {
+            return Err(PrivateTaskJournalError::Boundary);
+        }
+        let bytes = read_bounded(opened.file_mut(), MAX_BYTES)?;
+        let parsed = parse(&bytes, &candidate.run_id)?;
+        if parsed.header.workspace != self.workspace_digest {
+            return Err(PrivateTaskJournalError::WorkspaceMismatch);
+        }
+        if parsed.phase != PrivateTaskRecoveryPhase::Closed {
+            return Err(PrivateTaskJournalError::NotClosed);
+        }
+        if ContentVersion::from_bytes(&bytes) != candidate.version {
+            return Err(PrivateTaskJournalError::VersionConflict);
+        }
+        opened.delete()?;
+        Ok(())
     }
 
     pub(crate) fn begin(
@@ -680,6 +759,10 @@ pub enum PrivateTaskJournalError {
     WorkspaceMismatch,
     #[error("private task journal native boundary mismatch")]
     Boundary,
+    #[error("private task journal retirement requires a closed record")]
+    NotClosed,
+    #[error("private task journal retirement observation changed")]
+    VersionConflict,
     #[error("private task journal capacity includes unresolved crash records")]
     Capacity,
     #[error("private task journal is corrupt or interrupted; do not replay")]
@@ -1167,6 +1250,58 @@ mod tests {
         let restarted = reopened.unwrap();
         assert_eq!(restarted.recovery_report().unwrap().len(), 1);
         assert_eq!(after.unwrap(), before);
+    }
+
+    #[test]
+    fn private_journal_explicit_retirement_requires_exact_closed_bytes() {
+        let fixture = Fixture::new();
+        let journal = fixture.open();
+        let (manifest, action) = input();
+        let closed = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
+        closed.closed().unwrap();
+        let unresolved = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
+        let candidates = journal.closed_retirement_candidates().unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].run_id, closed.run);
+        let tampered = PrivateTaskRetirementCandidate {
+            run_id: unresolved.run.clone(),
+            version: candidates[0].version,
+        };
+        assert!(matches!(
+            journal.retire_closed(&tampered),
+            Err(PrivateTaskJournalError::NotClosed)
+        ));
+        assert!(journal.path(&unresolved.run).exists());
+        let wrong = PrivateTaskRetirementCandidate {
+            run_id: closed.run.clone(),
+            version: ContentVersion::from_bytes(b"stale"),
+        };
+        assert!(matches!(
+            journal.retire_closed(&wrong),
+            Err(PrivateTaskJournalError::VersionConflict)
+        ));
+        assert!(journal.path(&closed.run).exists());
+        journal.retire_closed(&candidates[0]).unwrap();
+        assert!(!journal.path(&closed.run).exists());
+        assert!(matches!(
+            journal.retire_closed(&candidates[0]),
+            Err(PrivateTaskJournalError::Native(_))
+        ));
+        assert_eq!(journal.recovery_report().unwrap().len(), 1);
+        drop(closed);
+        drop(unresolved);
     }
 
     #[test]

@@ -196,6 +196,26 @@ pub fn open_file_for_delete_no_reparse(
     })
 }
 
+/// Host-owned deletion of a validated state record. The same handle supports
+/// bounded read/verification and deletion; no other opener may replace or
+/// modify it between the exact-version precondition and delete. Hard links,
+/// reparse points and non-regular files fail closed.
+pub fn open_exclusive_file_for_delete_no_reparse(
+    path: &Path,
+) -> Result<OpenedWindowsDeleteFile, WindowsFileError> {
+    let file = OpenOptions::new()
+        .access_mode(FILE_GENERIC_READ.0 | DELETE.0)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+        .open(path)?;
+    let checked = finish_exclusive_file(file)?;
+    Ok(OpenedWindowsDeleteFile {
+        file: checked.file,
+        identity: checked.identity,
+        final_path: checked.final_path,
+    })
+}
+
 pub fn inspect_directory_no_reparse(path: &Path) -> Result<WindowsPathIdentity, WindowsFileError> {
     let mut options = OpenOptions::new();
     options
@@ -410,6 +430,29 @@ mod tests {
         assert!(!path.exists());
 
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn exclusive_delete_handle_checks_links_and_keeps_target_stable() {
+        use std::io::Read;
+        let root = workspace("exclusive-retire");
+        let path = root.join("closed.tasklog");
+        fs::write(&path, b"closed evidence").unwrap();
+        let mut opened = open_exclusive_file_for_delete_no_reparse(&path).unwrap();
+        let mut observed = Vec::new();
+        opened.file_mut().read_to_end(&mut observed).unwrap();
+        assert_eq!(observed, b"closed evidence");
+        assert!(OpenOptions::new().write(true).open(&path).is_err());
+        assert!(fs::rename(&path, root.join("replacement.tasklog")).is_err());
+        opened.delete().unwrap();
+        assert!(!path.exists());
+
+        fs::write(&path, b"linked evidence").unwrap();
+        let alias = root.join("alias.tasklog");
+        fs::hard_link(&path, &alias).unwrap();
+        assert!(open_exclusive_file_for_delete_no_reparse(&path).is_err());
+        assert_eq!(fs::read(&alias).unwrap(), b"linked evidence");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
