@@ -99,7 +99,8 @@ jobs:
               -BridgePath '.\target\debug\optic-bridge.exe' `
               -Workspace $workspace `
               -IsolationLauncherPath '.\target\debug\optic-bridge-isolation-launcher.exe' `
-              -IsolatedNodePath $node
+              -IsolatedNodePath $node `
+              -StartupTiming
           }
           finally {
             if ($null -eq $savedTmp) {
