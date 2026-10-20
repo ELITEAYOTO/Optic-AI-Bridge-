@@ -270,3 +270,17 @@ before Unix unlink.
 Source inspection does **not** prove that Unix concurrent pathname replacement,
 journal appends, directory identity or staging cleanup are fully safe. Those
 are independent review candidates; avoid combining them into a large refactor.
+
+## Mutation journal append hard-link boundary (PR #282, 2026-10-20)
+
+Source review of `runtime/src/mutation/recovery.rs` identified the only
+remaining state journal operation of the three read/append/retire paths
+using pathname-only metadata followed by a separate append open. PR #282
+merged into `main` as `bf79b320` after exact-head native Windows/Linux,
+dependency and private preparation checks. Windows now uses an exclusive
+validated state-file handle; Unix validates device/inode/single-link identity
+on the opened descriptor. Existing byte and sync barriers remain. The negative
+regression preserves both original external and journal evidence bytes.
+This review does not establish safe concurrent Unix pathname/size mutation,
+full parent-directory pinning, staging cleanup or power-loss durability.
+
