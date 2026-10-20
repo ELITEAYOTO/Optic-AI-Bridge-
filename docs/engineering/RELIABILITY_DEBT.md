@@ -1,8 +1,14 @@
 # Reliability and implementation debt
 
-## Unpublished journal cleanup before failed recovery validation — scoped candidate
+## Recovery scan eager unpublished cleanup — corrected by PR #288
 
-In `MutationRecoveryJournal::inspect_pending`, an otherwise valid `*.prepared.tmp` is discarded immediately in sorted directory order. A later corrupt or unresolved stable journal makes recovery fail, but the earlier temp evidence was already removed. The scoped `fix/recovery-inspect-preserve-temp-on-failure` change delays temp cleanup until all stable journals have been fully classified; a Windows/Linux negative regression confirms neither temp nor corrupt stable evidence is deleted on failure and confirms temp cleanup on successful retry. Verify exact-head CI/merge; multi-file cleanup is still not atomic if a deletion itself fails, and root identity/namespace races remain unproved.
+[PR #288](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/288) was squash-merged at `b1edc83438571867bd164ea0b2b9653304eed752` from source `60206dcadbf2efb57800ca93f0bd226acf16f6fb`. Its hosted [CI #39388280621](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388280621) passed Windows Rust, Linux Rust and dependency policy; [native preparation #39388280521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388280521) passed too. Independent [post-merge CI #39388749406](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39388749406) succeeded on the same merge SHA, first attempt (Windows, Linux, dependencies). GitHub showed zero open PRs at verification.
+
+The scanner now classifies every stable recovery journal before discarding well-formed unpublished temporary entries. The regression proves a later corrupt stable journal cannot erase an earlier temp entry during failed inspection. This closes only the **cleanup-before-validation ordering** failure; cleanup of multiple temporary files is still not atomic if a later deletion fails, and Windows/Unix path-identity and crash/power-loss guarantees remain separately unproven.
+
+## Current stabilization queue (not a feature backlog)
+
+Only investigate substantiated safety or reliability defects in the existing product. Existing debt includes intermittent native Windows AppContainer Node loopback and MCP TEMP-only first-response timeouts, concurrent ancestor/path replacement, Windows directory persistence and non-atomic cleanup behavior. Preserve original failures and do not relax tests or announce fixes without a demonstrated cause and regression.
 
 ## Linux published-journal directory entry synchronization — addressed by #287
 

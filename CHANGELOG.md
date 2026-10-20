@@ -1,5 +1,21 @@
 # Changelog
 
+## Stabilization-only release discipline — 2026-10-20
+
+- Operator directs a temporary pause on **new functionality**. Continue only
+  proved bug fixes, security/recovery hardening, reliability investigations
+  and regression coverage for already-integrated behavior; no broad refactor,
+  new GUI/integration or speculative PR. Feature roadmap remains deferred.
+- [PR #288](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/288) is
+  **merged** as `b1edc83438571867bd164ea0b2b9653304eed752`, not
+  merely a candidate. Final PR CI #39388280621 and native preparation
+  #39388280521 succeeded; post-merge main CI #39388749406 passed
+  Windows, Linux and dependency policy on its first attempt.
+- The scoped fix retains unpublished temp evidence if later stable recovery
+  validation fails. Multi-file cleanup atomicity, concurrent ancestor
+  replacement, Windows power-loss directory durability and the known Windows
+  Node/AppContainer/MCP intermittencies remain open investigations.
+
 ## Unpublished recovery evidence preservation — 2026-10-20
 
 - Proposed targeted fix `fix/recovery-inspect-preserve-temp-on-failure`:
