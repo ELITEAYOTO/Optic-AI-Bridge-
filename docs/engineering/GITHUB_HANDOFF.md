@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## New scoped Windows startup evidence increment — 2026-10-20
+
+A new chat confirmed `main` `0f857b81a0715b2fcb7cb8f1e2a4250bf9221fa6`, no PRs open before work and [post-merge CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039) completed successfully on attempt 2. Windows attempt 1 of that CI failed in the existing TEMP-only MCP doctor with a 30-second response timeout and an alive bridge, while Linux and dependency checks passed; the initial failure is retained. The separately recurring AppContainer/Node loopback `TimedOut` (10 seconds, no output) also remains a separate investigation.
+
+Branch `diag/windows-mcp-startup-phases` is an isolated, **unmerged** diagnostics increment. It adds a static opt-in startup clock (`OPTIC_STARTUP_TIMING=1`) to the Rust bridge's stderr and measures spawn/initialize handoff with monotonic time in the existing hosted Windows doctor. The scoped CI step passes `-StartupTiming` only to its child process. There is no additional timeout, fallback, capability, secret disclosure, stderr-to-stdout redirect, network grant, test skip, runner type, or operator-PC action. The phase markers separate pre-main OS startup from argument/policy/server/transport preparation and MCP handshake. If the failure repeats, correlate marker last-seen with host-side timestamps; do **not** infer causation from timing alone.
+
+**Next agent action:** Check exact branch head, PR and Windows/Linux/dependency CI; fix any genuine errors, squash only with successful head checks/reviews, then verify post-merge `main`. Continue targeted root-cause investigation separately when the new instrumentation captures a failure. If the branch is not merged, do not claim the diagnostics are shipped. Preserve the alpha branch, existing evidence and historic failed attempts.
+
+
 ## Current handoff: recovery journal read and retirement integrated — 2026-10-20
 
 At live inspection, `main` became
