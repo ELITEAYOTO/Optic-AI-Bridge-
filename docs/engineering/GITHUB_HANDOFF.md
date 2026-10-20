@@ -140,34 +140,45 @@ pass” when normal Cargo/Electron research is red. Documentation-only work need
 accurate links/state, not a claim of runtime verification. Keep historical
 audits dated and annotate their scope instead of rewriting measured history.
 
-## Current incremental continuation — 2026-10-20
+## Latest verified quality cycle — 2026-10-20
 
-The former in-progress [PR #262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262)
-is **merged into main** at `bca2eae82eacf5df89b2fd70339751723ec86167`.
-Its final head `14b978bc` passed the six hosted Linux/Windows, dependency and
-native preparation/lifecycle/direct-Rust checks before squash. Earlier source
-revisions failed format and export checks; these were genuine fixed regressions,
-not research-baseline failures. The host-only retirement does not grant replay,
-MCP deletion, automatic authorizations or production retention enrollment.
-The post-merge main push CI is independent and should be checked.
+This is a **newer checkpoint** than the bootstrap snapshot above. GitHub
+confirmed `main` at `5a8157ea2fff0b19c4b47e075eeefa457947efc1`,
+zero open PRs after completing:
 
-The operator also requested gradual file-size reduction, repository
-organization and an eventual file-by-file bug/security review. The inventory,
-scope and review criteria live in [CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md).
-[PR #263](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/263) has
-**merged into main** as `bcb5e8afdf8b07b0757819b07fc93cd62078c620`.
-Its final head `2d8a410ac268735c2a4074e698cb755abc9bc420` passed hosted
-Windows/Linux Rust, dependency policy and native preparation before merge;
-a previous head failed rustfmt and was corrected. The project input test
-body was moved mechanically into a child module; capture production code is
-unchanged. The quality tracker is a staged review plan, **not** a completed
-audit of every file. Post-merge main CI run 39353667299 is separate.
+- [PR #265](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/265):
+  merged as `a9d9a31b4e1635c35ac53c8225a4c5b4348aeb05`. Moved 1,115
+  lines of tests from `process.rs` into `process/tests.rs` without
+  altering the production prefix. Final head `f65f69b` passed four hosted
+  checks (Windows/Linux Rust, dependency policy, native preparation);
+  post-merge main CI run 39355110640 passed.
+- [PR #266](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/266):
+  merged as `5a8157ea2fff0b19c4b47e075eeefa457947efc1`. Corrected silent
+  process stdout/stderr read errors: incomplete output is flagged, and an
+  otherwise successful exit becomes `Failed`; existing owned stop,
+  deadline and termination-uncertain handling remain distinct. Two
+  synthetic failure/EOF tests were added. Exact head `4e4c712` passed
+  four hosted checks. Previous head failed rustfmt and was corrected.
+  Post-merge main run 39356012838 was still in progress at documentation
+  creation; verify its actual result rather than inventing a pass.
 
-Next agent action: check the latest main push CI, then choose one bounded
-refactor or begin the file-by-file review at the highest-risk native
-process/lease boundaries. Every confirmed defect needs a regression and
-applicable Windows-native proof. No operator-PC testing is approved. The
-connected GitHub tools currently lack a branch-deletion action, so the two
-integrated work-branch heads remain; only exact verified heads should later
-be retired, not archive/preservation refs or a mass cleanup. Normal
-Cargo/Electron research baselines remain unresolved.
+Both operations used hosted Windows/Linux runners only; no user-PC
+process, install, permission change, tunnel or self-hosted runner. The
+normal offline Cargo and sandboxed Electron research gates remain red.
+The separate generated-project alpha remains unmerged into main and is
+not production authentication. None of this establishes general writable
+builds or runtime disk quota enforcement.
+
+[CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) now tracks the two scoped
+source reviews; this is **not** a full review of all 212 baseline files.
+Next review target: `process/output.rs` panic/JoinHandle observability,
+the remaining spawn/launcher/lock paths, then operator CLI parsing and
+session lifecycle. Only add fixes backed by specific tests and native
+Windows evidence; avoid unrelated reorganizations.
+
+The connected GitHub actions available in this chat do not include a
+delete-branch operation. Previously merged short-lived branch heads
+remain until individually verified and retired; preserve archive tags,
+historical proof refs and `alpha/generated-project-editing`. Do not start
+another mass cleanup. New agent should inspect current heads/checks/PRs,
+especially the post-merge run and any later changes, before proceeding.
