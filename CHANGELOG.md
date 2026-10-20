@@ -1,5 +1,10 @@
 # Changelog
 
+## Candidate: fail fast on rejected process lease registration (2026-10-21)
+
+- `TaskLeaseRegistry::register` previously captured pinned executable identity **before** checking existing lease ID and registry/session capacity. Candidate branch `fix/lease-capacity-before-identity-capture` rejects these known invalid admissions before file IO, then repeats the same checks under the final lock following unchanged identity capture to preserve concurrent safety. Tests cover invalid absolute executable under duplicate/session/global denial and simultaneous admission at hard capacity.
+- No modification to authenticated/authorized executable identity, capture bytes, pinning, scopes, timeouts, or features. **Not integrated until exact-head native hosted CI and merge have succeeded.** Previous `main` `72966f92cf143be6f0c561f3ef07cef3fb4d4f11` passed independent [CI #39501571657](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39501571657) first attempt; Windows Node and MCP intermittencies remain open.
+
 ## Candidate: bounded executable identity capture timing (2026-10-20)
 
 - Confirmed [PR #295](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/295) merged at `615e62194d3c28c01530ff8993adab2447a12c19`, with independent [post-merge CI #39499240897](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39499240897) successful first attempt on the exact SHA. The Windows MCP doctor measured a 5737ms process-lease provisioning interval, not yet attributable to any specific operation.
