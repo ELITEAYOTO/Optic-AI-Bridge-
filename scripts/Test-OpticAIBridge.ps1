@@ -393,32 +393,12 @@ finally {
                 $seenPhases = New-Object 'System.Collections.Generic.HashSet[string]'
                 $seenProcessIdentityTiming = $false
                 foreach ($startupLine in $startupLines) {
-                    if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})
-            }
-        }
-        catch {
-            # Observability is best effort; never reinterpret a successful
-            # MCP functional proof as a failure due to timing collection.
-        }
-    }
-    if ($process) { $process.Dispose() }
-}
-) {
+                    if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
                         if ($seenPhases.Add($Matches[1])) {
                             Write-Host "OPTIC_DOCTOR_CHILD_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
                         }
                     }
-                    elseif (-not $seenProcessIdentityTiming -and $startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})
-            }
-        }
-        catch {
-            # Observability is best effort; never reinterpret a successful
-            # MCP functional proof as a failure due to timing collection.
-        }
-    }
-    if ($process) { $process.Dispose() }
-}
-) {
+                    elseif (-not $seenProcessIdentityTiming -and $startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
                         $seenProcessIdentityTiming = $true
                         Write-Host "OPTIC_DOCTOR_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
                     }
