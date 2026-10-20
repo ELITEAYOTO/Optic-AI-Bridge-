@@ -1,5 +1,13 @@
 # Current project status
 
+## Confirmed #294 integration and targeted MCP startup subphase diagnostic — 2026-10-20
+
+Live GitHub `main` at this checkpoint is `da3ab6f19a9b2544eef997cdf7edb987360c7553`, no open PRs. [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) merged test-only opt-in child startup markers. Source-head [CI #39487022400](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39487022400) passed first attempt (hosted Windows/Linux/dependencies). Independent main [CI #39487831596](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39487831596) completed on **attempt 2** after first-attempt and initial serial diagnostic 10s native Windows Node/AppContainer failures; failed attempt evidence remains retained. Failed-job-only Windows retry passed without a code change. This does **not** establish the cause or cure the intermittency.
+
+Two passing TEMP-only MCP doctor logs show child `executable-profile-checked=1ms` to `process-leases-provisioned=7802ms` and `5378ms`; MCP service follows within milliseconds. That span includes Git service setup, session provisioning, read scopes and process lease registration. Process lease registration may hash pinned executable identity, but the logs do **not** yet distinguish it from the other work.
+
+New diagnostic-only candidate `diag/mcp-lease-startup-subphases` adds **three static, opt-in stderr phase names** (`git-services-ready`, `session-provisioned`, `read-authorities-provisioned`) and the matching fixed whitelist entries in the existing Windows doctor. The existing hard deadlines, lease/security logic, stdout MCP protocol, scripts and CI gates are unchanged apart from these opt-in evidence markers. **Do not call this candidate integrated until exact-head hosted CI, actual marker output and merge/post-merge have been verified.** No new features or host permissions. Preserve Windows Node 10s and MCP first-response 30s failures as separate open debt; no operator-PC execution.
+
 ## MCP cold-start phase visibility — diagnostic candidate (2026-10-20)
 
 Live checkpoint before this work: `main` `de973989a30a28f561da27532582bca8c63e9309`, zero open PRs; independent [post-merge CI #39399746917](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39399746917) passed first attempt on exact SHA (Windows Rust, Linux Rust and dependency policy). Six recent successful hosted Windows post-merge jobs had TEMP-only MCP initialize receive at 3973, 7580, 4768, 4273, 7186 and 5139ms with the process-start marker at 6–9ms. These successful timings do **not** explain historical 30s first-response failures or distinct 10s Node isolation timeouts.

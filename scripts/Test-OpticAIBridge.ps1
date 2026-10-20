@@ -392,7 +392,7 @@ finally {
                 $startupLines = [string]::new($chars, 0, $used) -split "\r?\n"
                 $seenPhases = New-Object 'System.Collections.Generic.HashSet[string]'
                 foreach ($startupLine in $startupLines) {
-                    if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
+                    if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
                         if ($seenPhases.Add($Matches[1])) {
                             Write-Host "OPTIC_DOCTOR_CHILD_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
                         }

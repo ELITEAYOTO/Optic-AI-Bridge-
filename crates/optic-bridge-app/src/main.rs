@@ -209,6 +209,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
+    // Opt-in diagnostic: distinguish optional Git startup from lease minting.
+    startup_timing.mark("git-services-ready");
     let mut capabilities = BTreeSet::new();
     if args.file_read {
         capabilities.insert(Capability::FileRead);
@@ -254,6 +256,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
         now,
     )?;
+    startup_timing.mark("session-provisioned");
     let session = grant.handle;
     let supervised_session = session.clone();
 
@@ -274,6 +277,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         args.policy_epoch,
     )?;
 
+    startup_timing.mark("read-authorities-provisioned");
     // C5E keeps the first production minting path deliberately profile-specific:
     // only exact operator-selected Node interpreters may receive eligibility.
     let process_leases = provision_process_leases(

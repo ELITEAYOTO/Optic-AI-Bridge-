@@ -1,5 +1,15 @@
 # GitHub-only project handoff
 
+## #294 integrated; MCP lease startup subphase evidence candidate — 2026-10-20
+
+At latest live inspection `main=da3ab6f19a9b2544eef997cdf7edb987360c7553`, zero PRs. [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) is **merged**, its [source CI #39487022400](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39487022400) passed first attempt, and the independent [main CI #39487831596](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39487831596) passed on **attempt 2** only. On attempt 1 native Node loopback timed out at 10077ms with `launch_returned_ms=14` and no child marker; the first serial diagnostic also timed out, the next two returned expected exit 42. The Windows failed-job-only retry returned exit 42 and MCP child timings, without changing source. Preserve failed evidence; do not claim a root-cause fix.
+
+The #294 opt-in Windows doctor now emits eight validated child `OPTIC_STARTUP` phases. Two naturally passing runs show almost all startup latency from `executable-profile-checked=1ms` until `process-leases-provisioned` (~5378ms or 7802ms); source includes Git service setup, session provisioning, read leases and process leases (which capture and hash the pinned executable identity, bounded 512MiB). Attribution to executable hashing is currently only a hypothesis.
+
+New small diagnostic `diag/mcp-lease-startup-subphases`: mark `git-services-ready` immediately after optional Git service initialization, `session-provisioned` after the explicit lifecycle session grant, `read-authorities-provisioned` after read lease construction, and allow these exact names in the existing bounded PowerShell stderr observer. Thus native CI can distinguish process lease capture from prior subphases without disabling identity verification, increasing timeouts or changing authority. **Candidate only** pending exact-head Windows/Linux/dependency success and observed timing lines. If the result is still ambiguous, stop or instrument a still smaller boundary; never optimize security on a guess.
+
+Only GitHub-hosted runners; no operator-PC commands, releases, self-hosted CI, mass deletion, experimental alpha integration or new features. Dated candidate sections below are historical; verify their PR live before treating them as unfinished.
+
 ## MCP Windows startup: bounded successful-run phase evidence candidate — 2026-10-20
 
 Live `main` was `de973989a30a28f561da27532582bca8c63e9309` with zero PRs and independent [CI #39399746917](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39399746917) green first attempt on exact SHA. The Windows TEMP-only doctor receives initialize in 3973–7580ms across six sampled passing main jobs. The original 30s MCP first-response intermittencies and separate 10s Node/AppContainer intermittencies remain unresolved, not assumed fixed by sampling passes.
