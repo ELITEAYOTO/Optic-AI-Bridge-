@@ -140,27 +140,28 @@ pass” when normal Cargo/Electron research is red. Documentation-only work need
 accurate links/state, not a claim of runtime verification. Keep historical
 audits dated and annotate their scope instead of rewriting measured history.
 
-## Current in-progress increment — 2026-10-20
+## Current incremental continuation — 2026-10-20
 
-A short main-based change `feat/private-task-retirement` adds a Windows-native
-exclusive read/delete opener with no replacement window and a host-only journal
-API: list closed records with an exact byte-version, then explicitly retire one
-still-closed record after strict revalidation. Unresolved records, missing paths,
-links, drift and corrupt history must fail without deletion. No MCP/model action,
-new replay authority or automatic retention schedule is introduced.
+The former in-progress [PR #262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262)
+is **merged into main** at `bca2eae82eacf5df89b2fd70339751723ec86167`.
+Its final head `14b978bc` passed the six hosted Linux/Windows, dependency and
+native preparation/lifecycle/direct-Rust checks before squash. Earlier source
+revisions failed format and export checks; these were genuine fixed regressions,
+not research-baseline failures. The host-only retirement does not grant replay,
+MCP deletion, automatic authorizations or production retention enrollment.
+The post-merge main push CI is independent and should be checked.
 
-This is not a supported operator workflow yet. Review the exact PR head, Windows
-CI results and test coverage before merge. In particular, do not interpret a
-source change as executed native acceptance. Future work: operator consent/UI,
-retention policy and durable operational evidence. Retain historic reports.
+The operator additionally requested gradual file-size reduction, repository
+organization and an eventual file-by-file bug/security review. The inventory,
+scope and review criteria live in [CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md).
+Starting from merged main, branch `refactor/extract-project-input-tests`
+mechanically extracts the inline tests from `runtime/project_inputs.rs`
+into its child `tests.rs` file, leaving production capture code in place.
+No audit of every file has yet been performed. Do not confuse a source-count
+improvement with a product/behavior fix, and do not weaken Windows CI to pass.
 
-PR: [#262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262), base main `ba2ab11714ca`.
-Initial head `0c382cb` failed Linux rustfmt and Windows compilation
-(the native new opener was not exported); these are genuine incremental
-failures, not preexisting research failures. Layout fixed by `f0a5c83`;
-export fixed by `f863097`. Hosted revalidation started on the latter.
-**Before merging**, inspect the newer exact head after this handoff edit,
-its Windows/Linux Rust jobs, native preparation and native lifecycle jobs,
-check code/reviews, and update STATUS only for observed success. If a check
-fails, inspect the job logs and fix, never waive it. No operator-PC tests were
-run. Leave branch and PR open until the exact head passes applicable gates.
+Next agent action: inspect the new refactor PR on its exact head, Rust format,
+clippy and native Windows/Linux tests, address actual failures, then merge only
+with applicable results. Keep code-audit status scoped and historically measured.
+There is no approved operator-PC testing and no need to revisit mass branch
+cleanup or close independent normal Cargo/Electron research failure gates.

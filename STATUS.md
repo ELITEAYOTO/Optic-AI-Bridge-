@@ -21,6 +21,9 @@ and [agent entry point](AGENTS.md) do not require old chat memory or local files
 
 ## Merged and validated
 
+PR262 merged into main as `bca2eae` after its exact head `14b978b` passed all six applicable hosted checks (Windows/Linux Rust, dependency policy, native preparation, lifecycle and direct Rust). It adds a host-only, version-pinned retirement API for strictly closed private task evidence, with no model-visible deletion, automatic replay or operator workflow. This does **not** solve general retention UX or eliminate unresolved recovery capacity. [PR #262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262). No operator-PC execution. A separate source-organization review is tracked in [the quality register](docs/engineering/CODE_QUALITY_REVIEW.md); extracted tests require their own exact-head CI proof.
+
+
 PR259/`97f4098` adds lossless Windows path boundary checks and a native
 regression for a reproduced alias read across distinct non-Unicode roots.
 Git path comparisons/arguments and operator-policy placement receive the same
