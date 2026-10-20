@@ -983,13 +983,17 @@ mod tests {
         let (a, b) = std::thread::scope(|scope| {
             let g1 = Arc::clone(&gate);
             let g2 = Arc::clone(&gate);
-            let a = scope.spawn(|| {
+            let journal_ref = &journal;
+            let dest_ref = &dest;
+            let first_ref = &first;
+            let second_ref = &second;
+            let a = scope.spawn(move || {
                 g1.wait();
-                journal.publish_prepared_no_replace(&first, &dest)
+                journal_ref.publish_prepared_no_replace(first_ref, dest_ref)
             });
-            let b = scope.spawn(|| {
+            let b = scope.spawn(move || {
                 g2.wait();
-                journal.publish_prepared_no_replace(&second, &dest)
+                journal_ref.publish_prepared_no_replace(second_ref, dest_ref)
             });
             gate.wait();
             (
