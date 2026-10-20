@@ -1,6 +1,6 @@
 # GitHub-only project handoff
 
-## Next checkpoint: merged read protection and pending retirement fix — 2026-10-20
+## Current handoff: recovery journal read and retirement integrated — 2026-10-20
 
 At live inspection, `main` became
 `c2282ff5eba85d2a7480dd353db638a0623bd06d` after
@@ -12,13 +12,29 @@ and [native preparation 39368379422](https://github.com/ELITEAYOTO/Optic-AI-Brid
 The distinct post-merge `main` CI [39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
 completed successfully on exact post-merge `main` (Windows, Linux and dependency policy).
 
-The next bounded work branch `fix/recovery-safe-journal-retirement` is proposed
-as PR #278. It targets unlink of hard-linked recovery evidence, with a native
-handle-based Windows delete and a Unix opened-file alias check. **Do not treat
-this proposed code as shipped without successful latest-head checks and an
-observed squash merge.** Verify branch/PR state from GitHub rather than using
-this paragraph as an immutable checkpoint. No other PR stack is authorized.
-Earlier handoff notes below are historical checkpoints.
+[PR #278](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/278)
+was also squash-merged into `main` as
+`b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`
+from exact head `9778b497320d82db493bfbe4c02ff13d113c8ad5`.
+Its [CI 39369331802](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369331802)
+passed hosted Windows/Linux Rust and dependency policy;
+[native preparation 39369331816](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369331816)
+passed. The independent `main` CI
+[39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
+was in progress at this checkpoint; verify its live conclusion. The original
+#278 head failed rustfmt, corrected on a new exact head without waiver.
+There were zero open PRs following the observed merge. Previous handoff
+checkpoints below are historical and must not be treated as reset targets.
+Branch retirement tooling is unavailable through this connector; the integrated
+work branches remain without bulk cleanup.
+
+**Next specific review:** journal append path in
+`crates/optic-bridge-runtime/src/mutation/recovery.rs`: it checks pathname
+metadata then opens for append separately, without the equivalent alias/
+opened-file identity protection now used for reading or retirement.
+Demonstrate a defect with a hard-link fixture, then isolate the correction with
+native tests. Do not bundle this with Windows staged-artifact cleanup, directory
+identity, process-smoke intermittency or research compatibility gates.
 
 Unresolved: the separate journal append and staging-artifact cleanup boundaries,
 Unix pathname deletion race, directory pinning, power-loss durability, and the
