@@ -341,9 +341,9 @@ impl JournaledMutationService {
             let mut opened = optic_bridge_windows::open_exclusive_file_for_delete_no_reparse(
                 &staging,
             )
-            .map_err(|source| JournaledMutationError::StagingNativeFileRejected {
+            .map_err(|source| JournaledMutationError::StagingCleanupFailed {
                 action_id: record.action_id.clone(),
-                source,
+                source: std::io::Error::other(source),
             })?;
             let opened_size = opened.file_mut().metadata().map_err(|source| {
                 JournaledMutationError::StagingCleanupFailed {
@@ -370,9 +370,9 @@ impl JournaledMutationService {
             }
 
             opened.delete().map_err(|source| {
-                JournaledMutationError::StagingNativeFileRejected {
+                JournaledMutationError::StagingCleanupFailed {
                     action_id: record.action_id.clone(),
-                    source,
+                    source: std::io::Error::other(source),
                 }
             })?;
         }
@@ -440,13 +440,6 @@ pub enum JournaledMutationError {
     },
     #[error("operation {action_id:?} staging content no longer matches its journaled intent")]
     StagingContentMismatch { action_id: ActionId },
-    #[cfg(windows)]
-    #[error("operation {action_id:?} native staging file rejected or deletion failed: {source}")]
-    StagingNativeFileRejected {
-        action_id: ActionId,
-        #[source]
-        source: optic_bridge_windows::WindowsFileError,
-    },
     #[error("operation {action_id:?} staging cleanup failed: {source}")]
     StagingCleanupFailed {
         action_id: ActionId,
@@ -733,7 +726,7 @@ mod tests {
 
         assert!(matches!(
             service.recover(),
-            Err(JournaledMutationError::StagingNativeFileRejected { .. })
+            Err(JournaledMutationError::StagingCleanupFailed { .. })
         ));
         assert_eq!(
             fs::read(&external_evidence).expect("external retained"),
