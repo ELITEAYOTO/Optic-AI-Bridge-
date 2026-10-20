@@ -1123,7 +1123,10 @@ mod tests {
 
         fs::remove_file(&corrupt_path).expect("resolve corrupted fixture");
         assert!(
-            journal.reconcile(atomic.filesystem()).expect("reconcile").is_empty(),
+            journal
+                .reconcile(atomic.filesystem())
+                .expect("reconcile")
+                .is_empty(),
             "unpublished evidence is discarded only after a clean scan"
         );
         assert!(!unpublished_path.exists());
