@@ -1,5 +1,10 @@
 # Reliability and implementation debt
 
+## Setup-time state-root creation before denial — scoped correction under review
+
+Pre-increment `MutationRecoveryJournal::open` creates the requested state-root directory tree before canonical workspace-confinement rejection. An absent nested path inside the workspace therefore causes an unrequested workspace mutation even though journal creation is denied. Branch `fix/recovery-state-root-preflight` preflights the canonical nearest existing ancestor before creating anything, retains the final post-create check and adds a negative no-directory-creation test and a valid outside-root control. Verify the PR and exact-head CI before calling this delivered. The preflight is intentionally conservative and does not pin ancestors or make a concurrent pathname-swap guarantee.
+
+
 ## Windows recovery staging evidence — focused #284 correction (status via PR)
 
 Pre-fix `JournaledMutationService::cleanup_recovered_staging` validated only pathname regularity and matching file bytes before closing the reader and unlinking a separately resolved path. A hard-linked staging alias with content equal to the durable intent could be accepted and removed without detecting the external alias. [PR #284](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284) narrows the operation to one exclusive native single-link, no-reparse delete handle: recheck opened size, bounded-hash it, delete with that handle, retain durable journal on any rejection. The new Windows regression asserts the external link and staging link both remain, with original bytes and durable journal intact. See PR for the latest exact-head CI/merge result; **do not count source proposals as merged**. Parent directory identity/reparse behavior, power-loss durability, and other concurrent namespace races remain unproven. Node/AppContainer loopback and MCP first-response timing defects are separate unresolved items.

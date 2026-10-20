@@ -1,5 +1,10 @@
 # Current project status
 
+## State-root creation preflight — pending focused PR (2026-10-20)
+
+GitHub main `adeed077215c2103991254e4b5e2c64fa2d632de` and its [post-merge CI #39381445867](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39381445867) were checked: hosted Windows Rust, Linux Rust, and dependency policy succeeded on first attempt, with no open PRs before this increment. A separate targeted branch `fix/recovery-state-root-preflight` addresses a concrete setup side effect: `MutationRecoveryJournal::open` previously called `create_dir_all` before rejecting a requested state path inside the workspace. This could create nested directories in the workspace despite a rejected state-root request. The candidate first canonicalizes the closest existing ancestor and fails closed on an in-workspace ancestor *before* creating a directory, while retaining the post-create canonical check. Tests cover both rejected absent in-workspace state roots without side effects and accepted absent external state roots. This is **not integrated until exact-head hosted CI and merge**. Concurrent ancestor substitutions and symlink races remain outside this limited check; no general directory pinning or power-loss guarantee is claimed.
+
+
 ## Windows recovery staging cleanup — scoped source correction, 2026-10-20
 
 At resumed inspection, `main` was `d11d27c8efb1048f504d96024e4015ec60fd1535`, with no open PRs and post-merge hosted [CI #39376986248](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376986248) passing all Windows Rust, Linux Rust and dependency checks on attempt 1.

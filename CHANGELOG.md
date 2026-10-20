@@ -1,5 +1,17 @@
 # Changelog
 
+## Recovery state-root creation side-effect review — 2026-10-20
+
+- Pending narrow branch `fix/recovery-state-root-preflight`: reject absent
+  recovery state roots under the workspace **before** creating their ancestors.
+  Keep the existing post-create canonical check.
+- Negative test preserves an otherwise empty workspace when the chosen
+  nested state-root is forbidden; outside-root missing-directory creation
+  remains supported. No journal format, policy grant or filesystem effect API
+  changes. Concurrent directory replacement and full durability remain out
+  of scope. Verify exact-head GitHub CI and PR merge before claiming delivery.
+
+
 ## Recovery journal append alias hardening — 2026-10-20
 
 - [PR #282](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/282)

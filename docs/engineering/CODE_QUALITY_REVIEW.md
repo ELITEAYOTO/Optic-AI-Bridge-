@@ -296,3 +296,14 @@ This is a targeted recovery-evidence boundary correction, not a complete
 file-by-file code review, parent-directory race solution, or proof of
 sudden-power-loss durability. Its exact validation and merger are recorded
 on the PR, not presumed by this review note.
+
+## Recovery state-root setup preflight — narrow source review (2026-10-20)
+
+`mutation/recovery.rs::open` performed `create_dir_all` before workspace
+confinement checks. For an absent nested state-root inside the workspace, a
+denied operation nevertheless created a directory tree. Proposed preflight
+rejects a canonicalized existing in-workspace ancestor before creation and
+retains post-creation canonical validation. A negative workspace-unchanged
+test and an outside-root control cover the precise behavior. This is not a
+general directory TOCTOU or persistence proof. Check the corresponding
+scoped PR's exact-head native CI and merge state separately.

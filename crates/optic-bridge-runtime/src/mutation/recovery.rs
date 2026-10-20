@@ -45,9 +45,35 @@ impl MutationRecoveryJournal {
             return Err(RecoveryJournalError::InvalidLimits);
         }
 
+        let workspace_root = fs::canonicalize(workspace_root)?;
+        // Refuse a new state directory under the workspace before creating
+        // any of its missing ancestors. A post-creation canonical check alone
+        // can reject the path only after writing directories into the project.
+        // This is a fail-closed preflight, not a directory-handle pin against
+        // concurrent namespace changes.
+        let mut existing_ancestor = state_root.as_ref().to_path_buf();
+        loop {
+            match fs::canonicalize(&existing_ancestor) {
+                Ok(canonical) => {
+                    if canonical == workspace_root || canonical.starts_with(&workspace_root) {
+                        return Err(RecoveryJournalError::StateDirectoryInsideWorkspace);
+                    }
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if !existing_ancestor.pop() {
+                        return Err(RecoveryJournalError::Io(error));
+                    }
+                    if existing_ancestor.as_os_str().is_empty() {
+                        existing_ancestor = PathBuf::from(".");
+                    }
+                }
+                Err(error) => return Err(RecoveryJournalError::Io(error)),
+            }
+        }
+
         fs::create_dir_all(state_root.as_ref())?;
         let state_root = fs::canonicalize(state_root.as_ref())?;
-        let workspace_root = fs::canonicalize(workspace_root)?;
         if state_root == workspace_root || state_root.starts_with(&workspace_root) {
             return Err(RecoveryJournalError::StateDirectoryInsideWorkspace);
         }
@@ -808,6 +834,47 @@ mod tests {
         ));
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
         let _ = state;
+    }
+
+    #[test]
+    fn missing_state_directory_inside_workspace_is_rejected_before_creation() {
+        let (workspace, state) = fixture("preflight-inside");
+        let requested = workspace.join("should-not-exist").join("nested");
+        let atomic =
+            crate::AtomicMutationService::from_hard_limits(&workspace, HardLimits::default())
+                .expect("atomic");
+        assert!(matches!(
+            MutationRecoveryJournal::open(
+                &requested,
+                atomic.filesystem().root(),
+                HardLimits::default()
+            ),
+            Err(RecoveryJournalError::StateDirectoryInsideWorkspace)
+        ));
+        assert!(
+            !workspace.join("should-not-exist").exists(),
+            "rejected state root must not create any workspace directory"
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+        let _ = state;
+    }
+
+    #[test]
+    fn missing_state_directory_outside_workspace_can_still_be_created() {
+        let (workspace, state) = fixture("preflight-outside");
+        let requested = state.join("new").join("nested");
+        let atomic =
+            crate::AtomicMutationService::from_hard_limits(&workspace, HardLimits::default())
+                .expect("atomic");
+        assert!(!requested.exists());
+        let journal = MutationRecoveryJournal::open(
+            &requested,
+            atomic.filesystem().root(),
+            HardLimits::default(),
+        )
+        .expect("outside root");
+        assert!(journal.root().is_dir());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
     #[test]

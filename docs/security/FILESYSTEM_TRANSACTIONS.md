@@ -1,5 +1,19 @@
 # Filesystem Safety and Transactions
 
+## State-root creation preflight and confinement
+
+An operator-provided recovery state directory must not be created within a
+project workspace only to be rejected afterwards. The scoped pending
+`fix/recovery-state-root-preflight` change first canonicalizes the closest
+existing ancestor of a requested state root, rejecting workspace ancestors
+before directory creation, then retains canonical confinement validation
+after creation. This prevents deterministic setup-time workspace directory
+creation for rejected nested paths; it does **not** pin ancestor handles,
+eliminate concurrent namespace substitutions or prove crash durability.
+Confirm actual PR integration and native hosted tests before treating it as
+delivered.
+
+
 ## Windows recovery staging file identity at cleanup
 
 During recovery, after a durable `committing` record, an operation-owned

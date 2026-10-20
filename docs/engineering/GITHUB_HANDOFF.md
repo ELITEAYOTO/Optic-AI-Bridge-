@@ -1,5 +1,12 @@
 # GitHub-only project handoff
 
+## Current scoped state-root setup preflight (2026-10-20)
+
+On GitHub `main` was `adeed077215c2103991254e4b5e2c64fa2d632de`, with zero open PRs. [Post-merge CI #39381445867](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39381445867) finished green on exact main: Windows Rust, Linux Rust, dependency policy, attempt 1. Work branch `fix/recovery-state-root-preflight` corrects an actual side-effect-before-denial in `MutationRecoveryJournal::open`: when the chosen state-root did not yet exist within a workspace, `create_dir_all` previously created it before detecting and rejecting the workspace location. The candidate probes the canonical nearest existing ancestor first, retains the post-create canonical check, and tests refusal without project directory creation plus valid external directory creation. This is a **pending targeted PR** until exact-head CI and squash are observed; refresh live GitHub state.
+
+Parent-directory races between preflight and creation are still possible. No blanket security or durability claims. #277/#278/#282/#284 journal/staging hardening is already merged; do not redo. The Windows AppContainer/Node and MCP first-response intermittencies remain separate unexplained reliability debt. Next after validating this increment: narrow examination of journal publication no-clobber semantics or root identity, without speculative broad native changes. Preserve alpha ancestry and all evidence refs. No operator-PC tests, self-hosted runners, releases or mass deletions.
+
+
 ## Scoped Windows staging recovery evidence — 2026-10-20
 
 GitHub bootstrap: `main` `d11d27c8efb1048f504d96024e4015ec60fd1535`, zero open PRs, and [post-merge CI #39376986248](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376986248) success on first attempt for Windows Rust, Linux Rust and dependency policy. The current work is [PR #284](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284) on `fix/recovery-staging-handle-delete`. **Its eventual merge and checks are not pre-asserted**: re-open GitHub and validate exact head, reviews, hosted Windows/Linux and post-merge `main` before declaring success.
