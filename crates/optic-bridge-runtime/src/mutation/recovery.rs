@@ -546,7 +546,13 @@ fn parse_journal(
     let chunks = bytes.split(|byte| *byte == b'\n').collect::<Vec<_>>();
     for (index, chunk) in chunks.iter().enumerate() {
         if chunk.is_empty() {
-            continue;
+            // split() yields exactly one empty final element for the normal
+            // newline terminator. Earlier empty elements represent complete
+            // blank records, which the append-only writer never produces.
+            if has_complete_tail && index + 1 == chunks.len() {
+                continue;
+            }
+            return Err(RecoveryJournalError::CorruptJournal);
         }
         let is_last = index + 1 == chunks.len();
         if is_last && !has_complete_tail {
@@ -929,6 +935,78 @@ mod tests {
             report.records[0].outcome,
             RecoveryOutcome::ObservedCommitted
         );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn complete_empty_journal_lines_fail_closed_and_preserve_evidence() {
+        let (workspace, state) = fixture("blank-journal-records");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = journal
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        journal.mark_committing(&ticket).expect("committing");
+        let journal_path = journal.journal_path(ticket.action_id());
+        let original = fs::read(&journal_path).expect("original journal");
+        let first_terminator = original
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .expect("first journal record");
+
+        let mut interior_blank = original.clone();
+        interior_blank.insert(first_terminator + 1, b'\n');
+        fs::write(&journal_path, &interior_blank).expect("corrupt interior record");
+        assert!(matches!(
+            journal.reconcile(atomic.filesystem()),
+            Err(RecoveryJournalError::CorruptJournal)
+        ));
+        assert!(journal_path.exists(), "retain corrupted journal evidence");
+
+        let mut trailing_blank = original;
+        trailing_blank.push(b'\n');
+        fs::write(&journal_path, &trailing_blank).expect("corrupt trailing record");
+        assert!(matches!(
+            journal.reconcile(atomic.filesystem()),
+            Err(RecoveryJournalError::CorruptJournal)
+        ));
+        assert!(journal_path.exists(), "retain corrupted journal evidence");
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn incomplete_torn_tail_still_uses_last_complete_journal_state() {
+        let (workspace, state) = fixture("torn-journal-tail");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let path = WorkspacePath::parse("new.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = journal
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        journal.mark_committing(&ticket).expect("committing");
+        let journal_path = journal.journal_path(ticket.action_id());
+        let mut contents = fs::read(&journal_path).expect("journal bytes");
+        contents.extend_from_slice(b"{\"version\":");
+        fs::write(&journal_path, contents).expect("torn append");
+
+        let report = journal.inspect_pending(atomic.filesystem()).expect("inspect");
+        assert_eq!(report.records.len(), 1);
+        assert_eq!(
+            report.records[0].outcome,
+            RecoveryOutcome::ObservedNotCommitted
+        );
+        assert!(journal_path.exists(), "inspection retains journal evidence");
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 

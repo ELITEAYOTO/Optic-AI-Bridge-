@@ -228,3 +228,23 @@ checks; follow the linked PR and live checks. This is not a completed
 line-by-line audit of these modules or an endorsement of the journal schema
 for arbitrary crash/power-loss conditions. Do not re-run this as a broad
 repository-wide relocation.
+
+## Fail-closed journal record framing — 2026-10-20
+
+Source review of the mutation recovery parser found that it skipped
+**all** empty newline-delimited segments. The writer emits exactly one
+newline after each JSON record, never a complete blank record, while a
+crash-torn *nonterminated* final record must remain tolerable. A completed
+blank record anywhere else was silently accepted and could conceal
+anomalous on-disk evidence. This is a concrete source-level integrity
+gap, not an observed user incident.
+
+The `fix/recovery-reject-empty-lines` change distinguishes the one empty
+split item after the normal final terminator from unexpected complete
+blank records. It refuses the latter as `CorruptJournal`, preserving the
+journal instead of retiring it. Two regression cases exercise an empty
+record between transitions and after the last record, plus a separate
+test that a torn nonterminated tail still resolves from the previous
+complete record. No schema format, state transition, effect, lease,
+file-output budget or permission boundary is widened. Hosted Windows
+and Linux CI must pass on the exact PR head before merger.
