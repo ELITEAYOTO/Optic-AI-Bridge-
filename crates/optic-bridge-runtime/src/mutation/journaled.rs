@@ -290,6 +290,21 @@ impl JournaledMutationService {
         &self,
         report: &RecoveryReport,
     ) -> Result<(), JournaledMutationError> {
+        // Inspect and verify every staging artifact before the first removal.
+        // A corrupt later artifact must not erase earlier recovery evidence.
+        self.walk_recovered_staging(report, false)?;
+        // A second pass reopens and revalidates each exact delete handle:
+        // identities may change between passes. A failure during actual
+        // deletion is still not atomic across multiple files.
+        self.walk_recovered_staging(report, true)
+    }
+
+    #[cfg(windows)]
+    fn walk_recovered_staging(
+        &self,
+        report: &RecoveryReport,
+        delete: bool,
+    ) -> Result<(), JournaledMutationError> {
         for record in &report.records {
             let staging = staging_path_for(
                 self.atomic.filesystem(),
@@ -369,12 +384,14 @@ impl JournaledMutationService {
                 });
             }
 
-            opened
-                .delete()
-                .map_err(|source| JournaledMutationError::StagingCleanupFailed {
-                    action_id: record.action_id.clone(),
-                    source: std::io::Error::other(source),
-                })?;
+            if delete {
+                opened
+                    .delete()
+                    .map_err(|source| JournaledMutationError::StagingCleanupFailed {
+                        action_id: record.action_id.clone(),
+                        source: std::io::Error::other(source),
+                    })?;
+            }
         }
         Ok(())
     }
@@ -692,6 +709,83 @@ mod tests {
                 .expect("journal root")
                 .count(),
             1
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn corrupt_later_staging_does_not_erase_earlier_verified_staging() {
+        let (workspace, state) = fixture("preserve-earlier-staging");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let first = ActionId::generate().expect("first action");
+        let second = ActionId::generate().expect("second action");
+        assert_ne!(first.to_token(), second.to_token());
+        // Recovery traverses durable journal filenames in action-token order.
+        let (earlier, later) = if first.to_token() < second.to_token() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let mut staging_paths = Vec::new();
+        for (name, action, bytes) in [
+            ("earlier.txt", earlier.clone(), b"new".as_slice()),
+            ("later.txt", later.clone(), b"tampered".as_slice()),
+        ] {
+            let path = WorkspacePath::parse(name).expect("workspace path");
+            let plan = service
+                .prepare_write(&path, ExpectedState::Absent)
+                .expect("prepare write");
+            let ticket = service
+                .journal()
+                .begin_for_action(
+                    &action,
+                    &plan,
+                    ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+                )
+                .expect("durable prepared journal");
+            service
+                .journal()
+                .mark_committing(&ticket)
+                .expect("durable committing");
+            let staging =
+                staging_path_for(service.atomic().filesystem(), &path, ticket.action_id());
+            fs::write(&staging, bytes).expect("staging fixture");
+            staging_paths.push(staging);
+        }
+
+        assert!(matches!(
+            service.recover(),
+            Err(JournaledMutationError::StagingContentMismatch { action_id })
+                if action_id == later
+        ));
+        assert_eq!(
+            fs::read(&staging_paths[0]).expect("earlier staging retained"),
+            b"new"
+        );
+        assert_eq!(
+            fs::read(&staging_paths[1]).expect("invalid staging retained"),
+            b"tampered"
+        );
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("durable journal root")
+                .count(),
+            2,
+            "neither durable recovery intent may be retired on failed preflight"
+        );
+
+        fs::write(&staging_paths[1], b"new").expect("repair later staging");
+        assert_eq!(service.recover().expect("recovery").records.len(), 2);
+        assert!(!staging_paths[0].exists());
+        assert!(!staging_paths[1].exists());
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("retired journal root")
+                .count(),
+            0
         );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
