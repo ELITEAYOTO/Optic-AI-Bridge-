@@ -17,7 +17,9 @@ param(
     [string]$WritePrefix,
     [string]$DeletePrefix,
     [ValidateRange(1000, 120000)]
-    [int]$TimeoutMs = 30000
+    [int]$TimeoutMs = 30000,
+
+    [switch]$StartupTiming
 )
 
 Set-StrictMode -Version Latest
@@ -208,12 +210,21 @@ $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.CreateNoWindow = $true
+if ($StartupTiming) {
+    # Child-only diagnostic opt-in: do not alter the operator shell's environment.
+    # Fixed phase names/times only; no MCP messages, capabilities, paths or secrets.
+    $psi.Environment['OPTIC_STARTUP_TIMING'] = '1'
+}
 
 $process = New-Object System.Diagnostics.Process
 $process.StartInfo = $psi
+$startupClock = [Diagnostics.Stopwatch]::StartNew()
 
 try {
     if (-not $process.Start()) { throw 'Failed to start Optic AI Bridge.' }
+    if ($StartupTiming) {
+        Write-Host "OPTIC_DOCTOR_TIMING phase=process-started elapsed_ms=$($startupClock.ElapsedMilliseconds)"
+    }
 
     $initialize = [ordered]@{
         jsonrpc = '2.0'
@@ -227,8 +238,14 @@ try {
     } | ConvertTo-Json -Depth 8 -Compress
     $process.StandardInput.WriteLine($initialize)
     $process.StandardInput.Flush()
+    if ($StartupTiming) {
+        Write-Host "OPTIC_DOCTOR_TIMING phase=initialize-sent elapsed_ms=$($startupClock.ElapsedMilliseconds)"
+    }
 
     $initResponse = Read-McpResponse -Process $process -Id 1 -Timeout $TimeoutMs
+    if ($StartupTiming) {
+        Write-Host "OPTIC_DOCTOR_TIMING phase=initialize-received elapsed_ms=$($startupClock.ElapsedMilliseconds)"
+    }
     if ($initResponse.PSObject.Properties.Name -contains 'error') {
         throw "MCP initialize failed: $($initResponse.error.message)"
     }

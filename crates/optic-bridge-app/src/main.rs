@@ -9,7 +9,7 @@ use std::{
     ffi::OsString,
     path::PathBuf,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use optic_bridge_core::{
@@ -35,6 +35,37 @@ use crate::{
 
 const INITIAL_SESSION_TTL_MS: u64 = 30 * 60 * 1000;
 const SESSION_REAP_INTERVAL_MS: u64 = 5_000;
+
+// Operator/CI-opted timing evidence only. Phase names are static and contain
+// no workspace paths, executable locations, capability grants or request data.
+// Never print these markers on the MCP stdout protocol channel.
+#[derive(Debug)]
+struct StartupTiming {
+    started: Instant,
+    enabled: bool,
+}
+
+impl StartupTiming {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            enabled: startup_timing_enabled(std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref()),
+        }
+    }
+
+    fn mark(&self, phase: &'static str) {
+        if self.enabled {
+            eprintln!(
+                "OPTIC_STARTUP phase={phase} elapsed_ms={}",
+                self.started.elapsed().as_millis()
+            );
+        }
+    }
+}
+
+fn startup_timing_enabled(value: Option<&str>) -> bool {
+    value == Some("1")
+}
 
 fn build_process_manager(
     args: &AppArgs,
@@ -94,12 +125,16 @@ fn discover_isolation_launcher() -> Result<Option<PathBuf>, std::io::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let startup_timing = StartupTiming::new();
+    startup_timing.mark("entry");
     let args = AppArgs::parse()?;
+    startup_timing.mark("arguments-parsed");
     let limits = HardLimits::default().validate_nonzero()?;
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
     let expires_at = now.saturating_add_millis(args.session_lifetime_ms);
     let processes = Arc::new(build_process_manager(&args, limits)?);
+    startup_timing.mark("process-manager-created");
     let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits)?);
     let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits)?);
 
@@ -124,6 +159,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &process_isolation_eligible,
         limits,
     )?;
+    startup_timing.mark("executable-profile-checked");
     let configured_tool_profiles = loaded_tool_profiles
         .as_ref()
         .map(|loaded| loaded.profiles.as_slice())
@@ -255,6 +291,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     )?;
     let tool_profile_count = configured_tool_profiles.len();
+    startup_timing.mark("process-leases-provisioned");
     let tool_profile_registry = loaded_tool_profiles.map(|loaded| Arc::new(loaded.registry));
 
     let mutation_authorities = MutationAuthoritySet::provision(
@@ -338,6 +375,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         git_integration_authorities,
     )?
     .with_read_authorities(read_authorities);
+    startup_timing.mark("server-created");
     let git_integrate_authority_ready = server.git_integration_authority_ready();
 
     let max_request_bytes = usize::try_from(limits.max_request_bytes)
@@ -351,6 +389,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         max_response_bytes,
     )?;
 
+    startup_timing.mark("transport-created");
     eprintln!(
         "Optic AI Bridge {} — MCP stdio ({} process executable(s), {} tool profile(s), {} write scope(s), {} delete scope(s), {} directory scope(s), Git read {}, Git integrate authority {})",
         env!("CARGO_PKG_VERSION"),
@@ -371,6 +410,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service = server.serve(transport).await?;
+    startup_timing.mark("mcp-service-started");
     let renewal = args
         .supervise_session
         .then_some((supervised_session.clone(), args.session_lifetime_ms));
@@ -1301,6 +1341,15 @@ fn os_string_to_utf8(value: OsString, label: &str) -> Result<String, std::io::Er
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_timing_requires_exact_host_opt_in() {
+        assert!(!super::startup_timing_enabled(None));
+        assert!(!super::startup_timing_enabled(Some("")));
+        assert!(!super::startup_timing_enabled(Some("true")));
+        assert!(!super::startup_timing_enabled(Some("0")));
+        assert!(super::startup_timing_enabled(Some("1")));
+    }
+
     #[test]
     fn operator_session_lifetime_is_bounded_and_explicit() {
         assert_eq!(

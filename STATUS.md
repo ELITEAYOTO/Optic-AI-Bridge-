@@ -1,5 +1,12 @@
 # Current project status
 
+## Windows MCP startup timing investigation (PR pending) — 2026-10-20
+
+Fresh GitHub verification: `main` was `0f857b81a0715b2fcb7cb8f1e2a4250bf9221fa6`, with no open PRs; post-merge [CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039) passed on its second attempt. Its first attempt still contains a failed 30-second TEMP-only Node MCP initialization smoke; the separate AppContainer Node loopback 10-second intermittency also remains unresolved. These are not proven journal regressions.
+
+The current **unmerged** scoped diagnostics branch `diag/windows-mcp-startup-phases` provides opt-in monotonic startup phase timestamps on the bridge's stderr and host-side process-start/initialize timings for the existing GitHub-hosted Windows TEMP-only doctor. Static phase labels contain no path, credential, permissions or MCP payload. Ordinary bridge launches are unchanged unless `OPTIC_STARTUP_TIMING=1` is explicitly selected by the host. The diagnostic does **not** change 10s/30s timeouts, grant/isolation rules, CI acceptance conditions or the Rust core's optional language dependencies. The existing Windows doctor smoke and a Rust opt-in predicate test are the validation gates; **do not call this completed until an exact-head CI succeeds**. An eventual diagnostic pass alone will not establish a root cause or fix the intermittent failure.
+
+
 ## Recovery journal read and retirement hardening integrated — 2026-10-20
 
 - [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
