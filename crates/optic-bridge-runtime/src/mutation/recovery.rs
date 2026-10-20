@@ -148,11 +148,63 @@ impl MutationRecoveryJournal {
             let _ = fs::remove_file(&temp_path);
             return Err(error);
         }
-        if let Err(error) = fs::rename(&temp_path, &journal_path) {
+        if let Err(error) = self.publish_prepared_no_replace(&temp_path, &journal_path) {
+            // The destination is never replaced on either hosted OS. The
+            // create-new temp may still need cleanup after a failed attempt.
             let _ = fs::remove_file(&temp_path);
-            return Err(RecoveryJournalError::Io(error));
+            return Err(error);
         }
         Ok(ticket)
+    }
+
+    fn publish_prepared_no_replace(
+        &self,
+        temp_path: &Path,
+        journal_path: &Path,
+    ) -> Result<(), RecoveryJournalError> {
+        #[cfg(windows)]
+        {
+            optic_bridge_windows::move_file_no_replace(temp_path, journal_path)
+                .map_err(RecoveryJournalError::NativeJournalFile)
+        }
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            use nix::fcntl::{RenameFlags, renameat2};
+
+            // Resolve both names relative to one opened directory; the
+            // kernel checks destination absence as part of the rename.
+            let dir = File::open(&self.root)?;
+            let temp_name = temp_path.strip_prefix(&self.root).map_err(|_| {
+                RecoveryJournalError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "prepared journal path must be within the recovery root",
+                ))
+            })?;
+            let journal_name = journal_path.strip_prefix(&self.root).map_err(|_| {
+                RecoveryJournalError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "published journal path must be within the recovery root",
+                ))
+            })?;
+            renameat2(
+                &dir,
+                temp_name,
+                &dir,
+                journal_name,
+                RenameFlags::RENAME_NOREPLACE,
+            )
+            .map_err(|errno| {
+                RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32))
+            })
+        }
+        #[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
+        {
+            let _ = (temp_path, journal_path);
+            Err(RecoveryJournalError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "atomic no-replace journal publication is unsupported on this platform",
+            )))
+        }
     }
 
     pub fn mark_committing(&self, ticket: &JournalTicket) -> Result<(), RecoveryJournalError> {
@@ -874,6 +926,88 @@ mod tests {
         )
         .expect("outside root");
         assert!(journal.root().is_dir());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
+    #[test]
+    fn journal_publication_does_not_replace_preexisting_evidence() {
+        let (workspace, state) = fixture("publish-existing");
+        let (_, journal) = service(&workspace, &state, HardLimits::default());
+        let action_id = ActionId::generate().expect("action id");
+        let temp_path = journal.prepared_temp_path(&action_id);
+        let journal_path = journal.journal_path(&action_id);
+        fs::write(&temp_path, b"new prepared journal").expect("create temp");
+        fs::write(&journal_path, b"durable previous evidence").expect("create stable");
+
+        assert!(
+            journal
+                .publish_prepared_no_replace(&temp_path, &journal_path)
+                .is_err(),
+            "publication must not overwrite even after a prior absence check"
+        );
+        assert_eq!(
+            fs::read(&journal_path).expect("stable retained"),
+            b"durable previous evidence"
+        );
+        assert_eq!(
+            fs::read(&temp_path).expect("temporary retained"),
+            b"new prepared journal"
+        );
+        fs::remove_file(&journal_path).expect("remove test destination");
+        journal
+            .publish_prepared_no_replace(&temp_path, &journal_path)
+            .expect("publish when absent");
+        assert!(!temp_path.exists());
+        assert_eq!(
+            fs::read(&journal_path).expect("published content"),
+            b"new prepared journal"
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
+    #[test]
+    fn competing_journal_publishers_never_overwrite_the_first_winner() {
+        use std::sync::{Arc, Barrier};
+
+        let (workspace, state) = fixture("publish-contended");
+        let (_, journal) = service(&workspace, &state, HardLimits::default());
+        let dest = journal.root().join("contended.journal");
+        let first = journal.root().join("one.prepared.tmp");
+        let second = journal.root().join("two.prepared.tmp");
+        fs::write(&first, b"writer-one").expect("first");
+        fs::write(&second, b"writer-two").expect("second");
+
+        let gate = Arc::new(Barrier::new(3));
+        let (a, b) = std::thread::scope(|scope| {
+            let g1 = Arc::clone(&gate);
+            let g2 = Arc::clone(&gate);
+            let journal_ref = &journal;
+            let dest_ref = &dest;
+            let first_ref = &first;
+            let second_ref = &second;
+            let a = scope.spawn(move || {
+                g1.wait();
+                journal_ref.publish_prepared_no_replace(first_ref, dest_ref)
+            });
+            let b = scope.spawn(move || {
+                g2.wait();
+                journal_ref.publish_prepared_no_replace(second_ref, dest_ref)
+            });
+            gate.wait();
+            (
+                a.join().expect("first thread"),
+                b.join().expect("second thread"),
+            )
+        });
+        assert_ne!(a.is_ok(), b.is_ok(), "exactly one publisher must win");
+        let expected = if a.is_ok() {
+            b"writer-one"
+        } else {
+            b"writer-two"
+        };
+        assert_eq!(fs::read(&dest).expect("one stable winner"), expected);
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 

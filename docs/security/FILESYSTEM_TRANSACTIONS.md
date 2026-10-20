@@ -1,5 +1,22 @@
 # Filesystem Safety and Transactions
 
+## Recovery journal publication must not replace durable evidence
+
+A `prepared` record is fsynced to a create-new temporary journal before
+publishing its stable name. The prior sequence checked destination absence,
+then called a potentially **replacing** `fs::rename`; an actor creating the
+stable name between those calls could have its evidence overwritten. The
+bounded `fix/recovery-journal-publish-no-replace` proposal uses a single
+native no-replace rename on supported Windows and Linux GNU systems: Windows
+`MoveFileExW` without replacement/copy flags, and Linux `renameat2` with
+`RENAME_NOREPLACE` scoped to an opened recovery directory. It does not create
+an intermediate hard-link pair requiring special interrupted recovery. Tests
+cover a preexisting destination and two competing publishers. Unsupported
+targets fail closed; this is not parent-directory pinning, directory fsync or
+a complete sudden-power-loss guarantee. Inspect exact-head PR checks and
+integration state before describing it as delivered.
+
+
 ## State-root creation preflight and confinement
 
 An operator-provided recovery state directory must not be created within a

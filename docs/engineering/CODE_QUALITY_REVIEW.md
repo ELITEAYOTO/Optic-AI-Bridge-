@@ -307,3 +307,15 @@ retains post-creation canonical validation. A negative workspace-unchanged
 test and an outside-root control cover the precise behavior. This is not a
 general directory TOCTOU or persistence proof. Check the corresponding
 scoped PR's exact-head native CI and merge state separately.
+
+## Prepared recovery journal publication — no-clobber scoped review (2026-10-20)
+
+Reviewed `mutation/recovery.rs::begin_for_action` after #285 on
+`main` `49c55d7`. The preflight `ensure_action_path_absent` was separated
+from an overwriting `fs::rename` syscall. The candidate uses OS-native
+atomic no-replace publication, plus preexisting-evidence and concurrent
+publisher tests. It preserves the durable file write and existing state
+machine. No conclusion is drawn about folder identity under replacement,
+power-loss directory durability, other unsupported OSes or unrelated process
+isolation. Exact branch CI/merge must be checked live.
+
