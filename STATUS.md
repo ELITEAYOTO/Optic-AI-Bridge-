@@ -1,5 +1,12 @@
 # Current project status
 
+## Windows recovery staging cleanup — scoped source correction, 2026-10-20
+
+At resumed inspection, `main` was `d11d27c8efb1048f504d96024e4015ec60fd1535`, with no open PRs and post-merge hosted [CI #39376986248](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376986248) passing all Windows Rust, Linux Rust and dependency checks on attempt 1.
+
+[PR #284](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284) isolates a Windows-only recovery staging-cleanup defect: the original code read/validated bytes, closed that file and unlinked a separately resolved name. Valid matching bytes in a staging hard link to an outside file were accepted without detecting the second link. The change reuses the existing exclusive no-reparse, single-link native delete handle, verifies the opened length and hash, and deletes via that **same handle**. A negative native Windows test requires both hard links and the journal evidence to survive failed recovery. This paragraph describes PR scope, not its merge/CI outcome; inspect the [PR's latest head/checks](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/284) before claiming delivery. Parent-directory pinning, concurrent ancestor swaps and power-loss guarantees remain unproven. The experimental alpha and Windows Node intermittency are unchanged.
+
+
 ## Recovery journal append alias hardening integrated — 2026-10-20
 
 [PR #282](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/282) was squash-merged into `main` as `bf79b320b4e7aa04a02c87fe448d589296bc8bb2` from final source head `c837cead816fb59c5d3a94b8d9b5fe1926987644`. [CI #39375905332](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39375905332) passed hosted Windows Rust (including native AppContainer and MCP smokes), Linux Rust and dependency policy; hosted [native preparation #39375905331](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39375905331) also passed. The original head failed Clippy Windows due to an unnecessary `mut`, corrected without waiving checks. No PRs remained open after merging. The distinct [post-merge main CI #39376336498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39376336498) was in progress at documentation time; check its actual final result.
