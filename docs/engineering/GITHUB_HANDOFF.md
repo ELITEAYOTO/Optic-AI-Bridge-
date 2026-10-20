@@ -139,3 +139,17 @@ Use GitHub links rather than personal filesystem paths. Never say “all tests
 pass” when normal Cargo/Electron research is red. Documentation-only work needs
 accurate links/state, not a claim of runtime verification. Keep historical
 audits dated and annotate their scope instead of rewriting measured history.
+
+## Current in-progress increment — 2026-10-20
+
+A short main-based change `feat/private-task-retirement` adds a Windows-native
+exclusive read/delete opener with no replacement window and a host-only journal
+API: list closed records with an exact byte-version, then explicitly retire one
+still-closed record after strict revalidation. Unresolved records, missing paths,
+links, drift and corrupt history must fail without deletion. No MCP/model action,
+new replay authority or automatic retention schedule is introduced.
+
+This is not a supported operator workflow yet. Review the exact PR head, Windows
+CI results and test coverage before merge. In particular, do not interpret a
+source change as executed native acceptance. Future work: operator consent/UI,
+retention policy and durable operational evidence. Retain historic reports.
