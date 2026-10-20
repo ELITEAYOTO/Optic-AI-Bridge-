@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Current bounded increment — journal append alias, 2026-10-20
+
+At GitHub reinspection, `main` was `4b66fd0ca5e0ed397c589548d3fbf331e067df6a`, with zero open PRs, and exact post-merge [CI #39374757910](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39374757910) passed Windows Rust, Linux Rust and dependency policy on attempt 1. The independent Windows AppContainer 10-second and MCP initialization 30-second intermittent failures are still **unexplained**; prior reexecutions succeeded but do not establish causal fixes. The opt-in MCP startup timing probe #280 is already merged and should not be implemented again.
+
+Review of `crates/optic-bridge-runtime/src/mutation/recovery.rs` identified a concrete remaining alias weakness in `append`: pathname metadata was checked before opening a distinct append handle, without link count or opened-object verification. The work branch `fix/recovery-journal-append-identity` is deliberately limited to that append path, reusing native Windows exclusive state open and Unix descriptor checks, with a hard-link byte-preservation regression. Check current branch/PR/CI state live; this note is a dated source checkpoint, **not proof of a merged fix**. Do not bundle staged-artifact cleanup, full parent pinning, Unix concurrent namespace races or broad module rearrangement with this PR.
+
+Next: obtain exact-head hosted Windows/Linux Rust and dependency-policy results; review and squash only if passing, then recheck `main` and add final merge/CI evidence to the PR handoff. No operator-PC work, self-hosted runners, release or mass deletion. Alpha remains separate.
+
+
 ## Integrated startup timing probe and follow-up — 2026-10-20
 
 A new chat confirmed `main` `0f857b81a0715b2fcb7cb8f1e2a4250bf9221fa6`, no PRs open before work and [post-merge CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039) completed successfully on attempt 2. Windows attempt 1 of that CI failed in the existing TEMP-only MCP doctor with a 30-second response timeout and an alive bridge, while Linux and dependency checks passed; the initial failure is retained. The separately recurring AppContainer/Node loopback `TimedOut` (10 seconds, no output) also remains a separate investigation.
