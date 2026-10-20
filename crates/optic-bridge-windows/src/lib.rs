@@ -41,8 +41,8 @@ pub use executable::{PinnedExecutableFile, open_pinned_executable};
 pub use file::{
     OpenedWindowsDeleteFile, OpenedWindowsFile, WindowsFileError, WindowsFileIdentity,
     WindowsPathIdentity, inspect_directory_no_reparse, open_exclusive_file_for_delete_no_reparse,
-    open_exclusive_read_file, open_exclusive_state_file, open_file_for_delete_no_reparse, open_file_no_reparse,
-    replace_file_atomically,
+    open_exclusive_read_file, open_exclusive_state_file, open_file_for_delete_no_reparse,
+    open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
 pub use job::{ContainedAppContainerProcess, LimitedJobObject};
