@@ -169,7 +169,7 @@ The supported claim is narrower: deterministic recovery after **process terminat
 The Phase 2B residual external-writer boundary also remains: `ReplaceFileW` is path-based at its final namespace call and is not claimed to be a kernel compare-and-swap.
 
 
-## Scoped journal file identity hardening (PR #277, proposed #278)
+## Scoped journal file identity hardening (PR #277 and #278)
 
 Stable recovery journal reads refuse hard-link aliases and final reparse
 targets. Windows uses an exclusive read handle and native single-link
@@ -177,7 +177,7 @@ validation. Unix compares the opened regular file's device/inode with the
 pre-open metadata and requires a single hard link. The existing per-file byte
 ceiling and strict schema/state-transition validation remain in force.
 
-The subsequent retirement correction (#278, subject to native CI/merge)
+The merged retirement correction (#278)
 rejects aliased files before deletion. On Windows, the exact opened file is
 deleted through an exclusive native handle instead of a second pathname
 removal. On Unix, the opened file identity and link count are verified before

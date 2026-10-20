@@ -1,13 +1,24 @@
 # Prompt de reprise — GitHub uniquement
 
 Dernier point de contrôle vérifié le 20 octobre 2026 : `main`
-`e222ff912ac784eb7ae29d09e74ae1780f8a051b`, PR #273/#274/#275 fusionnées, zéro PR ouverte,
-[CI post-fusion #39364949397](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39364949397)
-réussie (Windows, Linux, dépendances). **Ce relevé est daté, pas une
-instruction de repartir de ce SHA.** Vérifier d'abord GitHub. Le prochain
-incrément envisagé concerne la sécurité des ouvertures/lectures/retraits du
-journal de récupération ou, séparément, l'intermittence native Node/AppContainer
-consignée dans RELIABILITY_DEBT.md. Ne pas refaire les PR livrées.
+`b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`, PR #277 et #278
+fusionnées après quatre checks Windows/Linux/dépendances/préparation native
+sur leurs têtes exactes. La CI post-fusion de #277
+[#39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
+a réussi. La CI post-fusion de #278
+[#39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
+a échoué à la première tentative Windows, sur le test Node/AppContainer déjà
+intermittent (`TimedOut` à 10s, sans sortie) ; les trois diagnostics ciblés ont
+réussi. Une réexécution du seul job Windows échoué sur le même commit a
+**réussi** (tentative 2), avec les jobs Linux/dépendances déjà réussis.
+La CI #39369706540 est donc terminée en succès après réexécution, mais
+son échec initial reste une dette de fiabilité. Ne pas effacer l'échec
+initial ni assimiler les diagnostics à un correctif. Zéro PR ouverte après #278. **Ce relevé est daté, pas une instruction
+de repartir de ce SHA.** Vérifier d'abord GitHub. Ne pas refaire #277/#278.
+Prochaine priorité recommandée : analyser l'intermittence native récurrente
+Node/AppContainer et conserver des diagnostics bornés, sans augmenter les délais
+ni réduire l'isolation. Ensuite analyser l'ouverture append du journal de
+récupération et, séparément, le nettoyage des staging.
 
 Copier le texte ci-dessous dans un nouveau chat disposant du connecteur GitHub.
 Le dépôt contient le contexte nécessaire ; aucun ancien fichier local ni
@@ -53,9 +64,8 @@ des anciennes branches sont déjà documentées ; ne recommence pas une suppress
 massive et conserve les tags d'archive et références de preuve.
 
 Choisis le prochain incrément concret à partir de la roadmap, de la dette et du
-code, en tenant compte des PR #273 à #275 déjà fusionnées et de leur dernier
-point de contrôle daté. Priorité proposée : analyse bornée des ouvertures,
-lectures, retraits de journaux et conservation des preuves de récupération,
+code, en tenant compte des PR #273 à #278 déjà fusionnées et de leur dernier
+point de contrôle daté. Priorité proposée : analyse bornée des écritures en append des journaux et de leur identité native,
 avec défaut démontré et tests, ou investigation séparée du timeout natif
 Node/AppContainer (sans relâcher son test). Ne relance pas un rangement déjà
 livré ; n'engage pas un audit de tous les fichiers en un seul lot.

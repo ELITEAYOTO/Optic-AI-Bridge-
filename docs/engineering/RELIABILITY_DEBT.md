@@ -8,11 +8,13 @@
   handle, while Unix checks descriptor identity and single-link count. Exact
   head `825bcdb` passed all four hosted CI checks. No general power-loss
   recovery or adversarial directory replacement proof follows.
-- **Retire #278 (proposed)**: the original `remove_regular_file` accepted
+- **Retire #278 (merged)**: the original `remove_regular_file` accepted
   a hard link as regular and then removed its directory entry, losing evidence
-  of a foreign alias. Proposed correction rejects linked objects, deletes by
-  validated exclusive handle on Windows and adds a negative preservation
-  regression. Require exact-head Windows/Linux CI before merging.
+  of a foreign alias. Merged `main` `b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`
+  rejects linked objects, deletes by validated exclusive handle on Windows
+  and has a cross-platform negative preservation regression. Exact head
+  `9778b49` passed four hosted checks in CI 39369331802 and 39369331816.
+  This does not prove Unix concurrent pathname removal safety.
 - **Still open**: journal append uses a pathname metadata check followed by
   a separate append opener; Windows staging cleanup validates, reads, closes
   and removes via separate pathname operations. Both need isolated assessment,
@@ -48,7 +50,7 @@ The regression exercises the boundary, not a string implementation detail.
 | Dependencies | Installed runtime presence does not authorize downloads, package scripts or egress | Operator-selected restore scope, package/script policy, credentials and network boundaries |
 | Private-task journal retention | Finite record/unresolved ceilings intentionally refuse admission when full; no host retention/retirement workflow is delivered | Host-only version-pinned retirement of closed evidence introduced; explicit operator integration/retention UX and operational proof still required |
 | Filesystem enumeration and sensitive metadata | Older read-boundary review deferred prepared enumeration and classification | Bind authorization to the observed enumeration target and settle content/listing/Git-control policy with native alias tests |
-| Windows native AppContainer Node loopback test intermittency | On PR #274 exact head `283c9e0`, CI 39363540900 attempt 1 failed `capability_free_appcontainer_denies_node_loopback_connection`: process `TimedOut` at 10s with no output, rather than normal probe exit; three serial diagnostics immediately passed, then failed-Windows-job-only rerun on the identical SHA passed. Not a known parser regression; cause unproven | Preserve both attempts and diagnostic logs. Investigate cold startup/isolation launch and scheduling with bounded evidence; do not weaken the isolation proof, bypass the native gate or automatically extend the timeout |
+| Windows native AppContainer Node loopback test intermittency | On PR #274 exact head `283c9e0`, CI 39363540900 attempt 1 failed `capability_free_appcontainer_denies_node_loopback_connection`: process `TimedOut` at 10s with no output, rather than normal probe exit; three serial diagnostics immediately passed, then failed-Windows-job-only rerun on the identical SHA passed. A second, independent recurrence happened on #278 post-merge `main` `b15fe76`: [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540) attempt 1 repeated `TimedOut` at 10s/no output on the same test; all three targeted serial diagnostics passed, while Linux/dependency checks were green. Failed-Windows-job-only attempt 2 on the identical SHA passed, including the original test and subsequent Node/MCP smokes. Neither first-attempt failure proves a journal regression or identifies the underlying cold-start root cause | Preserve both original failures, all three diagnostic passes, exact-head reruns and logs. Investigate cold startup/isolation launch and scheduling with bounded evidence; do not weaken the isolation proof, bypass the native gate or automatically extend the timeout |
 | Windows MCP TEMP-only smoke intermittency | Main CI 39356540735 failed a 30 s first-response wait with the bridge alive; a Windows failed-job-only rerun on the *same SHA* succeeded. No reproducible cause established | Retain failure and rerun as separate evidence; instrument bounded MCP startup/stdio path and add targeted deterministic regression if a defect can be reproduced; never silence the check |
 | Research integration follow-up | Bounded measurements from #250 and #255 are integrated on their target tracks; normal compatibility remains unavailable | Implement the support/recovery contracts rather than retaining completed measurement PRs; do not import the whole alpha into main |
 

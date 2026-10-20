@@ -1,6 +1,6 @@
 # Current project status
 
-## Journal read boundary integrated; retirement review active — 2026-10-20
+## Recovery journal read and retirement hardening integrated — 2026-10-20
 
 - [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
   was squash-merged into `main` as
@@ -19,11 +19,33 @@
   Windows uses the existing exclusive no-reparse, single-link read primitive;
   Unix validates the opened descriptor's identity and link count against
   pathname metadata. This is not a complete race/power-loss guarantee.
-- A second bounded change is proposed for #278: refuse aliased journal evidence
-  during retirement and use native handle deletion on Windows. Its status is
-  **pending exact-head CI and review**; do not count as integrated until merged.
-  Append, staging cleanup, directory identity and Unix pathname deletion races
-  remain separate review areas. Experimental alpha is unchanged.
+- [PR #278](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/278)
+  squash-merged as `b15fe7636dcb31033d71ecdfea9ed51bdc786a2b`
+  from exact final head `9778b497320d82db493bfbe4c02ff13d113c8ad5`.
+  Hosted [CI 39369331802](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369331802)
+  passed Windows Rust, Linux Rust and dependency policy; hosted
+  [native preparation 39369331816](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369331816)
+  passed. An earlier PR head failed rustfmt and was corrected, not waived.
+  Windows journal retirement now uses an exclusive validated handle for
+  deletion. Unix rejects aliased evidence before the existing pathname unlink;
+  a concurrent pathname replacement remains possible. The separate post-merge
+  `main` [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
+  initially failed its Windows Rust test on the **known intermittent**
+  `capability_free_appcontainer_denies_node_loopback_connection`: owned Node
+  returned `TimedOut` after 10 seconds with no output. Three immediate
+  serial diagnostics passed. The original first attempt is preserved and
+  the failed-Windows-job-only second attempt on the identical `main` SHA
+  **passed** all applicable Windows tests and smokes. Linux/dependency jobs
+  passed on the original attempt. CI #39369706540 is therefore completed
+  successfully on attempt 2, with the original failure retained as evidence.
+  There were zero open PRs immediately after the merge.
+- Next priority after this recurrent failure: isolate native AppContainer/Node
+  startup and scheduling with bounded diagnostics **without** increasing the
+  timeout or disabling the network-isolation proof. A separate future domain
+  review is journal appends and their opened-file identity, followed by staged
+  artifact cleanup or directory pinning, with demonstrable defects and tests.
+  Append, staging cleanup, power-loss durability and Unix pathname deletion
+  races are not covered by #277/#278. Experimental alpha remains separate.
   No operator-PC or self-hosted execution occurred.
 
 ## Final GitHub-verified continuation checkpoint — 2026-10-20
