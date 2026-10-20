@@ -369,12 +369,12 @@ impl JournaledMutationService {
                 });
             }
 
-            opened.delete().map_err(|source| {
-                JournaledMutationError::StagingCleanupFailed {
+            opened
+                .delete()
+                .map_err(|source| JournaledMutationError::StagingCleanupFailed {
                     action_id: record.action_id.clone(),
                     source: std::io::Error::other(source),
-                }
-            })?;
+                })?;
         }
         Ok(())
     }
