@@ -1,5 +1,32 @@
 # Current project status
 
+## Final GitHub-verified continuation checkpoint — 2026-10-20
+
+- At this checkpoint, `main` = `e222ff912ac784eb7ae29d09e74ae1780f8a051b` (squash merge
+  [PR #275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/275)).
+  GitHub reported **zero open pull requests**.
+- The exact post-merge `main` CI
+  [run 39364949397](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39364949397)
+  completed successfully: GitHub-hosted Windows Rust, Linux Rust and dependency
+  policy all succeeded. This confirms the state of that commit, **not** an
+  unconditional guarantee for future branch heads.
+- Post-merge `main` CI for #274
+  [run 39364345041](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39364345041)
+  also completed successfully. #273 post-merge run 39363288153 succeeded.
+- Source/test outcome remains narrowly scoped: six unchanged Rust source files
+  reorganized under `src/mutation/`; the recovery parser now rejects complete
+  blank journal records, retaining evidence while tolerating torn final lines.
+  The first-attempt AppContainer/Node loopback timeout on #274 remains a separate
+  unresolved intermittent failure despite a successful exact-head rerun.
+- `alpha/generated-project-editing` remains a separate experimental branch;
+  no full alpha-to-main merge, release, branch bulk-deletion, local operator-PC
+  test, installer, tunnel or self-hosted run occurred.
+
+**Next bounded review:** mutation recovery journal open/read/retire boundaries
+and evidence retention, or a dedicated investigation of Windows Node/AppContainer
+cold-start timing. Read [GITHUB_HANDOFF](docs/engineering/GITHUB_HANDOFF.md)
+and [RELIABILITY_DEBT](docs/engineering/RELIABILITY_DEBT.md) before changing code.
+
 ## Mutation and recovery stabilization — 2026-10-20
 
 - [PR #273](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/273)
@@ -23,8 +50,8 @@
   Both attempts are retained in CI run 39363540900. The cause of that
   intermittent native test remains unknown and is tracked in
   [RELIABILITY_DEBT](docs/engineering/RELIABILITY_DEBT.md).
-  Post-merge `main` CI run 39364345041 was still in progress at the
-  documentation checkpoint; check its live outcome before claiming success.
+  Post-merge `main` CI run 39364345041 subsequently completed successfully
+  on hosted Windows/Linux and dependency policy.
 
 No operator-PC execution, install, permission change, tunnel or self-hosted
 runner. These changes do not establish general Cargo/Electron support,

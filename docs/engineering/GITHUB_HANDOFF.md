@@ -6,6 +6,30 @@ This document makes continuation independent of the previous chat and its local
 files. [STATUS](../../STATUS.md) owns measured delivery; [ROADMAP](../../ROADMAP.md)
 owns acceptance order; contracts and ADRs remain normative in their own scopes.
 
+## Latest verified handoff checkpoint — 2026-10-20
+
+At the time of this final handoff verification, `main` was
+`e222ff912ac784eb7ae29d09e74ae1780f8a051b`; there were **zero open PRs**. Documentation reconciliation
+[PR #275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/275)
+had been squash-merged, and exact-`main` CI
+[run 39364949397](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39364949397)
+was **successful** (hosted Windows Rust, Linux Rust and dependency policy).
+The preceding #274 post-merge run 39364345041 also completed successfully.
+Verify GitHub again in a new chat; do not treat this dated SHA as a reset target.
+
+The physical mutation-domain move and blank-journal-record correction (#273/#274)
+are **finished**. Do not redo them. The first-attempt Windows Node/AppContainer
+timeout in the original #274 CI (run 39363540900) remains an open reliability
+finding despite same-head success on rerun; preserve both attempts. Cargo normal,
+Electron sandboxed, disk quota enforcement, real power-loss ACID and production
+auth in the generated-project alpha remain **unproven**.
+
+**Next specific work candidate:** inspect mutation recovery journal file-open,
+read and retirement boundary for a demonstrable safety or evidence-preservation
+defect with regression tests, or isolate the Windows AppContainer cold-start
+timeout in a separate PR. Choose only one bounded increment with native checks;
+do not manufacture a bug, expand capabilities or perform a mass refactor.
+
 ## Current operator direction
 
 Continue development, hardening and documentation through GitHub using the
@@ -286,8 +310,10 @@ verified `main` immediately after the merges was
    rerun passed. **This is an unresolved intermittent CI failure**, not
    fixed compatibility. Preserve the first attempt and study the native
    startup path separately.
-3. Post-merge `main` CI run 39364345041 was in progress while preparing
-   this handoff. Inspect live state before asserting its result.
+3. Post-merge `main` CI run 39364345041 later completed successfully.
+   The following documentation reconciliation PR #275 was merged at
+   `e222ff912ac784eb7ae29d09e74ae1780f8a051b`; exact-`main` run 39364949397 passed. See the
+   latest verified checkpoint at the top; re-check live state after this date.
 
 Follow [CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) for reviewed files and
 [RELIABILITY_DEBT](RELIABILITY_DEBT.md) for unresolved native timing evidence.

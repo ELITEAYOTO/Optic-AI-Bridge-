@@ -1,5 +1,14 @@
 # Prompt de reprise — GitHub uniquement
 
+Dernier point de contrôle vérifié le 20 octobre 2026 : `main`
+`e222ff912ac784eb7ae29d09e74ae1780f8a051b`, PR #273/#274/#275 fusionnées, zéro PR ouverte,
+[CI post-fusion #39364949397](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39364949397)
+réussie (Windows, Linux, dépendances). **Ce relevé est daté, pas une
+instruction de repartir de ce SHA.** Vérifier d'abord GitHub. Le prochain
+incrément envisagé concerne la sécurité des ouvertures/lectures/retraits du
+journal de récupération ou, séparément, l'intermittence native Node/AppContainer
+consignée dans RELIABILITY_DEBT.md. Ne pas refaire les PR livrées.
+
 Copier le texte ci-dessous dans un nouveau chat disposant du connecteur GitHub.
 Le dépôt contient le contexte nécessaire ; aucun ancien fichier local ni
 historique de conversation n'est requis. Les capacités du connecteur doivent
@@ -44,7 +53,13 @@ des anciennes branches sont déjà documentées ; ne recommence pas une suppress
 massive et conserve les tags d'archive et références de preuve.
 
 Choisis le prochain incrément concret à partir de la roadmap, de la dette et du
-code. Je privilégie une version réellement utilisable pour des projets autonomes,
+code, en tenant compte des PR #273 à #275 déjà fusionnées et de leur dernier
+point de contrôle daté. Priorité proposée : analyse bornée des ouvertures,
+lectures, retraits de journaux et conservation des preuves de récupération,
+avec défaut démontré et tests, ou investigation séparée du timeout natif
+Node/AppContainer (sans relâcher son test). Ne relance pas un rangement déjà
+livré ; n'engage pas un audit de tous les fichiers en un seul lot.
+Je privilégie une version réellement utilisable pour des projets autonomes,
 avec reprise et diagnostics fiables, plutôt qu'une accumulation de démonstrations
 ou de PR inachevées. Tu peux proposer un ajustement motivé de l'ordre des travaux.
 N'essaie pas de livrer tous les langages et toute l'interface en une seule PR.
