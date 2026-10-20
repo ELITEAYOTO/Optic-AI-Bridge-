@@ -9,8 +9,10 @@ a réussi. La CI post-fusion de #278
 [#39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
 a échoué à la première tentative Windows, sur le test Node/AppContainer déjà
 intermittent (`TimedOut` à 10s, sans sortie) ; les trois diagnostics ciblés ont
-réussi. Une réexécution du seul job Windows échoué sur le même commit a été
-demandée : **vérifier le résultat de la tentative 2**. Ne pas effacer l'échec
+réussi. Une réexécution du seul job Windows échoué sur le même commit a
+**réussi** (tentative 2), avec les jobs Linux/dépendances déjà réussis.
+La CI #39369706540 est donc terminée en succès après réexécution, mais
+son échec initial reste une dette de fiabilité. Ne pas effacer l'échec
 initial ni assimiler les diagnostics à un correctif. Zéro PR ouverte après #278. **Ce relevé est daté, pas une instruction
 de repartir de ce SHA.** Vérifier d'abord GitHub. Ne pas refaire #277/#278.
 Prochaine priorité recommandée : analyser l'intermittence native récurrente
