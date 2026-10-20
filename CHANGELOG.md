@@ -12,6 +12,12 @@
   delete the opened file via existing native Windows handle; Unix continues
   to unlink by path after descriptor checks. Exact head `9778b49` passed
   the same four checks. Earlier rustfmt failures were corrected and preserved.
+- Post-merge #278 `main` CI
+  [39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
+  initially failed the known intermittent Windows Node/AppContainer loopback
+  test (10s `TimedOut`, no output). Three targeted diagnostics passed, then
+  a failed-Windows-job-only rerun on the same SHA passed. The first failure
+  remains an unresolved reliability finding, not a waived gate.
 - These are bounded recovery evidence improvements, not new public MCP
   capabilities, disk quotas, power-loss guarantees, Windows cold-start fixes
   or general Unix pathname-race elimination. Next source review concerns
