@@ -30,11 +30,18 @@
   deletion. Unix rejects aliased evidence before the existing pathname unlink;
   a concurrent pathname replacement remains possible. The separate post-merge
   `main` [CI 39369706540](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39369706540)
-  was in progress at this dated checkpoint: verify its live conclusion.
+  initially failed its Windows Rust test on the **known intermittent**
+  `capability_free_appcontainer_denies_node_loopback_connection`: owned Node
+  returned `TimedOut` after 10 seconds with no output. Three immediate
+  serial diagnostics passed. The original first attempt is preserved and
+  a failed-Windows-job-only second attempt on the identical `main` SHA was
+  requested; verify the actual rerun outcome. Linux/dependency jobs passed.
   There were zero open PRs immediately after the merge.
-- Next narrow review: journal appends and their opened-file identity, then
-  separately staged-artifact cleanup, directory pinning or the native
-  Node/AppContainer intermittency, with a demonstrated defect and native tests.
+- Next priority after this recurrent failure: isolate native AppContainer/Node
+  startup and scheduling with bounded diagnostics **without** increasing the
+  timeout or disabling the network-isolation proof. A separate future domain
+  review is journal appends and their opened-file identity, followed by staged
+  artifact cleanup or directory pinning, with demonstrable defects and tests.
   Append, staging cleanup, power-loss durability and Unix pathname deletion
   races are not covered by #277/#278. Experimental alpha remains separate.
   No operator-PC or self-hosted execution occurred.
