@@ -117,3 +117,37 @@ ownership, CPU/memory reservation, deadline and termination-uncertainty
 contracts. Two synthetic async-reader regressions cover failed reads and
 clean EOF; these do not establish full end-to-end failure injection or
 power-loss durability.
+
+## Git-domain source layout consolidation — 2026-10-20
+
+Base: `main` `24a40e106ced2e66c373ec7787ad077eb16fc9b8`.
+The ten prior `src/git_*.rs` files were moved, byte-identically, into
+`crates/optic-bridge-runtime/src/git/` using concise domain-local filenames:
+`blob_batch.rs`, `change_set.rs`, `integrate.rs`,
+`integration_authority.rs`, `merge_commit.rs`, `merge_plan.rs`,
+`read.rs`, `tree_manifest.rs`, `tree_write.rs`, and `worktree.rs`.
+
+The **crate-root module names remain unchanged** through explicit
+`#[path = "git/…"]` declarations in `src/lib.rs`. Consequently existing
+`crate::git_*` references, public re-exports, tests and private ownership
+boundaries retain their module identities without a new `git` API facade.
+No Git behavior or security rules were intentionally altered.
+
+This is a mechanical layout operation, not a claim of a comprehensive Git
+security audit. In particular, test names and path-relative resources should
+be verified on the exact PR head under hosted Windows/Linux CI, rather than
+assuming that a textual identity check proves Rust module discovery. Do not
+repeat this sort of relocation in an unbounded repository-wide PR.
+
+## Intermittent Windows MCP smoke observation — 2026-10-20
+
+On `main` `24a40e1`, CI
+[run 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
+failed the `Smoke isolated Node doctor with TEMP-only environment` step
+after a 30-second MCP response timeout; the bridge remained alive until the
+test ended. Rust unit/integration tests, Linux and dependency checks passed.
+A **failed-job-only rerun** of Windows job `118412524278` succeeded with
+the same source revision, without modifying tests or security settings.
+This characterizes an intermittent failure, **not** a proven root cause or
+permanent fix. Preserve both attempts and investigate bounded startup/stdio
+diagnostics if it recurs. A green rerun must never erase the first failure.
