@@ -1,5 +1,31 @@
 # GitHub-only project handoff
 
+## Next checkpoint: merged read protection and pending retirement fix — 2026-10-20
+
+At live inspection, `main` became
+`c2282ff5eba85d2a7480dd353db638a0623bd06d` after
+[PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
+was squash-merged. Exact source `825bcdb963d80ac8419df887e8b8c307aa497caf`
+passed four hosted checks in
+[CI 39368379416](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368379416)
+and [native preparation 39368379422](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368379422).
+The distinct post-merge `main` CI [39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
+must be checked live; it was not yet complete when this note was drafted.
+
+The next bounded work branch `fix/recovery-safe-journal-retirement` is proposed
+as PR #278. It targets unlink of hard-linked recovery evidence, with a native
+handle-based Windows delete and a Unix opened-file alias check. **Do not treat
+this proposed code as shipped without successful latest-head checks and an
+observed squash merge.** Verify branch/PR state from GitHub rather than using
+this paragraph as an immutable checkpoint. No other PR stack is authorized.
+Earlier handoff notes below are historical checkpoints.
+
+Unresolved: the separate journal append and staging-artifact cleanup boundaries,
+Unix pathname deletion race, directory pinning, power-loss durability, and the
+Windows Node/AppContainer timeout. Keep alpha branch and archive/proof refs
+untouched. No PC testing, self-hosted runner, release or broad cleanup.
+
+
 Reviewed: 2026-10-20. Repository:
 [ELITEAYOTO/Optic-AI-Bridge-](https://github.com/ELITEAYOTO/Optic-AI-Bridge-).
 This document makes continuation independent of the previous chat and its local
