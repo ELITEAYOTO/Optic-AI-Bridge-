@@ -1,5 +1,31 @@
 # Current project status
 
+## Journal read boundary integrated; retirement review active — 2026-10-20
+
+- [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
+  was squash-merged into `main` as
+  `c2282ff5eba85d2a7480dd353db638a0623bd06d`.
+  Its final source head `825bcdb963d80ac8419df887e8b8c307aa497caf`
+  passed hosted Windows Rust, Linux Rust, dependency policy
+  ([CI 39368379416](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368379416))
+  and native preparation
+  ([run 39368379422](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368379422)).
+  An earlier head failed rustfmt and was corrected; canceled intermediate runs
+  are not counted as passing. The independent post-merge `main` CI
+  [39368741554](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39368741554)
+  was in progress at this written checkpoint: verify its live conclusion.
+- Read hardening rejects hard-link journal aliases on both hosted platforms:
+  Windows uses the existing exclusive no-reparse, single-link read primitive;
+  Unix validates the opened descriptor's identity and link count against
+  pathname metadata. This is not a complete race/power-loss guarantee.
+- A second bounded change is proposed for #278: refuse aliased journal evidence
+  during retirement and use native handle deletion on Windows. Its status is
+  **pending exact-head CI and review**; do not count as integrated until merged.
+  Append, staging cleanup, directory identity and Unix pathname deletion races
+  remain separate review areas. Experimental alpha is unchanged.
+  No operator-PC or self-hosted execution occurred.
+
+
 ## In-progress recovery journal read hardening — 2026-10-20
 
 At new-session bootstrap, `main` remained `b7ab450a0b31c779f3f9ae975425e0dc18f3449c`; post-fusion CI [39366933339](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39366933339) passed all three hosted jobs (Windows Rust, Linux Rust and dependency policy). The separate alpha was unchanged. [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277) addresses a demonstrated hard-link alias acceptance in mutation recovery journal **reads** with an opened-file validation and regression. This entry is **in-progress, not merged/proven**: inspect exact-head CI/reviews and update the status on actual outcome. Journal append/retire races, directory pinning and power-loss durability are not resolved by this increment. No operator-PC activity or self-hosted runs.
