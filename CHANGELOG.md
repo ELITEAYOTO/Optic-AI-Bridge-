@@ -1,5 +1,10 @@
 # Changelog
 
+## Candidate: bounded executable identity capture timing (2026-10-20)
+
+- Confirmed [PR #295](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/295) merged at `615e62194d3c28c01530ff8993adab2447a12c19`, with independent [post-merge CI #39499240897](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39499240897) successful first attempt on the exact SHA. The Windows MCP doctor measured a 5737ms process-lease provisioning interval, not yet attributable to any specific operation.
+- Diagnostic candidate `diag/process-identity-startup-phases` emits only opt-in fixed numeric phase durations around the existing executable path resolution, native pin opening and bounded content version capture; the Windows doctor publishes at most one whitelisted record. **Not shipped until exact-head checks and merge are verified.** No modification to executable identity validation, grants, timeouts, process isolation or feature delivery.
+
 ## Stabilization diagnostics — MCP startup subphase investigation (2026-10-20)
 
 - [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) **merged** as `da3ab6f19a9b2544eef997cdf7edb987360c7553`. Hosted exact-source CI #39487022400 passed first attempt, while independent post-merge main CI #39487831596 succeeded only on attempt 2: the first Windows test reproduced the old 10-second Node AppContainer timeout (plus one failed serial diagnostic). Passing MCP child phases showed a ~5.4–7.8s span between profile check and process lease completion. The original failure remains in GitHub, and neither startup defect is fixed.
