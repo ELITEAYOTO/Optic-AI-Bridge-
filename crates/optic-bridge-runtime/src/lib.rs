@@ -52,9 +52,13 @@ mod recovery;
 mod reusable_approval_broker;
 mod same_repo_coordinator;
 mod same_repo_merge;
+#[path = "session/lifecycle.rs"]
 mod session_lifecycle;
+#[path = "session/registry.rs"]
 mod session_registry;
+#[path = "session/reusable_approval.rs"]
 mod session_reusable_approval;
+#[path = "session/worktree.rs"]
 mod session_worktree;
 mod task_lease_registry;
 mod tool_profile_registry;
