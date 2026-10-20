@@ -158,14 +158,24 @@ async fn pipe_read_failure_is_not_silent_clean_eof_or_success() {
         25,
     );
     let job = JobId::generate().unwrap();
-    manager.jobs.lock().unwrap().jobs.insert(job.clone(), record.clone());
+    manager
+        .jobs
+        .lock()
+        .unwrap()
+        .jobs
+        .insert(job.clone(), record.clone());
 
     drain_output(BrokenPipeReader, ProcessStream::Stdout, record.clone()).await;
     assert!(record.output_read_failed.load(Ordering::Acquire));
     assert!(!record.output_overflow.load(Ordering::Acquire));
-    let chunk = manager.read(&owner, &job, ProcessStream::Stdout, 0, 1024).unwrap();
+    let chunk = manager
+        .read(&owner, &job, ProcessStream::Stdout, 0, 1024)
+        .unwrap();
     assert!(chunk.eof);
-    assert!(chunk.truncated, "read error cannot masquerade as complete output");
+    assert!(
+        chunk.truncated,
+        "read error cannot masquerade as complete output"
+    );
 
     let final_status = reconcile_drained_output_status(ProcessStatus::Exited, &record);
     assert_eq!(final_status, ProcessStatus::Failed);
