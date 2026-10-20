@@ -97,7 +97,7 @@ Zero is never interpreted as unlimited.
 
 Recovery reads are bounded. The directory scan is bounded and deterministic. Unexpected files, symlinks or invalid ActionId names fail closed instead of being silently ignored, except a well-formed unpublished `*.prepared.tmp` record which is safe to discard under the protocol because `committing` was never durably published.
 
-A torn trailing state line is ignored and the last complete line is used. If no complete initial `prepared` record exists, or if immutable fields/state ordering disagree, the journal is corrupt and recovery fails closed.
+A torn trailing state line is ignored and the last complete line is used. The sole empty item created by the final newline terminator is not a record; complete empty journal lines anywhere else are corrupt and recovery retains the journal for investigation. If no complete initial `prepared` record exists, or if immutable fields/state ordering disagree, the journal is corrupt and recovery fails closed.
 
 ### Reconciliation semantics
 
