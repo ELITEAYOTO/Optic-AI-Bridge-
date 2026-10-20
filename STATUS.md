@@ -1,5 +1,35 @@
 # Current project status
 
+## Mutation and recovery stabilization — 2026-10-20
+
+- [PR #273](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/273)
+  merged into `main` as `58ebc5c1a4f0fd015b26c04f8cd83cf4255d5782`.
+  Six unchanged Rust source blobs were relocated into `src/mutation/`;
+  their original crate-root module names, public exports and inline tests
+  remain unchanged. Exact source head `9758492` passed all four applicable
+  hosted Windows/Linux Rust, dependency and native-preparation checks;
+  post-merge `main` CI 39363288153 passed.
+- [PR #274](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/274)
+  merged as `58a72a202bbdb57da425fba461a7b1a97b2f9d92`.
+  The recovery journal parser now fails closed on a complete empty journal
+  record while still allowing a nonterminated torn final record. Regression
+  tests cover interior/trailing blank records, retained journal evidence and
+  torn-tail classification. The first source head `8d51d19` failed rustfmt
+  and was corrected. Exact final head `283c9e0` passed Linux, dependency
+  policy and native preparation; Windows test failure on the first CI
+  attempt was an AppContainer/Node loopback probe timeout, **not** a parser
+  failure. Three serialized diagnostics passed on the same source, and a
+  failed-Windows-job-only rerun passed the entire applicable Windows job.
+  Both attempts are retained in CI run 39363540900. The cause of that
+  intermittent native test remains unknown and is tracked in
+  [RELIABILITY_DEBT](docs/engineering/RELIABILITY_DEBT.md).
+  Post-merge `main` CI run 39364345041 was still in progress at the
+  documentation checkpoint; check its live outcome before claiming success.
+
+No operator-PC execution, install, permission change, tunnel or self-hosted
+runner. These changes do not establish general Cargo/Electron support,
+durable disk quotas, power-loss ACID recovery or a complete source audit.
+
 ## Latest reviewed stabilization — 2026-10-20
 
 - [PR #270](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/270)
@@ -17,7 +47,7 @@
   `TerminationUncertain`. Final source head `fb9ffdb` passed four hosted
   Windows/Linux Rust, dependency and native preparation checks. The initial
   `bed3ca9` head failed rustfmt and was corrected. Separate post-merge
-  main CI run 39361585398 must be inspected independently.
+  main CI run 39361585398 passed.
   
 No tests/builds/installers/permissions/tunnels were executed on the operator's
 PC; no self-hosted runners. These increments do not prove normal Cargo,

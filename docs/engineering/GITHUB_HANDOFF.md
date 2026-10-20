@@ -258,3 +258,47 @@ problem or structural benefit. Do not group many unrelated moves. Keep
 No branch-deletion action is available through this connector; only
 individually verified integrated work branches may later be retired, not tags,
 archive/proof refs or a bulk set.
+
+## Mutation/recovery stabilization checkpoint — 2026-10-20
+
+This section **supersedes previous in-progress observations**. The latest
+verified `main` immediately after the merges was
+`58a72a202bbdb57da425fba461a7b1a97b2f9d92`, zero open PRs.
+
+1. [PR #273](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/273):
+   source `97584927ba438efdd843b7bd4ad488d3c321e43f`, squash
+   `58ebc5c1a4f0fd015b26c04f8cd83cf4255d5782`. Six exactly unchanged
+   mutation/recovery Rust blobs moved under `src/mutation/`, with module
+   identities and exports preserved by six explicit `#[path]` declarations.
+   Four hosted Windows/Linux checks passed; post-merge main CI 39363288153
+   succeeded. No semantic file/journal change.
+2. [PR #274](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/274):
+   exact final source `283c9e0e699a50470fab2183dc9945b9d4559c23`, squash
+   `58a72a202bbdb57da425fba461a7b1a97b2f9d92`. The recovery parser
+   rejects completed blank newline-delimited records (`CorruptJournal`)
+   while preserving the contractual torn-final-line recovery. Regression
+   tests cover corrupt interior/trailing blank lines, evidence retention and
+   permitted torn tail. The initial `8d51d19` head failed `rustfmt`, fixed
+   without silencing checks. Linux, dependency and native preparation
+   passed. Native Windows run 39363540900 first attempt failed a separate
+   Node/AppContainer loopback probe because the child `TimedOut`; three
+   serial diagnostics passed, and an exact-source failed-Windows-job-only
+   rerun passed. **This is an unresolved intermittent CI failure**, not
+   fixed compatibility. Preserve the first attempt and study the native
+   startup path separately.
+3. Post-merge `main` CI run 39364345041 was in progress while preparing
+   this handoff. Inspect live state before asserting its result.
+
+Follow [CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) for reviewed files and
+[RELIABILITY_DEBT](RELIABILITY_DEBT.md) for unresolved native timing evidence.
+Next priority: focused source/test review of mutation-journal file-open and
+retirement boundaries or the Windows Node/AppContainer cold-start timing,
+with one regression-backed increment at a time. Do not rewrite all mutation
+services just to reduce length; their contracts and recovery state machine
+remain normative. No all-files audit is complete.
+
+No operator-PC work, self-hosted CI, broad Cargo/Electron compatibility
+claim, physical disk-quota claim, alpha merge, new release or mass branch
+retirement was authorized. The connected GitHub action surface exposed
+no delete-branch operation; preserve archive/proof refs and verify exact
+integrated heads before any future individual retirement.

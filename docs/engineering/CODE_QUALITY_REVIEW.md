@@ -222,9 +222,10 @@ original modules. Other file/domain services (`filesystem`,
 deliberately left untouched pending separate ownership review.
 
 Git blob identity establishes unchanged source bytes, **not** runtime
-correctness. A merge requires exact-head hosted Windows and Linux Rust
-format/Clippy/tests, dependency policy and any applicable native preparation
-checks; follow the linked PR and live checks. This is not a completed
+correctness. [PR #273](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/273)
+merged as `58ebc5c` after exact source head `9758492` passed four hosted
+Windows/Linux Rust, dependency policy and native-preparation checks.
+Post-merge main CI 39363288153 passed. This is not a completed
 line-by-line audit of these modules or an endorsement of the journal schema
 for arbitrary crash/power-loss conditions. Do not re-run this as a broad
 repository-wide relocation.
@@ -246,5 +247,10 @@ journal instead of retiring it. Two regression cases exercise an empty
 record between transitions and after the last record, plus a separate
 test that a torn nonterminated tail still resolves from the previous
 complete record. No schema format, state transition, effect, lease,
-file-output budget or permission boundary is widened. Hosted Windows
-and Linux CI must pass on the exact PR head before merger.
+file-output budget or permission boundary is widened. [PR #274](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/274)
+merged as `58a72a2`, from exact source head `283c9e0`. Linux, dependency
+and native preparation checks passed. Windows initially failed an unrelated
+AppContainer Node-loopback timing probe; three targeted serial diagnostic
+retries passed, and the failed Windows job was rerun unchanged and passed.
+The original failure remains preserved in run 39363540900, not waived.
+See the reliability debt register for the still-unknown root cause.
