@@ -1061,7 +1061,10 @@ mod tests {
         fs::rename(&journal_path, &outside).expect("move journal outside state");
         fs::hard_link(&outside, &journal_path).expect("add linked journal entry");
 
-        assert!(journal.retire(&ticket).is_err(), "do not retire aliased evidence");
+        assert!(
+            journal.retire(&ticket).is_err(),
+            "do not retire aliased evidence"
+        );
         assert_eq!(fs::read(&outside).expect("external evidence"), bytes);
         assert_eq!(fs::read(&journal_path).expect("journal evidence"), bytes);
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
