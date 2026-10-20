@@ -1093,8 +1093,9 @@ mod tests {
             prepared
         );
         let pending = journal
-            .inspect_pending(atomic.filesystem())
-            .expect("recover intent");
+            .scan_pending(atomic.filesystem())
+            .expect("recover intent")
+            .report;
         assert_eq!(pending.records.len(), 1);
         assert_eq!(pending.records[0].action_id, action_id);
         assert_eq!(
@@ -1399,7 +1400,7 @@ mod tests {
         fs::hard_link(&outside, &journal_path).expect("link external file into journal");
 
         assert!(
-            journal.inspect_pending(atomic.filesystem()).is_err(),
+            journal.scan_pending(atomic.filesystem()).is_err(),
             "a linked external file must not be accepted as journal evidence"
         );
         assert_eq!(fs::read(&outside).expect("external evidence"), original);
@@ -1538,8 +1539,9 @@ mod tests {
         fs::write(&journal_path, contents).expect("torn append");
 
         let report = journal
-            .inspect_pending(atomic.filesystem())
-            .expect("inspect");
+            .scan_pending(atomic.filesystem())
+            .expect("inspect")
+            .report;
         assert_eq!(report.records.len(), 1);
         assert_eq!(
             report.records[0].outcome,
