@@ -24,6 +24,7 @@
 - [Architectural decisions](decisions/)
 - [Test and CI strategy](engineering/TEST_AND_CI_STRATEGY.md)
 - [Reliability debt and reviewed boundaries](engineering/RELIABILITY_DEBT.md)
+- [Staged code-quality and per-file review](engineering/CODE_QUALITY_REVIEW.md)
 
 ## Operations and maintenance
 
