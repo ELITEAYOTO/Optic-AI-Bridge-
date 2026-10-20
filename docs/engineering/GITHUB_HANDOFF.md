@@ -219,3 +219,19 @@ start tunnels or use self-hosted runners. The connected GitHub action surface
 does not provide deletion of old integrated branches: retain them until a
 specific verified retirement capability is available, and never delete
 archive/proof references or conduct another mass cleanup.
+
+## In-progress verified source review — 2026-10-20
+
+The first short PR in this cycle grouped four session-owned files under
+`src/session/`, preserving original Git blobs and Rust module names.
+Its merge and hosted CI should be verified on GitHub before relying on it.
+A subsequent **separate**, base-main branch
+`fix/process-drain-join-diagnostics` addresses `process.rs` discarding
+failed stdout/stderr `JoinHandle` results. It must not be represented as
+merged or validated before the exact-head Windows/Linux runs confirm it.
+An intentional abort after `TerminationUncertain` is not a read failure.
+Inspect PR reviews, CI and base SHA before any squash; preserve earlier
+research failures and the historical Windows MCP smoke timeout.
+No operator-PC or self-hosted execution was authorized. Next step after
+this targeted correction: review session/lease or process completion
+diagnostics in a separate bounded increment, not a mass refactor.

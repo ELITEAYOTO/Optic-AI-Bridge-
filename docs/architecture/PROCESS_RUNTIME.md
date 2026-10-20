@@ -71,6 +71,7 @@ Development/CI uses a process-group wrapper plus kill-on-drop. This preserves li
 - stdout and stderr share one authorized output budget per job;
 - a stdout/stderr read error is not treated as clean EOF: it marks the stream output as incomplete (`truncated=true`), requests a bounded failure stop while the child is running, and prevents an otherwise normal exit from being reported as `Exited` after drains finish (`Failed` instead). A real stop/timeout/termination uncertainty retains its own status; this does not reconstruct lost bytes or promise power-loss recovery.
 - only bytes inside that budget are retained in memory;
+- an unexpected stdout/stderr drain task panic or cancellation is also incomplete output: a failed task join marks the stream truncated/closed and prevents an otherwise successful exit from appearing complete. Deliberate drain abort following `TerminationUncertain` retains the existing uncertain status and does not fabricate a pipe read failure;
 - overflow sets a truncation flag and triggers process-tree termination;
 - if a child exits naturally before the monitor observes overflow, the terminal status is corrected after the drain tasks complete so overflow cannot be misclassified as a normal exit;
 - `process_read` is cursor-based and independently capped per call (64 KiB by the current default HardLimits);
