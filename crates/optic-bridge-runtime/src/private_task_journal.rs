@@ -2,8 +2,9 @@
 use optic_bridge_core::{ActionEnvelope, ActionId, ContentVersion, JobId, ProjectInputManifest};
 use optic_bridge_windows::{
     EphemeralAppContainerPlan, OpenedWindowsFile, PinnedDirectoryChain, WindowsFileIdentity,
-    inspect_directory_no_reparse, open_exclusive_read_file, open_exclusive_state_file,
-    open_exclusive_file_for_delete_no_reparse, open_file_for_delete_no_reparse, pin_directory_chain,
+    inspect_directory_no_reparse, open_exclusive_file_for_delete_no_reparse,
+    open_exclusive_read_file, open_exclusive_state_file, open_file_for_delete_no_reparse,
+    pin_directory_chain,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -300,7 +301,10 @@ impl PrivateTaskJournal {
     pub fn closed_retirement_candidates(
         &self,
     ) -> Result<Vec<PrivateTaskRetirementCandidate>, PrivateTaskJournalError> {
-        let _gate = self.gate.lock().map_err(|_| PrivateTaskJournalError::Unavailable)?;
+        let _gate = self
+            .gate
+            .lock()
+            .map_err(|_| PrivateTaskJournalError::Unavailable)?;
         let records = self.scan()?;
         let mut result = Vec::new();
         for parsed in records {
@@ -336,7 +340,10 @@ impl PrivateTaskJournal {
         if !is_hex(&candidate.run_id, 64) {
             return Err(PrivateTaskJournalError::Corrupt);
         }
-        let _gate = self.gate.lock().map_err(|_| PrivateTaskJournalError::Unavailable)?;
+        let _gate = self
+            .gate
+            .lock()
+            .map_err(|_| PrivateTaskJournalError::Unavailable)?;
         // Fail closed on *all* journal corruption before removing any evidence.
         self.scan()?;
         let path = self.path(&candidate.run_id);
@@ -1250,9 +1257,21 @@ mod tests {
         let fixture = Fixture::new();
         let journal = fixture.open();
         let (manifest, action) = input();
-        let closed = journal.begin(&manifest, &action, &EphemeralAppContainerPlan::generate().unwrap()).unwrap();
+        let closed = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
         closed.closed().unwrap();
-        let unresolved = journal.begin(&manifest, &action, &EphemeralAppContainerPlan::generate().unwrap()).unwrap();
+        let unresolved = journal
+            .begin(
+                &manifest,
+                &action,
+                &EphemeralAppContainerPlan::generate().unwrap(),
+            )
+            .unwrap();
         let candidates = journal.closed_retirement_candidates().unwrap();
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].run_id, closed.run);
@@ -1260,17 +1279,26 @@ mod tests {
             run_id: unresolved.run.clone(),
             version: candidates[0].version,
         };
-        assert!(matches!(journal.retire_closed(&tampered), Err(PrivateTaskJournalError::NotClosed)));
+        assert!(matches!(
+            journal.retire_closed(&tampered),
+            Err(PrivateTaskJournalError::NotClosed)
+        ));
         assert!(journal.path(&unresolved.run).exists());
         let wrong = PrivateTaskRetirementCandidate {
             run_id: closed.run.clone(),
             version: ContentVersion::from_bytes(b"stale"),
         };
-        assert!(matches!(journal.retire_closed(&wrong), Err(PrivateTaskJournalError::VersionConflict)));
+        assert!(matches!(
+            journal.retire_closed(&wrong),
+            Err(PrivateTaskJournalError::VersionConflict)
+        ));
         assert!(journal.path(&closed.run).exists());
         journal.retire_closed(&candidates[0]).unwrap();
         assert!(!journal.path(&closed.run).exists());
-        assert!(matches!(journal.retire_closed(&candidates[0]), Err(PrivateTaskJournalError::Native(_))));
+        assert!(matches!(
+            journal.retire_closed(&candidates[0]),
+            Err(PrivateTaskJournalError::Native(_))
+        ));
         assert_eq!(journal.recovery_report().unwrap().len(), 1);
         drop(closed);
         drop(unresolved);
