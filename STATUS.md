@@ -21,6 +21,20 @@ and [agent entry point](AGENTS.md) do not require old chat memory or local files
 
 ## Merged and validated
 
+PR266 merged into main as `5a8157e`: a targeted process stdout/stderr
+reader-error correction no longer treats a read failure as clean EOF.
+A distinct private read-failure bit marks output incomplete, stops a running
+owned job through the existing bounded confirmation path, and converts an
+otherwise successful exit to `Failed` after pipe drains complete. Timed-out,
+stopped and termination-uncertain jobs retain their specific status. Two
+synthetic async-reader regressions were added. Final PR head `4e4c712`
+passed hosted Windows/Linux Rust, dependency policy and native preparation
+checks; the prior revision failed rustfmt and was corrected. This is not a
+general guarantee that every process log is durable or fully collected.
+[PR #266](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/266).
+The separate main push CI run 39356012838 was still executing at the
+documentation checkpoint; check its live result.
+
 PR265 merged into main as `a9d9a31`: the `process.rs` test body
 was moved unchanged into `process/tests.rs`; production logic remained
 byte-identical, with 27 tests preserved. Exact head `f65f69b` passed four
