@@ -25,7 +25,9 @@ failed Windows Rust Test on attempt 1 for the known intermittent native
 AppContainer/Node network probe (`TimedOut` at 10s, no output); three serial
 reruns of the single diagnostic passed. The original failure remains retained
 and the failed-Windows-job-only second attempt on exact `main` SHA `b15fe76`
-was requested; **check the live rerun conclusion**. Linux/dependency passed.
+**passed** its native tests and smokes. Linux/dependency passed on the first
+attempt. CI 39369706540 completed successfully on attempt 2, but its original
+failure remains relevant and recorded; the unknown cause is not fixed.
 The original
 #278 head failed rustfmt, corrected on a new exact head without waiver.
 There were zero open PRs following the observed merge. Previous handoff
