@@ -1,5 +1,11 @@
 # Read boundary hardening — 2026-10-12
 
+Historical snapshot: the candidate/branch status below describes 2026-10-12,
+not the current repository. See [current status](../../STATUS.md),
+[the debt register](../engineering/RELIABILITY_DEBT.md) and preservation history
+before classifying any finding as still open or already integrated. This note
+does not assert that all findings in this historical audit are closed.
+
 Status: implementation candidate on `security/read-boundary-hardening`; unmerged.
 Base: main `156653a406f01383e2fc14cada513963453b04f3`.
 Owners: #183, #181 and the pagination subfinding of #176.

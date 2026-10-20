@@ -7,7 +7,14 @@ Before changing code, read:
 2. `docs/security/SECURITY_INVARIANTS.md`
 3. the canonical document that owns the subsystem being changed.
 
-## Local checks
+## Current continuation: GitHub only
+
+Read [the agent handoff](docs/engineering/GITHUB_HANDOFF.md). Do not run tests,
+builds, installers, servers or permission changes on the operator's PC. Use an
+agent-owned isolated environment or GitHub-hosted CI; do not dispatch self-hosted
+jobs. Inspect applicable workflows and exact-head results before merging.
+
+## Contributor checks in your own development environment
 
 ```text
 cargo fmt --all -- --check

@@ -2,21 +2,22 @@
 
 ## Offline Cargo research integration — 2026-10-20
 
-PR255 completes the fixed research fixture and proposed optional preparation
-contract, not general Cargo or administrator setup. Its dedicated normal and
-prepared acceptance jobs remain independent; an unsupported normal job stays
-red and cannot inherit the prepared result. Standard direct-Rust CI is unchanged.
-Earlier21ac09b hosted proof completed prepared check/test, failing assertion,
-correction, offline dependency denial, cleanup and explicit revoke. At code head282524c, dedicated CI39339416828 prepared job118356950903 also
-proved unrelated-profile denial, cleanup and revoke; normal job118356951094
-retained the actual NUL error5. Subsequent integration documentation does not
-relabel those observations as normal support.
-See docs/research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md.
+PR255 is merged as `f1e72f8`. It completes the fixed research fixture and optional
+preparation design, not general Cargo or administrator setup. At final head
+`6bbcb64`, research [run 39339860948](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39339860948)
+passed prepared job118358440446, including unrelated-profile denial, known-output
+cleanup and explicit revoke. Independent normal job118358440142 retained NUL
+error5 / exit101. Standard direct-Rust CI is unchanged. See the
+[research owner](docs/research/PRIVATE_OFFLINE_CARGO_NUL_2026-10-19.md).
 
 
 Reviewed: 2026-10-20. This page describes source and measured acceptance, not a
 production release. Detailed historical notes are retained in
 [the exact previous status snapshot](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/e1b82888dcf9c079740777be27341ca943758859/STATUS.md).
+
+Current continuation is [GitHub-only](docs/engineering/GITHUB_HANDOFF.md): no
+operator-PC testing or runtime changes. The [new-chat prompt](PROJECT_CONTINUITY_PROMPT.md)
+and [agent entry point](AGENTS.md) do not require old chat memory or local files.
 
 ## Merged and validated
 
@@ -30,14 +31,18 @@ CI39338661674 and preparation39338661374 passed before merge.
 
 | Track | Latest delivered increment | Evidence |
 | --- | --- | --- |
-| Main core | Local supervision #252; pinned exact Node module metadata #254 | #254 head `837fa30` passed CI 39286806748, preparation 39286806746, native pipes 39286806756 and Rust compilation 39286806794; merged as `e1b8288` |
-| Generated FS alpha | Exact replacement #251; ancestry alignment #253/#256; isolated Python environment repair #256 | #256 head `d00e212` passed CI 39292953084, adapter/package 39292952943, preparation 39292952592, pipes 39292952775 and direct Rust 39292952891; merged as `a553645` |
-| Downloaded alpha package | Source CI merge `75ace2e`, artifact 12206671614 | 85 archive entries and 80 source files verified; native packaged 32 KiB HTTP editing and Node fail/fix/check/test passed |
+| Main core | Native path hardening #259; fixed offline Cargo research #255 | #259 merged `97f4098`; #255 head `6bbcb64` passed CI 39339859057, preparation 39339859114, pipes 39339859071 and direct Rust 39339859055; merged `f1e72f8`. Research normal failure remains separate. |
+| Generated FS alpha | Completed Electron diagnosis #250; hardened-core ancestry alignment #260 | #260 head `a4091bc` passed CI 39340735293, adapter/package 39340735266, preparation 39340735187, pipes 39340735200 and direct Rust 39340735265; merged `5245e3d`. Cargo/Electron research baselines remain red. |
+| Previously verified alpha package | Source CI merge `ac76efd6ea833e46dfced7bee3148af968754566`, artifact 12229445645 | 85 archive entries and 80 source files verified; native packaged 32 KiB HTTP editing and Node fail/fix/check/test passed before the no-PC continuation. |
 
 The alpha ZIP SHA256 is
-`b2b34a47e22357b1e6a49d2f721b471060932ab5c538791a28afca3024ae8b14`.
+`3563bb8e9666455e6559cf6e30362b99849eb437fe91769fc1b6691c2113bc00`.
 Its source identity remains fixed; a documentation change does not relabel it.
 It uses generated projects, shared connection authority and public dummy auth.
+The older `b2b34a47…` package predates #259 and is historical. Actions artifacts
+can expire; inspect availability in [run 39340735266](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39340735266)
+instead of assuming a local ZIP is accessible to a new agent. No production
+release or new PC test is implied by this provenance update.
 
 The core includes scoped/versioned filesystem mutation, separately authorized
 Git operations, bounded process lifecycle and private-service foundations.
@@ -50,13 +55,14 @@ Not every internal service is exposed as a general MCP project/build tool.
   staging rerun job118357480984 passed both diagnostic controls and observed
   normal exit `0x80000003` / primary result11 before app startup. The separately selected outer-only diagnostic succeeds; no automatic
   sandbox downgrade or public GUI permission follows. The baseline research
-  staging workflow remains red, including run 39292952790 on #256.
+  staging workflow remains red, including run39340735239 on #260; its controls
+  and separately selected outer-only comparison do not change normal support.
 - **Cargo #255:** ordinary capability-free execution fails opening NUL, exit 101.
   At source `21ac09b`, disposable CI 39291321987/job 118192403768 passed the prepared
   exact-profile comparison, actual checks/tests, output cleanup and explicit
   revoke with restored denial. This is not ordinary Windows Cargo acceptance.
 - **Optional Windows preparation:** development direction approved; the proposed
-  contract is on #255. No local privileged helper or device permission change
+  contract is [in main](docs/research/OPTIONAL_WINDOWS_NUL_PREPARATION.md). No local privileged helper or device permission change
   has been applied. Authentication, lease provenance and interrupted recovery
   remain implementation gates.
 - **Real projects:** writable output containment, dependency restore, secrets,
@@ -74,9 +80,12 @@ indefinitely open diagnostic carriers.
 
 244 historical remote branches were removed after explicit operator approval,
 exact-head/preservation revalidation and backup hash verification. The four
-reference branches and all preservation refs were verified unchanged. The merged
-#257 maintenance branch was retired separately; the completion-report branch is
-temporary. Exact heads, approval and observed results are in the
+reference branches and all preservation refs were verified unchanged at that
+retirement checkpoint. After later integrations #250/#255/#260, the pre-handoff
+inventory was zero open PRs and two branches: `main` and
+`alpha/generated-project-editing`; completed short-lived branches were retired.
+This dated inventory must be refreshed live by the next agent. Exact historical
+heads, approval and observed results are in the
 [consolidation record](docs/engineering/REPOSITORY_CONSOLIDATION_2026-10-20.md).
 
 Next delivery steps are owned by [ROADMAP.md](ROADMAP.md). Core and alpha remain

@@ -4,6 +4,9 @@ Reviewed: 2026-10-20. This is a bounded source review and delivery register, not
 a claim of a complete security audit. STATUS owns delivered evidence; this page
 owns concrete unfinished implementation/verification work.
 
+Continuation mode: [GitHub-only handoff](GITHUB_HANDOFF.md), with no operator-PC
+execution. Hosted native proof remains required where the boundary is Windows.
+
 ## Findings addressed in the current hardening change
 
 Native path comparison used replacement-character conversion in runtime scope
@@ -19,7 +22,7 @@ The regression exercises the boundary, not a string implementation detail.
 | --- | --- | --- |
 | Native path identity | Lossy comparison is addressed; Unicode case folding and Windows case-sensitive directories are not fully characterized | Native fixtures and a documented canonical comparison/identity contract; no guessed equivalence |
 | Cargo #255 | Fixed offline prepared fixture passed only on disposable CI; ordinary profile still cannot open NUL | Finish optional broker/profile provenance, preview, exact SID grant, interrupted recovery and revoke before any local privileged setup |
-| Electron #250 | Bounded diagnostics identify startup failure; normal sandboxed GUI still fails | Close diagnostic scope independently of a compatibility fix; keep normal failure visible and never silently select the outer-only comparison |
+| Electron #250 | Diagnostic scope is merged; normal sandboxed GUI still fails | Prove normal startup compatibility; keep failure visible and never silently select the outer-only comparison |
 | Private writable builds | Core has input capture, staging, owned tasks and publication services, but no general MCP build profile | Proven writable-storage/cleanup contract, authorized host composition and real native goal-driven acceptance |
 | Dependencies | Installed runtime presence does not authorize downloads, package scripts or egress | Operator-selected restore scope, package/script policy, credentials and network boundaries |
 | Private-task journal retention | Finite record/unresolved ceilings intentionally refuse admission when full; no host retention/retirement workflow is delivered | Explicit bounded retention and safe retirement of terminal evidence without deleting unresolved work or replaying effects |
@@ -28,7 +31,8 @@ The regression exercises the boundary, not a string implementation detail.
 
 ## Source review coverage
 
-Reviewed the two open PR deltas, native path helpers, project input manifests and
+The original bounded review inspected the then-open #250/#255 deltas (now merged),
+native path helpers, project input manifests and
 capture, artifact publication, private task launch and journal validation.
 Finite byte/entry/event bounds, exact snapshot hashes, staged publication progress
 and explicit unknown outcomes already exist in those services; they should be

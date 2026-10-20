@@ -2,6 +2,11 @@
 
 Read this file before changing architecture or implementing features.
 
+For a fresh chat, first read [AGENTS.md](AGENTS.md) and the
+[GitHub-only handoff](docs/engineering/GITHUB_HANDOFF.md). The current operator
+direction excludes tests/runtime changes on their PC; use an agent-owned isolated
+environment or GitHub-hosted CI. [Reusable prompt](PROJECT_CONTINUITY_PROMPT.md).
+
 ## Non-negotiable invariant
 
 **The AI decides what it wants to attempt. The bridge executes only authorized effects. Policy authorizes. Isolation contains.**
