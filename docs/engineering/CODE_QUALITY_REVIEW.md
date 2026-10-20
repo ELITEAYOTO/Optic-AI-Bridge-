@@ -160,11 +160,12 @@ private intra-crate references, nested test identities and public exports.
 No policies, expiry clocks, authorization or worktree effects are modified.
 
 This is a physical organization improvement only, **not** a completed security
-review of sessions, leases or worktrees. The PR's exact-head Linux/Windows
-format, Clippy, tests, native preparation and review outcomes must be checked
-before merging; test results are not implied by blob identity. The separate
-TaskLeaseRegistry, ToolProfileRegistry, approval brokers and Git modules remain
-at their current locations pending their own scope-specific review.
+review of sessions, leases or worktrees. [PR #270](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/270)
+was merged as `636a8b5` after the exact head `4d5ff0a` passed all four
+applicable hosted Windows/Linux Rust, dependency and native preparation
+checks; main push CI 39360825623 also passed. The separate TaskLeaseRegistry,
+ToolProfileRegistry, approval brokers and Git modules remain unmoved pending
+their own scope-specific review.
 
 ## Process drain join diagnostic gap — 2026-10-20
 
@@ -181,5 +182,22 @@ unexpectedly abandoned stream closed. The pre-existing deliberately aborted
 drains following `TerminationUncertain` retain their existing semantics.
 Native stop, bounded output budget, resource reservation, session ownership
 and policy code remain untouched. Two synthetic Tokio regression tests
-exercise unexpected task panic and intentional abort. Treat them as proposed
-until the exact head has passed hosted Windows/Linux tests and been merged.
+exercise unexpected task panic and intentional abort. [PR #271](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/271)
+merged as `8610c8d` after exact head `fb9ffdb` passed all four applicable
+hosted Windows/Linux Rust, dependency policy and native preparation checks.
+This does not prove that the monitor itself cannot panic or that inherited
+pipe handles always drain; those are distinct future review targets.
+
+## Focused registry/lifecycle source inspection — 2026-10-20
+
+On `main` `636a8b5`, inspected `src/session/registry.rs`,
+`src/session/lifecycle.rs`, and `src/task_lease_registry.rs` around
+session admission, expiry, renew, revoke, revocation waiting, lease ownership
+and physical reap. The reviewed paths check monotonic expiry, close admission
+during revoke, drain admitted operations, and preserve lease policy epoch
+validation. They contain 10, 17 and 13 test attributes respectively.
+**No additional reproducible defect is established by this scoped read.**
+This is not full concurrency, platform, whole-file or source-wide assurance.
+Future work: adversarial lock-order stress, exact authority provenance,
+process monitor shutdown and MCP TEMP-only intermittent first-response failure
+without a timeout waiver or unsupported compatibility claims.
