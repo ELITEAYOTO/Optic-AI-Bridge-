@@ -1,5 +1,12 @@
 # Current project status
 
+## Recovery append alias correction under review — 2026-10-20
+
+The latest verified `main` before this review was `4b66fd0ca5e0ed397c589548d3fbf331e067df6a`; [post-merge CI #39374757910](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39374757910) passed Windows Rust, Linux Rust and dependency policy on its first attempt, with zero PRs open at that instant. This does not resolve intermittent Windows AppContainer/Node and MCP first-response delays.
+
+A bounded **not-yet-merged** branch `fix/recovery-journal-append-identity` addresses the remaining hard-link alias acceptance when appending journal states. It validates opened-file identity/links and opened length before writing, using an exclusive native Windows state handle or Unix descriptor checks; the new regression requires a linked external journal to remain byte-identical after a failed append. Do not describe this behavior as released until a reviewed, exact-head CI-validated PR is observed merged. Parent-directory pinning, Unix concurrent namespace/size races and power-loss guarantees remain outside the change.
+
+
 ## Windows MCP startup timing evidence integrated — 2026-10-20
 
 Fresh GitHub verification: `main` was `0f857b81a0715b2fcb7cb8f1e2a4250bf9221fa6`, with no open PRs; post-merge [CI 39370890039](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39370890039) passed on its second attempt. Its first attempt still contains a failed 30-second TEMP-only Node MCP initialization smoke; the separate AppContainer Node loopback 10-second intermittency also remains unresolved. These are not proven journal regressions.
