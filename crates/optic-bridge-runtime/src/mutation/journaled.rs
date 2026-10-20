@@ -141,13 +141,20 @@ impl JournaledMutationService {
     }
 
     pub fn recover(&self) -> Result<RecoveryReport, JournaledMutationError> {
-        let report = self.journal.inspect_pending(self.atomic.filesystem())?;
+        let scan = self.journal.scan_pending(self.atomic.filesystem())?;
         #[cfg(windows)]
-        self.cleanup_recovered_staging(&report)?;
-        for record in &report.records {
+        {
+            // Stable journals alone are not enough to authorize cleanup:
+            // a corrupt staged artifact must not erase unpublished evidence.
+            self.walk_recovered_staging(&scan.report, false)?;
+        }
+        self.journal.discard_unpublished(&scan)?;
+        #[cfg(windows)]
+        self.cleanup_recovered_staging(&scan.report)?;
+        for record in &scan.report.records {
             self.journal.retire_action(&record.action_id)?;
         }
-        Ok(report)
+        Ok(scan.report)
     }
 
     #[must_use]
@@ -709,6 +716,82 @@ mod tests {
                 .expect("journal root")
                 .count(),
             1
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn corrupt_staging_preserves_unpublished_recovery_evidence() {
+        let (workspace, state) = fixture("staging-preserves-unpublished");
+        let service =
+            JournaledMutationService::from_hard_limits(&workspace, &state, HardLimits::default())
+                .expect("service");
+        let action = ActionId::generate().expect("committing action");
+        let path = WorkspacePath::parse("target.txt").expect("workspace path");
+        let plan = service
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("prepare write");
+        let ticket = service
+            .journal()
+            .begin_for_action(
+                &action,
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"expected")),
+            )
+            .expect("durable prepared journal");
+        service
+            .journal()
+            .mark_committing(&ticket)
+            .expect("durable committing");
+        let staging = staging_path_for(service.atomic().filesystem(), &path, ticket.action_id());
+        fs::write(&staging, b"corrupt").expect("staging fixture");
+
+        let unpublished_action = ActionId::generate().expect("unpublished action");
+        let unpublished = service
+            .journal()
+            .root()
+            .join(format!("{}.prepared.tmp", unpublished_action.to_token()));
+        let unpublished_bytes = b"unpublished interrupted preparation";
+        fs::write(&unpublished, unpublished_bytes).expect("unpublished fixture");
+
+        assert!(matches!(
+            service.recover(),
+            Err(JournaledMutationError::StagingContentMismatch { action_id })
+                if action_id == action
+        ));
+        assert_eq!(
+            fs::read(&unpublished).expect("unpublished evidence retained"),
+            unpublished_bytes
+        );
+        assert_eq!(fs::read(&staging).expect("staging retained"), b"corrupt");
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("journal root")
+                .count(),
+            2,
+            "failed recovery must retain both unpublished and stable evidence"
+        );
+
+        fs::write(&staging, b"expected").expect("repair staging");
+        assert_eq!(
+            service
+                .recover()
+                .expect("successful recovery")
+                .records
+                .len(),
+            1
+        );
+        assert!(
+            !unpublished.exists(),
+            "unpublished cleanup after full validation"
+        );
+        assert!(!staging.exists(), "staging cleanup after full validation");
+        assert_eq!(
+            fs::read_dir(service.journal().root())
+                .expect("retired journal root")
+                .count(),
+            0
         );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }

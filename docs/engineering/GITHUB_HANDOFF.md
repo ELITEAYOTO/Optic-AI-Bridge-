@@ -1,5 +1,13 @@
 # GitHub-only project handoff
 
+## New recovery cross-phase validation candidate — 2026-10-20
+
+Live before branching: `main` `1019fae055993c11348e99a361be1eae04ea206b`, zero open PRs, independent [main CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) passed first attempt on the exact head (Windows Rust, Linux Rust, dependencies). #288, #290, #291 and #292 are **already integrated**; do not repeat them. The feature freeze and operator-PC/runner/release restrictions remain in force.
+
+Evidence from current code: full `JournaledMutationService::recover` invokes journal `inspect_pending` (which discards unpublished `*.prepared.tmp` after validating stable records) before `cleanup_recovered_staging`. A corrupt staged artifact therefore causes an error **after** earlier unrelated unpublished evidence has been deleted. A source-scoped branch `fix/recovery-cross-phase-evidence` separates journal scan from unpublished deletion, retains the exact scanned paths, validates all staging objects first, then runs the former cleanup and retirement sequence. Standalone `MutationRecoveryJournal::reconcile` still performs its journal-only post-validation temp cleanup. A Windows regression includes a durable committing record with corrupt staging plus independent unpublished evidence: it asserts neither disappears on failure and both are cleaned after the staging bytes are corrected.
+
+**Candidate only** until the precise PR source head, native Windows regression, Linux Rust/dependencies, reviews and merge have been checked. This does not guarantee atomic cleanup of multiple files, concurrent ancestor path identity, or crash/power-loss durability. Do not weaken deadlines, permissions or CI, merge alpha, add features, run anything on the user's PC or use self-hosted runners. Future agents must inspect live PR/CI, not assume this branch was merged.
+
 ## Canonical current handoff — verified after PR #291 (2026-10-20)
 
 GitHub `main` was independently confirmed at `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02`, with **zero open PRs**. [Post-merge CI #39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) completed successfully on that **exact SHA**, first attempt: hosted Windows Rust, Linux Rust and dependency policy. This supersedes candidate/pending language in the dated history below.
