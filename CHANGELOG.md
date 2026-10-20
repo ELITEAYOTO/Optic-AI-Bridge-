@@ -1,5 +1,18 @@
 # Changelog
 
+## Atomic no-clobber prepared journal publication — 2026-10-20
+
+- Candidate `fix/recovery-journal-publish-no-replace`: replace ordinary
+  potentially overwriting rename with native no-replace publication on
+  Windows and Linux GNU. Use the already-locked `nix` Unix wrapper.
+- Existing stable evidence must survive a publication attempt. Concurrency
+  regression allows exactly one publisher to win; no intermediate two-link
+  journal state is introduced.
+- Other platforms fail closed until dedicated support is validated.
+  This does not prove namespace ancestor pinning or power-loss durability.
+  Verify exact-head PR checks and squash before claiming integration.
+
+
 ## Recovery state-root creation side-effect review — 2026-10-20
 
 - Pending narrow branch `fix/recovery-state-root-preflight`: reject absent

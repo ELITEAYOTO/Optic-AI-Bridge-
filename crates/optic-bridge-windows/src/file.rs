@@ -20,7 +20,8 @@ use windows::{
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
             FILE_ID_INFO, FILE_SHARE_READ, FILE_STANDARD_INFO, FileAttributeTagInfo,
             FileDispositionInfo, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx,
-            GetFinalPathNameByHandleW, REPLACE_FILE_FLAGS, ReplaceFileW,
+            GetFinalPathNameByHandleW, MOVEFILE_FLAGS, MoveFileExW, REPLACE_FILE_FLAGS,
+            ReplaceFileW,
             SetFileInformationByHandle, VOLUME_NAME_DOS,
         },
     },
@@ -227,6 +228,19 @@ pub fn inspect_directory_no_reparse(path: &Path) -> Result<WindowsPathIdentity, 
         identity: query_identity(&file)?,
         final_path: query_final_path(&file)?,
     })
+}
+
+/// Publish a prepared same-directory journal without replacing a destination
+/// that may have appeared since its last absence check. No copy fallback:
+/// publication must remain one namespace operation or fail closed.
+/// This does not pin the parent directory or guarantee crash-time directory fsync.
+pub fn move_file_no_replace(from: &Path, to: &Path) -> Result<(), WindowsFileError> {
+    let from = wide_null(from);
+    let to = wide_null(to);
+    // SAFETY: both Windows path buffers are terminated and live for the call;
+    // zero flags intentionally omit MOVEFILE_REPLACE_EXISTING/COPY_ALLOWED.
+    unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_FLAGS(0))? };
+    Ok(())
 }
 
 pub fn replace_file_atomically(
@@ -453,6 +467,28 @@ mod tests {
         assert!(open_exclusive_file_for_delete_no_reparse(&path).is_err());
         assert_eq!(fs::read(&alias).unwrap(), b"linked evidence");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn move_file_no_replace_preserves_existing_evidence_and_source() {
+        let root = workspace("no-clobber-publish");
+        let from = root.join("prepared.tmp");
+        let to = root.join("stable.journal");
+        fs::write(&from, b"prepared candidate").expect("prepared bytes");
+        fs::write(&to, b"existing durable evidence").expect("existing bytes");
+
+        assert!(move_file_no_replace(&from, &to).is_err());
+        assert_eq!(fs::read(&from).expect("candidate retained"), b"prepared candidate");
+        assert_eq!(
+            fs::read(&to).expect("existing evidence"),
+            b"existing durable evidence"
+        );
+
+        fs::remove_file(&to).expect("remove test destination");
+        move_file_no_replace(&from, &to).expect("publish absent destination");
+        assert!(!from.exists());
+        assert_eq!(fs::read(&to).expect("published bytes"), b"prepared candidate");
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

@@ -1,5 +1,10 @@
 # Reliability and implementation debt
 
+## Journal publication no-clobber invariant — scoped candidate, 2026-10-20
+
+Before the candidate change, after `ensure_action_path_absent` the recovery journal used replacing `fs::rename(temp, stable)`. A stable journal created after that absence check could be overwritten. The proposed bounded fix uses kernel-enforced no-replace rename on the two tested platforms (Win32 MoveFileExW without replacement, Linux GNU renameat2 RENAME_NOREPLACE via already locked nix); direct existing-evidence and competing-publisher tests verify neither silently overwrites. Keeping a single rename avoids introducing a new two-hardlink interrupted-recovery state. Unsupported targets now fail closed; platform support beyond hosted Windows/Linux GNU is not demonstrated. Confirm PR exact-head CI and merge. Open questions: parent directory identity/ancestor races, directory flush after rename, unexpected journal entries and sudden power loss. Windows Node/AppContainer and MCP first-response intermittencies remain separate debt.
+
+
 ## Setup-time state-root creation before denial — scoped correction under review
 
 Pre-increment `MutationRecoveryJournal::open` creates the requested state-root directory tree before canonical workspace-confinement rejection. An absent nested path inside the workspace therefore causes an unrequested workspace mutation even though journal creation is denied. Branch `fix/recovery-state-root-preflight` preflights the canonical nearest existing ancestor before creating anything, retains the final post-create check and adds a negative no-directory-creation test and a valid outside-root control. Verify the PR and exact-head CI before calling this delivered. The preflight is intentionally conservative and does not pin ancestors or make a concurrent pathname-swap guarantee.
