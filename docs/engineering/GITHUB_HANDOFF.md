@@ -1,5 +1,11 @@
 # GitHub-only project handoff
 
+## MCP Windows startup: bounded successful-run phase evidence candidate — 2026-10-20
+
+Live `main` was `de973989a30a28f561da27532582bca8c63e9309` with zero PRs and independent [CI #39399746917](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39399746917) green first attempt on exact SHA. The Windows TEMP-only doctor receives initialize in 3973–7580ms across six sampled passing main jobs. The original 30s MCP first-response intermittencies and separate 10s Node/AppContainer intermittencies remain unresolved, not assumed fixed by sampling passes.
+
+Code confirms that the bridge opt-in `OPTIC_STARTUP_TIMING` writes fixed phase markers to stderr, but the doctor smoke previously only read stderr on failure, obscuring baselines from successful runs. Proposed narrow script-only candidate `diag/mcp-startup-phase-visibility`: after successful doctor completion and bounded process shutdown, read a maximum of 4096 stderr characters under a 400ms stopwatch budget, emit at most one marker per whitelisted static phase and only its numeric elapsed milliseconds. Collecting this *does not* alter process admission, timeout, MCP protocol, native isolation or local runtime permissions. Preserve the existing failure path (which already reads bounded display of stderr for timeout diagnostics). Verify actual markers in hosted Windows source-head CI before acceptance; do not report a root-cause fix. No new feature, operator-PC execution, self-hosted runner or extra CI dispatch. Prior merged recovery PR #293 is complete; do not duplicate it.
+
 ## New recovery cross-phase validation candidate — 2026-10-20
 
 Live before branching: `main` `1019fae055993c11348e99a361be1eae04ea206b`, zero open PRs, independent [main CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) passed first attempt on the exact head (Windows Rust, Linux Rust, dependencies). #288, #290, #291 and #292 are **already integrated**; do not repeat them. The feature freeze and operator-PC/runner/release restrictions remain in force.

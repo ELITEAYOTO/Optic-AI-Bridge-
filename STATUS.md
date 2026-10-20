@@ -1,5 +1,11 @@
 # Current project status
 
+## MCP cold-start phase visibility — diagnostic candidate (2026-10-20)
+
+Live checkpoint before this work: `main` `de973989a30a28f561da27532582bca8c63e9309`, zero open PRs; independent [post-merge CI #39399746917](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39399746917) passed first attempt on exact SHA (Windows Rust, Linux Rust and dependency policy). Six recent successful hosted Windows post-merge jobs had TEMP-only MCP initialize receive at 3973, 7580, 4768, 4273, 7186 and 5139ms with the process-start marker at 6–9ms. These successful timings do **not** explain historical 30s first-response failures or distinct 10s Node isolation timeouts.
+
+A read-only code review found that `OPTIC_STARTUP_TIMING=1` already emits fixed child phase markers to the MCP bridge's stderr, but `scripts/Test-OpticAIBridge.ps1` only consumes that stderr on failure. Passing CI thus loses the internal phase baselines needed to localize slow initializations. A test-only diagnostic candidate (`diag/mcp-startup-phase-visibility`) uses an opt-in, post-exit, strictly bounded (4096 chars / 400ms) read of stderr after a successful doctor check, emitting only eight whitelisted phase names with numeric monotonic times. No arbitrary stderr, paths, secrets or protocol payloads are published; failure behavior and existing 30s functional deadline stay intact. **Candidate, not a shipped fix:** verify the exact PR head and the hosted Windows doctor log before merging; if phase records are missing, report that honestly. Root cause is still unknown. No code/permissions/sandbox changes, no operator-PC activity or feature expansion.
+
 ## Cross-phase recovery evidence retention — scoped candidate (2026-10-20)
 
 GitHub verified `main` `1019fae055993c11348e99a361be1eae04ea206b`, zero open PRs and independent [post-merge CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) green first attempt (hosted Windows Rust, Linux Rust, dependencies) before this increment. Operator-directed stabilization-only freeze remains binding.
