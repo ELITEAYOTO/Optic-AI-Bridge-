@@ -1,5 +1,18 @@
 # Changelog
 
+## Unpublished recovery evidence preservation — 2026-10-20
+
+- Proposed targeted fix `fix/recovery-inspect-preserve-temp-on-failure`:
+  delay removal of valid unpublished `*.prepared.tmp` files until all
+  stable recovery records have been classified without error.
+- Cross-platform negative test preserves both earlier temporary and later
+  corrupt stable bytes on failed inspection, then confirms normal cleanup
+  after removing the corruption. This does not change journal formats or
+  restore authorization, nor provide atomic multi-file deletion.
+- PR #287 merged as `0ca2305`; its post-merge CI 39387133506 passed
+  Windows, Linux and dependency policy on first attempt. Verify the new
+  candidate PR's exact-head checks and merge before claiming integration.
+
 ## Linux prepared-journal directory synchronization — 2026-10-20
 
 - Candidate `fix/recovery-linux-directory-sync`: after no-replace publication,

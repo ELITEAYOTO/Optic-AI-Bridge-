@@ -267,6 +267,10 @@ impl MutationRecoveryJournal {
         paths.sort();
 
         let mut records = Vec::new();
+        // Delay cleanup until all stable records have been parsed and their
+        // outcomes classified. An unrelated corrupt journal must not erase
+        // unpublished evidence just because its name sorts later.
+        let mut unpublished = Vec::new();
         for path in paths {
             let file_name = path
                 .file_name()
@@ -275,7 +279,7 @@ impl MutationRecoveryJournal {
 
             if let Some(token) = file_name.strip_suffix(PREPARED_TEMP_SUFFIX) {
                 ActionId::from_token(token)?;
-                self.remove_regular_file(&path)?;
+                unpublished.push(path);
                 continue;
             }
 
@@ -314,6 +318,14 @@ impl MutationRecoveryJournal {
                 intended: parsed.intended,
                 outcome,
             });
+        }
+
+        // Unpublished prepared files cannot represent a committed effect.
+        // Only discard them after the full stable-journal inspection succeeds.
+        // Cleanup failure still fails closed; this is not atomic multi-file
+        // retirement or a full directory-identity guarantee.
+        for path in unpublished {
+            self.remove_regular_file(&path)?;
         }
 
         Ok(RecoveryReport { records })
@@ -1070,6 +1082,51 @@ mod tests {
             pending.records[0].outcome,
             RecoveryOutcome::PreparedNotCommitted
         );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn corrupt_stable_journal_does_not_delete_earlier_unpublished_evidence() {
+        let (workspace, state) = fixture("preserve-unpublished");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let first = ActionId::generate().expect("first id");
+        let second = ActionId::generate().expect("second id");
+        assert_ne!(first.to_token(), second.to_token());
+        let (unpublished_id, corrupt_id) = if first.to_token() < second.to_token() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let unpublished_path = journal.prepared_temp_path(&unpublished_id);
+        let corrupt_path = journal.journal_path(&corrupt_id);
+        assert!(
+            unpublished_path < corrupt_path,
+            "unpublished entry must be visited before corrupt stable entry"
+        );
+        let unpublished_bytes = b"unpublished but retained after failed inspection";
+        let corrupt_bytes = b"not-json\n";
+        fs::write(&unpublished_path, unpublished_bytes).expect("unpublished fixture");
+        fs::write(&corrupt_path, corrupt_bytes).expect("corrupt stable fixture");
+
+        assert!(matches!(
+            journal.reconcile(atomic.filesystem()),
+            Err(RecoveryJournalError::Serde(_))
+        ));
+        assert_eq!(
+            fs::read(&unpublished_path).expect("unpublished evidence retained"),
+            unpublished_bytes
+        );
+        assert_eq!(
+            fs::read(&corrupt_path).expect("corrupt stable evidence retained"),
+            corrupt_bytes
+        );
+
+        fs::remove_file(&corrupt_path).expect("resolve corrupted fixture");
+        assert!(
+            journal.reconcile(atomic.filesystem()).expect("reconcile").is_empty(),
+            "unpublished evidence is discarded only after a clean scan"
+        );
+        assert!(!unpublished_path.exists());
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 

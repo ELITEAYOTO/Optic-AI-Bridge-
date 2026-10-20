@@ -330,3 +330,14 @@ evidence remains recoverable while admission returns an error. This is a
 limited Linux filesystem persistence barrier, not a sudden-power-loss
 certification, Windows flush guarantee or ancestor pinning fix. Verify the
 source PR's exact CI/merge state separately.
+
+## Recovery scan cleanup ordering — 2026-10-20
+
+Review of `mutation/recovery.rs::inspect_pending` identified eager deletion
+of a valid unpublished prepared file before later stable records were
+validated. A later corrupt stable journal causes failed inspection despite
+already erased earlier temp evidence. The scoped candidate defers temp
+cleanup until after successful stable classification. Regression covers
+failure with both files preserved and successful retry cleanup. This does
+not make temp deletion atomic across multiple entries, solve concurrent
+namespace replacement, or establish hardware power-loss durability.
