@@ -1,5 +1,12 @@
 # Changelog
 
+## Opt-in Windows MCP startup evidence (pending CI)
+
+- Proposed bounded diagnostics in `diag/windows-mcp-startup-phases` for the intermittent Windows TEMP-only doctor initialization, without altering production permission/isolation or timeouts.
+- The bridge emits only static startup-phase names and monotonic elapsed milliseconds to stderr when the host explicitly sets `OPTIC_STARTUP_TIMING=1`; the existing Windows CI smoke enables the diagnostic only on its spawned child and records host-side process/initialize timing.
+- This is **not yet an integrated or validated fix**. Preserve earlier failed Windows CI attempts and do not infer a root cause from a single good run.
+
+
 ## Recovery journal evidence boundary — 2026-10-20
 
 - [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
