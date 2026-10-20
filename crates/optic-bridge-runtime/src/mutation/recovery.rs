@@ -244,17 +244,21 @@ impl MutationRecoveryJournal {
         &self,
         filesystem: &BoundedFileSystem,
     ) -> Result<RecoveryReport, RecoveryJournalError> {
-        let report = self.inspect_pending(filesystem)?;
-        for record in &report.records {
+        let scan = self.scan_pending(filesystem)?;
+        self.discard_unpublished(&scan)?;
+        for record in &scan.report.records {
             self.retire_action(&record.action_id)?;
         }
-        Ok(report)
+        Ok(scan.report)
     }
 
-    pub(crate) fn inspect_pending(
+    // Validation only: callers decide when cleanup can safely start.
+    // The journal-only reconciler may clean immediately after this scan,
+    // while full recovery must also validate staged operation artifacts.
+    pub(crate) fn scan_pending(
         &self,
         filesystem: &BoundedFileSystem,
-    ) -> Result<RecoveryReport, RecoveryJournalError> {
+    ) -> Result<PendingRecoveryScan, RecoveryJournalError> {
         let mut paths = Vec::new();
         for entry in fs::read_dir(&self.root)? {
             if paths.len() >= self.max_records {
@@ -320,15 +324,23 @@ impl MutationRecoveryJournal {
             });
         }
 
-        // Unpublished prepared files cannot represent a committed effect.
-        // Only discard them after the full stable-journal inspection succeeds.
-        // Cleanup failure still fails closed; this is not atomic multi-file
-        // retirement or a full directory-identity guarantee.
-        for path in unpublished {
-            self.remove_regular_file(&path)?;
-        }
+        Ok(PendingRecoveryScan {
+            report: RecoveryReport { records },
+            unpublished,
+        })
+    }
 
-        Ok(RecoveryReport { records })
+    pub(crate) fn discard_unpublished(
+        &self,
+        scan: &PendingRecoveryScan,
+    ) -> Result<(), RecoveryJournalError> {
+        // Unpublished files cannot represent committed effects. Their
+        // deletion must follow all relevant validation phases, not just
+        // stable-journal classification. Deletion remains non-atomic.
+        for path in &scan.unpublished {
+            self.remove_regular_file(path)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn retire_action(&self, action_id: &ActionId) -> Result<(), RecoveryJournalError> {
@@ -587,6 +599,13 @@ impl JournalTicket {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoveryReport {
     pub records: Vec<RecoveryRecord>,
+}
+
+// Internal scan result retains the exact unpublished paths observed during
+// validation; callers must not rescan and accidentally clean newer entries.
+pub(crate) struct PendingRecoveryScan {
+    pub(crate) report: RecoveryReport,
+    unpublished: Vec<PathBuf>,
 }
 
 impl RecoveryReport {
