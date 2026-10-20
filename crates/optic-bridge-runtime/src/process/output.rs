@@ -30,7 +30,7 @@ where
                 // uncertainty even when the child exits with code zero.
                 record.output_read_failed.store(true, Ordering::Release);
                 break;
-            },
+            }
         }
     }
     mark_stream_closed(&record, stream);
