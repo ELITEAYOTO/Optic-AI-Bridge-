@@ -1,5 +1,13 @@
 # Current project status
 
+## Cross-phase recovery evidence retention — scoped candidate (2026-10-20)
+
+GitHub verified `main` `1019fae055993c11348e99a361be1eae04ea206b`, zero open PRs and independent [post-merge CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) green first attempt (hosted Windows Rust, Linux Rust, dependencies) before this increment. Operator-directed stabilization-only freeze remains binding.
+
+A Windows code-path review found a distinct **cross-phase cleanup-before-validation** defect: `JournaledMutationService::recover` called `MutationRecoveryJournal::inspect_pending`, which deletes unpublished `*.prepared.tmp` records after checking stable journals, **before** checking recovered operation staging. A later staging content mismatch fails recovery despite the earlier unpublished bytes already being removed. Unlike #288 (stable-journal preflight) and #291 (staging-only preflight), the two validated phases were not ordered together.
+
+The candidate on `fix/recovery-cross-phase-evidence` makes journal inspection validation-only, retains its exact observed unpublished paths, preflights all recovered staging on Windows, **then** performs the previously authorized unpublished cleanup and the existing double-pass staging cleanup. A new Windows regression requires both the staged file and unrelated unpublished journal evidence to survive mismatch, and checks successful subsequent cleanup after repair. The standalone journal reconciler still deletes unpublished entries after its own full stable scan. This is **not integrated until exact-head native Windows/Linux/CI and merge are verified**. Multi-file delete atomicity, concurrent namespace replacement and power-loss durability remain outside this fix.
+
 ## Canonical verified stabilization checkpoint — 2026-10-20
 
 At live inspection, `main` is `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02`, **zero open PRs**, and the independent post-merge [CI #39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) completed successfully **on the exact main SHA, first attempt**, with hosted Windows Rust, Linux Rust and dependency-policy jobs all green.
