@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -8,6 +8,9 @@ use optic_bridge_core::{
     ActionId, ContentVersion, ExpectedState, HardLimits, IdError, TokenParseError, WorkspacePath,
     WorkspacePathError,
 };
+#[cfg(not(windows))]
+use std::fs::File;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -271,7 +274,39 @@ impl MutationRecoveryJournal {
             });
         }
 
+        // Inspect the object opened by the OS, not only the pathname checked
+        // above: a hard link (or a replacement between lstat and open) must
+        // never make unrelated data acceptable as recovery evidence.
+        #[cfg(windows)]
+        let mut opened = optic_bridge_windows::open_exclusive_read_file(path)
+            .map_err(RecoveryJournalError::NativeJournalFile)?;
+        #[cfg(windows)]
+        if opened.final_path() != path {
+            return Err(RecoveryJournalError::UnexpectedJournalEntry);
+        }
+        #[cfg(windows)]
+        let mut file = opened.file_mut();
+        #[cfg(not(windows))]
         let mut file = File::open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+
+            let actual = file.metadata()?;
+            if !actual.is_file()
+                || actual.nlink() != 1
+                || actual.dev() != metadata.dev()
+                || actual.ino() != metadata.ino()
+            {
+                return Err(RecoveryJournalError::UnexpectedJournalEntry);
+            }
+        }
+        // Bound the actual opened object, including after a pathname race.
+        if file.metadata()?.len() > self.max_file_bytes {
+            return Err(RecoveryJournalError::JournalFileTooLarge {
+                limit: self.max_file_bytes,
+            });
+        }
         let read_limit = self
             .max_file_bytes
             .checked_add(1)
@@ -638,6 +673,9 @@ pub enum RecoveryJournalError {
     Io(#[from] std::io::Error),
     #[error("journal serialization failed: {0}")]
     Serde(#[from] serde_json::Error),
+    #[cfg(windows)]
+    #[error("native recovery journal open/identity validation failed: {0}")]
+    NativeJournalFile(#[source] optic_bridge_windows::WindowsFileError),
     #[error("workspace path in journal is invalid: {0}")]
     WorkspacePath(#[from] WorkspacePathError),
     #[error("journal action token is invalid: {0}")]
@@ -935,6 +973,37 @@ mod tests {
             report.records[0].outcome,
             RecoveryOutcome::ObservedCommitted
         );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn hard_linked_journal_is_not_trusted_as_recovery_evidence() {
+        let (workspace, state) = fixture("hardlink-evidence");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let path = WorkspacePath::parse("target.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = journal
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        let journal_path = journal.journal_path(ticket.action_id());
+        let outside = state.parent().expect("fixture base").join("external-evidence");
+        let original = fs::read(&journal_path).expect("journal contents");
+
+        fs::rename(&journal_path, &outside).expect("move valid journal outside state");
+        fs::hard_link(&outside, &journal_path).expect("link external file into journal");
+
+        assert!(
+            journal.inspect_pending(atomic.filesystem()).is_err(),
+            "a linked external file must not be accepted as journal evidence"
+        );
+        assert_eq!(fs::read(&outside).expect("external evidence"), original);
+        assert_eq!(fs::read(&journal_path).expect("journal evidence"), original);
+
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
