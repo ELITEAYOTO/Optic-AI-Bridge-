@@ -183,38 +183,39 @@ historical proof refs and `alpha/generated-project-editing`. Do not start
 another mass cleanup. New agent should inspect current heads/checks/PRs,
 especially the post-merge run and any later changes, before proceeding.
 
-## Ongoing Git-domain layout consolidation — 2026-10-20
+## Latest runtime Git layout consolidation — 2026-10-20
 
-Latest verified `main` at work start:
-`24a40e106ced2e66c373ec7787ad077eb16fc9b8`, zero open PRs.
-The associated push CI 39356540735 initially failed Windows on the
-TEMP-only Node MCP doctor smoke (30-second first-response timeout with bridge
-still alive). Re-running **only the failed job** 118412524278 at the same
-commit succeeded; Linux and dependency jobs were already successful.
-This is unresolved intermittency, not a proven fix. Preserve the original
-failure, follow [RELIABILITY_DEBT](RELIABILITY_DEBT.md), and do not relax
-checks.
+This supersedes the earlier source snapshot. At inspection `main` was
+`24a40e1` with no PRs, and the Windows job in [CI 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
+had failed only the TEMP-only Node MCP doctor smoke after 30 seconds with the
+bridge alive. An exact-source failed-Windows-job rerun (job 118412524278)
+succeeded. This remains an unresolved intermittent failure; do not dismiss
+or weaken that acceptance.
 
-Current short branch `refactor/runtime-git-modules` moves precisely ten
-`git_*.rs` Rust modules from the runtime source root to `src/git/`.
-Each destination was checked against the original full text before the
-old path was removed. `lib.rs` retains the identical crate-root module names
-via `#[path = "git/..."]`, leaving `pub use` and other call sites untouched.
-Nested test modules and tests retain their parent namespace.
-[CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) records the file inventory
-and explicit limitations. No architecture/ADR change, new crate, new
-runtime, security permission or model authority is intended.
+[PR #268](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/268)
+has **merged into main** at
+`d79d60b88b60b2e95c85039c2d31427d0954a865`. The source head
+`b2b5207834efe27b131aa1e7d1b46372e55194c0` passed all four
+applicable GitHub-hosted checks (Windows/Linux Rust, dependency policy and
+private native preparation). Ten `src/git_*.rs` files moved to
+`src/git/{blob_batch,change_set,integrate,integration_authority,merge_commit,merge_plan,read,tree_manifest,tree_write,worktree}.rs`
+with identical file blob SHAs. `lib.rs` uses explicit `#[path]` to preserve
+all previous `git_*` module names, public reexports and private test
+namespaces. No authorization, resource ceilings, contracts or functionality
+were altered. Post-merge `main` CI run 39358651176 must be inspected
+separately.
 
-**Next-agent action:** inspect the live branch and its PR, exact head,
-check suites, comments and possible merge. Do not interpret content equality
-as a successful compile until hosted Windows/Linux tests actually pass.
-If they pass and branch protections allow, merge/squash against verified
-`main`; follow with post-merge CI observation. If CI fails, fix the concrete
-regression without deleting tests. Only then consider another
-responsibility-based directory move (e.g. session/recovery vs mutation)
-as a *separate* PR, or investigate the intermittent TEMP-only MCP timeout.
-Never move everything in a single PR or merge the complete generated alpha.
+Next action: verify actual post-merge CI, then continue **one domain at a
+time** (session and lease lifecycle or file mutation/recovery) only if module
+dependencies and tests justify it. A second priority is investigating the
+Windows MCP first-response intermittency with deterministic, bounded
+diagnostics; no workaround is approved. The file-by-file audit is ongoing,
+not complete. The separate generated-project alpha remains isolated,
+no broad Cargo or sandboxed Electron support was proven, and no runtime disk
+quota is claimed.
 
-Operator's PC, local permission changes, tunnels and self-hosted runners
-remain prohibited. The currently exposed GitHub tool surface has no exact
-branch-delete action; do not try a mass cleanup or touch preservation refs.
+Do not touch the operator's PC, request PowerShell, change local permissions,
+start tunnels or use self-hosted runners. The connected GitHub action surface
+does not provide deletion of old integrated branches: retain them until a
+specific verified retirement capability is available, and never delete
+archive/proof references or conduct another mass cleanup.

@@ -19,24 +19,24 @@ Current continuation is [GitHub-only](docs/engineering/GITHUB_HANDOFF.md): no
 operator-PC testing or runtime changes. The [new-chat prompt](PROJECT_CONTINUITY_PROMPT.md)
 and [agent entry point](AGENTS.md) do not require old chat memory or local files.
 
-## Current Git runtime organization and CI observation
+## Current structural delivery and Windows smoke evidence
 
-The source revision associated with `refactor/runtime-git-modules`
-relocates ten `git_*.rs` modules into `crates/optic-bridge-runtime/src/git/`
-without changing their contents or public module names. This is **layout
-only**: it is not a new user capability or a completed per-file security audit.
-The exact PR head still requires hosted Linux and native Windows CI before
-merging; refer to the [quality register](docs/engineering/CODE_QUALITY_REVIEW.md)
-for the file map.
+[PR #268](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/268)
+merged to `main` as `d79d60b88b60b2e95c85039c2d31427d0954a865`.
+The ten prior `src/git_*.rs` modules are now under `src/git/`, with
+identical content hashes and unchanged crate-root module names and
+public exports. Exact PR head `b2b5207` passed four hosted checks:
+Windows/Linux Rust, native preparation and dependency policy. This is a
+mechanical organization improvement, not new behavior or an audit of all files.
+Post-merge `main` CI run 39358651176 is a distinct check; inspect live
+results before claiming it passed.
 
-The post-merge `main` CI run
-[39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
-initially **failed** its Windows TEMP-only Node MCP doctor smoke on a 30-second
-response timeout (bridge still alive). The failed Windows job was rerun
-unchanged and **succeeded**. Root cause remains unknown; treat as an
-intermittent test/runtime diagnostic issue, not a defect proven repaired.
-The failure is retained in the reliability register; no workaround or
-`continue-on-error` was added.
+Earlier [run 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
+on `main` initially failed the Windows TEMP-only Node MCP doctor smoke
+after a 30-second response timeout with the bridge still alive. Re-running
+only the failed Windows job at the exact same SHA succeeded, without a
+source or workflow change. Root cause is not proven; the failure remains
+recorded in [RELIABILITY_DEBT](docs/engineering/RELIABILITY_DEBT.md).
 
 ## Merged and validated
 
