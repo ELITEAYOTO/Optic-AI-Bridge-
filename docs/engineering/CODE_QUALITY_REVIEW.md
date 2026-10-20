@@ -254,3 +254,17 @@ AppContainer Node-loopback timing probe; three targeted serial diagnostic
 retries passed, and the failed Windows job was rerun unchanged and passed.
 The original failure remains preserved in run 39363540900, not waived.
 See the reliability debt register for the still-unknown root cause.
+
+## Recovery-journal read/retire lifecycle — scoped source review, 2026-10-20
+
+Reviewed `runtime/src/mutation/recovery.rs` open/read/retire methods on
+`main` `b7ab450` and `c2282ff`, not every caller or concurrent filesystem
+interaction. A constructed valid hard-linked journal was accepted by the
+read path; #277 fixed that narrow defect with descriptor/native-handle checks
+and passed four exact-source hosted checks before squash into `c2282ff`.
+The subsequent retire path still unlinked a hard-linked entry by pathname.
+The #278 proposal adds an explicit rejection regression, native handle deletion
+on Windows and descriptor link/identity checking before Unix unlink.
+Source inspection does **not** prove that Unix concurrent pathname replacement,
+journal appends, directory identity or staging cleanup are fully safe. Those
+are independent review candidates; avoid combining them into a large refactor.

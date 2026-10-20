@@ -367,16 +367,47 @@ impl MutationRecoveryJournal {
     }
 
     fn remove_regular_file(&self, path: &Path) -> Result<(), RecoveryJournalError> {
-        match fs::symlink_metadata(path) {
-            Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_file() {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(RecoveryJournalError::Io(error)),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(RecoveryJournalError::UnexpectedJournalEntry);
+        }
+
+        #[cfg(windows)]
+        {
+            // Delete the exact exclusively opened regular file, not a path
+            // independently resolved after validation. The native primitive
+            // also rejects reparse points and hard-link aliases.
+            let opened = optic_bridge_windows::open_exclusive_file_for_delete_no_reparse(path)
+                .map_err(RecoveryJournalError::NativeJournalFile)?;
+            opened
+                .delete()
+                .map_err(RecoveryJournalError::NativeJournalFile)
+        }
+        #[cfg(not(windows))]
+        {
+            let opened = File::open(path)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+
+                let actual = opened.metadata()?;
+                if !actual.is_file()
+                    || actual.nlink() != 1
+                    || actual.dev() != metadata.dev()
+                    || actual.ino() != metadata.ino()
+                {
                     return Err(RecoveryJournalError::UnexpectedJournalEntry);
                 }
-                fs::remove_file(path)?;
-                Ok(())
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(RecoveryJournalError::Io(error)),
+            // Unix does not offer the native Windows handle-based delete
+            // primitive here; a concurrent pathname replacement remains
+            // outside this bounded alias-rejection improvement.
+            fs::remove_file(path)?;
+            Ok(())
         }
     }
 }
@@ -1003,6 +1034,39 @@ mod tests {
         assert_eq!(fs::read(&outside).expect("external evidence"), original);
         assert_eq!(fs::read(&journal_path).expect("journal evidence"), original);
 
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn retirement_rejects_hard_linked_evidence_without_deleting_it() {
+        let (workspace, state) = fixture("retire-hardlink");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let path = WorkspacePath::parse("new.txt").expect("path");
+        let plan = atomic
+            .prepare_write(&path, ExpectedState::Absent)
+            .expect("plan");
+        let ticket = journal
+            .begin(
+                &plan,
+                ExpectedState::Content(ContentVersion::from_bytes(b"new")),
+            )
+            .expect("begin");
+        let journal_path = journal.journal_path(ticket.action_id());
+        let outside = state
+            .parent()
+            .expect("fixture base")
+            .join("retained-evidence");
+        let bytes = fs::read(&journal_path).expect("original journal");
+
+        fs::rename(&journal_path, &outside).expect("move journal outside state");
+        fs::hard_link(&outside, &journal_path).expect("add linked journal entry");
+
+        assert!(
+            journal.retire(&ticket).is_err(),
+            "do not retire aliased evidence"
+        );
+        assert_eq!(fs::read(&outside).expect("external evidence"), bytes);
+        assert_eq!(fs::read(&journal_path).expect("journal evidence"), bytes);
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 

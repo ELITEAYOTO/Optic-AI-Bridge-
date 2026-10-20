@@ -168,6 +168,25 @@ The supported claim is narrower: deterministic recovery after **process terminat
 
 The Phase 2B residual external-writer boundary also remains: `ReplaceFileW` is path-based at its final namespace call and is not claimed to be a kernel compare-and-swap.
 
+
+## Scoped journal file identity hardening (PR #277, proposed #278)
+
+Stable recovery journal reads refuse hard-link aliases and final reparse
+targets. Windows uses an exclusive read handle and native single-link
+validation. Unix compares the opened regular file's device/inode with the
+pre-open metadata and requires a single hard link. The existing per-file byte
+ceiling and strict schema/state-transition validation remain in force.
+
+The subsequent retirement correction (#278, subject to native CI/merge)
+rejects aliased files before deletion. On Windows, the exact opened file is
+deleted through an exclusive native handle instead of a second pathname
+removal. On Unix, the opened file identity and link count are verified before
+a still path-based `remove_file`; this does **not** eliminate concurrent
+namespace swaps on that platform. This hardening is **not** a complete
+read/append/retire atomic transaction or a directory-pinning/power-loss
+durability guarantee. The journal append boundary and Windows staged-file
+cleanup have separate unreviewed risks.
+
 ## Transactional services
 
 Prefer patch/transaction APIs over blind whole-file replacement. File write/patch/delete runtime services are Phase 2C3 and must reuse the journal-wrapped commit boundary rather than bypass it. Public MCP mutation remains disabled until the runtime service, policy and negative recovery gates pass.

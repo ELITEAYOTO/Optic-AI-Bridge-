@@ -1,16 +1,33 @@
 # Reliability and implementation debt
 
+## Journal evidence lifecycle — targeted corrections, not a full audit
+
+- **Read #277 (merged)**: `main` `c2282ff5eba85d2a7480dd353db638a0623bd06d`.
+  Hard-linked external recovery bytes previously passed pathname-only metadata
+  checks. Windows now validates an exclusive no-reparse single-link opened
+  handle, while Unix checks descriptor identity and single-link count. Exact
+  head `825bcdb` passed all four hosted CI checks. No general power-loss
+  recovery or adversarial directory replacement proof follows.
+- **Retire #278 (proposed)**: the original `remove_regular_file` accepted
+  a hard link as regular and then removed its directory entry, losing evidence
+  of a foreign alias. Proposed correction rejects linked objects, deletes by
+  validated exclusive handle on Windows and adds a negative preservation
+  regression. Require exact-head Windows/Linux CI before merging.
+- **Still open**: journal append uses a pathname metadata check followed by
+  a separate append opener; Windows staging cleanup validates, reads, closes
+  and removes via separate pathname operations. Both need isolated assessment,
+  not bundled into #278. Unix deletion remains path-based after descriptor
+  validation, so the concurrent namespace replacement race is not closed.
+  Explicit state-root/directory pinning and full sudden-power-loss persistence
+  guarantees remain unproven.
+
+
 Reviewed: 2026-10-20. This is a bounded source review and delivery register, not
 a claim of a complete security audit. STATUS owns delivered evidence; this page
 owns concrete unfinished implementation/verification work.
 
 Continuation mode: [GitHub-only handoff](GITHUB_HANDOFF.md), with no operator-PC
 execution. Hosted native proof remains required where the boundary is Windows.
-
-## Mutation recovery journal read boundary — PR #277 (pending CI)
-
-Source review of `src/mutation/recovery.rs` on main `b7ab450a0b31c779f3f9ae975425e0dc18f3449c` found that a pathname-only `symlink_metadata` check followed by a separate `File::open` could accept a hard-linked copy of otherwise valid journal bytes as recovery evidence. PR #277 narrows the read boundary to opened-object checks (Windows exclusive no-reparse/single-link read; Unix opened device/inode/link-count validation), retains the bounded byte reader and adds hard-link rejection regression. **Unmerged pending exact-head Windows/Linux validation**; do not count this as shipped behavior until merged. Separate unreviewed journal append, retirement and directory pinning risks are not claimed resolved. The test is a deterministic negative fixture, not a complete concurrent namespace race proof.
-
 ## Findings addressed in the current hardening change
 
 Native path comparison used replacement-character conversion in runtime scope
