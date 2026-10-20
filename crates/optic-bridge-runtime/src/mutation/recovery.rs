@@ -262,7 +262,7 @@ impl MutationRecoveryJournal {
         let mut opened = optic_bridge_windows::open_exclusive_state_file(&path, false)
             .map_err(RecoveryJournalError::NativeJournalFile)?;
         #[cfg(windows)]
-        let mut file = opened.file_mut();
+        let file = opened.file_mut();
         #[cfg(not(windows))]
         let mut file = OpenOptions::new().append(true).open(&path)?;
         #[cfg(unix)]
