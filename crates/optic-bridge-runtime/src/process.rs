@@ -1430,9 +1430,22 @@ async fn monitor_child(
         stdout_task.abort();
         stderr_task.abort();
     }
-    let _ = stdout_task.await;
-    let _ = stderr_task.await;
-    if status == ProcessStatus::TerminationUncertain {
+    let intentional_abort = status == ProcessStatus::TerminationUncertain;
+    join_output_drain(
+        &record,
+        ProcessStream::Stdout,
+        stdout_task,
+        intentional_abort,
+    )
+    .await;
+    join_output_drain(
+        &record,
+        ProcessStream::Stderr,
+        stderr_task,
+        intentional_abort,
+    )
+    .await;
+    if intentional_abort {
         mark_stream_closed(&record, ProcessStream::Stdout);
         mark_stream_closed(&record, ProcessStream::Stderr);
     }
@@ -1445,6 +1458,20 @@ async fn monitor_child(
     }
     if let Ok(mut state) = record.state.lock() {
         *state = JobState { status, exit_code };
+    }
+}
+
+// Failed output-drain task joins (panic or unexpected cancellation) are not
+// clean EOF. Record the partial output and close the affected stream.
+async fn join_output_drain(
+    record: &JobRecord,
+    stream: ProcessStream,
+    task: tokio::task::JoinHandle<()>,
+    intentional_abort: bool,
+) {
+    if task.await.is_err() && !intentional_abort {
+        record.output_read_failed.store(true, Ordering::Release);
+        mark_stream_closed(record, stream);
     }
 }
 

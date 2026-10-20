@@ -165,3 +165,21 @@ format, Clippy, tests, native preparation and review outcomes must be checked
 before merging; test results are not implied by blob identity. The separate
 TaskLeaseRegistry, ToolProfileRegistry, approval brokers and Git modules remain
 at their current locations pending their own scope-specific review.
+
+## Process drain join diagnostic gap — 2026-10-20
+
+Review base `main` `636a8b5e917fd731dbd8566e118958f141f67542`: after child termination the monitor
+discarded the `JoinHandle` results of both stdout/stderr drain tasks.
+An unexpectedly panicking or cancelled drain could therefore leave incomplete
+output without setting `output_read_failed`, while an otherwise successful
+exit was still reported as `Exited`. This is a source-level reliability
+finding, **not** evidence that a production panic occurred.
+
+The targeted `fix/process-drain-join-diagnostics` change awaits and checks
+both joins, sets an existing private incomplete-output flag, and marks an
+unexpectedly abandoned stream closed. The pre-existing deliberately aborted
+drains following `TerminationUncertain` retain their existing semantics.
+Native stop, bounded output budget, resource reservation, session ownership
+and policy code remain untouched. Two synthetic Tokio regression tests
+exercise unexpected task panic and intentional abort. Treat them as proposed
+until the exact head has passed hosted Windows/Linux tests and been merged.

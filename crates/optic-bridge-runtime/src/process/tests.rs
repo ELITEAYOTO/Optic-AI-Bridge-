@@ -211,6 +211,51 @@ async fn clean_output_eof_retains_success_status() {
     );
 }
 
+#[tokio::test]
+async fn failed_output_drain_join_does_not_masquerade_as_normal_exit() {
+    let record = synthetic_record(
+        SessionHandle::generate().unwrap(),
+        0,
+        ProcessStatus::Running,
+        64 * 1024 * 1024,
+        25,
+    );
+    record.output.lock().unwrap().stdout_closed = false;
+    let crashed = tokio::spawn(async {
+        panic!("synthetic output drain panic");
+    });
+    join_output_drain(&record, ProcessStream::Stdout, crashed, false).await;
+    assert!(record.output_read_failed.load(Ordering::Acquire));
+    assert!(record.output.lock().unwrap().stdout_closed);
+    assert_eq!(
+        reconcile_drained_output_status(ProcessStatus::Exited, &record),
+        ProcessStatus::Failed
+    );
+    assert_eq!(
+        reconcile_drained_output_status(ProcessStatus::Stopped, &record),
+        ProcessStatus::Stopped
+    );
+}
+
+#[tokio::test]
+async fn intentional_drain_abort_retains_termination_uncertainty_without_false_read_error() {
+    let record = synthetic_record(
+        SessionHandle::generate().unwrap(),
+        0,
+        ProcessStatus::TerminationUncertain,
+        64 * 1024 * 1024,
+        25,
+    );
+    let aborted = tokio::spawn(std::future::pending::<()>());
+    aborted.abort();
+    join_output_drain(&record, ProcessStream::Stderr, aborted, true).await;
+    assert!(!record.output_read_failed.load(Ordering::Acquire));
+    assert_eq!(
+        reconcile_drained_output_status(ProcessStatus::TerminationUncertain, &record),
+        ProcessStatus::TerminationUncertain
+    );
+}
+
 async fn await_terminal(
     manager: &ProcessManager,
     session: &SessionHandle,
