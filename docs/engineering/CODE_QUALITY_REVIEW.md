@@ -64,3 +64,36 @@ Source and CI rules: [AI handoff](../../AI_HANDOFF.md),
 [repository workflow](REPOSITORY_WORKFLOW.md), [current handoff](GITHUB_HANDOFF.md).
 No operator-PC or self-hosted execution. Research Cargo and Electron failures
 retain their independent, documented status.
+
+## Focused process-runtime source review — 2026-10-20
+
+Source base: `main` `3dac14efe1a5040a9bae4dc936c5c43f9917b1bb`.
+Reviewed: `crates/optic-bridge-runtime/src/process.rs` source layout,
+owned-job record fields, admission/retention checks, monitor/termination
+uncertainty and existing unit/integration test module structure.
+This is **targeted coverage**, not a line-by-line proof of the full runtime.
+
+- Production ownership: `ProcessManager` stores jobs keyed by opaque `JobId`;
+  `owned_job` returns the same unknown-job error for absent and foreign
+  jobs. Terminal-only same-session history eviction is explicit.
+- Runtime resource admission checks cover active/uncertain process count,
+  output, process memory, workload class, CPU and Windows host-memory
+  headroom. The native owned job and monitor continue to require bounded
+  termination confirmation; unresolved termination retains resource
+  ownership. These observations are **not** evidence of universal safety.
+- Scoped finding: `process.rs` had 2,679 lines, including 1,115 lines of
+  inline tests. A mechanical refactor retains the production prefix exactly
+  and moves the complete existing test body into `process/tests.rs`
+  (27 test attributes and 70 assertion macros observed). The parent uses
+  `#[cfg(test)] mod tests;` and test module identity remains
+  `process::tests`. The new parent has 1,564 lines.
+- No security/behavior defect has been proven by this inspection. The
+  extraction changes no effect, deadline, capability, isolation or
+  cleanup rule. Acceptance requires GitHub-hosted Windows **and** Linux
+  formatting, Clippy and tests on the exact PR head. No operator-PC tests.
+
+Remaining review: fully examine the spawn/launcher and environment branches,
+concurrency/lock ordering, output module, cross-session interactions and
+Windows-only cleanup with native tests before claiming broader assurance.
+Any confirmed defect belongs in a distinct regression-backed change,
+not hidden within this mechanical relocation.
