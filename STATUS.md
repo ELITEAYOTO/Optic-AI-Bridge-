@@ -34,8 +34,10 @@
   `capability_free_appcontainer_denies_node_loopback_connection`: owned Node
   returned `TimedOut` after 10 seconds with no output. Three immediate
   serial diagnostics passed. The original first attempt is preserved and
-  a failed-Windows-job-only second attempt on the identical `main` SHA was
-  requested; verify the actual rerun outcome. Linux/dependency jobs passed.
+  the failed-Windows-job-only second attempt on the identical `main` SHA
+  **passed** all applicable Windows tests and smokes. Linux/dependency jobs
+  passed on the original attempt. CI #39369706540 is therefore completed
+  successfully on attempt 2, with the original failure retained as evidence.
   There were zero open PRs immediately after the merge.
 - Next priority after this recurrent failure: isolate native AppContainer/Node
   startup and scheduling with bounded diagnostics **without** increasing the
