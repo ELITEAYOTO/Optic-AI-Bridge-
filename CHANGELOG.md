@@ -1,5 +1,23 @@
 # Changelog
 
+## Recovery journal evidence boundary — 2026-10-20
+
+- [PR #277](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/277)
+  merged as `c2282ff`: validate actual opened journal file identity before
+  recovery parsing and reject hard links (Windows exclusive no-reparse/single
+  link, Unix descriptor identity and link count). Exact head `825bcdb`
+  passed hosted Windows/Linux Rust, dependency and native preparation.
+- [PR #278](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/278)
+  merged as `b15fe76`: reject linked files before journal retirement and
+  delete the opened file via existing native Windows handle; Unix continues
+  to unlink by path after descriptor checks. Exact head `9778b49` passed
+  the same four checks. Earlier rustfmt failures were corrected and preserved.
+- These are bounded recovery evidence improvements, not new public MCP
+  capabilities, disk quotas, power-loss guarantees, Windows cold-start fixes
+  or general Unix pathname-race elimination. Next source review concerns
+  append-open aliasing and, independently, staged-artifact cleanup.
+
+
 ## GitHub-only continuity — 2026-10-20
 
 - Add agent entry instructions, a repository-owned GitHub handoff and a complete reusable French continuation prompt.
