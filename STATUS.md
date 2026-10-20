@@ -1,5 +1,29 @@
 # Current project status
 
+## Latest reviewed stabilization — 2026-10-20
+
+- [PR #270](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/270)
+  merged as `636a8b5e917fd731dbd8566e118958f141f67542`.
+  Four session-owned modules were moved byte-identically into
+  `crates/optic-bridge-runtime/src/session/`. Crate-root module names,
+  test namespaces and public exports did not change. Final source head
+  `4d5ff0a` passed GitHub-hosted Windows/Linux Rust, dependency policy
+  and native preparation checks; post-merge main CI run 39360825623 passed.
+- [PR #271](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/271)
+  merged as `8610c8dc2558695842412c5a0fce993d2420d6fb`.
+  Unexpected stdout/stderr Tokio drain task join failures are now treated
+  as incomplete output, not silently discarded. Two synthetic regressions
+  cover task panic and intentionally aborted drains after
+  `TerminationUncertain`. Final source head `fb9ffdb` passed four hosted
+  Windows/Linux Rust, dependency and native preparation checks. The initial
+  `bed3ca9` head failed rustfmt and was corrected. Separate post-merge
+  main CI run 39361585398 must be inspected independently.
+  
+No tests/builds/installers/permissions/tunnels were executed on the operator's
+PC; no self-hosted runners. These increments do not prove normal Cargo,
+sandboxed Electron, general disk quotas, universal process logging durability
+or completion of an exhaustive source audit.
+
 ## Offline Cargo research integration — 2026-10-20
 
 PR255 is merged as `f1e72f8`. It completes the fixed research fixture and optional
@@ -28,8 +52,8 @@ identical content hashes and unchanged crate-root module names and
 public exports. Exact PR head `b2b5207` passed four hosted checks:
 Windows/Linux Rust, native preparation and dependency policy. This is a
 mechanical organization improvement, not new behavior or an audit of all files.
-Post-merge `main` CI run 39358651176 is a distinct check; inspect live
-results before claiming it passed.
+Post-merge `main` CI run 39358651176 passed; the subsequent #269
+post-merge main CI 39359157209 also passed.
 
 Earlier [run 39356540735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39356540735)
 on `main` initially failed the Windows TEMP-only Node MCP doctor smoke

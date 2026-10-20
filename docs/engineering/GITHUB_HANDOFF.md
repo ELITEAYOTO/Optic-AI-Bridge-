@@ -220,18 +220,41 @@ does not provide deletion of old integrated branches: retain them until a
 specific verified retirement capability is available, and never delete
 archive/proof references or conduct another mass cleanup.
 
-## In-progress verified source review — 2026-10-20
+## Latest completed stabilization cycle — 2026-10-20
 
-The first short PR in this cycle grouped four session-owned files under
-`src/session/`, preserving original Git blobs and Rust module names.
-Its merge and hosted CI should be verified on GitHub before relying on it.
-A subsequent **separate**, base-main branch
-`fix/process-drain-join-diagnostics` addresses `process.rs` discarding
-failed stdout/stderr `JoinHandle` results. It must not be represented as
-merged or validated before the exact-head Windows/Linux runs confirm it.
-An intentional abort after `TerminationUncertain` is not a read failure.
-Inspect PR reviews, CI and base SHA before any squash; preserve earlier
-research failures and the historical Windows MCP smoke timeout.
-No operator-PC or self-hosted execution was authorized. Next step after
-this targeted correction: review session/lease or process completion
-diagnostics in a separate bounded increment, not a mass refactor.
+The previous session/Git layout work is now superseded by these exact
+GitHub observations:
+
+- [PR #270](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/270)
+  merged on `main` as `636a8b5e917fd731dbd8566e118958f141f67542`
+  from source `4d5ff0a4372c465b7e65b7d1bd581c0d44fe9f3b`.
+  The four session-domain Rust source blobs were unchanged; paths and
+  `lib.rs` declarations only. Four hosted checks passed on exact PR head;
+  post-merge main CI 39360825623 passed.
+- [PR #271](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/271)
+  merged as `8610c8dc2558695842412c5a0fce993d2420d6fb`
+  from source `fb9ffdb8b6489b09653e3a8ea5ed6c71634b08dc`.
+  A failed stdout/stderr Tokio drain task join now sets the existing
+  incomplete-output signal and closes the stream, preventing clean
+  `Exited` reporting for incomplete collection. Deliberately aborted
+  drains following `TerminationUncertain` retain their original uncertainty
+  semantics. Two synthetic tests were added. Exact source passed four hosted
+  checks; initial head `bed3ca9` failed formatting and was corrected.
+  Post-merge main run 39361585398 was still in progress when this handoff
+  was drafted and must be checked live.
+
+The source inspection of session/lease admission/revoke/renew is **scoped**;
+no exhaustive per-file or platform security audit was completed. Follow
+[CODE_QUALITY_REVIEW](CODE_QUALITY_REVIEW.md) and keep known research
+Cargo/Electron and Windows MCP TEMP-only intermittency evidence intact.
+No PC tests, installation, permission change, tunnel or self-hosted runner
+was used.
+
+**Next action:** verify actual latest main post-merge CI. Then select one
+bounded code-quality increment (e.g. process monitor shutdown/cancellation,
+session lock-order tests, or mutation/recovery layout) based on a demonstrated
+problem or structural benefit. Do not group many unrelated moves. Keep
+`alpha/generated-project-editing` isolated and its ancestry intact.
+No branch-deletion action is available through this connector; only
+individually verified integrated work branches may later be retired, not tags,
+archive/proof refs or a bulk set.
