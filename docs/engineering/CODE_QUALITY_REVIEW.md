@@ -97,3 +97,21 @@ concurrency/lock ordering, output module, cross-session interactions and
 Windows-only cleanup with native tests before claiming broader assurance.
 Any confirmed defect belongs in a distinct regression-backed change,
 not hidden within this mechanical relocation.
+
+## Confirmed process output diagnostic gap — 2026-10-20
+
+Source review of `crates/optic-bridge-runtime/src/process/output.rs` on
+`main` `a9d9a31b4e1635c35ac53c8225a4c5b4348aeb05` found that a
+reader error followed the same branch as clean EOF: both exited the drain
+without setting any observable failure. Consequently a child exiting zero
+could be returned as `Exited` with `output_truncated=false` even if stdout
+or stderr had become unreadable. This is a concrete source-level reliability
+finding, not an observed production incident.
+
+A separate targeted change `fix/process-output-read-errors` tracks a distinct
+bounded read-failure flag in the private job record and refuses an otherwise
+successful process result after an incomplete drain. It preserves the existing
+output-budget signal, ownership, CPU/memory reservations, deadlines and native
+stop uncertainty. Two synthetic async reader regressions cover failed reads
+and clean EOF, while hosted Windows and Linux CI must confirm compilation,
+format, and native behavior before support can be claimed.
