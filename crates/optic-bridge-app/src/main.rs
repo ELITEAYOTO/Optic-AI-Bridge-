@@ -49,9 +49,7 @@ impl StartupTiming {
     fn new() -> Self {
         Self {
             started: Instant::now(),
-            enabled: startup_timing_enabled(
-                std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref(),
-            ),
+            enabled: startup_timing_enabled(std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref()),
         }
     }
 
