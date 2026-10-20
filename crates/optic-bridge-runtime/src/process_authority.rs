@@ -1,4 +1,4 @@
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, time::Instant};
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -52,9 +52,25 @@ impl ProcessExecutableIdentity {
         executable: &str,
         max_bytes: u64,
     ) -> Result<(Self, ExecutablePin), ProcessAuthorityError> {
+        // Record only fixed phase durations when the operator opted into
+        // startup timings. Never reveal an executable path, file contents,
+        // identity hash, or additional authority through this diagnostic.
+        let started = Instant::now();
         let canonical_path = canonical_executable(executable)?;
+        let path_done = started.elapsed();
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
+        let pin_done = started.elapsed();
         let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
+        let total = started.elapsed();
+        if std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1") {
+            eprintln!(
+                "OPTIC_PROCESS_IDENTITY_TIMING path_ms={} pin_ms={} hash_ms={} total_ms={}",
+                path_done.as_millis(),
+                pin_done.saturating_sub(path_done).as_millis(),
+                total.saturating_sub(pin_done).as_millis(),
+                total.as_millis(),
+            );
+        }
         Ok((
             Self {
                 canonical_path,
