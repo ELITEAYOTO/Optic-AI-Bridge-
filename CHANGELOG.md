@@ -1,5 +1,11 @@
 # Changelog
 
+## Candidate: retain unpublished evidence across full recovery validation (2026-10-20)
+
+- The integrated #288 journal-only preflight and #291 staging-only preflight still left full Windows recovery able to remove unpublished prepared journal files before rejecting unrelated corrupt staged content. Candidate branch `fix/recovery-cross-phase-evidence` defers that deletion until both journal and staging validation have passed, while preserving standalone journal reconcile semantics.
+- Added a native Windows negative regression preserving staged and unpublished evidence on failure, then proving cleanup after correction. **Not shipped without the candidate PR's exact-head CI and successful merge.** No permission, journal schema, resource budget or release change. Multi-file deletion is still not atomic; path/ancestor races and power-loss guarantees remain out of scope.
+- Most recently verified prior `main` `1019fae055993c11348e99a361be1eae04ea206b` passed [CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) on the first attempt (hosted Windows/Linux/dependencies), with no open PRs. New functionality remains frozen by operator decision.
+
 ## Verified stabilization — Windows diagnostics and recovered staging evidence (2026-10-20)
 
 - [PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) merged as `0c2a125537d020e3a3aff4124d12745d7a8c5c4c`: the existing native Windows Node/AppContainer loopback test records bounded monotonic host phases and an early child marker. [Source CI #39392262806](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392262806) and independent [main CI #39392829136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392829136) passed. Historical Node and MCP startup timeouts remain unresolved; this is instrumentation, not a fix.
