@@ -186,10 +186,16 @@ impl MutationRecoveryJournal {
                     "published journal path must be within the recovery root",
                 ))
             })?;
-            renameat2(&dir, temp_name, &dir, journal_name, RenameFlags::RENAME_NOREPLACE)
-                .map_err(|errno| {
-                    RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32))
-                })
+            renameat2(
+                &dir,
+                temp_name,
+                &dir,
+                journal_name,
+                RenameFlags::RENAME_NOREPLACE,
+            )
+            .map_err(|errno| {
+                RecoveryJournalError::Io(std::io::Error::from_raw_os_error(errno as i32))
+            })
         }
         #[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
         {
@@ -986,10 +992,17 @@ mod tests {
                 journal.publish_prepared_no_replace(&second, &dest)
             });
             gate.wait();
-            (a.join().expect("first thread"), b.join().expect("second thread"))
+            (
+                a.join().expect("first thread"),
+                b.join().expect("second thread"),
+            )
         });
         assert_ne!(a.is_ok(), b.is_ok(), "exactly one publisher must win");
-        let expected = if a.is_ok() { b"writer-one" } else { b"writer-two" };
+        let expected = if a.is_ok() {
+            b"writer-one"
+        } else {
+            b"writer-two"
+        };
         assert_eq!(fs::read(&dest).expect("one stable winner"), expected);
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }

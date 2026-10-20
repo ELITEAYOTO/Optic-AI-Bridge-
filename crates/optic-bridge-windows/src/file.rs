@@ -20,9 +20,8 @@ use windows::{
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
             FILE_ID_INFO, FILE_SHARE_READ, FILE_STANDARD_INFO, FileAttributeTagInfo,
             FileDispositionInfo, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx,
-            GetFinalPathNameByHandleW, MOVEFILE_FLAGS, MoveFileExW, REPLACE_FILE_FLAGS,
-            ReplaceFileW,
-            SetFileInformationByHandle, VOLUME_NAME_DOS,
+            GetFinalPathNameByHandleW, MOVE_FILE_FLAGS, MoveFileExW, REPLACE_FILE_FLAGS,
+            ReplaceFileW, SetFileInformationByHandle, VOLUME_NAME_DOS,
         },
     },
     core::{Error as WindowsError, PCWSTR},
@@ -239,7 +238,13 @@ pub fn move_file_no_replace(from: &Path, to: &Path) -> Result<(), WindowsFileErr
     let to = wide_null(to);
     // SAFETY: both Windows path buffers are terminated and live for the call;
     // zero flags intentionally omit MOVEFILE_REPLACE_EXISTING/COPY_ALLOWED.
-    unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_FLAGS(0))? };
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from.as_ptr()),
+            PCWSTR(to.as_ptr()),
+            MOVE_FILE_FLAGS(0),
+        )?
+    };
     Ok(())
 }
 
@@ -478,7 +483,10 @@ mod tests {
         fs::write(&to, b"existing durable evidence").expect("existing bytes");
 
         assert!(move_file_no_replace(&from, &to).is_err());
-        assert_eq!(fs::read(&from).expect("candidate retained"), b"prepared candidate");
+        assert_eq!(
+            fs::read(&from).expect("candidate retained"),
+            b"prepared candidate"
+        );
         assert_eq!(
             fs::read(&to).expect("existing evidence"),
             b"existing durable evidence"
@@ -487,7 +495,10 @@ mod tests {
         fs::remove_file(&to).expect("remove test destination");
         move_file_no_replace(&from, &to).expect("publish absent destination");
         assert!(!from.exists());
-        assert_eq!(fs::read(&to).expect("published bytes"), b"prepared candidate");
+        assert_eq!(
+            fs::read(&to).expect("published bytes"),
+            b"prepared candidate"
+        );
         fs::remove_dir_all(root).expect("cleanup");
     }
 
