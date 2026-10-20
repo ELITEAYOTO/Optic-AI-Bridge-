@@ -357,26 +357,24 @@ impl JournaledMutationService {
                     limit: self.max_mutation_bytes,
                 });
             }
-            let observed = ContentVersion::from_reader_bounded(
-                opened.file_mut(),
-                self.max_mutation_bytes,
-            )
-            .map_err(|source| JournaledMutationError::StagingObservationFailed {
-                action_id: record.action_id.clone(),
-                source,
-            })?;
+            let observed =
+                ContentVersion::from_reader_bounded(opened.file_mut(), self.max_mutation_bytes)
+                    .map_err(|source| JournaledMutationError::StagingObservationFailed {
+                        action_id: record.action_id.clone(),
+                        source,
+                    })?;
             if observed != intended_version {
                 return Err(JournaledMutationError::StagingContentMismatch {
                     action_id: record.action_id.clone(),
                 });
             }
 
-            opened
-                .delete()
-                .map_err(|source| JournaledMutationError::StagingNativeFileRejected {
+            opened.delete().map_err(|source| {
+                JournaledMutationError::StagingNativeFileRejected {
                     action_id: record.action_id.clone(),
                     source,
-                })?;
+                }
+            })?;
         }
         Ok(())
     }
@@ -737,7 +735,10 @@ mod tests {
             service.recover(),
             Err(JournaledMutationError::StagingNativeFileRejected { .. })
         ));
-        assert_eq!(fs::read(&external_evidence).expect("external retained"), b"new");
+        assert_eq!(
+            fs::read(&external_evidence).expect("external retained"),
+            b"new"
+        );
         assert_eq!(fs::read(&staging).expect("staging retained"), b"new");
         assert_eq!(
             fs::read_dir(service.journal().root())
