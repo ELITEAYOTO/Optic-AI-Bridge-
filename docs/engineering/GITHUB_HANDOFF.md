@@ -153,3 +153,14 @@ This is not a supported operator workflow yet. Review the exact PR head, Windows
 CI results and test coverage before merge. In particular, do not interpret a
 source change as executed native acceptance. Future work: operator consent/UI,
 retention policy and durable operational evidence. Retain historic reports.
+
+PR: [#262](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/262), base main `ba2ab11714ca`.
+Initial head `0c382cb` failed Linux rustfmt and Windows compilation
+(the native new opener was not exported); these are genuine incremental
+failures, not preexisting research failures. Layout fixed by `f0a5c83`;
+export fixed by `f863097`. Hosted revalidation started on the latter.
+**Before merging**, inspect the newer exact head after this handoff edit,
+its Windows/Linux Rust jobs, native preparation and native lifecycle jobs,
+check code/reviews, and update STATUS only for observed success. If a check
+fails, inspect the job logs and fix, never waive it. No operator-PC tests were
+run. Leave branch and PR open until the exact head passes applicable gates.
