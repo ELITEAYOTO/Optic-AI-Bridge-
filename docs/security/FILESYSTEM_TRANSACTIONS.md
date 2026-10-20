@@ -1,18 +1,24 @@
 # Filesystem Safety and Transactions
 
-## Recovery journal directory sync after publication (Linux GNU candidate)
+## Failed recovery inspection must retain unrelated unpublished evidence (candidate)
 
-After the temporary prepared record has been synced and published via Linux
-`renameat2(RENAME_NOREPLACE)`, the recovery directory needs a separate
-`sync_all` to request durability of its new name. A scoped candidate calls
-it on the same opened directory used for rename. Failure of directory sync
-returns an error with **published stable evidence retained**, so recovery
-may reconcile the prepared intent; the caller is never told admission
-succeeded when this barrier fails. An injected-failure Linux regression
-checks this state. Windows behavior and guarantees are unchanged. A
-directory fsync is not a guarantee against every storage device or power
-loss, and the path-to-directory open remains unpinned against all races.
-Check exact-head hosted PR CI and merge before treating this as delivered.
+The recovery scanner may discard a well-formed `*.prepared.tmp` only because
+no `committing` state was durably published. However, a failed inspection
+must not remove an earlier temp entry before discovering a later corrupt or
+unresolved stable journal. The scoped
+`fix/recovery-inspect-preserve-temp-on-failure` candidate gathers temporary
+paths within the existing record limit, classifies all stable journal
+records first, and runs the existing identity-checked cleanup only if that
+classification succeeds. A cross-platform regression proves both entries
+survive failed inspection and cleanup resumes on a clean scan. This is not
+atomic multi-file cleanup, a new permission or a recovery replay mechanism.
+Verify exact PR and hosted CI results before declaring delivery.
+
+## Recovery journal directory sync after publication — PR #287 (2026-10-20)
+
+[PR #287](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/287) was squash-merged as `0ca2305e7f01d5263330b67c4a0bb0520d452c8a` from final head `66161c9dee9e1a565b074d1cf105cf8961a712c2`. Hosted [PR CI #39386566516](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39386566516) and [native preparation #39386566570](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39386566570) passed; independent [main CI #39387133506](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39387133506) passed Windows Rust, Linux Rust and dependency policy on its first attempt. Linux GNU syncs the already-open containing directory after
+no-replace publish; if sync fails, the published journal remains available.
+This does not establish Windows flush or general sudden-power-loss safety.
 
 ## Recovery journal publication must not replace durable evidence — PR #286
 

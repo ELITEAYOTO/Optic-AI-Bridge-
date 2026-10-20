@@ -1,8 +1,12 @@
 # Reliability and implementation debt
 
-## Linux published-journal directory entry synchronization (candidate)
+## Unpublished journal cleanup before failed recovery validation — scoped candidate
 
-After [merged PR #286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/286), Linux GNU uses an opened directory and `renameat2(RENAME_NOREPLACE)` but did not call `sync_all` on that directory. Only the temporary journal file was fsynced. Proposed small change synchronizes that same directory after publication, and returns an error *while retaining the stable journal* if the directory sync fails. A Linux injected-failure test verifies the existing journal can still be inspected and reconciled. This addresses one concrete persistence barrier, **not** full power-loss guarantees or hardware cache behavior; Windows directory persistence, ancestor races and journal retirement persistence are still separate unknowns. Verify exact branch PR/CI before calling it delivered.
+In `MutationRecoveryJournal::inspect_pending`, an otherwise valid `*.prepared.tmp` is discarded immediately in sorted directory order. A later corrupt or unresolved stable journal makes recovery fail, but the earlier temp evidence was already removed. The scoped `fix/recovery-inspect-preserve-temp-on-failure` change delays temp cleanup until all stable journals have been fully classified; a Windows/Linux negative regression confirms neither temp nor corrupt stable evidence is deleted on failure and confirms temp cleanup on successful retry. Verify exact-head CI/merge; multi-file cleanup is still not atomic if a deletion itself fails, and root identity/namespace races remain unproved.
+
+## Linux published-journal directory entry synchronization — addressed by #287
+
+[PR #287](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/287) was squash-merged as `0ca2305e7f01d5263330b67c4a0bb0520d452c8a` from final head `66161c9dee9e1a565b074d1cf105cf8961a712c2`. Hosted [PR CI #39386566516](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39386566516) and [native preparation #39386566570](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39386566570) passed; independent [main CI #39387133506](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39387133506) passed Windows Rust, Linux Rust and dependency policy on its first attempt. Same opened directory is fsynced after Linux GNU no-replace rename, with an injected-sync-error regression preserving the stable prepared journal; hardware power-loss guarantees, Windows directory durability and retirement persistence remain separate debt.
 
 ## Journal publication no-clobber invariant — integrated by #286
 
