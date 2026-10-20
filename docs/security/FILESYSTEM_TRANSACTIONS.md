@@ -1,22 +1,20 @@
 # Filesystem Safety and Transactions
 
-## Recovery journal append identity (separate bounded review)
+## Recovery journal append identity (PR #282)
 
 The append operation is part of the durable mutation state machine: callers
-must not write the `committing` marker to an unverified external hard-link
-alias. The targeted append hardening candidate uses the existing exclusive
-native Windows no-reparse single-link state-file opener, and opened-descriptor
-device/inode and single-link checks on Unix. It bounds new journal bytes
-against **the opened file's** size and preserves the sync-before-effect
-ordering. A hard-linked external journal must cause rejection without a
-change to either file's bytes. This entry describes the intended contract;
-check PR and native CI state before claiming it is delivered.
+must not write a `committing` marker to an unverified external hard-link alias.
+Merged [PR #282](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/282)
+opens existing journals using the exclusive Windows no-reparse/single-link
+state-file handle, or on Unix validates the actual opened regular file's
+device/inode and single-link count against pre-open metadata. Both check the
+byte ceiling using the opened file's size before writing, and retain
+`sync_all` before allowing a namespace effect. A cross-platform test rejects
+an external hard-link alias and verifies its bytes remain unchanged.
 
 This does not pin the parent directory on every OS, resolve Unix concurrent
-namespace/size races, or establish general power-loss durability. Those
-remain separate questions; the journal schema and state transitions are
-unchanged.
-
+namespace/size races, or prove general power-loss durability. Journal schema,
+state transitions and authority are unchanged.
 
 ## Root confinement
 

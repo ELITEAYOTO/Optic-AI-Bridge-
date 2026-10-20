@@ -1,19 +1,19 @@
 # Changelog
 
-## Recovery journal append alias review — 2026-10-20
+## Recovery journal append alias hardening — 2026-10-20
 
-- Proposed short change `fix/recovery-journal-append-identity`: check opened
-  journal file identity and single-link ownership before persisting additional
-  journal states, with an alias-preservation regression.
-- Windows reuses the existing exclusive no-reparse state-file handle; Unix
-  checks actual descriptor identity and single-link count. The append size
-  ceiling is evaluated on the opened file. Schema, state machine and grants
-  are untouched.
-- **Delivery/validation pending** at documentation authoring time: inspect the
-  live PR/checks and merge state before claiming integration; staging cleanup,
-  directory pinning, Unix concurrent namespace races and power-loss durability
-  remain separate.
-
+- [PR #282](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/282)
+  squash-merged as `bf79b320` after final head `c837cead` passed Windows
+  and Linux Rust, dependency policy and native preparation (CI 39375905332,
+  39375905331). Its first head's Windows Clippy failure was corrected, not
+  suppressed.
+- Reject hard-linked external journal evidence before append. Windows reuses
+  the exclusive no-reparse state handle; Unix checks actual opened file
+  identity and single link. The file ceiling is based on the opened handle.
+  The new negative regression confirms neither linked file is modified.
+- No change to schema, state machine, permissions, timeouts or runtime
+  dependencies. Parent pinning, concurrent Unix namespace/size races, staging
+  cleanup and power-loss durability remain separate debt.
 
 ## Opt-in Windows MCP startup evidence — 2026-10-20
 
