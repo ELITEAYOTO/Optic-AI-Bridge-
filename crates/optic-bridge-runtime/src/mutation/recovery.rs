@@ -1052,7 +1052,10 @@ mod tests {
             )
             .expect("begin");
         let journal_path = journal.journal_path(ticket.action_id());
-        let outside = state.parent().expect("fixture base").join("retained-evidence");
+        let outside = state
+            .parent()
+            .expect("fixture base")
+            .join("retained-evidence");
         let bytes = fs::read(&journal_path).expect("original journal");
 
         fs::rename(&journal_path, &outside).expect("move journal outside state");
