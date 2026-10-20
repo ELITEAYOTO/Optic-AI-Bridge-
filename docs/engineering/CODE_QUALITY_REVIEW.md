@@ -4,6 +4,10 @@ Status: IN PROGRESS, source inventory recorded 2026-10-20. This is a
 review plan and partial source inspection, **not** a completed file-by-file audit
 or a claim of production security.
 
+## Latest verified scoped corrections (2026-10-20)
+
+[PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) (Windows Node timing markers, not a root-cause repair) merged with passing hosted exact-head and post-merge CI. [PR #291](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/291) (Windows all-staging preflight before cleanup, with a passing two-journal native regression) merged as `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02`; independent [main CI #39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) passed Windows, Linux and dependencies on that SHA on its first attempt. The earlier #286–#288 'candidate' notes below were written before their respective merges; verify the canonical [STATUS](../../STATUS.md) / [handoff](GITHUB_HANDOFF.md) for integrated state. There has **not** been a complete file-by-file audit, and multiple-file deletion atomicity, directory identity, power-loss durability, and Windows startup intermittencies remain open. Feature work is paused by the operator.
+
 ## Starting inventory
 
 At reviewed main `bca2eae82eacf5df89b2fd70339751723ec86167`,

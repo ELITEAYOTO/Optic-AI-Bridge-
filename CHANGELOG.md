@@ -1,5 +1,11 @@
 # Changelog
 
+## Verified stabilization — Windows diagnostics and recovered staging evidence (2026-10-20)
+
+- [PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) merged as `0c2a125537d020e3a3aff4124d12745d7a8c5c4c`: the existing native Windows Node/AppContainer loopback test records bounded monotonic host phases and an early child marker. [Source CI #39392262806](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392262806) and independent [main CI #39392829136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392829136) passed. Historical Node and MCP startup timeouts remain unresolved; this is instrumentation, not a fix.
+- [PR #291](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/291) merged as `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02`: on Windows, recovery validates **all** staged artifacts before deleting any, then reopens and revalidates exact native delete handles for cleanup. Native two-journal regression protects earlier staging evidence when a later staging mismatch blocks recovery and confirms normal cleanup after repair. [Source CI #39393849343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39393849343), [native preparation #39393849287](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39393849287) and independent [post-merge CI #39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) passed (hosted Windows/Linux/dependencies, main first attempt). This does **not** make a series of deletions atomic, pin directory ancestors, or establish power-loss durability.
+- Stabilization-only policy continues: existing reliability and security corrections, no new features. Older changelog entries containing 'candidate' describe their historical state and are not current assignments. No operator-PC tests or self-hosted CI, releases, permission expansions or bulk deletion.
+
 ## Stabilization-only release discipline — 2026-10-20
 
 - Operator directs a temporary pause on **new functionality**. Continue only
