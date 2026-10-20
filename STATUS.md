@@ -1,5 +1,12 @@
 # Current project status
 
+## Windows recovery staging preflight — targeted candidate, 2026-10-20
+
+The independent post-merge [main CI #39392829136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39392829136) for squash-merged [PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) **passed first attempt** on exact `main` `0c2a125537d020e3a3aff4124d12745d7a8c5c4c`: hosted Windows Rust, Linux Rust and dependency policy. No PR was open before the next increment. Windows Node diagnostics are integrated, but the intermittent cause remains unknown.
+
+A separate scoped Windows-only correction candidate addresses a concrete evidence-retention problem in `JournaledMutationService::cleanup_recovered_staging`: while traversing several recoverable operations, it deleted a validated earlier staging artifact before discovering that a later one contained mismatched bytes. On failure, earlier evidence had already been removed. The new code validates **all** staging artifacts in a first pass, then opens, revalidates and deletes them via the same exclusive native handles in a second pass. A negative Windows regression requires both staging files and both journals to survive a later mismatch, then exercises ordinary cleanup after repairing the fixture. This preserves file-identity restrictions and output/size ceilings; it does **not** make multiple deletions atomic, eliminate concurrent namespace races, or certify power-loss durability. **Do not count this as integrated until its PR exact-head CI and merge are verified.** No new features, permissions, deadline changes or local-PC execution.
+
+
 ## Latest GitHub verification and Windows diagnostic-only increment — 2026-10-20
 
 [PR #289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/289) was squash-merged as `aba3f9c182a052c909b287531611854dd89d2f76`. Its independent hosted [post-merge CI #39390250258](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39390250258) passed on the **exact main SHA**, first attempt: Windows Rust, Linux Rust and dependency policy; no PR was open at the verification checkpoint. The stabilization-only operator direction below remains binding.
