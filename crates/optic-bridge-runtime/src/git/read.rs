@@ -118,6 +118,9 @@ impl GitReadService {
             "--no-color",
             "--no-renames",
             "--ignore-submodules=all",
+            "--raw",
+            "-z",
+            "--patch",
         ]);
         if staged {
             args.push(OsString::from("--cached"));
@@ -127,9 +130,7 @@ impl GitReadService {
             args.push(OsString::from(path.as_str()));
         }
         let output = self.run_success(&args, limit)?;
-        Ok(GitDiffSnapshot {
-            bytes: output.stdout,
-        })
+        parse_verified_diff(output.stdout)
     }
 
     pub fn log(
@@ -320,7 +321,10 @@ pub struct GitStatusSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitDiffSnapshot {
+    /// Original Git patch bytes, excluding the private raw-path prelude.
     pub bytes: Vec<u8>,
+    /// Changed paths requiring the additional sensitive read authority.
+    pub sensitive_paths: Vec<WorkspacePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -381,6 +385,8 @@ pub enum GitReadError {
     InvalidLogRecord,
     #[error("Git status output cannot be verified against sensitive-path policy")]
     UnverifiableStatus,
+    #[error("Git diff output cannot be verified against sensitive-path policy")]
+    UnverifiableDiff,
     #[error("filesystem/process operation failed: {0}")]
     Io(#[from] io::Error),
     #[error("Git object id is invalid: {0}")]
@@ -496,6 +502,91 @@ fn classify_status_path(
         sensitive_paths.push(path);
     }
     Ok(())
+}
+
+/// Both path identities and patch bytes originate from ONE Git diff invocation.
+/// A separate --name-only preflight would race the working tree/index. The raw
+/// -z prelude is machine-parseable; only the patch suffix is returned to MCP.
+/// No unverified byte is published on unexpected/native-unrepresentable output.
+fn parse_verified_diff(output: Vec<u8>) -> Result<GitDiffSnapshot, GitReadError> {
+    if output.is_empty() {
+        return Ok(GitDiffSnapshot {
+            bytes: Vec::new(),
+            sensitive_paths: Vec::new(),
+        });
+    }
+    let mut offset = 0usize;
+    let mut count = 0usize;
+    let mut sensitive_paths = Vec::new();
+    while output.get(offset) == Some(&b':') {
+        let header_end = diff_nul_end(&output, offset)?;
+        let status = verify_raw_diff_header(&output[offset..header_end])?;
+        offset = header_end + 1;
+        let path_end = diff_nul_end(&output, offset)?;
+        classify_status_path(&output[offset..path_end], &mut sensitive_paths)
+            .map_err(|_| GitReadError::UnverifiableDiff)?;
+        offset = path_end + 1;
+        if matches!(status, b'R' | b'C') {
+            let other_end = diff_nul_end(&output, offset)?;
+            classify_status_path(&output[offset..other_end], &mut sensitive_paths)
+                .map_err(|_| GitReadError::UnverifiableDiff)?;
+            offset = other_end + 1;
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err(GitReadError::UnverifiableDiff);
+    }
+    // Git emits a blank separator before the patch after --raw -z. The
+    // generated patch must follow a validated nonempty raw change queue.
+    let rest = &output[offset..];
+    let patch = rest.strip_prefix(b"\n").unwrap_or(rest);
+    if !patch.starts_with(b"diff --git ") {
+        return Err(GitReadError::UnverifiableDiff);
+    }
+    Ok(GitDiffSnapshot {
+        bytes: patch.to_vec(),
+        sensitive_paths,
+    })
+}
+
+fn diff_nul_end(output: &[u8], offset: usize) -> Result<usize, GitReadError> {
+    output
+        .get(offset..)
+        .and_then(|tail| tail.iter().position(|byte| *byte == 0))
+        .map(|relative| offset + relative)
+        .ok_or(GitReadError::UnverifiableDiff)
+}
+
+fn verify_raw_diff_header(header: &[u8]) -> Result<u8, GitReadError> {
+    let invalid = || GitReadError::UnverifiableDiff;
+    let mut fields = header.split(|byte| *byte == b' ');
+    let old_mode = fields.next().ok_or_else(invalid)?;
+    let new_mode = fields.next().ok_or_else(invalid)?;
+    let old_oid = fields.next().ok_or_else(invalid)?;
+    let new_oid = fields.next().ok_or_else(invalid)?;
+    let status = fields.next().ok_or_else(invalid)?;
+    if fields.next().is_some()
+        || old_mode.len() != 7
+        || old_mode[0] != b':'
+        || !old_mode[1..].iter().all(u8::is_ascii_digit)
+        || new_mode.len() != 6
+        || !new_mode.iter().all(u8::is_ascii_digit)
+        || ![old_oid, new_oid]
+            .iter()
+            .all(|oid| (7..=64).contains(&oid.len()) && oid.iter().all(u8::is_ascii_hexdigit))
+    {
+        return Err(invalid());
+    }
+    let (kind, detail) = status.split_first().ok_or_else(invalid)?;
+    if !matches!(kind, b'A' | b'D' | b'M' | b'T' | b'U' | b'R' | b'C')
+        || (!detail.is_empty()
+            && (!matches!(kind, b'M' | b'R' | b'C')
+                || !detail.iter().all(u8::is_ascii_digit)))
+    {
+        return Err(invalid());
+    }
+    Ok(*kind)
 }
 
 fn parse_log_entries(bytes: &[u8]) -> Result<Vec<GitLogEntry>, GitReadError> {
