@@ -73,6 +73,10 @@ function Throw-McpTimeout {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_PHASE phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
                 $printed++
             }
+            elseif ($phaseLine -cmatch '^OPTIC_PROCESS_LEASE_TIMING phase=(entered|eligibility-checked|id-started|id-generated|registration-started|registered) elapsed_ms=([0-9]{1,12})$') {
+                Write-Host "OPTIC_DOCTOR_TIMEOUT_LEASE_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+                $printed++
+            }
             elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
                 $printed++
@@ -412,6 +416,13 @@ finally {
                     if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-lease-entered|process-lease-eligibility-checked|process-lease-id-started|process-lease-id-generated|process-lease-registration-started|process-lease-registered|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
                         if ($seenPhases.Add($Matches[1])) {
                             Write-Host "OPTIC_DOCTOR_CHILD_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+                        }
+                    }
+                    elseif ($startupLine -cmatch '^OPTIC_PROCESS_LEASE_TIMING phase=(entered|eligibility-checked|id-started|id-generated|registration-started|registered) elapsed_ms=([0-9]{1,12})$') {
+                        $leasePhase = $Matches[1]
+                        $leaseDuration = $Matches[2]
+                        if ($seenPhases.Add("lease-$leasePhase")) {
+                            Write-Host "OPTIC_DOCTOR_LEASE_TIMING phase=$leasePhase elapsed_ms=$leaseDuration"
                         }
                     }
                     elseif (-not $seenProcessIdentityTiming -and $startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
