@@ -76,10 +76,14 @@ Order before first response:
    synchronous open/canonicalize/read can wait on OS I/O without a Rust deadline.
 7. Server constructs bounded filesystem/routers/governor; transport construction
    wraps stdin/stdout but does not yet answer requests.
-8. serve(transport).await performs RMCP initialization using ServerHandler's
-   default handshake; no custom initialize file hash is registered. The marker
-   mcp-service-started is emitted AFTER this await, so absence is ambiguous
-   between handshake receive/send/notification and pre-service startup.
+8. For the doctor's initialize path, serve(transport).await performs RMCP
+   initialization; no custom initialize file hash is registered. The resolved
+   RMCP 3.4.0 source sends InitializeResult and immediately enters serve_inner;
+   it does NOT await notifications/initialized (service/server.rs:664–687).
+   mcp-service-started is emitted after that await: presence means the SDK send
+   completed locally, not that the peer read it. Absence is ambiguous across
+   pre-service startup, receiving initialize, handler work, send and scheduling;
+   an initialized-notification gate is excluded on this inspected SDK path.
 9. JSON-line receive waits for newline/bytes/EOF with bounded line size; send
    serializes bounded JSON, obtains an async writer mutex, writes and flushes.
    No general per-write wall deadline appears in this adapter. A peer retaining
@@ -309,3 +313,49 @@ VALIDATION.md and PROVENANCE.json record actual extended-case and independent
 CI results on the final exact source, and the first failures remain linked above.
 
 Normal CI 39611781103 on source 5ee95745a85188c2b6d5323a913700d22c52ab7f completed successfully on attempt 1; this did not turn the separate failed research workflow green.
+
+
+## Final native observations and precise SDK correction
+
+Research source 141316ea64fbef9538611b0d206138b3cda8840f passed all twenty
+supervised cases (ten per hosted OS), plus independent normal CI 39612609531
+attempt 1. Research workflow 39612609544 contains the results and source audit.
+
+| Case | Windows runner ms | Linux runner ms | Meaning |
+| --- | ---: | ---: | --- |
+| no descendant | 18 | 5 | ordinary completion |
+| direct exit 7 | 7 | 5 | nonzero preserved |
+| nul-stdio descendant | 1022 | 10 | OS-specific retained-handle difference |
+| selective-null descendant | 43 | 20 | explicitly selective inheritance returns |
+| stdout held | 1026 | 1012 | reader outlives direct child |
+| stderr held | 1022 | 1013 | reader outlives direct child |
+| both held | 1025 | 1013 | same liveness defect |
+| stdin held | 1022 | 1011 | writer delayed, then BrokenPipe |
+| timeout + retained output | 1212 | 1205 | TimedOut is itself delayed by joins |
+| output overflow + retained output | 1025 | 1013 | OutputLimitExceeded is itself delayed |
+
+Configured runner deadline: 200ms, captured-output ceiling: 4096 bytes. A known
+descendant retains handles until the independent supervisor releases it one
+second after parent death; its autonomous maximum is eight seconds. All twenty
+cases reached verified quiescence. The measurements demonstrate missing deadline
+coverage, not an experiment left hanging indefinitely.
+
+The exact downloaded RMCP 3.4.0 source is recorded in research job logs:
+src/service/server.rs:418–757, especially receive at 568, handler await at 645,
+response send at 664–672 and immediate service startup at 674–687. Cancellation
+is selected in serve_server_with_ct at 456–461; no initialized-notification wait
+occurs on this path. This rules out a hypothesized notification gate BEFORE the
+mcp-service-started marker. It does not prove the historical request reached that
+path or identify a slow OS component. The earlier protocol description has been
+corrected above rather than leaving a conflicting hypothesis as current fact.
+
+Remaining diagnostic limits: the bounded PowerShell ReadAsync capture can leave
+an underlying asynchronous read pending after its 400ms wait budget; synthetic
+StringReader tests do not prove cancellation or completion of a real retained
+pipe. This campaign changes marker selection, not that resource-lifetime
+contract. The new Rust reader wrapper creates no detached background worker;
+its synthetic held reader has an independent self-deadline and is joined.
+
+This final documentation consolidation adds no new investigation or runtime
+change. The final artifact's own exact-head CI and research metadata determine
+its validation status; preceding-head successes remain explicitly identified.
