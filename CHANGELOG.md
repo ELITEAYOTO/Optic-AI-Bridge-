@@ -1,5 +1,11 @@
 # Changelog
 
+## Git diff sensitive-content guard candidate (2026-10-21)
+
+- Operator-approved Policy B, next #182 increment: request raw NUL-delimited Git changed-file metadata and ordinary patch in one hardened Git diff call; verify each changed path, refuse unparseable outputs, and return only the bounded patch.
+- For a classified sensitive path in a patch, require explicit active FileRead with ReadContent and ReadSensitive scopes while the session admission guard is held; no GitRead privilege expansion. Native Windows/Linux Git and MCP regressions for whole/path/staged/ordinary and malformed outputs.
+- Candidate until exact source CI, reviewed squash and independent main CI. Ordinary filenames may contain arbitrary secrets; #176/#182 remain open. No features, release, self-hosted runner, workstation execution, network/timeout or security policy loosening.
+
 ## Git status sensitive metadata gate — PR candidate (2026-10-21)
 
 - Validate the complete Git porcelain-v2 `-z` status record stream before
