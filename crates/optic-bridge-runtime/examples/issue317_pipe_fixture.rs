@@ -2,6 +2,7 @@
 use std::{
     collections::BTreeMap,
     env, fs,
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -54,13 +55,17 @@ fn main() {
                 "runner_ms": started.elapsed().as_millis(),
                 "ok": result.is_ok(),
                 "error": result.as_ref().err().map(|error| format!("{error:?}")),
+                "exit_code": result.as_ref().ok().and_then(|output| output.status.code()),
             });
             fs::write(root.join("result.json"), value.to_string()).expect("result");
         }
         "parent" => {
             fs::write(root.join("parent.pid"), std::process::id().to_string()).expect("pid");
-            if case == "control" {
+            if case == "control" || case == "nonzero" {
                 fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
+                if case == "nonzero" {
+                    std::process::exit(7);
+                }
                 return;
             }
             if case == "selective-null" {
@@ -83,8 +88,8 @@ fn main() {
                 fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
                 return;
             }
-            let stdout_held = case == "stdout" || case == "both";
-            let stderr_held = case == "stderr" || case == "both";
+            let stdout_held = ["stdout", "both", "timeout-both", "limit-both"].contains(&case);
+            let stderr_held = ["stderr", "both", "timeout-both", "limit-both"].contains(&case);
             let mut command = Command::new(env::current_exe().expect("fixture exe"));
             command.args(["holder".as_ref(), root.as_os_str(), args[2].as_os_str()]);
             command.stdin(if case == "stdin" {
@@ -107,6 +112,14 @@ fn main() {
             let _owned_by_outer_guard = command.spawn().expect("holder");
             await_file(&root, "holder.ready", 3);
             fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
+            if case == "limit-both" {
+                std::io::stdout()
+                    .write_all(&[b'X'; 4097])
+                    .expect("bounded synthetic overflow");
+            }
+            if case == "timeout-both" {
+                await_file(&root, "release", 8);
+            }
         }
         "holder" => {
             fs::write(root.join("holder.pid"), std::process::id().to_string()).expect("pid");

@@ -1,3 +1,44 @@
+# Validated research findings — 2026-10-21
+
+At source dfc8ba9f8013de97794e80b276a2ebebc098b497, normal CI 39610113717
+and supervised research 39610114084 passed on first attempts, hosted native
+Windows and Ubuntu plus dependency policy. No main/PR318 merge occurred.
+
+**Reproduced product liveness defect:** the unchanged HardenedCommandRunner
+exceeds its configured 200ms deadline when a synthetic descendant retains an
+inherited stdout/stderr or input pipe. Independent release after parent death
+makes it return around 1 second, and all fixture processes are quiescent.
+This elevates #317 from source-derived risk to native two-platform reproduction.
+It does NOT prove that real Git commands or either intermittent Node/MCP incident
+have taken this path. No production ownership/cleanup fix is integrated.
+
+| OS | Actual per-case runner elapsed |
+| --- | --- |
+| linux | control=5ms; null-stdio=10ms; selective-null=25ms; stdout=1013ms; stderr=1011ms; both=1011ms; stdin=1012ms |
+| win32 | control=12ms; null-stdio=1025ms; selective-null=49ms; stdout=1022ms; stderr=1025ms; both=1024ms; stdin=1022ms |
+
+On Windows, nul-stdio with ordinary child inheritance blocked, while the known
+Python selective-null comparison returned in 49ms; Linux returned 10/25ms for
+the corresponding cases. This supports additional inherited handle retention
+in the Windows fixture. It is not an identification of a particular handle,
+a general Rust defect, or a justified production Python workaround.
+
+**#319:** three new diagnostic regressions and native CI passed at this source.
+They show an in-flight first-read milestone before an externally held synthetic
+read completes, unchanged exact consumption/digests, and fixed checkpoint
+cardinality. The natural 30-second no-initialize failure remains unreproduced
+and unexplained; no hash/pin bypass, production buffering or deadline change.
+
+The next bounded increment extends #317 to direct nonzero exit, direct-child
+timeout with retained output, and output-budget exhaustion with retained output.
+The original 200ms runner deadline and 4096-byte output ceiling remain fixed.
+It also inspects the exact resolved RMCP 3.4.0 handshake source from the hosted
+Cargo registry, without any user-PC operation. Generated artifact VALIDATION.md
+and PROVENANCE.json are the execution result for the final source SHA; this
+document preserves preceding attempts and does not preclaim the new outcomes.
+
+---
+
 # Hosted stabilization research — 2026-10-21
 
 Research only. No user-PC execution, no release, no merge, no new PR.
@@ -208,3 +249,36 @@ while ordinary nul-stdio blocks, non-standard inherited handles are implicated
 in THIS fixture; the exact handle and Rust/OS mechanism remain unproven.
 Failure to obtain that contrast stays visible. This is not a production workaround,
 a Node startup fix, or authority to use ambient Python in the Bridge core.
+
+
+## Revocation consequence — source finding, not end-to-end reproduction
+
+SessionRegistry::revoke() marks the session revoked, then waits on
+admissions_drained until all active admission permits leave their critical
+sections (session/registry.rs:166–190). SessionLifecycleManager::revoke()
+performs lease/process cleanup only after this drain (lifecycle.rs:245–260).
+A blocking admitted Git operation using this runner could therefore prolong
+revoke completion; new admissions are still denied. This consequence is
+source-derived. It is NOT a demonstrated authorization bypass, not a measured
+end-to-end MCP revoke failure, and not a reason to drop the admission permit.
+A production fix must retain the no-effects-after-revoke ordering.
+
+## Correction acceptance design
+
+A small timeout around join with detached I/O workers would return faster while
+leaving handles/threads alive, and is rejected. Merely killing the direct child
+does not own its descendants. A viable experimental correction must establish
+tree ownership before any descendant can execute, terminate/reap that tree on
+every outcome, close/cancel pipe operations, join I/O workers and retain explicit
+uncertainty/capacity when cleanup cannot be confirmed. Windows needs assign-before-
+resume ownership, Linux needs a defined group/escape contract; process groups
+alone are not a sandbox. The generic runner currently has no ProcessManager
+JobId or TerminationUncertain result contract, so copying that label without an
+owner-retention design would be misleading. This campaign does not introduce a
+speculative cross-platform process-control refactor.
+
+Next native regressions for a future fix: direct success/nonzero, spawn failures,
+held stdout/stderr/stdin, child timeout, output exhaustion, writer BrokenPipe,
+reader errors, simultaneous cancellation, post-exit drain and uncertain kill/
+wait outcomes. Require exact-head Windows/Linux and prove no detached workers,
+residual descendants or released authority/capacity before cleanup.

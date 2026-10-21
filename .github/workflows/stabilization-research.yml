@@ -26,6 +26,8 @@ jobs:
           cargo +1.99.0 fmt --all -- --check
       - name: Build synthetic runner fixture
         run: cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_pipe_fixture
+      - name: Inspect exact resolved RMCP handshake source
+        run: python scripts/research/inspect_rmcp_handshake.py
       - name: Supervised inherited pipe characterization
         timeout-minutes: 3
         shell: bash
@@ -46,7 +48,7 @@ jobs:
     needs: reproduce
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

@@ -125,12 +125,12 @@ def exercise(executable, case, parent):
             (root / "go").write_text("synthetic", encoding="ascii")
             wait_for(lambda: (root / "parent.exiting").exists(), 4, "direct parent exiting")
             parent_pid = int((root / "parent.pid").read_text())
-            holder_pid = int((root / "holder.pid").read_text()) if case != "control" else None
+            holder_pid = int((root / "holder.pid").read_text()) if case not in ["control", "nonzero"] else None
             wait_for(lambda: not pid_alive(parent_pid), 2, "direct parent actually exited")
             if holder_pid is not None:
                 assert pid_alive(holder_pid), "retaining descendant absent"
             observed = time.monotonic()
-            if case == "control":
+            if case in ["control", "nonzero"]:
                 wait_for(lambda: process.poll() is not None, 1, "control returns")
                 blocked = False
             else:
@@ -153,12 +153,18 @@ def exercise(executable, case, parent):
                 wait_for(lambda: job.active() == 0, 2, "job quiescence")
             reap()
             value = json.loads((root / "result.json").read_text(encoding="utf-8"))
-            if case not in ["control", "null-stdio", "selective-null"]:
+            if case not in ["control", "nonzero", "null-stdio", "selective-null"]:
                 assert value["runner_ms"] >= 1000, "deadline violation not measured"
-            if case == "stdin":
+            if case == "timeout-both":
+                assert not value["ok"] and value["error"] == "TimedOut", "timeout result lost"
+            elif case == "limit-both":
+                assert not value["ok"] and "OutputLimitExceeded" in value["error"], "quota result lost"
+            elif case == "stdin":
                 assert not value["ok"] and "Io" in value["error"], "writer failure not retained"
             else:
                 assert value["ok"], "unrelated runner error"
+                if case == "nonzero":
+                    assert value["exit_code"] == 7, "nonzero exit changed"
             assert out.stat().st_size <= 4096 and err.stat().st_size <= 4096, "unexpected fixture output"
             success = True
             return dict(case=case,configured_deadline_ms=200,blocked_after_parent_exit=blocked,
@@ -203,7 +209,7 @@ def main():
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix="optic-issue317-") as temporary:
-            for case in ["control", "null-stdio", "selective-null", "stdout", "stderr", "both", "stdin"]:
+            for case in ["control", "nonzero", "null-stdio", "selective-null", "stdout", "stderr", "both", "stdin", "timeout-both", "limit-both"]:
                 result["cases"].append(exercise(executable, case, Path(temporary)))
                 output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["complete"] = True
