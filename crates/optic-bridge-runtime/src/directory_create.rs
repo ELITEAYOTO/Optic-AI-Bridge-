@@ -35,6 +35,11 @@ impl DirectoryCreationService {
     }
 
     pub(crate) fn create(&self, path: &WorkspacePath) -> Result<(), DirectoryCreateError> {
+        // Windows pins/rejects reparse ancestors below; an exact .git segment
+        // is reserved even when requested through a broad workspace lease.
+        if crate::mutation::is_git_control_metadata_path(path) {
+            return Err(DirectoryCreateError::ReservedGitMetadata);
+        }
         if path.as_str().split('/').count() > 32 {
             return Err(DirectoryCreateError::DepthExceeded);
         }
@@ -113,6 +118,8 @@ fn validate_names(path: &WorkspacePath) -> Result<(), DirectoryCreateError> {
 
 #[derive(Debug, Error)]
 pub enum DirectoryCreateError {
+    #[error("generic directory creation cannot change Git control metadata")]
+    ReservedGitMetadata,
     #[error(
         "directory names must not use Windows device, control or ambiguous trailing characters"
     )]
