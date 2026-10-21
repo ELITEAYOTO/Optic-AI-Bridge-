@@ -473,19 +473,19 @@ mod tests {
         let fixture = RepoFixture::new("log-cursor-budget");
         let mut server = fixture.server(&[Capability::GitRead]);
         let head = "a".repeat(40);
-        let entry = GitLogEntryResponse {
+        let entry = || GitLogEntryResponse {
             id: "b".repeat(40),
             parents: vec!["c".repeat(40), "d".repeat(40)],
             commit_time_unix_seconds: 1,
         };
         let one_without_cursor = GitLogResponse {
             snapshot_head: Some(head.clone()),
-            entries: vec![entry.clone()],
+            entries: vec![entry()],
             next_cursor: None,
         };
         let one_with_cursor = GitLogResponse {
             snapshot_head: Some(head.clone()),
-            entries: vec![entry.clone()],
+            entries: vec![entry()],
             next_cursor: Some(GitLogCursorResponse {
                 head: head.clone(),
                 offset: 1,
@@ -502,7 +502,7 @@ mod tests {
         let overhead = server.limits.max_response_bytes - server.structured_payload_budget();
         let two_entries = || GitLogResponse {
             snapshot_head: Some(head.clone()),
-            entries: vec![entry.clone(), entry.clone()],
+            entries: vec![entry(), entry()],
             next_cursor: None,
         };
         assert!(
