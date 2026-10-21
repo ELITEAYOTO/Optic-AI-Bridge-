@@ -691,13 +691,27 @@ mod tests {
         fs::write(root.join("independent.txt"), b"ordinary").expect("ordinary fixture");
         let files = BoundedFileSystem::new(&root, 128, 4, 16).expect("filesystem");
         let link = files
-            .prepare_read(&WorkspacePath::parse("public.txt").expect("path"), 0, Some(64))
+            .prepare_read(
+                &WorkspacePath::parse("public.txt").expect("path"),
+                0,
+                Some(64),
+            )
             .expect("prepare hardlink read");
-        assert!(link.has_multiple_links(), "opened hardlink identity must be recognized");
+        assert!(
+            link.has_multiple_links(),
+            "opened hardlink identity must be recognized"
+        );
         let normal = files
-            .prepare_read(&WorkspacePath::parse("independent.txt").expect("path"), 0, Some(64))
+            .prepare_read(
+                &WorkspacePath::parse("independent.txt").expect("path"),
+                0,
+                Some(64),
+            )
             .expect("prepare ordinary read");
-        assert!(!normal.has_multiple_links(), "ordinary single-name file stays readable");
+        assert!(
+            !normal.has_multiple_links(),
+            "ordinary single-name file stays readable"
+        );
         drop(link);
         drop(normal);
         fs::remove_dir_all(root).expect("remove fixture");
