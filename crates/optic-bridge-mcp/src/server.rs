@@ -1028,7 +1028,8 @@ mod tests {
                 limit: Some(8),
             }))
             .await
-            .expect_err("alias must not list a directory outside its search scope");
+            .err()
+            .expect("alias must not list a directory outside its search scope");
         assert_eq!(denied.message, "optic.policy_denied");
 
         let permitted = scoped_server
