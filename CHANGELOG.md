@@ -1,5 +1,10 @@
 # Changelog
 
+## Git metadata authority segregation — bounded stabilization candidate (2026-10-21)
+
+- Prevent generic workspace file mutation from addressing canonical `.git` control metadata (including linked worktree pointer files and ASCII case variants) without affecting ordinary dotfiles; keep dedicated Git integration authority separate. Deny generic creation of Git-control directories and provide a stable MCP error. Add native Windows/Unix regressions for requested and canonical paths. This entry describes a **PR candidate**, not a verified merge; require exact-head CI and independent main CI before claiming final delivery. Open risks: concurrent namespace races, hardlinks, sensitive GitRead/content policy and remote access.
+
+
 ## Canonical fs_list metadata authorization hardening — 2026-10-21
 
 - A prefix-scoped search previously authorized the requested lexical directory but enumerated its resolved target. The focused stabilization change canonicalizes the directory before `Effect::FileSearch` policy evaluation and lists canonical returned paths. A Unix symlink-prefix negative test and portable normal-directory test cover the behavior. No default authority widening or permission change. Integration must be verified against GitHub live PR/CI and `main` SHA; sensitive-content classification and concurrent directory-race hardening remain open in [security issue #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176).
