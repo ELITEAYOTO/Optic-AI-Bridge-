@@ -1,5 +1,17 @@
 # Current project status
 
+
+## Stabilisation Windows — PR #299 fusionnée le 21 octobre 2026
+
+À l'observation GitHub après la fusion : `main=6fe41ba2ce0e66f245acb7ea7c6c253e3f0f77ea`, aucune PR ouverte. La [PR #299](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/299) a été fusionnée par squash depuis la tête exacte `aca382535f24b6f6b1c26c2313302d315099ed4e`. Sa [CI source #39526324369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526324369) a réussi **du premier coup** (Windows Rust natif, Linux Rust, dépendances), de même que la [préparation native #39526324493](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526324493). La [CI indépendante post-fusion #39526677098](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526677098) doit être vérifiée avant toute affirmation de succès sur `main` ; les docs sont un relevé daté, jamais la tête GitHub live.
+
+**Incrément réel :** jalons monotones opt-in, à libellés fixes, écrits sur `stderr` par le lanceur d'isolation Windows : entrée, requête, entrées validées, profil, grants, enfant créé suspendu, token vérifié, reprise, fin. `OPTIC_LAUNCHER_PHASES=1` est transmis uniquement en tant que constante opt-in à ce lanceur, dans la preuve Windows existante et les répétitions diagnostiques déclenchées lors d'un échec. Le test natif vérifie la présence des phases et conserve le refus réseau effectif, la sortie attendue, les limites de 10 secondes et les règles d'isolation.
+
+**Exemple validé :** `target_created_suspended=14 ms`, `target_resumed=14 ms`, `target_exited=361 ms` à partir de l'entrée du lanceur. Le parent a séparément observé `launch_returned=13 ms`, `terminal_observed=407 ms` ; ces horloges ont des origines différentes. Ces données prouvent le fonctionnement de l'instrumentation sur un essai **réussi**, pas la cause des expirations précédentes. Les intermittences Windows AppContainer/Node de ~10s et MCP première réponse de ~30s restent **ouvertes**. Le nettoyage multi-fichiers, les courses d'ancêtres et la persistance après coupure restent non validés. Aucun correctif fonctionnel de ces défauts n'est revendiqué. Le gel des nouvelles fonctions, l'interdiction de toute intervention sur le PC et la distinction `main`/alpha restent en vigueur.
+
+Voir [la dette](docs/engineering/RELIABILITY_DEBT.md), [l'issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) et [la reprise](docs/engineering/GITHUB_HANDOFF.md). Les sections antérieures restent des archives datées.
+
+
 ## Point de reprise canonique — stabilisation vérifiée le 21 octobre 2026
 
 **Observation avant cette mise à jour documentaire** — `main` = `83329d48789c20b1fc235d3096c3199dc9dc5176`; **aucune PR ouverte**. La [PR #297](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/297) est fusionnée. Sa [CI indépendante post-fusion #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) a réussi **dès la première tentative**, sur le commit exact : Rust Windows natif, Rust Linux et politique des dépendances. La préparation native sur la tête source exacte a également réussi. Vérifier de nouveau l'état GitHub : ce point de contrôle n'est pas une tête à réinitialiser.
