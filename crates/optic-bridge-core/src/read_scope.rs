@@ -108,7 +108,12 @@ pub fn requires_sensitive_authority(path: &WorkspacePath) -> bool {
             || name.starts_with(".env.")
             || name.contains("secret")
             || name.contains("credential")
-            || name.contains("token")
+            || name == "token"
+            || name.starts_with("token.")
+            || name.starts_with("token_")
+            || name.starts_with("token-")
+            || name.contains("_token")
+            || name.contains("-token")
             || [
                 ".pem", ".key", ".p12", ".pfx", ".kdbx", ".jks", ".keystore",
                 ".tfstate", ".tfvars",
