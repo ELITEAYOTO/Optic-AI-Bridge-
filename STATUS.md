@@ -1,5 +1,12 @@
 # Current project status
 
+## Git-control mutation authority boundary — stabilization candidate (2026-10-21)
+
+The [security audit #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) identified a real authority-composition gap: generic FileWrite/FileDelete with whole-workspace or prefix grants could address `.git` control metadata, despite dedicated GitIntegrate authority. The scoped candidate reserves every exact `.git` path component (case-insensitively, including linked-worktree `.git` files) from generic transactional write/delete/patch preparation, **after canonical target observation**; generic directory creation rejects the same namespace. It does not expand session/lease rights or change the Git integration runtime. Ordinary dotfiles such as `.gitignore` remain regular project files.
+
+Cross-platform preparation tests, a Unix internal alias test, native Windows end-to-end authorized mutation and directory tests, and explicit MCP denial-code tests are included. **Do not describe as delivered until exact-head GitHub-hosted Windows/Linux/dependency/native-preparation CI and post-merge main checks succeed.** Parent path swaps, hardlink alias identity and power-loss durability remain independent issues. Never infer that sensitive-content reads or remote exposure are solved by this change. No new features, permission expansion, operator-PC activity or self-hosted CI.
+
+
 ## Scoped fs_list canonical-target authorization — security stabilization (2026-10-21)
 
 Source review of the existing local MCP `fs_list` found a concrete lexical/canonical scope mismatch: policy evaluated a requested directory alias before `BoundedFileSystem::list` followed the alias to a different workspace subtree. Under prefix-scoped `SearchMetadataScope`, this permits metadata enumeration outside the granted prefix. The bounded correction resolves the **canonical directory target before policy evaluation** and lists that resolved canonical root; returned paths identify the actual directory. A Unix symlink regression distinguishes restricted-prefix denial from whole-workspace allowed canonical listing; a portable root/normal-directory regression runs on hosted Windows and Linux.
