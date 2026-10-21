@@ -594,8 +594,10 @@ fn parse_log_entries(bytes: &[u8]) -> Result<Vec<GitLogEntry>, GitReadError> {
     let text = std::str::from_utf8(bytes).map_err(|_| GitReadError::InvalidLogRecord)?;
     let mut entries = Vec::new();
     for line in text.lines() {
+        // Empty rows are not commit records. Silently skipping them can
+        // make offset-based pagination disagree with the emitted Git stream.
         if line.is_empty() {
-            continue;
+            return Err(GitReadError::InvalidLogRecord);
         }
         let mut fields = line.split('\t');
         let id = fields.next().ok_or(GitReadError::InvalidLogRecord)?;
@@ -1095,6 +1097,34 @@ mod tests {
         assert_eq!(second.snapshot_head, Some(pinned_head));
         assert_eq!(second.entries.len(), 1);
         assert!(second.next_cursor.is_none());
+    }
+
+    #[test]
+    fn git_log_parser_rejects_blank_rows_instead_of_skipping_commits() {
+        let id = "0123456789012345678901234567890123456789";
+        let one = format!("{id}\\t\\t42\\n");
+        let two = format!("{id}\\t\\t43\\n");
+        assert!(parse_log_entries(b"").expect("empty result").is_empty());
+        let valid = parse_log_entries(format!("{one}{two}").as_bytes())
+            .expect("consecutive commit records");
+        assert_eq!(valid.len(), 2);
+        assert_eq!(valid[0].commit_time_unix_seconds, 42);
+        assert_eq!(valid[1].commit_time_unix_seconds, 43);
+
+        for malformed in [
+            format!("\\n{one}"),
+            format!("{one}\\n{two}"),
+            format!("{one}\\n"),
+            "\\n".to_owned(),
+        ] {
+            assert!(
+                matches!(
+                    parse_log_entries(malformed.as_bytes()),
+                    Err(GitReadError::InvalidLogRecord)
+                ),
+                "a blank Git record must never silently advance or shorten a cursor page"
+            );
+        }
     }
 
     #[test]
