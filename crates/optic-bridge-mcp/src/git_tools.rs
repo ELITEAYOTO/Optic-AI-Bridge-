@@ -732,8 +732,10 @@ mod tests {
             .await
             .expect("ordinary source diff remains accessible")
             .0;
-        assert!(String::from_utf8_lossy(&STANDARD.decode(source.data_base64).expect("base64"))
-            .contains("ordinary change"));
+        assert!(
+            String::from_utf8_lossy(&STANDARD.decode(source.data_base64).expect("base64"))
+                .contains("ordinary change")
+        );
         let wrong_scope = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
             WorkspacePath::parse("src").expect("prefix"),
         ));
@@ -752,15 +754,16 @@ mod tests {
             .await
             .expect("explicit protected content authority")
             .0;
-        assert!(String::from_utf8_lossy(&STANDARD.decode(patch.data_base64).expect("base64"))
-            .contains("second dummy only"));
+        assert!(
+            String::from_utf8_lossy(&STANDARD.decode(patch.data_base64).expect("base64"))
+                .contains("second dummy only")
+        );
     }
 
     #[tokio::test]
     async fn git_diff_staged_secret_is_denied_without_extra_lease() {
         let fixture = RepoFixture::new("staged-diff");
-        fs::write(fixture.repo.join("credentials.key"), b"fixture key only\n")
-            .expect("fixture");
+        fs::write(fixture.repo.join("credentials.key"), b"fixture key only\n").expect("fixture");
         run_git(
             &fixture.git,
             Some(&fixture.repo),
