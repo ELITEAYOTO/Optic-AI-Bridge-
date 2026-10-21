@@ -1,5 +1,10 @@
 # Changelog
 
+## Canonical fs_list metadata authorization hardening — 2026-10-21
+
+- A prefix-scoped search previously authorized the requested lexical directory but enumerated its resolved target. The focused stabilization change canonicalizes the directory before `Effect::FileSearch` policy evaluation and lists canonical returned paths. A Unix symlink-prefix negative test and portable normal-directory test cover the behavior. No default authority widening or permission change. Integration must be verified against GitHub live PR/CI and `main` SHA; sensitive-content classification and concurrent directory-race hardening remain open in [security issue #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176).
+
+
 ## Recovery unpublished-evidence preflight — 2026-10-21
 
 - [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) squash-merged as `05b5a928c862601926e8b0cc11540ce020caf271`: preflight every unpublished temporary recovery record before removing the first, then revalidate native identity at removal. Cross-platform negative hard-link regression and post-repair success were verified. No mutation policy, scope, timeout, grant or journal format changed.
