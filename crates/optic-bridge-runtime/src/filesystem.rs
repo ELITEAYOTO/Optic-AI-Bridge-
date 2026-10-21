@@ -159,6 +159,32 @@ impl BoundedFileSystem {
         }
     }
 
+    /// Resolve the actual directory to a workspace-relative canonical scope
+    /// before a caller authorizes FileSearch. A requested alias must never
+    /// substitute for the target directory in a prefix-scoped policy decision.
+    /// None represents the workspace root and requires whole-workspace search.
+    ///
+    /// This does not pin ancestor directories against concurrent replacement.
+    pub fn canonical_list_root(
+        &self,
+        path: Option<&WorkspacePath>,
+    ) -> Result<Option<WorkspacePath>, FileSystemError> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let resolved = self.resolve_existing(path)?;
+        if !resolved.is_dir() {
+            return Err(FileSystemError::NotDirectory);
+        }
+        if resolved == self.root {
+            return Ok(None);
+        }
+        let relative = resolved
+            .strip_prefix(&self.root)
+            .map_err(|_| FileSystemError::OutsideWorkspace)?;
+        Ok(Some(workspace_path_from_relative(relative)?))
+    }
+
     pub fn list(
         &self,
         path: Option<&WorkspacePath>,
