@@ -33,6 +33,7 @@ pub use project_inputs::{
 };
 pub use read_scope::{
     ReadContentScope, ReadSensitiveScope, SearchMetadataScope, WorkspaceAuthorityScope,
+    requires_sensitive_authority,
 };
 pub use session::{
     LeaseScope, MonotonicTime, PrincipalId, ProcessExecutionClass, ProjectId, SessionGrant,
