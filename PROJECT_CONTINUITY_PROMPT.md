@@ -1,5 +1,15 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+
+## Actualisation de la reprise — 21 octobre 2026, après #299
+
+Au dernier contrôle, la [PR #299](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/299) a été fusionnée par squash dans `main` au SHA `6fe41ba2ce0e66f245acb7ea7c6c253e3f0f77ea`. La CI sur la tête source exacte `aca382535f24b6f6b1c26c2313302d315099ed4e` a réussi **dès la première tentative** (Rust Windows natif, Rust Linux, dépendances), ainsi que la préparation native. La CI indépendante sur `main` [#39526677098](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526677098) a également **réussi dès la première tentative** sur le SHA exact de fusion (`6fe41ba2`), Windows/Linux/dépendances. Revérifier la tête GitHub live plutôt que de repartir d'un ancien SHA.
+
+#299 mesure en opt-in sur `stderr` les jalons internes du lanceur Windows AppContainer (lecture requête, profil, création suspendue, vérification, reprise et sortie). Les phases ont été constatées dans un test natif réussi, mais **le blocage intermittent de ~10 s n'est pas corrigé**. Le problème est suivi dans l'[issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185). Les mesures parentales de ~13–17 ms ne sont **pas** des mesures du démarrage intérieur de Node. Attendre une nouvelle occurrence naturelle avec les phases internes activées sur les diagnostics existants, puis seulement corriger un défaut établi. La lenteur MCP de première réponse (~30 s) reste distincte. Aucun timeout, permission ou sandbox n'a été relâché.
+
+**Toujours en vigueur : stabilisation uniquement, zéro action sur le PC utilisateur, GitHub/runners hébergés seulement, pas de nouvelle fonctionnalité/GUI/Cargo produit/fusion alpha, pas de correction sans preuve.** Les anciens checkpoints et prompts ci-dessous sont historiques, non des instructions de reset.
+
+
 > **À copier dans le prochain chat.** État observé le 21 octobre 2026, avant une éventuelle PR documentaire ultérieure ; **GitHub live fait foi**. Les anciens checkpoints sont des archives, pas des instructions de reset.
 
 Tu reprends la direction technique de **Optic AI Bridge**, exclusivement dans :
