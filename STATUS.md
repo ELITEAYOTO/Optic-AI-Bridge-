@@ -1,5 +1,12 @@
 # Current project status
 
+## Git-log response size & pagination — bounded regression
+
+A deterministic `git_log` response-fitting flaw existed when the final history page had `next_cursor: None`: trimming entries to meet the structured response-byte limit then **added** a cursor containing the snapshot HEAD and new offset without checking the resulting serialized size. A too-large MCP response could be emitted despite the configured output budget. The narrow fix repeatedly refits after cursor insertion, reducing the page while preserving at least one advancing entry; if no entry plus cursor fits, it fails closed with `optic.response_too_large`. Cursor arithmetic now rejects overflow rather than saturating into a non-advancing token.
+
+Focused tests construct an end-of-history page with a carefully selected byte budget to prove rejection when the cursor cannot fit, acceptance when it can and preservation of a complete cursor-free last page. GitRead capabilities, HEAD snapshot pinning, Git subprocess sandbox and resource limits are unchanged. **Verify the actual PR, exact-head CI, and independent `main` CI before claiming this change is integrated.** No new feature, user-PC activity or CI bypass.
+
+
 ## Git-control mutation authority boundary — stabilization candidate (2026-10-21)
 
 The [security audit #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) identified a real authority-composition gap: generic FileWrite/FileDelete with whole-workspace or prefix grants could address `.git` control metadata, despite dedicated GitIntegrate authority. The scoped candidate reserves every exact `.git` path component (case-insensitively, including linked-worktree `.git` files) from generic transactional write/delete/patch preparation, **after canonical target observation**; generic directory creation rejects the same namespace. It does not expand session/lease rights or change the Git integration runtime. Ordinary dotfiles such as `.gitignore` remain regular project files.

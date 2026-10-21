@@ -1,5 +1,12 @@
 # GitHub-only project handoff
 
+## Focused Git-log response-budget regression
+
+Source review of `ReadonlyMcpServer::fit_git_log_response` identified that adding a continuation cursor **after** clipping an end-of-history page could grow serialized JSON beyond `max_response_bytes`. The scoped correction refits the **final** entries+cursor combination and rejects a page if no entry plus cursor can fit. It also checks offset addition instead of using saturating addition. Regressions cover insufficient budget, sufficient budget with exactly one advancing entry, and a complete page that stays cursor-free.
+
+The correction belongs to a single GitHub PR with docs and tests; live GitHub source SHA and CI **must** be rechecked before merge. No new commands/capabilities, policy changes, timeout increases, MCP transport additions or operator PC access. The active Linux/Windows test results and the post-merge `main` verification, once known, are authoritative in the PR/Actions history. Keep Windows Node/AppContainer and MCP first-response timeout investigations separate, and preserve their evidence.
+
+
 ## Active single-PR stabilization: reserve .git metadata (2026-10-21)
 
 At the start of this increment GitHub `main=9c6c91096590f9f005dabc51253b9b5f8b1abcca`, zero PRs open and [independent #303 post-merge CI #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408) passed on attempt 1. [Issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) documents an actual separation-of-authorities defect: generic FileWrite/FileDelete could target Git-owned `.git` data without GitIntegrate authority.

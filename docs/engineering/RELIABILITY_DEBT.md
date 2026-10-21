@@ -1,5 +1,12 @@
 # Reliability and implementation debt
 
+## Git-log serialization cap and cursor progress
+
+A bounded output bug was demonstrated in `fit_git_log_response`: when a final page originally had no `next_cursor`, trimming its entries to fit the structured response budget required synthesizing a continuation cursor. The old code did not remeasure the page **after** synthesizing that cursor. The narrow correction refits entries and cursor together and fails closed if retaining one entry is impossible, without changing the existing maximum response budget. Numeric cursor overflow must not produce a non-progressing saturated offset. Dedicated synthetic-budget tests cover these constraints.
+
+This is a size/progress correctness fix, **not** implementation of sensitive GitRead classification (#182), and does not affect Git history snapshot pinning, security capabilities, Windows startup, filesystem ancestor races, or recovery atomicity. Validate exact-head GitHub CI live before calling it delivered.
+
+
 ## Git control namespace separation — scoped correction under test (2026-10-21)
 
 [Audit issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) establishes that normalized generic FileWrite/FileDelete and DirectoryCreate have structurally accepted `.git` control paths, while GitIntegrate uses a dedicated session capability/lease and runtime. The incremental correction reserves the **exact `.git` component**, case-insensitively at any subtree depth. Atomic file mutation preparation checks both requested and **canonical observed** paths before any commit/staging; generic directory creation denies Git control names while its existing native ancestor reparse-point protections stay intact. Worktree `.git` pointer files are treated as metadata; ordinary `.gitignore` and `.gitattributes` are unaffected.
