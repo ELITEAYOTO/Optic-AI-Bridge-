@@ -272,6 +272,53 @@ mod tests {
         root
     }
 
+    /// Research-only bounded outer buffer. `Take` wraps the *underlying*
+    /// source before `BufReader`, avoiding the prefetch-across-ceiling bug.
+    /// No production code calls this helper.
+    fn diagnostic_bounded_buffered_version(
+        reader: impl Read,
+        capacity: usize,
+        max_bytes: u64,
+    ) -> Result<ContentVersion, ContentVersionReadError> {
+        if max_bytes == 0 {
+            return Err(ContentVersionReadError::LimitExceeded);
+        }
+        let bounded = reader.take(max_bytes.saturating_add(1));
+        let buffered = std::io::BufReader::with_capacity(capacity, bounded);
+        ContentVersion::from_reader_bounded(buffered, max_bytes)
+    }
+
+    #[test]
+    fn buffered_identity_diagnostic_never_prefetches_past_authorized_ceiling() {
+        use std::io::Cursor;
+
+        // Especially important when the buffer is far larger than a small
+        // authorized observation ceiling: the descriptor may consume only
+        // max_bytes + 1, regardless of BufReader's requested capacity.
+        let bytes = b"abcdefghijklmnop";
+        for capacity in [64 * 1024, 256 * 1024, 1024 * 1024] {
+            let mut forbidden = Cursor::new(bytes.as_slice());
+            assert!(matches!(
+                diagnostic_bounded_buffered_version(&mut forbidden, capacity, 7),
+                Err(ContentVersionReadError::LimitExceeded)
+            ));
+            assert_eq!(forbidden.position(), 8);
+
+            let mut exact = Cursor::new(&bytes[..7]);
+            let result = diagnostic_bounded_buffered_version(&mut exact, capacity, 7)
+                .expect("exactly permitted bytes");
+            assert_eq!(result, ContentVersion::from_bytes(&bytes[..7]));
+            assert_eq!(exact.position(), 7);
+
+            let mut denied = Cursor::new(bytes.as_slice());
+            assert!(matches!(
+                diagnostic_bounded_buffered_version(&mut denied, capacity, 0),
+                Err(ContentVersionReadError::LimitExceeded)
+            ));
+            assert_eq!(denied.position(), 0);
+        }
+    }
+
     #[test]
     fn identity_rejects_same_path_after_content_change() {
         let root = workspace("change");
@@ -421,7 +468,7 @@ mod tests {
     #[test]
     #[ignore = "explicit hosted-Windows buffer-capacity diagnostic only"]
     fn diagnostic_native_buffer_capacity_probe() {
-        use std::io::{BufReader, Seek, SeekFrom};
+        use std::io::{Seek, SeekFrom};
 
         let path = env::var_os("OPTIC_DIAG_NODE_PATH").expect("explicit hosted Node path");
         let canonical = fs::canonicalize(path).expect("canonical runner executable path");
@@ -450,16 +497,14 @@ mod tests {
                 latency_buckets: [0; 4],
                 max_read_elapsed: Duration::ZERO,
             };
-            // This buffer is diagnostic-only; the trusted BLAKE3 function
-            // still requests 64 KiB and enforces the same 512-MiB ceiling.
-            let version = {
-                let mut buffered = BufReader::with_capacity(capacity, &mut timed);
-                ContentVersion::from_reader_bounded(
-                    &mut buffered,
-                    MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
-                )
-                .expect("bounded identity of pinned executable")
-            };
+            // The underlying handle is capped to max_bytes + 1, even if
+            // BufReader tries to prefetch a larger chunk.
+            let version = diagnostic_bounded_buffered_version(
+                &mut timed,
+                capacity,
+                MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
+            )
+            .expect("bounded identity of pinned executable");
             BufferPass {
                 version,
                 read_ms: timed.read_elapsed.as_millis(),
