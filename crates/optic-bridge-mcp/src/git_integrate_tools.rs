@@ -99,11 +99,15 @@ impl ReadonlyMcpServer {
         // reaches a known result. Mutation calls cannot be safely cancelled by
         // dropping their JoinHandle, while read-only target observation shares the
         // same bounded Git runtime and authorization path.
-        let result = tokio::task::spawn_blocking(move || operation(service))
-            .await
-            .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
-            .map_err(map_authorized_git_integration_error)?;
-        drop(permit);
+        // Own transport capacity inside the blocking worker: aborting the
+        // async caller must not recycle it while a Git operation is active.
+        let result = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            operation(service)
+        })
+        .await
+        .map_err(|_| ErrorData::internal_error("optic.runtime_join_failed", None))?
+        .map_err(map_authorized_git_integration_error)?;
         Ok(result)
     }
 }
@@ -586,16 +590,23 @@ mod tests {
             );
         }
     }
-    // Research-only characterization on the #317 branch. This intentionally
-    // records the CURRENT permit-accounting gap; success is NOT an acceptance
-    // test for correct cancellation ownership. No production Git worker runs.
+    // Regression for cancelling the async waiter of an already-started
+    // blocking worker. The worker itself performs no Git operation; the
+    // fixture contains only disposable synthetic repository data.
     #[tokio::test]
-    async fn research_cancelled_git_waiter_releases_capacity_while_worker_is_active() {
-        use std::sync::mpsc;
-        use std::time::Duration;
+    async fn cancelled_git_integration_keeps_transport_capacity_until_worker_exit() {
+        use std::{sync::mpsc, time::Duration};
 
-        let fixture = RepoFixture::new("research-cancel-capacity");
-        let server = fixture.server();
+        use optic_bridge_runtime::{TransportError, TransportGuard, TransportLimits};
+
+        let fixture = RepoFixture::new("transport-cancel-capacity");
+        let mut server = fixture.server();
+        let limits = server.transport_guard.limits();
+        server.transport_guard = TransportGuard::new(TransportLimits {
+            max_concurrent_requests: 1,
+            ..limits
+        })
+        .expect("single transport slot");
         assert_eq!(server.transport_guard.active_requests(), 0);
 
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
@@ -606,10 +617,10 @@ mod tests {
         let waiter = tokio::spawn(async move {
             task_server
                 .run_git_integration(move |_service| {
-                    entered_tx.send(()).expect("blocking worker entry observed");
+                    entered_tx.send(()).expect("worker entry signal");
                     release_rx
                         .recv_timeout(Duration::from_secs(5))
-                        .expect("external test supervisor released worker");
+                        .expect("external test barrier release");
                     let _ = finished_tx.send(());
                     Ok::<(), AuthorizedGitIntegrationError>(())
                 })
@@ -619,40 +630,67 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(5), entered_rx)
             .await
             .expect("worker entry deadline")
-            .expect("worker entry signal");
+            .expect("worker entry observed");
         assert_eq!(server.transport_guard.active_requests(), 1);
 
-        // Aborting the async JoinHandle does not cancel a started spawn_blocking
-        // closure. The blocking closure is deliberately held at a finite barrier.
         waiter.abort();
-        let cancelled = tokio::time::timeout(Duration::from_secs(5), waiter)
-            .await
-            .expect("caller abort deadline")
-            .expect_err("caller must be cancelled");
-        assert!(cancelled.is_cancelled());
-
-        // The current implementation drops RequestPermit in the caller future,
-        // even though the worker has NOT reached its release barrier.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("caller cancellation deadline")
+                .expect_err("caller was cancelled")
+                .is_cancelled()
+        );
         assert_eq!(
             server.transport_guard.active_requests(),
-            0,
-            "research baseline changed: transport permit no longer drops early"
+            1,
+            "started blocking Git worker must retain transport capacity"
         );
-        let reused = server
-            .transport_guard
-            .begin_execution(server.clock.now())
-            .expect("research: freed capacity currently admits new request");
-        assert_eq!(server.transport_guard.active_requests(), 1);
-        drop(reused);
+        assert_eq!(
+            server
+                .transport_guard
+                .begin_execution(server.clock.now())
+                .expect_err("single slot must remain occupied"),
+            TransportError::TooManyConcurrentRequests
+        );
 
-        release_tx.send(()).expect("release retained worker");
+        release_tx.send(()).expect("release blocked worker");
         tokio::time::timeout(Duration::from_secs(5), finished_rx)
             .await
             .expect("worker completion deadline")
-            .expect("worker completion signal");
+            .expect("worker completed");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server.transport_guard.active_requests() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("capacity release after worker exit");
+        let reused = server
+            .transport_guard
+            .begin_execution(server.clock.now())
+            .expect("capacity reusable only after completion");
+        drop(reused);
         assert_eq!(server.transport_guard.active_requests(), 0);
-        eprintln!(
-            "OPTIC_317_RESEARCH_GIT_TRANSPORT_CANCEL_GAP worker_active=true permit_released=true capacity_reusable=true"
-        );
+    }
+
+    #[tokio::test]
+    async fn git_integration_transport_capacity_released_on_success_and_error() {
+        let fixture = RepoFixture::new("transport-finished-capacity");
+        let server = fixture.server();
+        server
+            .run_git_integration(|_service| Ok::<(), AuthorizedGitIntegrationError>(()))
+            .await
+            .expect("synthetic success");
+        assert_eq!(server.transport_guard.active_requests(), 0);
+
+        let error = server
+            .run_git_integration(|_service| {
+                Err::<(), _>(AuthorizedGitIntegrationError::EffectMismatch)
+            })
+            .await
+            .expect_err("synthetic integration error");
+        assert_eq!(error.message.as_ref(), "optic.git_integration_effect_mismatch");
+        assert_eq!(server.transport_guard.active_requests(), 0);
     }
 }
