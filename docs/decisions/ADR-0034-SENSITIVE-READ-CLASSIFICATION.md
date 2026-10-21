@@ -1,6 +1,43 @@
 # ADR-0034: Shared Sensitive-Path Classification for Read Authorities
 
-Status: **Accepted security direction (operator, 2026-10-21); partial implementation in the first corrective increment**
+Status: **Accepted policy B; path-name floor implemented and verified through #310; full sensitive-content guarantee unresolved**.
+
+## Verified integration checkpoint — 2026-10-21
+
+This section supersedes the pre-merge *candidate* descriptions below; those
+remain as dated design history, not as present code status.
+
+- [#308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/308):
+  shared core path classifier, FileRead dual-scope check and canonical fs_list
+  page metadata gate.
+- [#309](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/309):
+  structured Git porcelain-v2 `-z` status paths, unknown/unrepresentable
+  output refused, extra metadata-sensitive scope when names are classified.
+- [#310](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/310):
+  one hardened `--raw -z --patch` Git invocation; parse the raw file paths,
+  require Git's verified extra NUL separator before patch text, refuse unknown
+  or malformed records, and require typed FileRead with matching ReadContent
+  and ReadSensitive lease for classified protected patch paths while session
+  admission is held. Ordinary source diffs remain supported.
+- Exact #310 squash commit `bd2915c3a9833c1da5a8fc5005445d1884260d4f`.
+  Accepted source SHA `154d7ea6ab6b10aa967ab0a2f2034f2f06400fe9`
+  passed [CI #39551993433](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39551993433)
+  and [native preparation #39551993151](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39551993151)
+  on first attempts. Independent [main CI #39552523257](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39552523257)
+  passed first attempt on the exact squash commit (hosted native Windows,
+  Linux, dependency policy). Earlier red CI attempts remain preserved.
+
+**Remaining policy B limits:** this is a filename-based **floor**, not
+content DLP or proof that arbitrary ordinary-looking code/config lacks
+credentials. Git worktree/index snapshots are not atomic against concurrent
+modification; branch-name metadata, alternate path identities, ancestor races
+and true canonical target binding require further investigation. The real
+workspace remote exposure and new-feature freeze are unchanged. Security
+issues #176 and #182 stay open. #176 was inadvertently auto-completed by the
+GitHub PR-body keyword parser at #310 merge, then explicitly reopened;
+future PR prose must avoid auto-closing keywords while discussing open issues.
+
+
 
 ## Decision
 
