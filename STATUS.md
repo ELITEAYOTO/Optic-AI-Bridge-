@@ -1,5 +1,13 @@
 # Current project status
 
+## Sensitive-read authority — policy B approved, first scoped fix under CI review (2026-10-21)
+
+After merged #307, live `main=3d9a0f78304578af53fd23b9fed7d08603348e0b`, zero open PRs, and post-merge hosted Windows/Linux/dependency CI #39542505029 passed first attempt. The operator has now approved **Policy B**: shared deterministic classification of sensitive path/content across FileRead, FileSearch and GitRead, with fail-closed handling of unverifiable outputs. **This paragraph describes a candidate increment on `security/sensitive-file-authority-scope`, not a verified merge.**
+
+First narrow corrective implementation: pure conservative sensitive-path classifier in core, enforced by `PolicyEngine` for file reads (ordinary content and matching sensitive scopes both required), and by `fs_list` before releasing sensitive directory names (whole affected page denied without additional sensitive grant). Unit and MCP regressions cover path ancestry, case, absent/mismatched sensitive leases, ordinary content and explicit scoped access. Exact-head hosted Windows/Linux acceptance and independent main CI are **not yet claimed**.
+
+**Important limitation:** lexical name detection is not secret-content inspection. `GitRead` status/diff remain outside this increment and can independently disclose names or secret-bearing patches. Both #176 and #182 remain **open blockers** to real-project remote/autonomous exposure. Do not infer safe remote access, close these tickets, or restart features. Next correction must treat Git output records and unverifiable outputs fail-closed under the **same** classifier (ADR-0034) with exact SHA CI. No broad grants, deadline changes, PC execution or alpha merge.
+
 ## Successor handoff snapshot — 2026-10-21, after merged #306
 
 GitHub live before this documentation handoff: `main=dadaf48539788235b689dd4e09adcd2fb94904f3`, **zero PRs open**, [PR #306](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/306) squash-merged (governance and stabilization exit-gates documentation). [PR #306 source CI #39540522392](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540522392) passed first attempt, and independent [main CI #39540940136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540940136) passed first attempt on exact merge SHA (hosted Rust Windows, Rust Linux, dependencies). This is **dated evidence, not an instruction to restore a commit**. Verify live GitHub for changes after this handoff's own PR.
