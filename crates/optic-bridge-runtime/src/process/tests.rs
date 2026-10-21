@@ -405,6 +405,29 @@ fn isolation_launcher_environment_accepts_tmp_without_temp() {
 
 #[cfg(windows)]
 #[test]
+fn isolation_launcher_phase_diagnostics_only_forward_exact_one() {
+    for value in [None, Some("0"), Some("untrusted"), Some("1")] {
+        let environment = isolation_launcher_environment_from(|name| match name {
+            "SystemRoot" => Some(OsString::from(r"C:\Windows")),
+            "LOCALAPPDATA" => Some(OsString::from(r"C:\Users\optic\AppData\Local")),
+            "TEMP" | "TMP" => Some(OsString::from(r"C:\Temp")),
+            "OPTIC_LAUNCHER_PHASES" => value.map(OsString::from),
+            _ => None,
+        })
+        .expect("launcher environment");
+
+        let diagnostic = environment
+            .iter()
+            .find(|(name, _)| *name == "OPTIC_LAUNCHER_PHASES");
+        assert_eq!(diagnostic.is_some(), value == Some("1"));
+        if let Some((_, forwarded)) = diagnostic {
+            assert_eq!(forwarded, &OsString::from("1"));
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
 fn isolation_launcher_environment_requires_one_temp_alias() {
     let error = isolation_launcher_environment_from(|name| match name {
         "SystemRoot" => Some(OsString::from(r"C:\Windows")),

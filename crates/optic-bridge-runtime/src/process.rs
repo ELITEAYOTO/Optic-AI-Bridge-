@@ -70,12 +70,18 @@ where
     let temp = temp.unwrap_or_else(|| fallback.clone());
     let tmp = tmp.unwrap_or(fallback);
 
-    Ok(vec![
+    let mut environment = vec![
         ("SystemRoot", system_root),
         ("LOCALAPPDATA", local_appdata),
         ("TEMP", temp),
         ("TMP", tmp),
-    ])
+    ];
+    // CI-only diagnostic opt-in: never forward arbitrary values or credentials.
+    // This is for the outer isolation launcher, not a new operator grant.
+    if lookup("OPTIC_LAUNCHER_PHASES") == Some(OsString::from("1")) {
+        environment.push(("OPTIC_LAUNCHER_PHASES", OsString::from("1")));
+    }
+    Ok(environment)
 }
 
 #[cfg(windows)]
