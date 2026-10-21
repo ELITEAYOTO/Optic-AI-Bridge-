@@ -915,6 +915,111 @@ mod tests {
     }
 
     #[test]
+    fn diff_single_invocation_classifies_worktree_and_staged_sensitive_paths() {
+        let fixture = RepoFixture::new("diff-sensitive");
+        fs::write(fixture.repo.join(".env"), b"first fixture only\n").expect("fixture");
+        fs::write(fixture.repo.join("a.txt"), b"ordinary changed\n").expect("fixture");
+        commit_all(&fixture.git, &fixture.repo, "fixture secrets");
+        fs::write(fixture.repo.join(".env"), b"second fixture only\n").expect("change");
+        fs::write(fixture.repo.join("a.txt"), b"ordinary again\n").expect("change");
+        let service = fixture.service();
+        let all = service.diff(None, false, None).expect("whole-repo diff");
+        assert!(all.sensitive_paths.iter().any(|p| p.as_str() == ".env"));
+        assert!(
+            String::from_utf8_lossy(&all.bytes).contains("second fixture only"),
+            "existing raw patch semantics preserved"
+        );
+        let ordinary = service
+            .diff(Some(&path("a.txt")), false, None)
+            .expect("literal ordinary diff");
+        assert!(ordinary.sensitive_paths.is_empty());
+        assert!(String::from_utf8_lossy(&ordinary.bytes).contains("ordinary again"));
+        let protected = service
+            .diff(Some(&path(".env")), false, None)
+            .expect("literal protected diff");
+        assert_eq!(
+            protected.sensitive_paths.iter().map(WorkspacePath::as_str).collect::<Vec<_>>(),
+            [".env"]
+        );
+
+        // A staged newly added protected file has no committed worktree
+        // predecessor, but its contents must still require sensitive access.
+        fs::write(fixture.repo.join("nested.key"), b"new key fixture only\n")
+            .expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("nested.key")],
+        );
+        let staged = service.diff(None, true, None).expect("staged diff");
+        assert!(
+            staged
+                .sensitive_paths
+                .iter()
+                .any(|p| p.as_str() == "nested.key")
+        );
+        assert!(String::from_utf8_lossy(&staged.bytes).contains("new key fixture only"));
+    }
+
+    #[test]
+    fn diff_single_invocation_checks_directory_pathspec_children() {
+        let fixture = RepoFixture::new("diff-directory");
+        fs::create_dir_all(fixture.repo.join("src")).expect("directory");
+        fs::write(fixture.repo.join("src").join(".env.local"), b"first\n").expect("fixture");
+        fs::write(fixture.repo.join("src").join("main.rs"), b"first\n").expect("fixture");
+        commit_all(&fixture.git, &fixture.repo, "nested paths");
+        fs::write(fixture.repo.join("src").join(".env.local"), b"changed secret\n")
+            .expect("change");
+        fs::write(fixture.repo.join("src").join("main.rs"), b"changed source\n")
+            .expect("change");
+        let selected = fixture
+            .service()
+            .diff(Some(&path("src")), false, None)
+            .expect("directory diff");
+        assert!(
+            selected
+                .sensitive_paths
+                .iter()
+                .any(|p| p.as_str() == "src/.env.local")
+        );
+        assert!(String::from_utf8_lossy(&selected.bytes).contains("changed source"));
+    }
+
+    #[test]
+    fn malformed_raw_diff_stream_refuses_any_patch_before_release() {
+        let good = b":100644 100644 abcdef0 1234567 M\0src/main.rs\0\ndiff --git a/src/main.rs b/src/main.rs\n";
+        let verified = parse_verified_diff(good.to_vec()).expect("verified diff");
+        assert_eq!(
+            verified.bytes,
+            b"diff --git a/src/main.rs b/src/main.rs\n"
+        );
+        assert!(verified.sensitive_paths.is_empty());
+        let protected = b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n";
+        assert_eq!(
+            parse_verified_diff(protected.to_vec())
+                .expect("protected path parsed")
+                .sensitive_paths[0]
+                .as_str(),
+            "src/.env"
+        );
+        for invalid in [
+            b"diff --git a/.env b/.env\n".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env".as_slice(),
+            b":100644 100644 abcdef0 1234567 X\0src/.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0../.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src\\.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0\xff\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ncorrupted".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0".as_slice(),
+        ] {
+            assert!(
+                matches!(parse_verified_diff(invalid.to_vec()), Err(GitReadError::UnverifiableDiff)),
+                "malformed/unverifiable diff must be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn diff_output_is_hard_bounded() {
         let fixture = RepoFixture::new("diff-limit");
         fs::write(fixture.repo.join("a.txt"), vec![b'x'; 4096]).expect("large diff");
