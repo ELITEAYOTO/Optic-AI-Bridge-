@@ -425,15 +425,25 @@ impl ReadonlyMcpServer {
 
         let page = self
             .run_admitted_read(move |server, grant, permit| {
+                // Authorize the resolved directory, not an untrusted alias.
+                // A symlink within a permitted prefix may target an entirely
+                // different workspace subtree. List the canonical target so
+                // returned entry paths also name the authorized directory.
+                let canonical_root = server
+                    .filesystem
+                    .canonical_list_root(root.as_ref())
+                    .map_err(map_filesystem_error)?;
                 server.ensure_read_deadline(permit)?;
                 server.authorize(
                     grant,
-                    Effect::FileSearch { root: root.clone() },
+                    Effect::FileSearch {
+                        root: canonical_root.clone(),
+                    },
                     server.clock.now(),
                 )?;
                 server
                     .filesystem
-                    .list(root.as_ref(), cursor, limit)
+                    .list(canonical_root.as_ref(), cursor, limit)
                     .map_err(map_filesystem_error)
             })
             .await?;
