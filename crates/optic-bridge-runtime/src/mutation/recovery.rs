@@ -237,7 +237,7 @@ impl MutationRecoveryJournal {
     }
 
     pub fn retire(&self, ticket: &JournalTicket) -> Result<(), RecoveryJournalError> {
-        self.remove_regular_file(&self.journal_path(&ticket.action_id))
+        self.remove_regular_file(&self.journal_path(&ticket.action_id), true)
     }
 
     pub fn reconcile(
@@ -334,17 +334,23 @@ impl MutationRecoveryJournal {
         &self,
         scan: &PendingRecoveryScan,
     ) -> Result<(), RecoveryJournalError> {
-        // Unpublished files cannot represent committed effects. Their
-        // deletion must follow all relevant validation phases, not just
-        // stable-journal classification. Deletion remains non-atomic.
+        // Classify *all* unpublished entries before discarding even the first.
+        // Otherwise a later hard-linked/reparse/nonfile entry could fail
+        // closed only after earlier evidence had already been erased.
         for path in &scan.unpublished {
-            self.remove_regular_file(path)?;
+            self.remove_regular_file(path, false)?;
+        }
+        // Each delete must re-open/revalidate the exact object: preflight
+        // cannot guarantee identity against later concurrent namespace races.
+        // A later deletion failure can still leave partial cleanup.
+        for path in &scan.unpublished {
+            self.remove_regular_file(path, true)?;
         }
         Ok(())
     }
 
     pub(crate) fn retire_action(&self, action_id: &ActionId) -> Result<(), RecoveryJournalError> {
-        self.remove_regular_file(&self.journal_path(action_id))
+        self.remove_regular_file(&self.journal_path(action_id), true)
     }
 
     fn ensure_action_path_absent(
@@ -514,7 +520,7 @@ impl MutationRecoveryJournal {
             .join(format!("{}{}", action_id.to_token(), PREPARED_TEMP_SUFFIX))
     }
 
-    fn remove_regular_file(&self, path: &Path) -> Result<(), RecoveryJournalError> {
+    fn remove_regular_file(&self, path: &Path, delete: bool) -> Result<(), RecoveryJournalError> {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -531,9 +537,13 @@ impl MutationRecoveryJournal {
             // also rejects reparse points and hard-link aliases.
             let opened = optic_bridge_windows::open_exclusive_file_for_delete_no_reparse(path)
                 .map_err(RecoveryJournalError::NativeJournalFile)?;
-            opened
-                .delete()
-                .map_err(RecoveryJournalError::NativeJournalFile)
+            if delete {
+                opened
+                    .delete()
+                    .map_err(RecoveryJournalError::NativeJournalFile)
+            } else {
+                Ok(())
+            }
         }
         #[cfg(not(windows))]
         {
@@ -554,7 +564,9 @@ impl MutationRecoveryJournal {
             // Unix does not offer the native Windows handle-based delete
             // primitive here; a concurrent pathname replacement remains
             // outside this bounded alias-rejection improvement.
-            fs::remove_file(path)?;
+            if delete {
+                fs::remove_file(path)?;
+            }
             Ok(())
         }
     }
