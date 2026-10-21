@@ -728,6 +728,69 @@ mod tests {
     }
 
     #[test]
+    fn status_classifies_sensitive_staged_and_untracked_names() {
+        let fixture = RepoFixture::new("sensitive-status");
+        fs::write(fixture.repo.join(".ENV.production"), b"fixture only").expect("fixture");
+        fs::write(fixture.repo.join("ordinary notes.txt"), b"ordinary").expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new(".ENV.production")],
+        );
+        fs::create_dir_all(fixture.repo.join(".aws")).expect("fixture directory");
+        fs::write(fixture.repo.join(".aws").join("credentials"), b"fixture only")
+            .expect("fixture");
+        let snapshot = fixture.service().status().expect("status parsed");
+        let paths: Vec<_> = snapshot
+            .sensitive_paths
+            .iter()
+            .map(WorkspacePath::as_str)
+            .collect();
+        assert!(paths.contains(&".ENV.production"));
+        assert!(paths.contains(&".aws/credentials"));
+        assert!(!paths.contains(&"ordinary notes.txt"));
+    }
+
+    #[test]
+    fn porcelain_v2_parser_checks_both_rename_names_and_all_record_shapes() {
+        // Synthetic protocol records exercise cases even if a particular Git
+        // version does not emit a rename or unmerged entry in a local fixture.
+        let mut raw = b"# branch.oid (initial)\0".to_vec();
+        raw.extend_from_slice(b"1 M. N... 100644 100644 100644 aa bb src/main.rs\0");
+        raw.extend_from_slice(b"2 R. N... 100644 100644 100644 aa bb R100 normal.txt\0nested/.env\0");
+        raw.extend_from_slice(b"u UU N... 100644 100644 100644 100644 a b c auth/secret.key\0");
+        raw.extend_from_slice(b"? new-token.txt\0");
+        raw.extend_from_slice(b"! ignored.txt\0");
+        let paths = parse_sensitive_status_paths(&raw).expect("all record types parsed");
+        let names: Vec<_> = paths.iter().map(WorkspacePath::as_str).collect();
+        assert_eq!(
+            names,
+            ["nested/.env", "auth/secret.key", "new-token.txt"]
+        );
+    }
+
+    #[test]
+    fn porcelain_v2_parser_fails_closed_for_unknown_truncated_and_native_alias_records() {
+        for raw in [
+            b"# branch.oid (initial)\0x unexpected\0".as_slice(),
+            b"# branch.oid (initial)\0? unclosed.txt".as_slice(),
+            b"# branch.oid (initial)\0? ..\\.env\0".as_slice(),
+            b"# branch.oid (initial)\0? ../.env\0".as_slice(),
+            b"# branch.oid (initial)\0? \xff\0".as_slice(),
+            b"# branch.oid (initial)\02 R. N... 100644 100644 100644 aa bb R100 path.txt\0".as_slice(),
+            b"# branch.stash 1\0".as_slice(),
+        ] {
+            assert!(
+                matches!(
+                    parse_sensitive_status_paths(raw),
+                    Err(GitReadError::UnverifiableStatus)
+                ),
+                "unverifiable status must be denied"
+            );
+        }
+    }
+
+    #[test]
     fn diff_is_path_scoped() {
         let fixture = RepoFixture::new("diff-path");
         fs::write(fixture.repo.join("a.txt"), b"alpha changed\n").expect("modify a");
