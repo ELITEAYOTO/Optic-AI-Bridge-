@@ -537,10 +537,12 @@ fn parse_verified_diff(output: Vec<u8>) -> Result<GitDiffSnapshot, GitReadError>
     if count == 0 {
         return Err(GitReadError::UnverifiableDiff);
     }
-    // Git emits a blank separator before the patch after --raw -z. The
-    // generated patch must follow a validated nonempty raw change queue.
-    let rest = &output[offset..];
-    let patch = rest.strip_prefix(b"\n").unwrap_or(rest);
+    // Git emits exactly one additional NUL between its -z raw record
+    // stream and patch text. Reject any other delimiter rather than trying
+    // to guess where confidential patch bytes begin.
+    let patch = output[offset..]
+        .strip_prefix(b"\0")
+        .ok_or(GitReadError::UnverifiableDiff)?;
     if !patch.starts_with(b"diff --git ") {
         return Err(GitReadError::UnverifiableDiff);
     }
@@ -1023,12 +1025,12 @@ mod tests {
 
     #[test]
     fn malformed_raw_diff_stream_refuses_any_patch_before_release() {
-        let good = b":100644 100644 abcdef0 1234567 M\0src/main.rs\0\ndiff --git a/src/main.rs b/src/main.rs\n";
+        let good = b":100644 100644 abcdef0 1234567 M\0src/main.rs\0\0diff --git a/src/main.rs b/src/main.rs\n";
         let verified = parse_verified_diff(good.to_vec()).expect("verified diff");
         assert_eq!(verified.bytes, b"diff --git a/src/main.rs b/src/main.rs\n");
         assert!(verified.sensitive_paths.is_empty());
         let protected =
-            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n";
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\0diff --git a/src/.env b/src/.env\n";
         assert_eq!(
             parse_verified_diff(protected.to_vec())
                 .expect("protected path parsed")
@@ -1045,6 +1047,10 @@ mod tests {
             b":100644 100644 abcdef0 1234567 M\0\xff\0\ndiff --git ".as_slice(),
             b":100644 100644 abcdef0 1234567 M\0src/.env\0\ncorrupted".as_slice(),
             b":100644 100644 abcdef0 1234567 M\0src/.env\0".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0diff --git a/src/.env b/src/.env\n"
+                .as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n"
+                .as_slice(),
         ] {
             assert!(
                 matches!(
