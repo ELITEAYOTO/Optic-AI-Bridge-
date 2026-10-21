@@ -521,11 +521,9 @@ mod tests {
     fn git_control_mutation_denial_is_reported_without_filesystem_details() {
         let write = map_atomic_mutation_error(AtomicMutationError::ReservedGitMetadata);
         assert_eq!(write.message, "optic.git_metadata_protected");
-        let directory = map_authorized_mutation_error(
-            AuthorizedFileMutationError::Directory(
-                optic_bridge_runtime::DirectoryCreateError::ReservedGitMetadata,
-            ),
-        );
+        let directory = map_authorized_mutation_error(AuthorizedFileMutationError::Directory(
+            optic_bridge_runtime::DirectoryCreateError::ReservedGitMetadata,
+        ));
         assert_eq!(directory.message, "optic.git_metadata_protected");
     }
 
