@@ -700,7 +700,10 @@ mod tests {
         let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
         let status = granted.git_status().await.expect("authorized status").0;
         let raw = STANDARD.decode(status.porcelain_v2_base64).expect("base64");
-        assert!(raw.windows(b".envrc.private".len()).any(|part| part == b".envrc.private"));
+        assert!(
+            raw.windows(b".envrc.private".len())
+                .any(|part| part == b".envrc.private")
+        );
 
         run_git(
             &fixture.git,
@@ -739,7 +742,8 @@ mod tests {
             .expect("authorized direnv patch")
             .0;
         assert!(
-            STANDARD.decode(patch.data_base64)
+            STANDARD
+                .decode(patch.data_base64)
                 .expect("base64 patch")
                 .windows(b"fixture second".len())
                 .any(|part| part == b"fixture second")
