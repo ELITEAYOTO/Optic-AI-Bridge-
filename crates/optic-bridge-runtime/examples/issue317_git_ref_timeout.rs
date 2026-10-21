@@ -136,8 +136,8 @@ fn run_driver() {
         );
         let observed = git_output(&git, &base, &["rev-parse", "--verify", TARGET]);
         assert_eq!(
-            observed,
-            if expect_mutation { &new } else { &old },
+            observed.as_str(),
+            if expect_mutation { new.as_str() } else { old.as_str() },
             "Git ref state mismatched expected synthetic scenario {case}"
         );
         println!(
