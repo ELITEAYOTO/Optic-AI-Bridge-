@@ -1,5 +1,11 @@
 # GitHub-only project handoff
 
+## Approved Policy B — first narrow correction candidate (2026-10-21)
+
+Live baseline before branching: `main=3d9a0f78304578af53fd23b9fed7d08603348e0b` after merged #307, zero open PRs, independent push CI #39542505029 green on first attempt (Windows native/Linux/dependencies). The operator **approved Policy B**: a shared deterministic sensitive classifier for FileRead, FileSearch and GitRead, rejecting unverifiable outputs. The first scoped branch `security/sensitive-file-authority-scope` adds a shared pure core lexical classifier, file-read dual-scope enforcement and `fs_list` sensitive-name page denial with targeted unit/MCP regressions; acceptance depends on exact-head hosted CI and post-merge main CI. See [ADR-0034](../decisions/ADR-0034-SENSITIVE-READ-CLASSIFICATION.md). Do not assume this candidate is merged: inspect GitHub live.
+
+Remaining critical gap: the classifier is a path-name **floor**, not exhaustive content-secret detection, and **GitRead currently remains unfiltered**. #176 and #182 stay open; real-workspace remote/autonomous exposure is prohibited. The next individually demonstrated change should target complete Git status/diff output sensitivity, fail closed on unknown records, preserve existing Git containment and ordinary behavior where proven, with Windows/Linux fixture coverage. No speculative permission broadening or feature development. Other open Windows, recovery/race, soak and code-audit debts are unchanged.
+
 ## Current successor handoff — after merged #306 (2026-10-21)
 
 **Verified live base before this handoff update:** `main=dadaf48539788235b689dd4e09adcd2fb94904f3`, zero open PRs, [docs-only PR #306](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/306) squash-merged. Its [source CI #39540522392](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540522392) and independent [main CI #39540940136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540940136) **both succeeded first attempt on their exact SHAs** (Windows Rust, Linux Rust and dependency policy). A new handoff-only PR may have changed main after this snapshot: **requery live GitHub**, do not reset to this SHA.
