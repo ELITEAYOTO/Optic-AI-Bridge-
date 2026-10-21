@@ -1,13 +1,12 @@
 # ADR-0034: Shared Sensitive-Path Classification for Read Authorities
 
+Status: **Accepted policy B; path-name floor verified through #312; full sensitive-content guarantee unresolved**.
+
 ## Subsequent bounded filename-floor extension — #312 (2026-10-21)
 
 The shared classifier now recognizes direnv `.envrc` and `.envrc.*`, including ASCII case variations. [PR #312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) was squash-merged as `30295539fc6911f221cee6ac3c59785398c7a050`: accepted head `4e61a8f0aa0b65872d76ea9a2584b4ab79b89f33` passed [source CI #39571281997](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571281997), and independent [main CI #39571875338](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571875338) passed first attempt on exact squash SHA (Windows native, Ubuntu and dependencies). This only improves an existing deterministic lexical floor; it neither detects secrets inside innocently named files nor resolves #176/#182. No default permission or Git/process/runtime policy widened.
 
-
-Status: **Accepted policy B; path-name floor verified through #312; full sensitive-content guarantee unresolved**.
-
-## Verified integration checkpoint — 2026-10-21
+## Historical verified integration checkpoint through #310 — 2026-10-21
 
 This section supersedes the pre-merge *candidate* descriptions below; those
 remain as dated design history, not as present code status.
