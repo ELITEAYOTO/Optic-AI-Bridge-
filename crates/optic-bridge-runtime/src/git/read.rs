@@ -1102,8 +1102,8 @@ mod tests {
     #[test]
     fn git_log_parser_rejects_blank_rows_instead_of_skipping_commits() {
         let id = "0123456789012345678901234567890123456789";
-        let one = format!("{id}\\t\\t42\\n");
-        let two = format!("{id}\\t\\t43\\n");
+        let one = format!("{id}\t\t42\n");
+        let two = format!("{id}\t\t43\n");
         assert!(parse_log_entries(b"").expect("empty result").is_empty());
         let valid = parse_log_entries(format!("{one}{two}").as_bytes())
             .expect("consecutive commit records");
@@ -1112,10 +1112,10 @@ mod tests {
         assert_eq!(valid[1].commit_time_unix_seconds, 43);
 
         for malformed in [
-            format!("\\n{one}"),
-            format!("{one}\\n{two}"),
-            format!("{one}\\n"),
-            "\\n".to_owned(),
+            format!("\n{one}"),
+            format!("{one}\n{two}"),
+            format!("{one}\n"),
+            "\n".to_owned(),
         ] {
             assert!(
                 matches!(
