@@ -89,10 +89,7 @@ fn run_shim(args: &[String]) {
 }
 
 fn run_driver() {
-    let base = env::temp_dir().join(format!(
-        "optic-317-git-cas-timeout-{}",
-        std::process::id()
-    ));
+    let base = env::temp_dir().join(format!("optic-317-git-cas-timeout-{}", std::process::id()));
     fs::create_dir(&base).expect("unique fixture root");
     let _owned_root = FixtureRoot(base.clone());
     let git = git_executable();
@@ -104,10 +101,7 @@ fn run_driver() {
     assert_ne!(old, new, "distinct Git objects");
 
     let runner = HardenedCommandRunner::new(RUNNER_DEADLINE).expect("bounded runner");
-    for (case, expect_mutation) in [
-        ("cas-then-hold", true),
-        ("no-cas-then-hold", false),
-    ] {
+    for (case, expect_mutation) in [("cas-then-hold", true), ("no-cas-then-hold", false)] {
         git_output(&git, &base, &["update-ref", TARGET, &old]);
         let marker = base.join(format!("{case}.ready"));
         let args = [
@@ -120,11 +114,10 @@ fn run_driver() {
             old.clone().into(),
             marker.as_os_str().to_os_string(),
         ];
-        let env_vars: BTreeMap<_, _> =
-            ["SystemRoot", "SystemDrive", "WINDIR", "TMP", "TEMP"]
-                .into_iter()
-                .filter_map(|name| env::var_os(name).map(|value| (name.into(), value)))
-                .collect();
+        let env_vars: BTreeMap<_, _> = ["SystemRoot", "SystemDrive", "WINDIR", "TMP", "TEMP"]
+            .into_iter()
+            .filter_map(|name| env::var_os(name).map(|value| (name.into(), value)))
+            .collect();
         let spec = HardenedCommandSpec {
             executable: env::current_exe().expect("fixture binary"),
             cwd: base.clone(),
@@ -149,7 +142,11 @@ fn run_driver() {
         );
         println!(
             "OPTIC_317_GIT_CAS_TIMEOUT case={case} error=TimedOut actual_ref={} marker=observed",
-            if expect_mutation { "advanced" } else { "unchanged" }
+            if expect_mutation {
+                "advanced"
+            } else {
+                "unchanged"
+            }
         );
     }
 }
