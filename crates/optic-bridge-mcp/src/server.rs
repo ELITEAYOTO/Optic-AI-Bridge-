@@ -590,7 +590,7 @@ impl ReadonlyMcpServer {
         Ok(())
     }
 
-    fn authorize(
+    pub(crate) fn authorize(
         &self,
         grant: &SessionGrant,
         effect: Effect,

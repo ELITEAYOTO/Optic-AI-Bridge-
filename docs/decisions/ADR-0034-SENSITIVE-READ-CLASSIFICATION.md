@@ -82,6 +82,41 @@ containing secrets, alternate filesystem identities and concurrent Git
 repository changes require separate review. Real-workspace remote exposure
 continues to be blocked.
 
+## Third bounded candidate — verify Git diffs without a second Git command
+
+For #182, `git_diff` must not expose protected patch text under GitRead
+alone. A separate `git diff --name-only` preflight is **not** an authority
+boundary: working files/index can change between two Git calls. The scoped
+implementation instead requests `--raw -z --patch` in the existing **single**
+hardened Git invocation, retaining no-ext-diff/no-textconv/no-renames and
+submodule exclusion. Before returning a patch, the runtime parses the raw
+NUL-delimited changed-path prelude and classifies **each** path with the
+shared conservative classifier. Unexpected headers, malformed native paths,
+unknown statuses and unverifiable patch framing fail closed. The exposed
+response remains the bounded Git patch, not the private raw prelude. Since
+the raw prefix consumes the existing output-byte budget, some close-to-limit
+diffs may now be rejected rather than truncated or exposing unverified data.
+
+For **sensitive path patches**, MCP must additionally authorize a
+`FileRead` typed effect against a matching, active `ReadContentScope`
+**and** `ReadSensitiveScope` while still holding the session admission
+guard; a GitRead capability alone never substitutes for file-content
+authority. Directory-pathspec and repository-wide diffs are checked against
+each emitted changed path, not merely the user-supplied filter.
+Ordinary path-only diffs should remain usable with just GitRead.
+Renames are disabled by the command; surprising rename/copy records, if
+present, must validate both names rather than authorize only one.
+
+This is a **candidate** pending the source SHA's Windows-native/Linux
+Git-fixture CI and independent main CI. Git's own diff queue is trusted
+to generate the raw-path metadata and patch in the *same invocation*;
+it is not a claim of atomic worktree snapshots in the presence of
+concurrent edits. Filename classification remains a minimum lexical
+guard and does **not** prove normal-looking file contents contain no
+secrets, nor does it resolve ancestor identity races, unsafe aliases
+or remote real-project exposure (#176/#182). Do not close those issues
+based on this candidate.
+
 ## Regressions / future acceptance
 
 Exercise sensitive and ordinary canonical paths, directory ancestry,

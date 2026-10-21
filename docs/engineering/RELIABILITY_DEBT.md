@@ -1,5 +1,11 @@
 # Reliability and implementation debt
 
+## Candidate Git diff output verification and sensitive content lease (2026-10-21)
+
+Historical starting point: `main=ccaa7c05af27cfaab02d5dcb93369f60a0c01f53`, [#309 independent post-merge CI #39549267903](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39549267903) succeeded first attempt. Proposed #182 increment, **not yet CI-proven**: one Git diff invocation with paired `--raw -z --patch` output, parse/validate raw path records before releasing patch, deny unverifiable formats, and authorize typed FileRead dual scopes for flagged sensitive patch paths; native Windows/Linux regressions required.
+
+Remaining: lexical classifier fails to recognize secrets in ordinary-named content (#176); Git worktree/index concurrent edits may not form a single atomic snapshot; pathname aliases and native identities need additional investigation, as do Windows Node and recovery/soak open issues. Neither #176 nor #182 can be closed or real project remote access enabled solely on this change.
+
 ## Git porcelain status classification — candidate, issue #182 still open (2026-10-21)
 
 Baseline: `main=bfba4b97a531440de08012ca50106797d995646b`

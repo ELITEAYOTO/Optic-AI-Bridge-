@@ -1,5 +1,13 @@
 # Current project status
 
+## Git diff path-verified output boundary — candidate (2026-10-21)
+
+Live GitHub before branching: `main=ccaa7c05af27cfaab02d5dcb93369f60a0c01f53`; [#309](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/309) squash-merged; independent [post-merge CI #39549267903](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39549267903) green first attempt (native Windows/Linux/dependencies); zero open PRs. New **candidate** `security/git-diff-raw-output-authority`: not integrated until exact-PR-SHA CI and independent main CI succeed.
+
+Proven #182 gap: unlike the now-protected `git_status`, `git_diff` returned raw staged/worktree patch bytes without classifying any changed path. Candidate correction: one hardened Git invocation `--raw -z --patch` with raw changed-path verification and strict rejection of malformed/unknown/native-unrepresentable outputs. No preflight/patch race from two separate Git calls. For protected patch paths, check an additional active typed FileRead effect (both content and sensitive scopes) **inside session admission**, then release only the patch suffix. Normal source patches stay available. Unit/MCP regressions target unscoped/path-scoped/dir-scoped/staged protected patches, ordinary code, malformed raw and resource budgets.
+
+**Limit:** Git diff source metadata and patch come from the same Git diff command, but worktree snapshots are not atomic against arbitrary concurrent edits. Lexical path rules do not detect secrets in normal-looking file contents. #176/#182 remain OPEN; no remote real-project deployment or restart of new features.
+
 ## Git status sensitive-path classification — candidate (2026-10-21)
 
 Live baseline for this increment: `main=bfba4b97a531440de08012ca50106797d995646b`, [#308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/308) squash-merged, independent [post-merge CI #39546153987](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39546153987) green first attempt, zero open PRs. Operator-approved Policy B remains binding, with no remote exposure to real workspaces.

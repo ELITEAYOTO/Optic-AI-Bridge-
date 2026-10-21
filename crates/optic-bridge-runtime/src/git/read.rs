@@ -118,6 +118,9 @@ impl GitReadService {
             "--no-color",
             "--no-renames",
             "--ignore-submodules=all",
+            "--raw",
+            "-z",
+            "--patch",
         ]);
         if staged {
             args.push(OsString::from("--cached"));
@@ -127,9 +130,7 @@ impl GitReadService {
             args.push(OsString::from(path.as_str()));
         }
         let output = self.run_success(&args, limit)?;
-        Ok(GitDiffSnapshot {
-            bytes: output.stdout,
-        })
+        parse_verified_diff(output.stdout)
     }
 
     pub fn log(
@@ -320,7 +321,10 @@ pub struct GitStatusSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitDiffSnapshot {
+    /// Original Git patch bytes, excluding the private raw-path prelude.
     pub bytes: Vec<u8>,
+    /// Changed paths requiring the additional sensitive read authority.
+    pub sensitive_paths: Vec<WorkspacePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -381,6 +385,8 @@ pub enum GitReadError {
     InvalidLogRecord,
     #[error("Git status output cannot be verified against sensitive-path policy")]
     UnverifiableStatus,
+    #[error("Git diff output cannot be verified against sensitive-path policy")]
+    UnverifiableDiff,
     #[error("filesystem/process operation failed: {0}")]
     Io(#[from] io::Error),
     #[error("Git object id is invalid: {0}")]
@@ -496,6 +502,92 @@ fn classify_status_path(
         sensitive_paths.push(path);
     }
     Ok(())
+}
+
+/// Both path identities and patch bytes originate from ONE Git diff invocation.
+/// A separate --name-only preflight would race the working tree/index. The raw
+/// -z prelude is machine-parseable; only the patch suffix is returned to MCP.
+/// No unverified byte is published on unexpected/native-unrepresentable output.
+fn parse_verified_diff(output: Vec<u8>) -> Result<GitDiffSnapshot, GitReadError> {
+    if output.is_empty() {
+        return Ok(GitDiffSnapshot {
+            bytes: Vec::new(),
+            sensitive_paths: Vec::new(),
+        });
+    }
+    let mut offset = 0usize;
+    let mut count = 0usize;
+    let mut sensitive_paths = Vec::new();
+    while output.get(offset) == Some(&b':') {
+        let header_end = diff_nul_end(&output, offset)?;
+        let status = verify_raw_diff_header(&output[offset..header_end])?;
+        offset = header_end + 1;
+        let path_end = diff_nul_end(&output, offset)?;
+        classify_status_path(&output[offset..path_end], &mut sensitive_paths)
+            .map_err(|_| GitReadError::UnverifiableDiff)?;
+        offset = path_end + 1;
+        if matches!(status, b'R' | b'C') {
+            let other_end = diff_nul_end(&output, offset)?;
+            classify_status_path(&output[offset..other_end], &mut sensitive_paths)
+                .map_err(|_| GitReadError::UnverifiableDiff)?;
+            offset = other_end + 1;
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err(GitReadError::UnverifiableDiff);
+    }
+    // Git emits exactly one additional NUL between its -z raw record
+    // stream and patch text. Reject any other delimiter rather than trying
+    // to guess where confidential patch bytes begin.
+    let patch = output[offset..]
+        .strip_prefix(b"\0")
+        .ok_or(GitReadError::UnverifiableDiff)?;
+    if !patch.starts_with(b"diff --git ") {
+        return Err(GitReadError::UnverifiableDiff);
+    }
+    Ok(GitDiffSnapshot {
+        bytes: patch.to_vec(),
+        sensitive_paths,
+    })
+}
+
+fn diff_nul_end(output: &[u8], offset: usize) -> Result<usize, GitReadError> {
+    output
+        .get(offset..)
+        .and_then(|tail| tail.iter().position(|byte| *byte == 0))
+        .map(|relative| offset + relative)
+        .ok_or(GitReadError::UnverifiableDiff)
+}
+
+fn verify_raw_diff_header(header: &[u8]) -> Result<u8, GitReadError> {
+    let invalid = || GitReadError::UnverifiableDiff;
+    let mut fields = header.split(|byte| *byte == b' ');
+    let old_mode = fields.next().ok_or_else(invalid)?;
+    let new_mode = fields.next().ok_or_else(invalid)?;
+    let old_oid = fields.next().ok_or_else(invalid)?;
+    let new_oid = fields.next().ok_or_else(invalid)?;
+    let status = fields.next().ok_or_else(invalid)?;
+    if fields.next().is_some()
+        || old_mode.len() != 7
+        || old_mode[0] != b':'
+        || !old_mode[1..].iter().all(u8::is_ascii_digit)
+        || new_mode.len() != 6
+        || !new_mode.iter().all(u8::is_ascii_digit)
+        || ![old_oid, new_oid]
+            .iter()
+            .all(|oid| (7..=64).contains(&oid.len()) && oid.iter().all(u8::is_ascii_hexdigit))
+    {
+        return Err(invalid());
+    }
+    let (kind, detail) = status.split_first().ok_or_else(invalid)?;
+    if !matches!(kind, b'A' | b'D' | b'M' | b'T' | b'U' | b'R' | b'C')
+        || (!detail.is_empty()
+            && (!matches!(kind, b'M' | b'R' | b'C') || !detail.iter().all(u8::is_ascii_digit)))
+    {
+        return Err(invalid());
+    }
+    Ok(*kind)
 }
 
 fn parse_log_entries(bytes: &[u8]) -> Result<Vec<GitLogEntry>, GitReadError> {
@@ -821,6 +913,153 @@ mod tests {
             .expect("literal diff");
         let text = String::from_utf8(diff.bytes).expect("git diff utf8 fixture");
         assert!(text.contains(literal));
+    }
+
+    #[test]
+    fn git_raw_and_patch_framing_from_real_hardened_command_is_verifiable() {
+        let fixture = RepoFixture::new("diff-framing");
+        fs::write(fixture.repo.join("a.txt"), b"modified synthetic content\n").expect("fixture");
+        let output = fixture
+            .service()
+            .run_success(
+                &os_args([
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--no-color",
+                    "--no-renames",
+                    "--ignore-submodules=all",
+                    "--raw",
+                    "-z",
+                    "--patch",
+                ]),
+                64 * 1024,
+            )
+            .expect("hardened Git raw + patch");
+        assert!(
+            parse_verified_diff(output.stdout.clone()).is_ok(),
+            "real Git format is unverified (first 200 synthetic bytes): {:?}",
+            &output.stdout[..output.stdout.len().min(200)]
+        );
+    }
+
+    #[test]
+    fn diff_single_invocation_classifies_worktree_and_staged_sensitive_paths() {
+        let fixture = RepoFixture::new("diff-sensitive");
+        fs::write(fixture.repo.join(".env"), b"first fixture only\n").expect("fixture");
+        fs::write(fixture.repo.join("a.txt"), b"ordinary changed\n").expect("fixture");
+        commit_all(&fixture.git, &fixture.repo, "fixture secrets");
+        fs::write(fixture.repo.join(".env"), b"second fixture only\n").expect("change");
+        fs::write(fixture.repo.join("a.txt"), b"ordinary again\n").expect("change");
+        let service = fixture.service();
+        let all = service.diff(None, false, None).expect("whole-repo diff");
+        assert!(all.sensitive_paths.iter().any(|p| p.as_str() == ".env"));
+        assert!(
+            String::from_utf8_lossy(&all.bytes).contains("second fixture only"),
+            "existing raw patch semantics preserved"
+        );
+        let ordinary = service
+            .diff(Some(&path("a.txt")), false, None)
+            .expect("literal ordinary diff");
+        assert!(ordinary.sensitive_paths.is_empty());
+        assert!(String::from_utf8_lossy(&ordinary.bytes).contains("ordinary again"));
+        let protected = service
+            .diff(Some(&path(".env")), false, None)
+            .expect("literal protected diff");
+        assert_eq!(
+            protected
+                .sensitive_paths
+                .iter()
+                .map(WorkspacePath::as_str)
+                .collect::<Vec<_>>(),
+            [".env"]
+        );
+
+        // A staged newly added protected file has no committed worktree
+        // predecessor, but its contents must still require sensitive access.
+        fs::write(fixture.repo.join("nested.key"), b"new key fixture only\n").expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("nested.key")],
+        );
+        let staged = service.diff(None, true, None).expect("staged diff");
+        assert!(
+            staged
+                .sensitive_paths
+                .iter()
+                .any(|p| p.as_str() == "nested.key")
+        );
+        assert!(String::from_utf8_lossy(&staged.bytes).contains("new key fixture only"));
+    }
+
+    #[test]
+    fn diff_single_invocation_checks_directory_pathspec_children() {
+        let fixture = RepoFixture::new("diff-directory");
+        fs::create_dir_all(fixture.repo.join("src")).expect("directory");
+        fs::write(fixture.repo.join("src").join(".env.local"), b"first\n").expect("fixture");
+        fs::write(fixture.repo.join("src").join("main.rs"), b"first\n").expect("fixture");
+        commit_all(&fixture.git, &fixture.repo, "nested paths");
+        fs::write(
+            fixture.repo.join("src").join(".env.local"),
+            b"changed secret\n",
+        )
+        .expect("change");
+        fs::write(
+            fixture.repo.join("src").join("main.rs"),
+            b"changed source\n",
+        )
+        .expect("change");
+        let selected = fixture
+            .service()
+            .diff(Some(&path("src")), false, None)
+            .expect("directory diff");
+        assert!(
+            selected
+                .sensitive_paths
+                .iter()
+                .any(|p| p.as_str() == "src/.env.local")
+        );
+        assert!(String::from_utf8_lossy(&selected.bytes).contains("changed source"));
+    }
+
+    #[test]
+    fn malformed_raw_diff_stream_refuses_any_patch_before_release() {
+        let good = b":100644 100644 abcdef0 1234567 M\0src/main.rs\0\0diff --git a/src/main.rs b/src/main.rs\n";
+        let verified = parse_verified_diff(good.to_vec()).expect("verified diff");
+        assert_eq!(verified.bytes, b"diff --git a/src/main.rs b/src/main.rs\n");
+        assert!(verified.sensitive_paths.is_empty());
+        let protected =
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\0diff --git a/src/.env b/src/.env\n";
+        assert_eq!(
+            parse_verified_diff(protected.to_vec())
+                .expect("protected path parsed")
+                .sensitive_paths[0]
+                .as_str(),
+            "src/.env"
+        );
+        for invalid in [
+            b"diff --git a/.env b/.env\n".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env".as_slice(),
+            b":100644 100644 abcdef0 1234567 X\0src/.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0../.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src\\.env\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0\xff\0\ndiff --git ".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ncorrupted".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0".as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0diff --git a/src/.env b/src/.env\n"
+                .as_slice(),
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n"
+                .as_slice(),
+        ] {
+            assert!(
+                matches!(
+                    parse_verified_diff(invalid.to_vec()),
+                    Err(GitReadError::UnverifiableDiff)
+                ),
+                "malformed/unverifiable diff must be rejected"
+            );
+        }
     }
 
     #[test]
