@@ -1,4 +1,4 @@
-use std::{fs, io, path::Path, time::Instant};
+use std::{fs, io::{self, Read}, path::Path, time::{Duration, Instant}};
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -12,6 +12,25 @@ use thiserror::Error;
 use optic_bridge_windows::{PinnedExecutableFile, open_pinned_executable};
 
 pub const MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Diagnostic-only reader that partitions native read time from the
+/// remaining bounded content-hash work without inspecting or logging bytes.
+struct TimedIdentityReader<'a, R: Read> {
+    inner: &'a mut R,
+    read_elapsed: Duration,
+    read_calls: u32,
+}
+
+impl<R: Read> Read for TimedIdentityReader<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let began = Instant::now();
+        let result = self.inner.read(buffer);
+        self.read_elapsed += began.elapsed();
+        self.read_calls = self.read_calls.saturating_add(1);
+        result
+    }
+}
+
 
 #[cfg(windows)]
 type ExecutablePin = PinnedExecutableFile;
@@ -60,9 +79,30 @@ impl ProcessExecutableIdentity {
         let path_done = started.elapsed();
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let pin_done = started.elapsed();
-        let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
+        let timing_enabled =
+            std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
+        let version = if timing_enabled {
+            let hash_started = Instant::now();
+            let mut timed = TimedIdentityReader {
+                inner: pin.file_mut(),
+                read_elapsed: Duration::ZERO,
+                read_calls: 0,
+            };
+            let observed = ContentVersion::from_reader_bounded(&mut timed, max_bytes)?;
+            let hash_elapsed = hash_started.elapsed();
+            eprintln!(
+                "OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms={} nonread_ms={} total_ms={} calls={}",
+                timed.read_elapsed.as_millis(),
+                hash_elapsed.saturating_sub(timed.read_elapsed).as_millis(),
+                hash_elapsed.as_millis(),
+                timed.read_calls,
+            );
+            observed
+        } else {
+            ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?
+        };
         let total = started.elapsed();
-        if std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1") {
+        if timing_enabled {
             eprintln!(
                 "OPTIC_PROCESS_IDENTITY_TIMING path_ms={} pin_ms={} hash_ms={} total_ms={}",
                 path_done.as_millis(),
