@@ -60,6 +60,11 @@ project remotely.
 
 ## First bounded implementation
 
+The conservative path-name floor also covers direnv `.envrc` and `.envrc.*` files,
+which may export environment variables or load private credentials. This is a
+deterministic name check, not proof of secret-free content in other files.
+
+
 - Shared pure classifier lives in `optic-bridge-core::requires_sensitive_authority`,
   independent of OS, transport, LLM or Git subprocesses.
 - `PolicyEngine` requires **both** `ReadContentScope` and matching
