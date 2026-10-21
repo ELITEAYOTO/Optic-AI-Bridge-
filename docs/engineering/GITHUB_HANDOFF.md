@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current successor handoff — after merged #306 (2026-10-21)
+
+**Verified live base before this handoff update:** `main=dadaf48539788235b689dd4e09adcd2fb94904f3`, zero open PRs, [docs-only PR #306](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/306) squash-merged. Its [source CI #39540522392](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540522392) and independent [main CI #39540940136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540940136) **both succeeded first attempt on their exact SHAs** (Windows Rust, Linux Rust and dependency policy). A new handoff-only PR may have changed main after this snapshot: **requery live GitHub**, do not reset to this SHA.
+
+The operator wants the **existing repo stabilized**, not new features. One PR at a time, scoped correction + regression + docs, no artificial PR. Never use the operator PC or self-hosted runners. No Electron GUI, generalized Cargo, production remote MCP, alpha-wide merge, release, permission broadening or disabled protection. Follow `AGENTS.md`, `AI_HANDOFF.md`, `STATUS.md`, `ROADMAP.md`, `RELIABILITY_DEBT.md` and [the full reusable prompt](../../PROJECT_CONTINUITY_PROMPT.md) for instructions and invariants.
+
+**Immediate next investigation:** read-only inspection of the current sensitive-read authority composition, [issue #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) and [issue #182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182), across `ReadSensitiveScope`, default `ReadAuthoritySpec::workspace_all_non_sensitive()`, `fs_read`/`fs_list`, `GitRead`, `git_status`, `git_diff`, `git_log`, canonical path resolution, policy and lease checks. **Do not assert a functioning sensitive-file classifier:** it has not been implemented/proved, and Git status/diff can independently reveal sensitive material. Decide a deterministic cross-capability contract *before* code changes or real workspace remote exposure; a trust-model choice may require the operator. The existing canonical-`fs_list` and `.git` mutation fixes are already in main (#303/#304).
+
+**Next outstanding reliability gates:** natural native Windows Node/AppContainer 10s startup intermittent [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) with original red evidence, separate MCP ~30s first response, non-atomic multi-delete recovery after a real delete fails, directory ancestor races and Windows crash/power-loss persistence, incomplete 1h/4h fault-soak and file-level audit. Existing #180/#181/#183 issues remain open despite prior targeted safeguards—reconcile acceptance evidence before creating duplicates or closing issues.
+
+**Already integrated:** #293–#297, #299, #301–#306 (source/merge and CI evidence in STATUS); particularly #301 preserve recovery evidence, #303 canonical listing policy, #304 Git control namespace, #305 cursor-aware Git-log response, #306 documentation reconciliation. Green first-pass CI is **not** a certificate of production correctness. `main` was unprotected and the ruleset listing returned none at last observation; owner approval is needed before changing settings. Treat historical sections below as dated accounts, not active tasks.
+
+
 ## Latest verified handoff — 2026-10-21 after merged PR #305
 
 **Previously verified live `main`:** `43d3a4aeedee04dd03e895e27e81d3bc5af6652c`; **zero open PRs**. Independent [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed first attempt **on the exact merge SHA**, hosted Windows Rust, Linux Rust, dependencies. Requery GitHub before acting: this is a timestamped checkpoint, never a reset target.

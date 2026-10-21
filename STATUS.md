@@ -1,5 +1,14 @@
 # Current project status
 
+## Successor handoff snapshot — 2026-10-21, after merged #306
+
+GitHub live before this documentation handoff: `main=dadaf48539788235b689dd4e09adcd2fb94904f3`, **zero PRs open**, [PR #306](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/306) squash-merged (governance and stabilization exit-gates documentation). [PR #306 source CI #39540522392](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540522392) passed first attempt, and independent [main CI #39540940136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39540940136) passed first attempt on exact merge SHA (hosted Rust Windows, Rust Linux, dependencies). This is **dated evidence, not an instruction to restore a commit**. Verify live GitHub for changes after this handoff's own PR.
+
+**Next step:** security source audit of the `fs_read`/`fs_list` vs `GitRead`/status/diff data-exposure contract, [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) and [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182), with **no sensitive classifier yet proven** and no permission broadening. Other open reliability boundaries remain [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) Windows 10s Node/AppContainer, distinct MCP ~30s initial response, recovery atomicity/ancestor races/power-loss durability, soak/fault tests and incomplete exhaustive code audit. Administrative issues #180/#181/#183 have code-level regressions/protections recorded and need acceptance reconciliation, not automatic recreation or closure.
+
+**Operating rule:** one PR at a time only after proving a defect, tests+docs together, exact SHA CI and independent post-fusion main verification; no operator PC, self-hosted runner, new features, release or changing GitHub branch protections without approval. Full future-chat instructions live in [PROJECT_CONTINUITY_PROMPT.md](PROJECT_CONTINUITY_PROMPT.md) and [GITHUB_HANDOFF.md](docs/engineering/GITHUB_HANDOFF.md); old candidate headings below are archive records.
+
+
 ## Verified integration checkpoint — 2026-10-21 (before this documentation update)
 
 At the **live GitHub check**, `main` was `43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, with **zero open PRs**. Independent push [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed **first attempt** on this exact commit (hosted Windows Rust, Linux Rust, dependency policy). This is a dated observation, **not** an instruction to reset or a claim about later commits.
