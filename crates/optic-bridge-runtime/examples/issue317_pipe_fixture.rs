@@ -13,7 +13,10 @@ use optic_bridge_runtime::{HardenedCommandRunner, HardenedCommandSpec};
 fn await_file(root: &Path, name: &str, seconds: u64) {
     let started = Instant::now();
     while !root.join(name).is_file() {
-        assert!(started.elapsed() < Duration::from_secs(seconds), "fixture guard");
+        assert!(
+            started.elapsed() < Duration::from_secs(seconds),
+            "fixture guard"
+        );
         thread::sleep(Duration::from_millis(5));
     }
 }
@@ -34,9 +37,10 @@ fn main() {
                 executable: env::current_exe().expect("fixture exe"),
                 cwd: root.clone(),
                 args: vec!["parent".into(), root.clone().into_os_string(), case.into()],
-                env: ["SystemRoot", "SystemDrive"].into_iter().filter_map(|name| {
-                    env::var_os(name).map(|value| (name.into(), value))
-                }).collect::<BTreeMap<_, _>>(),
+                env: ["SystemRoot", "SystemDrive"]
+                    .into_iter()
+                    .filter_map(|name| env::var_os(name).map(|value| (name.into(), value)))
+                    .collect::<BTreeMap<_, _>>(),
                 output_limit: 4096,
             };
             let runner = HardenedCommandRunner::new(Duration::from_millis(200)).expect("runner");
@@ -55,13 +59,31 @@ fn main() {
         }
         "parent" => {
             fs::write(root.join("parent.pid"), std::process::id().to_string()).expect("pid");
+            if case == "control" {
+                fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
+                return;
+            }
             let stdout_held = case == "stdout" || case == "both";
             let stderr_held = case == "stderr" || case == "both";
             let mut command = Command::new(env::current_exe().expect("fixture exe"));
             command.args(["holder".as_ref(), root.as_os_str(), args[2].as_os_str()]);
-            command.stdin(if case == "stdin" { Stdio::inherit() } else { Stdio::null() });
-            command.stdout(if stdout_held { Stdio::inherit() } else { Stdio::null() });
-            command.stderr(if stderr_held { Stdio::inherit() } else { Stdio::null() });
+            command.stdin(if case == "stdin" {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            });
+            command.stdout(if stdout_held {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            });
+            command.stderr(if stderr_held {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            });
+            // Intentional orphan: the external Job/subreaper supervisor owns and reaps it.
+            #[expect(clippy::zombie_processes)]
             let _owned_by_outer_guard = command.spawn().expect("holder");
             await_file(&root, "holder.ready", 3);
             fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");

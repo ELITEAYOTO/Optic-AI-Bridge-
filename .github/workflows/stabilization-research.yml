@@ -20,11 +20,10 @@ jobs:
       - name: Install pinned Rust
         shell: bash
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
-      - name: Record formatter diff for review
+      - name: Check exact-source formatting
         shell: bash
         run: |
-          cargo +1.99.0 fmt --all
-          git diff -- '*.rs'
+          cargo +1.99.0 fmt --all -- --check
       - name: Build synthetic runner fixture
         run: cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_pipe_fixture
       - name: Supervised inherited pipe characterization

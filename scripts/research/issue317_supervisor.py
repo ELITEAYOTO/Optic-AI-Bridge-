@@ -122,9 +122,10 @@ def exercise(executable, case, parent):
             (root / "go").write_text("synthetic", encoding="ascii")
             wait_for(lambda: (root / "parent.exiting").exists(), 4, "direct parent exiting")
             parent_pid = int((root / "parent.pid").read_text())
-            holder_pid = int((root / "holder.pid").read_text())
+            holder_pid = int((root / "holder.pid").read_text()) if case != "control" else None
             wait_for(lambda: not pid_alive(parent_pid), 2, "direct parent actually exited")
-            assert pid_alive(holder_pid), "retaining descendant absent"
+            if holder_pid is not None:
+                assert pid_alive(holder_pid), "retaining descendant absent"
             observed = time.monotonic()
             if case == "control":
                 wait_for(lambda: process.poll() is not None, 1, "control returns")
@@ -134,18 +135,20 @@ def exercise(executable, case, parent):
                 # cannot return while the synthetic descendant holds a pipe.
                 time.sleep(1.0)
                 blocked = process.poll() is None
-                assert blocked, "source-level liveness hypothesis not reproduced"
-                assert not (root / "result.json").exists(), "runner already returned"
+                if case != "null-stdio":
+                    assert blocked, "source-level liveness hypothesis not reproduced"
+                    assert not (root / "result.json").exists(), "runner already returned"
             held_ms = round((time.monotonic() - observed) * 1000)
             (root / "release").write_text("synthetic", encoding="ascii")
             process.wait(timeout=4)
             assert process.returncode == 0, "fixture failed"
-            wait_for(lambda: not pid_alive(holder_pid), 2, "descendant exit")
+            if holder_pid is not None:
+                wait_for(lambda: not pid_alive(holder_pid), 2, "descendant exit")
             if job:
                 wait_for(lambda: job.active() == 0, 2, "job quiescence")
             reap()
             value = json.loads((root / "result.json").read_text(encoding="utf-8"))
-            if case != "control":
+            if case not in ["control", "null-stdio"]:
                 assert value["runner_ms"] >= 1000, "deadline violation not measured"
             if case == "stdin":
                 assert not value["ok"] and "Io" in value["error"], "writer failure not retained"
@@ -195,7 +198,7 @@ def main():
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix="optic-issue317-") as temporary:
-            for case in ["control", "stdout", "stderr", "both", "stdin"]:
+            for case in ["control", "null-stdio", "stdout", "stderr", "both", "stdin"]:
                 result["cases"].append(exercise(executable, case, Path(temporary)))
                 output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["complete"] = True

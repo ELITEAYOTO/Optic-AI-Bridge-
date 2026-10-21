@@ -50,7 +50,6 @@ impl<R: Read> Read for TimedIdentityReader<'_, R> {
     }
 }
 
-
 // First-observation diagnostics only; a fixed set of events, no file data.
 static IDENTITY_PROGRESS_CLAIMED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -348,7 +347,6 @@ mod tests {
         root
     }
 
-
     #[test]
     fn identity_progress_is_visible_while_the_first_read_is_pending() {
         use std::sync::mpsc;
@@ -375,7 +373,10 @@ mod tests {
         let (events_tx, events_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let worker = thread::spawn(move || {
-            let source = HeldRead { released: release_rx, first: true };
+            let source = HeldRead {
+                released: release_rx,
+                first: true,
+            };
             let reader = IdentityProgressReader::new(source, |phase| {
                 events_tx.send(phase).expect("observer");
             });
@@ -400,17 +401,29 @@ mod tests {
             let reader = IdentityProgressReader::new(&mut source, |phase| events.push(phase));
             let result = ContentVersion::from_reader_bounded(reader, max);
             if max == 0 {
-                assert!(matches!(result, Err(ContentVersionReadError::LimitExceeded)));
+                assert!(matches!(
+                    result,
+                    Err(ContentVersionReadError::LimitExceeded)
+                ));
                 assert_eq!(source.position(), 0);
                 assert!(events.is_empty());
             } else if max == 7 {
-                assert!(matches!(result, Err(ContentVersionReadError::LimitExceeded)));
+                assert!(matches!(
+                    result,
+                    Err(ContentVersionReadError::LimitExceeded)
+                ));
                 assert_eq!(source.position(), 8);
                 assert!(!events.contains(&"eof-observed"));
             } else {
-                assert_eq!(result.expect("complete digest"), ContentVersion::from_bytes(b"12345678"));
+                assert_eq!(
+                    result.expect("complete digest"),
+                    ContentVersion::from_bytes(b"12345678")
+                );
                 assert_eq!(source.position(), 8);
-                assert_eq!(events, ["read-entered", "first-read-returned", "eof-observed"]);
+                assert_eq!(
+                    events,
+                    ["read-entered", "first-read-returned", "eof-observed"]
+                );
             }
         }
     }
@@ -418,18 +431,25 @@ mod tests {
     #[test]
     fn identity_progress_emits_each_fixed_checkpoint_only_once() {
         let mut events = Vec::new();
-        let mut reader = IdentityProgressReader::new(
-            io::repeat(0).take(257 * 1024 * 1024),
-            |phase| events.push(phase),
-        );
+        let mut reader =
+            IdentityProgressReader::new(io::repeat(0).take(257 * 1024 * 1024), |phase| {
+                events.push(phase)
+            });
         let mut buffer = vec![0_u8; 1024 * 1024];
         while reader.read(&mut buffer).expect("synthetic read") != 0 {}
         assert_eq!(reader.read(&mut buffer).expect("repeated EOF"), 0);
         drop(reader);
-        assert_eq!(events, [
-            "read-entered", "first-read-returned", "read-16m",
-            "read-64m", "read-256m", "eof-observed",
-        ]);
+        assert_eq!(
+            events,
+            [
+                "read-entered",
+                "first-read-returned",
+                "read-16m",
+                "read-64m",
+                "read-256m",
+                "eof-observed",
+            ]
+        );
     }
 
     /// Research-only bounded outer buffer. `Take` wraps the *underlying*

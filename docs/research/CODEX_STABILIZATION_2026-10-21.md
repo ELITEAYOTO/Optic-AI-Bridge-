@@ -154,3 +154,30 @@ Next actions, in order:
    integration. Never replace joins with detached threads.
 3. Revisit #185 only with new delivery/loader/first-output evidence; preserve
    distinct original red attempts. #318 stays open, unmerged, with its own red CI.
+
+
+## Retained first campaign attempt — 5f00209e181629ce9536a075f274648a38af9831
+
+CI 39608173136 attempt 1 failed Linux formatting and Windows Clippy's
+zombie_processes check for the intentional orphan fixture. Research workflow
+39608173235 attempt 1: Linux job 119249744218 reproduced stdout/stderr/both
+and stdin blocking at 1010–1015ms vs 200ms; all were externally released and
+reaped. This research job first applied the recorded rustfmt-only diff before
+compiling; it is initial characterization, not final exact-byte acceptance.
+Windows job 119249743554 failed its control assumption: a descendant launched
+with all selected stdio redirected to nul still kept the runner from returning
+within one second after direct-parent death. That surprising observation is
+retained, not classified as an ordinary Node/MCP failure.
+
+Refinement: add a genuine no-descendant control; retain the original nul-stdio
+descendant as a separate measured characterization with no guessed outcome.
+The explicit-retained stdout/stderr/stdin tests still require the original
+deadline violation and complete cleanup. The deliberate orphan is annotated
+with a statement-scoped expected Clippy lint and its verified external ownership
+reason; production lint/test/security gates remain unchanged. Commit source
+formatting and require exact-source formatting in the final research workflow.
+No change to the production HardenedCommandRunner implementation.
+
+Windows nul-stdio retention needs separate interpretation; it may involve
+additional inherited handles, but the experiment alone does not identify the
+specific retained handle or establish a general Rust/Windows defect.
