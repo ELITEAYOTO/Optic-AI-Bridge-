@@ -684,6 +684,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn direnv_private_filename_requires_extra_authority_for_status_and_diff() {
+        let fixture = RepoFixture::new("direnv-sensitive-read");
+        fs::write(fixture.repo.join(".envrc.private"), b"fixture first\n").expect("fixture");
+        let ordinary = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            ordinary
+                .git_status()
+                .await
+                .err()
+                .expect("direnv filename is sensitive metadata")
+                .message,
+            "optic.policy_denied"
+        );
+        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let status = granted.git_status().await.expect("authorized status").0;
+        let raw = STANDARD.decode(status.porcelain_v2_base64).expect("base64");
+        assert!(raw.windows(b".envrc.private".len()).any(|part| part == b".envrc.private"));
+
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new(".envrc.private")],
+        );
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new("synthetic direnv"),
+            ],
+        );
+        fs::write(fixture.repo.join(".envrc.private"), b"fixture second\n")
+            .expect("modified fixture");
+        let request = || GitDiffRequest {
+            path: Some(".envrc.private".to_owned()),
+            staged: Some(false),
+            max_bytes: Some(16 * 1024),
+        };
+        assert_eq!(
+            ordinary
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("direnv patch requires content authority")
+                .message,
+            "optic.policy_denied"
+        );
+        let patch = granted
+            .git_diff(Parameters(request()))
+            .await
+            .expect("authorized direnv patch")
+            .0;
+        assert!(
+            STANDARD.decode(patch.data_base64)
+                .expect("base64 patch")
+                .windows(b"fixture second".len())
+                .any(|part| part == b"fixture second")
+        );
+    }
+
+    #[tokio::test]
     async fn git_diff_requires_sensitive_content_authority_but_preserves_ordinary_diff() {
         let fixture = RepoFixture::new("sensitive-diff");
         fs::write(fixture.repo.join(".env"), b"first dummy only\n").expect("fixture");
