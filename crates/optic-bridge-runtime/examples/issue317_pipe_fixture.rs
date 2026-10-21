@@ -37,7 +37,7 @@ fn main() {
                 executable: env::current_exe().expect("fixture exe"),
                 cwd: root.clone(),
                 args: vec!["parent".into(), root.clone().into_os_string(), case.into()],
-                env: ["SystemRoot", "SystemDrive"]
+                env: ["SystemRoot", "SystemDrive", "OPTIC_RESEARCH_PYTHON"]
                     .into_iter()
                     .filter_map(|name| env::var_os(name).map(|value| (name.into(), value)))
                     .collect::<BTreeMap<_, _>>(),
@@ -60,6 +60,26 @@ fn main() {
         "parent" => {
             fs::write(root.join("parent.pid"), std::process::id().to_string()).expect("pid");
             if case == "control" {
+                fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
+                return;
+            }
+            if case == "selective-null" {
+                // Contrast: Python explicitly closes non-standard inherited
+                // handles. This known fixture helper remains in the outer job/group.
+                let python = env::var_os("OPTIC_RESEARCH_PYTHON").expect("fixture Python");
+                let script = "import subprocess,sys; subprocess.Popen([sys.argv[1],'holder',sys.argv[2],sys.argv[3]],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)";
+                let status = Command::new(python)
+                    .args(["-I", "-S", "-c", script])
+                    .arg(env::current_exe().expect("fixture exe"))
+                    .arg(&root)
+                    .arg(case)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .expect("selective inheritance helper");
+                assert!(status.success());
+                await_file(&root, "holder.ready", 3);
                 fs::write(root.join("parent.exiting"), b"synthetic").expect("parent marker");
                 return;
             }

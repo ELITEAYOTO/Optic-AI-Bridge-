@@ -114,7 +114,10 @@ def exercise(executable, case, parent):
     err = root / "outer.stderr"
     try:
         with out.open("wb") as stdout, err.open("wb") as stderr:
+            environment = os.environ.copy()
+            environment["OPTIC_RESEARCH_PYTHON"] = sys.executable
             process = subprocess.Popen([str(executable), "runner", str(root), case],
+                                       env=environment,
                                        stdout=stdout, stderr=stderr,
                                        start_new_session=(os.name != "nt"))
             if job:
@@ -135,7 +138,9 @@ def exercise(executable, case, parent):
                 # cannot return while the synthetic descendant holds a pipe.
                 time.sleep(1.0)
                 blocked = process.poll() is None
-                if case != "null-stdio":
+                if case == "selective-null":
+                    assert not blocked, "selective inheritance did not release runner"
+                elif case != "null-stdio":
                     assert blocked, "source-level liveness hypothesis not reproduced"
                     assert not (root / "result.json").exists(), "runner already returned"
             held_ms = round((time.monotonic() - observed) * 1000)
@@ -148,7 +153,7 @@ def exercise(executable, case, parent):
                 wait_for(lambda: job.active() == 0, 2, "job quiescence")
             reap()
             value = json.loads((root / "result.json").read_text(encoding="utf-8"))
-            if case not in ["control", "null-stdio"]:
+            if case not in ["control", "null-stdio", "selective-null"]:
                 assert value["runner_ms"] >= 1000, "deadline violation not measured"
             if case == "stdin":
                 assert not value["ok"] and "Io" in value["error"], "writer failure not retained"
@@ -198,7 +203,7 @@ def main():
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix="optic-issue317-") as temporary:
-            for case in ["control", "null-stdio", "stdout", "stderr", "both", "stdin"]:
+            for case in ["control", "null-stdio", "selective-null", "stdout", "stderr", "both", "stdin"]:
                 result["cases"].append(exercise(executable, case, Path(temporary)))
                 output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["complete"] = True

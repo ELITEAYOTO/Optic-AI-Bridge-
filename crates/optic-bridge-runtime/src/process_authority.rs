@@ -173,15 +173,15 @@ impl ProcessExecutableIdentity {
         let version = if timing_enabled {
             let hash_started = Instant::now();
             mark_progress("hash-started");
-            let mut progress = IdentityProgressReader::new(pin.file_mut(), mark_progress);
             let mut timed = TimedIdentityReader {
-                inner: &mut progress,
+                inner: pin.file_mut(),
                 read_elapsed: Duration::ZERO,
                 read_calls: 0,
                 latency_buckets: [0; 4],
                 max_read_elapsed: Duration::ZERO,
             };
-            let observed = ContentVersion::from_reader_bounded(&mut timed, max_bytes)?;
+            let progress = IdentityProgressReader::new(&mut timed, mark_progress);
+            let observed = ContentVersion::from_reader_bounded(progress, max_bytes)?;
             mark_progress("hash-complete");
             let hash_elapsed = hash_started.elapsed();
             eprintln!(
@@ -431,14 +431,15 @@ mod tests {
     #[test]
     fn identity_progress_emits_each_fixed_checkpoint_only_once() {
         let mut events = Vec::new();
-        let mut reader =
-            IdentityProgressReader::new(io::repeat(0).take(257 * 1024 * 1024), |phase| {
-                events.push(phase)
-            });
-        let mut buffer = vec![0_u8; 1024 * 1024];
-        while reader.read(&mut buffer).expect("synthetic read") != 0 {}
-        assert_eq!(reader.read(&mut buffer).expect("repeated EOF"), 0);
-        drop(reader);
+        {
+            let mut reader =
+                IdentityProgressReader::new(io::repeat(0).take(257 * 1024 * 1024), |phase| {
+                    events.push(phase)
+                });
+            let mut buffer = vec![0_u8; 1024 * 1024];
+            while reader.read(&mut buffer).expect("synthetic read") != 0 {}
+            assert_eq!(reader.read(&mut buffer).expect("repeated EOF"), 0);
+        }
         assert_eq!(
             events,
             [

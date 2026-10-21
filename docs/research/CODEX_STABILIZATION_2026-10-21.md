@@ -181,3 +181,30 @@ No change to the production HardenedCommandRunner implementation.
 Windows nul-stdio retention needs separate interpretation; it may involve
 additional inherited handles, but the experiment alone does not identify the
 specific retained handle or establish a general Rust/Windows defect.
+
+
+## Exact second attempt — 2f2f608d6768b073bbc3992d1177598e2f803beb
+
+Supervised research workflow 39609013851, attempt 1, completed Windows and Linux
+characterizations with all owned fixture processes quiescent. Windows Server
+2025 / Python 3.12.10: no-descendant control 18ms; nul-stdio descendant 1025ms;
+stdout 1024ms; stderr 1023ms; both 1026ms; retained stdin 1026ms, then BrokenPipe.
+Ubuntu 24.04 / Python 3.12.3: control 5ms; nul-stdio 10ms; stdout 1013ms; stderr
+1012ms; both 1012ms; stdin 1012ms, then BrokenPipe. Each runner deadline was
+200ms; external release occurred one second after verified direct-parent death.
+These are controlled deadline violations, not an infinite-duration benchmark.
+
+Normal CI 39609013696, attempt 1, then exposed a test-only drop_non_drop Clippy
+error in the progress checkpoint regression. Replace the explicit drop with a
+lexical scope; no lint suppression for runtime/test code. Retain that red run.
+Keep native I/O measurement INSIDE the progress wrapper, so existing read_ms
+continues timing native reads rather than including progress stderr emission.
+
+A further falsifiable Windows inheritance comparison adds selective-null:
+the known hosted Python creates the exact same Rust holder with close_fds=True
+and nul stdio, while the Rust parent still exits. Original nul-stdio and
+explicit-held-pipe cases are retained unchanged. If selective-null returns
+while ordinary nul-stdio blocks, non-standard inherited handles are implicated
+in THIS fixture; the exact handle and Rust/OS mechanism remain unproven.
+Failure to obtain that contrast stays visible. This is not a production workaround,
+a Node startup fix, or authority to use ambient Python in the Bridge core.
