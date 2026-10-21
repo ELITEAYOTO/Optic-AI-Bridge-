@@ -42,6 +42,13 @@ jobs:
       - name: Test
         id: workspace-tests
         run: cargo test --locked --workspace --all-features
+      - name: Characterize Git CAS outcome after native runner timeout (research #317)
+        if: startsWith(github.ref, 'refs/heads/bootstrap/issue-317-')
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          cargo build --locked -p optic-bridge-runtime --example issue317_git_ref_timeout
+          python -c 'import os,subprocess; exe=os.path.abspath(os.path.join("target","debug","examples","issue317_git_ref_timeout"+(".exe" if os.name=="nt" else ""))); subprocess.run([exe,"driver"], timeout=35, check=True)'
       - name: Diagnose failed Windows Node loopback proof without relaxing its gate
         if: failure() && runner.os == 'Windows' && steps.workspace-tests.outcome == 'failure'
         shell: pwsh
