@@ -1,5 +1,16 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Reprise canonique vérifiée — 21 octobre 2026 après PR #305
+
+Point GitHub vérifié avant cette mise à jour documentaire : `main=43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, **zéro PR ouverte** ; CI indépendante [#39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) réussie **dès la première tentative**, Windows Rust natif, Linux et dépendances sur ce SHA exact. Revérifier l'état live en premier : **ne jamais réinitialiser sur un ancien checkpoint**.
+
+Les PR [#301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301), [#302](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/302), [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303), [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304) et [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305) sont **toutes fusionnées**. Respectivement : préservation des preuves de récupération, ancienne passation, autorisation de `fs_list` sur le répertoire canonique, protection de l'espace `.git` contre mutation générique, ajustement de la limite de réponse `git_log` après ajout du curseur. Les sections datées ci-dessous disant « candidat » décrivent les étapes avant fusion, **pas des PR à reprendre**.
+
+Priorités encore ouvertes : intermittence Windows Node/AppContainer 10s [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), autre timeout de première réponse MCP ~30s, récupération multi-suppressions non atomique/courses sur les ancêtres/persistance après coupure, politique de lectures sensibles [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176), composition GitRead [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182). #180/#181/#183 sont des tickets **encore ouverts dans GitHub** avec des protections déjà intégrées en tout ou partie : ne pas créer de correctif redondant ni les clore sans vérification de leur contrat. L'audit fichier par fichier et les épreuves de durée demeurent incomplets ; `main` n'est pas protégé selon le dernier relevé, et toute modification de protections requiert une décision du propriétaire.
+
+Maintenir le gel fonctionnel : une seule PR à la fois, correctif démontré/tests/docs dans la même PR, Windows natif sur runners GitHub hébergés, exact-head CI et post-fusion, conservation des premières tentatives rouges ; aucune action sur le PC utilisateur, élévation, self-hosted runner, release ou refonte globale. **ROADMAP.md** possède les critères de sortie ; aucun taux de « propreté à 100 % » ne peut être inféré d'une CI verte.
+
+
 ## Contrôle de fiabilité Git — curseur et limite de réponse
 
 L'audit a identifié un dépassement possible de la limite JSON de `git_log` : la réponse pouvait être ajustée à la limite, puis recevoir un `next_cursor` supplémentaire sans vérification de taille finale. La correction candidate revérifie la taille `entrées + curseur`, conserve une pagination strictement progressive ou refuse l'émission par `optic.response_too_large`. Les tests utilisent un budget synthétique déterministe avec et sans place pour le nouveau curseur. Aucune modification de droit Git, d'isolation, de réseau ou de fonctionnalité.
