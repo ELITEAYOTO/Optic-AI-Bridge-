@@ -441,10 +441,21 @@ impl ReadonlyMcpServer {
                     },
                     server.clock.now(),
                 )?;
-                server
+                if let Some(root) = canonical_root.as_ref() {
+                    server.ensure_sensitive_metadata_authorized(grant, root, server.clock.now())?;
+                }
+                let page = server
                     .filesystem
                     .list(canonical_root.as_ref(), cursor, limit)
-                    .map_err(map_filesystem_error)
+                    .map_err(map_filesystem_error)?;
+                for entry in &page.entries {
+                    server.ensure_sensitive_metadata_authorized(
+                        grant,
+                        &entry.path,
+                        server.clock.now(),
+                    )?;
+                }
+                Ok(page)
             })
             .await?;
 
@@ -545,6 +556,38 @@ impl ReadonlyMcpServer {
         } else {
             Ok(())
         }
+    }
+
+    /// FileSearch permission alone does not disclose protected filenames.
+    /// For now this denies the entire affected page (no unsafe cursor skipping).
+    fn ensure_sensitive_metadata_authorized(
+        &self,
+        grant: &SessionGrant,
+        path: &WorkspacePath,
+        now: optic_bridge_core::MonotonicTime,
+    ) -> Result<(), ErrorData> {
+        if !optic_bridge_core::requires_sensitive_authority(path) {
+            return Ok(());
+        }
+        let denied = || ErrorData::invalid_request("optic.policy_denied", None);
+        if !grant.allows(Capability::FileRead) {
+            return Err(denied());
+        }
+        let lease_id = self
+            .read_authorities
+            .lease_for(Capability::FileRead)
+            .ok_or_else(denied)?;
+        let lease = self
+            .task_leases
+            .get_active(lease_id, &self.session, now)
+            .map_err(|_| denied())?;
+        if !lease.allows(Capability::FileRead)
+            || !lease.covers_read_sensitive(path)
+            || lease.policy_epoch != grant.policy_epoch
+        {
+            return Err(denied());
+        }
+        Ok(())
     }
 
     fn authorize(
@@ -839,6 +882,15 @@ mod tests {
         capabilities: &[Capability],
         search_scope: Option<SearchMetadataScope>,
     ) -> ReadonlyMcpServer {
+        server_with_scopes(root, capabilities, search_scope, None)
+    }
+
+    fn server_with_scopes(
+        root: &Path,
+        capabilities: &[Capability],
+        search_scope: Option<SearchMetadataScope>,
+        sensitive_scope: Option<optic_bridge_core::ReadSensitiveScope>,
+    ) -> ReadonlyMcpServer {
         let clock: Arc<dyn Clock> = Arc::new(FixedClock(MonotonicTime::from_millis(10)));
         let session = SessionHandle::generate().expect("test entropy");
         let grant = SessionGrant {
@@ -865,7 +917,7 @@ mod tests {
             } else {
                 BTreeSet::new()
             },
-            read_sensitive: BTreeSet::new(),
+            read_sensitive: sensitive_scope.into_iter().collect(),
         };
         let read_authorities = ReadAuthoritySet::provision(
             &server.task_leases,
@@ -980,6 +1032,93 @@ mod tests {
         assert_eq!(response.data, STANDARD.encode(b"hello"));
         assert!(response.eof);
 
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn sensitive_fs_read_is_denied_without_extra_scope_and_works_with_explicit_scope() {
+        let root = workspace("sensitive-read");
+        fs::write(root.join(".env"), b"fixture-only-secret").expect("fixture");
+        fs::write(root.join("README.md"), b"ordinary").expect("fixture");
+        let read = |path: &str| FsReadRequest {
+            path: path.to_owned(),
+            offset: None,
+            max_bytes: Some(64),
+        };
+        let ordinary = server(&root, &[Capability::FileRead]);
+        assert_eq!(
+            ordinary
+                .fs_read(Parameters(read(".env")))
+                .await
+                .err()
+                .expect("sensitive read requires extra scope")
+                .message,
+            "optic.policy_denied"
+        );
+        ordinary
+            .fs_read(Parameters(read("README.md")))
+            .await
+            .expect("ordinary content allowed");
+        let elevated = server_with_scopes(
+            &root,
+            &[Capability::FileRead],
+            None,
+            Some(optic_bridge_core::ReadSensitiveScope::all()),
+        );
+        let response = elevated
+            .fs_read(Parameters(read(".env")))
+            .await
+            .expect("explicit sensitive authority")
+            .0;
+        assert_eq!(
+            STANDARD.decode(response.data).expect("base64"),
+            b"fixture-only-secret"
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn fs_list_does_not_expose_sensitive_names_without_extra_scope() {
+        let root = workspace("sensitive-list");
+        fs::write(root.join("README.md"), b"ordinary").expect("fixture");
+        fs::write(root.join(".env"), b"fixture-only-secret").expect("fixture");
+        let list = || FsListRequest {
+            path: None,
+            cursor: None,
+            limit: Some(64),
+        };
+        let ordinary = server(&root, &[Capability::FileSearch, Capability::FileRead]);
+        assert_eq!(
+            ordinary
+                .fs_list(Parameters(list()))
+                .await
+                .err()
+                .expect("sensitive filename must not be returned")
+                .message,
+            "optic.policy_denied"
+        );
+        let elevated = server_with_scopes(
+            &root,
+            &[Capability::FileSearch, Capability::FileRead],
+            None,
+            Some(optic_bridge_core::ReadSensitiveScope::all()),
+        );
+        let response = elevated
+            .fs_list(Parameters(list()))
+            .await
+            .expect("authorized listing")
+            .0;
+        assert!(response.entries.iter().any(|entry| entry.name == ".env"));
+        let no_read = server(&root, &[Capability::FileSearch]);
+        assert_eq!(
+            no_read
+                .fs_list(Parameters(list()))
+                .await
+                .err()
+                .expect("no read lease")
+                .message,
+            "optic.policy_denied"
+        );
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

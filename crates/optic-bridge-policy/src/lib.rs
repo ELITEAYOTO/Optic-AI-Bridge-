@@ -4,7 +4,7 @@
 
 use optic_bridge_core::{
     ActionEnvelope, Capability, Effect, LeaseScope, MonotonicTime, ProcessExecutionClass,
-    SessionGrant, TaskLease, ToolApprovalRequirement,
+    SessionGrant, TaskLease, ToolApprovalRequirement, requires_sensitive_authority,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,7 +155,10 @@ impl PolicyEngine {
 
 fn lease_covers_effect(lease: &TaskLease, effect: &Effect) -> bool {
     match effect {
-        Effect::FileRead { path } => lease.covers_read_content(path),
+        Effect::FileRead { path } => {
+            lease.covers_read_content(path)
+                && (!requires_sensitive_authority(path) || lease.covers_read_sensitive(path))
+        }
         Effect::FileSearch { root } => lease.covers_search_metadata(root.as_ref()),
         Effect::FileWrite { path, .. }
         | Effect::FileDelete { path, .. }
@@ -420,6 +423,62 @@ mod tests {
         );
         assert_eq!(
             PolicyEngine.evaluate(&allowed, &session, Some(&read_scope), now()),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn sensitive_file_read_requires_both_content_and_sensitive_scopes() {
+        use optic_bridge_core::{ReadContentScope, ReadSensitiveScope};
+
+        let session = session(&[Capability::FileRead]);
+        let secret_effect = Effect::FileRead {
+            path: path("src/.ENV.local"),
+        };
+        let content_only = lease(
+            &session,
+            &[Capability::FileRead],
+            &[LeaseScope::ReadContent(ReadContentScope::all())],
+        );
+        let action = envelope(&session, secret_effect.clone(), Some(&content_only));
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&content_only), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+        let sensitive_only = lease(
+            &session,
+            &[Capability::FileRead],
+            &[LeaseScope::ReadSensitive(ReadSensitiveScope::all())],
+        );
+        let action = envelope(&session, secret_effect.clone(), Some(&sensitive_only));
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&sensitive_only), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+        let wrong_prefix = lease(
+            &session,
+            &[Capability::FileRead],
+            &[
+                LeaseScope::ReadContent(ReadContentScope::all()),
+                LeaseScope::ReadSensitive(ReadSensitiveScope::prefix(path("other"))),
+            ],
+        );
+        let action = envelope(&session, secret_effect.clone(), Some(&wrong_prefix));
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&wrong_prefix), now()),
+            PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
+        );
+        let permitted = lease(
+            &session,
+            &[Capability::FileRead],
+            &[
+                LeaseScope::ReadContent(ReadContentScope::all()),
+                LeaseScope::ReadSensitive(ReadSensitiveScope::prefix(path("src"))),
+            ],
+        );
+        let action = envelope(&session, secret_effect, Some(&permitted));
+        assert_eq!(
+            PolicyEngine.evaluate(&action, &session, Some(&permitted), now()),
             PolicyDecision::Allow
         );
     }

@@ -1,5 +1,22 @@
 # Reliability and implementation debt
 
+## Policy B classifier implementation boundary — candidate (2026-10-21)
+
+Operator approved common deterministic sensitive classification for file content,
+directory metadata and Git with unknown/unverifiable output denial. The first
+candidate increments *only* file read/list: a pure conservative lexical
+`requires_sensitive_authority` classifier, policy-enforced FileRead
+ReadContent+ReadSensitive dual-scope, and fs_list whole-page denial for
+protected names without separately provisioned sensitive scope, plus unit/MCP
+tests. This is a **candidate**, not evidence of completed CI/integration.
+Decision: [ADR-0034](../decisions/ADR-0034-SENSITIVE-READ-CLASSIFICATION.md).
+
+**Still blockers:** ordinary-looking files can contain secrets; Git status/diff
+can independently reveal protected names/patches and are not yet classified;
+unknown Git output representation requires fail-closed design; canonical
+ancestor/identity races remain. Keep #176/#182 open, no real-project remote
+exposure, no claim of full classifier or blanket data confidentiality.
+
 ## Active stabilization risk register — live evidence snapshot 2026-10-21
 
 At inspection `main=43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, no PRs open; [post-merge CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) green first attempt, exact SHA. Scoped PRs #301–#305 are **merged**, not candidates. Do not infer global safety from this CI.

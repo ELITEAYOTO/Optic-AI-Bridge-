@@ -74,8 +74,60 @@ typed_workspace_scope!(
 );
 typed_workspace_scope!(
     ReadSensitiveScope,
-    "Additional authority for content classified as sensitive by a future explicit classifier. This type does not classify paths by itself."
+    "Additional authority for paths classified sensitive by the deterministic workspace classifier. Ordinary content authority is still required."
 );
+
+/// Conservative name-based sensitivity floor for canonical workspace paths.
+/// This is not a content-secret detector: an ordinary-looking file can still
+/// contain secrets. Real-project remote exposure remains blocked until all
+/// read surfaces and content policy are validated.
+#[must_use]
+pub fn requires_sensitive_authority(path: &WorkspacePath) -> bool {
+    path.as_str().split('/').any(|segment| {
+        let name = segment.to_ascii_lowercase();
+        matches!(
+            name.as_str(),
+            ".ssh"
+                | ".aws"
+                | ".azure"
+                | ".gnupg"
+                | ".kube"
+                | ".docker"
+                | ".git"
+                | ".npmrc"
+                | ".pypirc"
+                | ".netrc"
+                | ".git-credentials"
+                | "credentials"
+                | "id_rsa"
+                | "id_dsa"
+                | "id_ecdsa"
+                | "id_ed25519"
+        ) || name == ".env"
+            || name.starts_with(".env.")
+            || name.contains("secret")
+            || name.contains("credential")
+            || name == "token"
+            || name.starts_with("token.")
+            || name.starts_with("token_")
+            || name.starts_with("token-")
+            || name.contains("_token")
+            || name.contains("-token")
+            || [
+                ".pem",
+                ".key",
+                ".p12",
+                ".pfx",
+                ".kdbx",
+                ".jks",
+                ".keystore",
+                ".tfstate",
+                ".tfvars",
+            ]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -106,6 +158,41 @@ mod tests {
         assert!(search.covers_search_root(Some(&path("src"))));
         assert!(content.covers_path(&path("src/lib.rs")));
         assert!(sensitive.covers_path(&path("src/secrets.txt")));
+    }
+
+    #[test]
+    fn sensitive_path_classifier_checks_all_segments_and_ascii_case() {
+        for candidate in [
+            ".env",
+            ".ENV.production",
+            "config/.aws/credentials",
+            "nested/private.KEY",
+            "keys/id_ed25519",
+            "src/SeCrEtS.json",
+            "terraform/state.tfstate",
+            "auth/api_Token.txt",
+            ".git/config",
+            "nested/.npmrc",
+        ] {
+            assert!(
+                requires_sensitive_authority(&path(candidate)),
+                "sensitive path not recognized: {candidate}"
+            );
+        }
+        for candidate in [
+            "src/lib.rs",
+            ".gitignore",
+            ".gitattributes",
+            "README.md",
+            "src/environment.rs",
+            "docs/security.md",
+            "tokenizer.rs",
+        ] {
+            assert!(
+                !requires_sensitive_authority(&path(candidate)),
+                "ordinary path unexpectedly classified: {candidate}"
+            );
+        }
     }
 
     #[test]
