@@ -1,20 +1,10 @@
 # Reliability and implementation debt
 
-## Bounded FileRead multi-link alias safeguard — source-level finding (2026-10-21)
+## Verified FileRead hard-link alias safeguard — after #314 (2026-10-21)
 
-Path-based sensitive authorization alone does not distinguish hard-linked
-names for the same native file. A protected `.env` and ordinary
-`README.txt` hard link resolve as separate canonical pathnames but the same
-opened file identity; without a shared-link check, FileRead through the
-ordinary alias could bypass the lexical sensitivity floor. The scoped safeguard
-treats multi-linked opened files as potentially sensitive and requires the
-existing matching sensitive scope in addition to ordinary FileRead. It is
-conservative for harmless hard links. Tests use **synthetic bytes** on native
-Windows/Linux; they must pass on exact CI head before this can be considered
-integrated. Staged Git blob metadata, arbitrary benign-name secrets,
-concurrent identity changes and cross-tool GitRead proof remain open under
-#176/#182. No timeout/sandbox/network/process or feature change.
+An ordinary-looking hard-link alias can refer to the same file identity as a sensitive-named `.env`. Previously only the canonical lexical alias was classified, so FileRead authority could differ between the names. [PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) now checks the link count **on the opened native handle/descriptor** and conservatively requires an existing matching sensitive scope for files with multiple names, alongside ordinary FileRead authorization. Valid synthetic alias denial, explicit approval and normal single-link reads passed both Windows and Linux. Accepted source [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127), specialized workflows and independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) passed on exact SHAs; current integrated commit `7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`. [Full evidence](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381).
 
+This is a narrow link-alias defense, **not** content scanning, a stable Git snapshot, or a remote-workspace readiness guarantee. Harmless multiply-linked files can be denied by design. #176 and #182 remain open for secrets in ordinary filenames, Git blobs/branch metadata and identity/concurrency. [Read-only GitRead review](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182#issuecomment-6312922336) records the unclassified `branch.head`/`branch.upstream` metadata as an unresolved contract question, not a demonstrated credential leak. #185's intermittent Node/AppContainer 10s timeout is unrelated and its cause is still unknown; the 30s first MCP response remains a separate issue. No changes to network, sandbox, process deadlines, Git command behavior, defaults or operator PC.
 
 ## Verified after #312; Windows transport evidence remains open (2026-10-21)
 
