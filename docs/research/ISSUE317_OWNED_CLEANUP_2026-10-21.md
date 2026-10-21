@@ -178,3 +178,31 @@ the already specified bounded2s cleanup confirmation, record initial count and
 confirmation elapsed, and also confirm fallback termination before closing the
 guard. Command deadline200ms and acceptance of zero active processes are unchanged.
 A still-nonempty job remains a failure. No workflow retry on unchanged SHA.
+
+## Second native attempt: a useful negative ownership result
+
+Source55c93721cc2acc67b0c404be11df8cf97aced4d6, research39681675221 attempt1:
+Windows passed all16 cases. The initial outer accounting count was sometimes1
+after worker wait; it reached0 within0–16ms of bounded confirmation. This supports
+the harness timing diagnosis without any command-deadline change.
+
+Linux passed the ten ordinary cases, then the escaped-holder comparison failed
+the INDEPENDENT guard: an adopted fixture remained after the prototype reported
+reclamation. The first-stage assertions had required original group empty,
+escaped holder alive, pipe workers alive and ownership retained. Recovery killed
+the escaped child through its pidfd and joined readers, but did not explicitly
+waitpid that child before releasing the owner. EOF/group-empty/joined readers
+therefore failed to prove complete reaping in THIS prototype. The outer guard's
+finally path reclaimed adopted fixtures; the red result is retained.
+
+Experimental correction only: after signalling the already-owned escaped holder,
+poll waitpid(WNOHANG) with the2s confirmation bound before closing its pidfd and
+retrying final owner cleanup. Also test refusal by actually invoking a second
+start on the retained owner, rather than merely reading a capacity boolean.
+No Rust production correction is inferred. This result strengthens the decision
+to withhold a generic Job/group-only production patch.
+
+Validation history: normal CI39681209313 succeeded on7959bc93 attempt1. Normal
+CI39681675082 is independent of its red research workflow; inspect its final
+result. Final generated provenance records the final exact head rather than
+relabeling preceding source successes.

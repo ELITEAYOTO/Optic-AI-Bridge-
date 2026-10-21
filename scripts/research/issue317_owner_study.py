@@ -243,8 +243,13 @@ def worker(exe, root, case, fault):
             assert owner.slot and not owner.closed and owner.process is not None
             assert owner.state == "Uncertain"
             # Admission of another command is refused while this one is retained.
-            admission_allowed = not owner.slot
-            assert not admission_allowed
+            denied = False
+            try:
+                owner.start(exe, "control", "none")
+            except AssertionError:
+                denied = True
+            assert denied, "retained owner admitted a second native launch"
+            retained["second_launch_denied"] = denied
             if fault == "terminate":
                 assert pid_alive(int((root / "holder.pid").read_text()))
             if case == "escape-both":
@@ -259,6 +264,10 @@ def worker(exe, root, case, fault):
                 try:
                     assert holder in adopted_children()
                     signal.pidfd_send_signal(fd, signal.SIGKILL)
+                    # EOF/group-empty do not prove the adopted child was reaped.
+                    wait_for(lambda: os.waitpid(holder, os.WNOHANG)[0] == holder,
+                             2, "escaped child explicitly reaped")
+                    retained["escaped_child_reaped"] = True
                 finally:
                     os.close(fd)
             assert owner.finish(), "retry could not reclaim retained owner"
