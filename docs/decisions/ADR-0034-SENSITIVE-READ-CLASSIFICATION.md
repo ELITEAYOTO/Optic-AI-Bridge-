@@ -1,22 +1,14 @@
 # ADR-0034: Shared Sensitive-Path Classification for Read Authorities
 
-Status: **Accepted policy B; path-name floor verified through #312; full sensitive-content guarantee unresolved**.
+Status: **Accepted policy B; lexical path floor and bounded native FileRead alias guard verified through #314; full sensitive-content guarantee unresolved**.
 
-## Native hard-link alias safeguard (bounded FileRead defense)
+## Native hard-link alias safeguard — verified #314 (2026-10-21)
 
-The canonical-name floor cannot distinguish two hard-link names for one physical
-file. For prepared `fs_read`, a multi-linked opened file is conservatively
-treated as **potentially sensitive**, even when the selected path looks ordinary.
-The caller must hold the normal ReadContent lease plus explicit matching
-ReadSensitive authority for the observed path. The link count comes from the
-same opened native file, not an independently re-resolved filename. This is
-intentional conservative denial for ordinary multi-linked files and does not
-change FileSearch or GitRead contracts.
+Pathname classification alone cannot distinguish different hard-link names for one physical file. For prepared `fs_read`, a multi-linked **opened native file** is conservatively treated as potentially sensitive even if its requested canonical name appears ordinary. In addition to the ordinary FileRead/ReadContent check, the caller must have the preexisting, matching ReadSensitive lease for that path. The link count is observed from the same opened Windows file handle or Unix descriptor, not a second pathname lookup. Harmless multi-linked files may require the extra lease by design.
 
-This safeguard cannot detect secrets copied into ordinary files, unrecognized
-paths, staged Git blobs or all concurrent namespace/identity races. It does
-not justify real-project remote access; #176 and #182 remain open. Native
-Windows and Linux regressions are required for acceptance.
+[PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) is **squash-merged** at `7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`. Synthetic Windows/Linux negative and explicit-positive regressions passed on accepted source `fbf7c9f40bbae18d4017f237b8783a19964620c8` in [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127). Independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) passed first attempt on the exact merge SHA. No extra default grant, FileSearch or GitRead contract change.
+
+This cannot discover copied secrets in ordinary files, validate all staged/historical Git blobs, or close native ancestor/concurrency races. The [GitRead issue #182 audit](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182#issuecomment-6312922336) additionally records branch/ref metadata as a policy decision still pending. #176/#182 remain open and real-project remote exposure remains blocked.
 
 ## Subsequent bounded filename-floor extension — #312 (2026-10-21)
 

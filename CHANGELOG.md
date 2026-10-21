@@ -1,5 +1,11 @@
 # Changelog
 
+## Verified FileRead hard-link identity safeguard — PR #314 (2026-10-21)
+
+- [#314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) squash-merged at `7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`: prepared `fs_read` now conservatively requires an explicit sensitive lease for an opened file identity having multiple hard-link names, even through an ordinary-looking alias. Synthetic deny/grant/ordinary-file native regressions cover Windows and Linux. Harmless multi-linked files may be denied absent extra authority.
+- Accepted source SHA `fbf7c9f40bbae18d4017f237b8783a19964620c8` passed [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127) and three specialized Windows workflows; independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) passed first attempt at the squash SHA. Initial superseded source-head rustfmt failure is retained. [Evidence](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381).
+- [Read-only GitRead review](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182#issuecomment-6312922336) records branch/ref labels and historical/staged Git blobs as unresolved contract/authority boundaries. #176, #182 and Windows timeout #185 remain open; no runtime change beyond FileRead alias check, feature, permission, sandbox or operator-PC change.
+
 ## Verified security read-boundary increment — PR #312 (2026-10-21)
 
 - Squash-merged [#312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) at `30295539fc6911f221cee6ac3c59785398c7a050`: deterministic sensitivity guard for direnv `.envrc` and `.envrc.*` names in the shared classifier. Synthetic Rust core, MCP FileRead, Git status and Git diff tests verify denial without explicit sensitive authority and permitted reads with the matching lease. ADR-0034 updated.
