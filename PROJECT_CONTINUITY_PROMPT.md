@@ -1,5 +1,15 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Checkpoint prioritaire et vérifié — 21 octobre 2026, après #312
+
+Ce bloc **remplace comme point de départ** les anciennes passations ci-dessous (notamment celles intitulées « après #306 »). Toujours vérifier GitHub en direct avant toute opération ; ne jamais réinitialiser une branche sur ce SHA simplement parce qu'il figure dans ce document.
+
+**Dernier état vérifié :** `main=30295539fc6911f221cee6ac3c59785398c7a050`, zéro PR ouverte. [PR #312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) fusionnée par squash (fichiers direnv `.envrc`/`.envrc.*` considérés sensibles par le classificateur lexical commun). Tête de PR acceptée `4e61a8f0aa0b65872d76ea9a2584b4ab79b89f33`, [CI #39571281997](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571281997) réussie du premier coup Windows natif / Linux / dépendances ; [CI post-fusion #39571875338](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571875338) réussie du premier coup sur `main`. Ancien échec de formatage #39570589090 conservé.
+
+**Maintenir strictement** le gel des fonctionnalités, aucune action sur le PC de l'utilisateur, aucun runner auto-hébergé, aucune extension de permissions, aucun test de réseau réel/workspace sensible à distance et une seule PR à la fois. Les corrections #303–#312 déjà intégrées ne doivent pas être recommencées ; `alpha/generated-project-editing` reste séparée. Avant toute modification : relire AGENTS.md, AI_HANDOFF.md, STATUS.md, ROADMAP.md, GITHUB_HANDOFF, RELIABILITY_DEBT et ADR-0034, puis constater les CI, issues et PR live. N'apporter qu'un correctif démontré par source et régression, vérifier Windows/Linux sur SHA exact, puis CI indépendante après squash.
+
+**Priorités réelles :** #176 et #182 demeurent ouvertes : noms ordinaires contenant des secrets, alias/identité et concurrence Git ne sont pas couverts par la simple classification de noms. [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) : intermittence native Windows 10 s sans sortie, **ni bug Bridge confirmé ni faux positif GitHub confirmé** ; [revue de code](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185#issuecomment-6312184351) indique que les erreurs d'écriture/fermeture de stdin vers le lanceur sont ignorées, mais ne prouve aucune défaillance d'envoi. Suivre des occurrences naturelles et n'instrumenter que de manière ciblée et non sensible si justifié ; ne pas augmenter le watchdog ou affaiblir les tests. Timeout initial MCP ~30 s **distinct**. Récupération multi-fichiers, courses sur les ancêtres et durabilité Windows toujours non prouvées. Pas de promesse « 100 % fiable » à partir d'une CI verte.
+
 ## Passation prête pour le prochain chat — 21 octobre 2026, après PR #306
 
 **Dépôt unique autorisé :** https://github.com/ELITEAYOTO/Optic-AI-Bridge-
