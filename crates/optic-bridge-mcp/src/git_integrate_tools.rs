@@ -690,7 +690,10 @@ mod tests {
             })
             .await
             .expect_err("synthetic integration error");
-        assert_eq!(error.message.as_ref(), "optic.git_integration_effect_mismatch");
+        assert_eq!(
+            error.message.as_ref(),
+            "optic.git_integration_effect_mismatch"
+        );
         assert_eq!(server.transport_guard.active_requests(), 0);
     }
 }
