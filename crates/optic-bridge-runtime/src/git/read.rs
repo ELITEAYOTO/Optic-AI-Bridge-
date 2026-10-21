@@ -581,8 +581,7 @@ fn verify_raw_diff_header(header: &[u8]) -> Result<u8, GitReadError> {
     let (kind, detail) = status.split_first().ok_or_else(invalid)?;
     if !matches!(kind, b'A' | b'D' | b'M' | b'T' | b'U' | b'R' | b'C')
         || (!detail.is_empty()
-            && (!matches!(kind, b'M' | b'R' | b'C')
-                || !detail.iter().all(u8::is_ascii_digit)))
+            && (!matches!(kind, b'M' | b'R' | b'C') || !detail.iter().all(u8::is_ascii_digit)))
     {
         return Err(invalid());
     }
@@ -938,14 +937,17 @@ mod tests {
             .diff(Some(&path(".env")), false, None)
             .expect("literal protected diff");
         assert_eq!(
-            protected.sensitive_paths.iter().map(WorkspacePath::as_str).collect::<Vec<_>>(),
+            protected
+                .sensitive_paths
+                .iter()
+                .map(WorkspacePath::as_str)
+                .collect::<Vec<_>>(),
             [".env"]
         );
 
         // A staged newly added protected file has no committed worktree
         // predecessor, but its contents must still require sensitive access.
-        fs::write(fixture.repo.join("nested.key"), b"new key fixture only\n")
-            .expect("fixture");
+        fs::write(fixture.repo.join("nested.key"), b"new key fixture only\n").expect("fixture");
         run_git(
             &fixture.git,
             Some(&fixture.repo),
@@ -968,10 +970,16 @@ mod tests {
         fs::write(fixture.repo.join("src").join(".env.local"), b"first\n").expect("fixture");
         fs::write(fixture.repo.join("src").join("main.rs"), b"first\n").expect("fixture");
         commit_all(&fixture.git, &fixture.repo, "nested paths");
-        fs::write(fixture.repo.join("src").join(".env.local"), b"changed secret\n")
-            .expect("change");
-        fs::write(fixture.repo.join("src").join("main.rs"), b"changed source\n")
-            .expect("change");
+        fs::write(
+            fixture.repo.join("src").join(".env.local"),
+            b"changed secret\n",
+        )
+        .expect("change");
+        fs::write(
+            fixture.repo.join("src").join("main.rs"),
+            b"changed source\n",
+        )
+        .expect("change");
         let selected = fixture
             .service()
             .diff(Some(&path("src")), false, None)
@@ -989,12 +997,10 @@ mod tests {
     fn malformed_raw_diff_stream_refuses_any_patch_before_release() {
         let good = b":100644 100644 abcdef0 1234567 M\0src/main.rs\0\ndiff --git a/src/main.rs b/src/main.rs\n";
         let verified = parse_verified_diff(good.to_vec()).expect("verified diff");
-        assert_eq!(
-            verified.bytes,
-            b"diff --git a/src/main.rs b/src/main.rs\n"
-        );
+        assert_eq!(verified.bytes, b"diff --git a/src/main.rs b/src/main.rs\n");
         assert!(verified.sensitive_paths.is_empty());
-        let protected = b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n";
+        let protected =
+            b":100644 100644 abcdef0 1234567 M\0src/.env\0\ndiff --git a/src/.env b/src/.env\n";
         assert_eq!(
             parse_verified_diff(protected.to_vec())
                 .expect("protected path parsed")
@@ -1013,7 +1019,10 @@ mod tests {
             b":100644 100644 abcdef0 1234567 M\0src/.env\0".as_slice(),
         ] {
             assert!(
-                matches!(parse_verified_diff(invalid.to_vec()), Err(GitReadError::UnverifiableDiff)),
+                matches!(
+                    parse_verified_diff(invalid.to_vec()),
+                    Err(GitReadError::UnverifiableDiff)
+                ),
                 "malformed/unverifiable diff must be rejected"
             );
         }
