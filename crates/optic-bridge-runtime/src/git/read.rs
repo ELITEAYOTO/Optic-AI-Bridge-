@@ -7,7 +7,9 @@ use std::{
     time::Duration,
 };
 
-use optic_bridge_core::{GitObjectId, GitObjectIdError, HardLimits, WorkspacePath};
+use optic_bridge_core::{
+    GitObjectId, GitObjectIdError, HardLimits, WorkspacePath, requires_sensitive_authority,
+};
 use thiserror::Error;
 
 use crate::{
@@ -92,9 +94,13 @@ impl GitReadService {
         ]);
         let output = self.run_success(&args, limit)?;
         let head = parse_status_head(&output.stdout)?;
+        // Validate the complete NUL-delimited record stream before any MCP
+        // response may expose it. Unknown/unrepresentable records fail closed.
+        let sensitive_paths = parse_sensitive_status_paths(&output.stdout)?;
         Ok(GitStatusSnapshot {
             head,
             porcelain_v2: output.stdout,
+            sensitive_paths,
         })
     }
 
@@ -307,6 +313,9 @@ impl GitReadService {
 pub struct GitStatusSnapshot {
     pub head: Option<GitObjectId>,
     pub porcelain_v2: Vec<u8>,
+    /// Canonical-grammar Git paths that need an additional sensitive lease.
+    /// A malformed or unrepresentable status is never returned as a snapshot.
+    pub sensitive_paths: Vec<WorkspacePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -370,6 +379,8 @@ pub enum GitReadError {
     InvalidObjectId,
     #[error("Git log output was malformed")]
     InvalidLogRecord,
+    #[error("Git status output cannot be verified against sensitive-path policy")]
+    UnverifiableStatus,
     #[error("filesystem/process operation failed: {0}")]
     Io(#[from] io::Error),
     #[error("Git object id is invalid: {0}")]
@@ -392,6 +403,99 @@ fn parse_status_head(bytes: &[u8]) -> Result<Option<GitObjectId>, GitReadError> 
         return Ok(Some(GitObjectId::parse(value.to_owned())?));
     }
     Ok(None)
+}
+
+/// Git porcelain-v2 -z is NUL-delimited, with an extra NUL pathname
+/// after record type '2' (rename/copy). Pathnames may contain spaces and
+/// newlines; never inspect status as unstructured lines or search raw text.
+fn parse_sensitive_status_paths(bytes: &[u8]) -> Result<Vec<WorkspacePath>, GitReadError> {
+    let body = bytes
+        .strip_suffix(&[0])
+        .ok_or(GitReadError::UnverifiableStatus)?;
+    let mut records = body.split(|byte| *byte == 0);
+    let mut sensitive_paths = Vec::new();
+    let mut seen_head = false;
+    while let Some(record) = records.next() {
+        if record.is_empty() {
+            return Err(GitReadError::UnverifiableStatus);
+        }
+        if record.starts_with(b"# ") {
+            // --branch emits only these known headers; refuse new/unknown
+            // records instead of treating their unexamined data as harmless.
+            if record.starts_with(b"# branch.oid ") {
+                if seen_head {
+                    return Err(GitReadError::UnverifiableStatus);
+                }
+                seen_head = true;
+            } else if ![
+                b"# branch.head ".as_slice(),
+                b"# branch.upstream ".as_slice(),
+                b"# branch.ab ".as_slice(),
+            ]
+            .iter()
+            .any(|prefix| record.starts_with(prefix))
+            {
+                return Err(GitReadError::UnverifiableStatus);
+            }
+            continue;
+        }
+        let (path, renamed) = match record.first() {
+            Some(b'1') if record.starts_with(b"1 ") => (status_path_field(record, 8)?, false),
+            Some(b'2') if record.starts_with(b"2 ") => (status_path_field(record, 9)?, true),
+            Some(b'u') if record.starts_with(b"u ") => (status_path_field(record, 10)?, false),
+            Some(b'?') if record.starts_with(b"? ") => (&record[2..], false),
+            Some(b'!') if record.starts_with(b"! ") => (&record[2..], false),
+            _ => return Err(GitReadError::UnverifiableStatus),
+        };
+        classify_status_path(path, &mut sensitive_paths)?;
+        if renamed {
+            classify_status_path(
+                records.next().ok_or(GitReadError::UnverifiableStatus)?,
+                &mut sensitive_paths,
+            )?;
+        }
+    }
+    if !seen_head {
+        return Err(GitReadError::UnverifiableStatus);
+    }
+    Ok(sensitive_paths)
+}
+
+fn status_path_field(record: &[u8], preceding_fields: usize) -> Result<&[u8], GitReadError> {
+    let mut tail = record;
+    for _ in 0..preceding_fields {
+        let separator = tail
+            .iter()
+            .position(|byte| *byte == b' ')
+            .ok_or(GitReadError::UnverifiableStatus)?;
+        if separator == 0 {
+            return Err(GitReadError::UnverifiableStatus);
+        }
+        tail = &tail[separator + 1..];
+    }
+    if tail.is_empty() {
+        return Err(GitReadError::UnverifiableStatus);
+    }
+    Ok(tail)
+}
+
+fn classify_status_path(
+    path: &[u8],
+    sensitive_paths: &mut Vec<WorkspacePath>,
+) -> Result<(), GitReadError> {
+    let path = std::str::from_utf8(path).map_err(|_| GitReadError::UnverifiableStatus)?;
+    // Git emits slash-separated repository-relative names under -z. In
+    // particular a Unix literal backslash cannot be normalized for authority,
+    // and on Windows Git is not allowed to invent a different separator here.
+    if path.contains('\\') {
+        return Err(GitReadError::UnverifiableStatus);
+    }
+    let path = WorkspacePath::from_native_relative(Path::new(path))
+        .map_err(|_| GitReadError::UnverifiableStatus)?;
+    if requires_sensitive_authority(&path) {
+        sensitive_paths.push(path);
+    }
+    Ok(())
 }
 
 fn parse_log_entries(bytes: &[u8]) -> Result<Vec<GitLogEntry>, GitReadError> {
