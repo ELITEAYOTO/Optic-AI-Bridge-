@@ -683,29 +683,6 @@ mod tests {
         );
     }
 
-    // Test fixture only: on a failed gate, reveal a bounded prefix from a
-    // synthetic Git diff to diagnose combined -z raw/patch wire framing.
-    fn synthetic_diff_prefix(fixture: &RepoFixture, staged: bool) -> Vec<u8> {
-        let mut cmd = Command::new(&fixture.git);
-        cmd.current_dir(&fixture.repo).args([
-            "diff",
-            "--raw",
-            "-z",
-            "--patch",
-            "--no-renames",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            "--ignore-submodules=all",
-        ]);
-        if staged {
-            cmd.arg("--cached");
-        }
-        let output = cmd.output().expect("synthetic probe git");
-        assert!(output.status.success(), "synthetic Git fixture");
-        output.stdout.into_iter().take(180).collect()
-    }
-
     #[tokio::test]
     async fn git_diff_requires_sensitive_content_authority_but_preserves_ordinary_diff() {
         let fixture = RepoFixture::new("sensitive-diff");
@@ -740,9 +717,7 @@ mod tests {
                 .err()
                 .expect("whole repo with secret denied")
                 .message,
-            "optic.policy_denied",
-            "synthetic raw prefix: {:?}",
-            synthetic_diff_prefix(&fixture, false)
+            "optic.policy_denied"
         );
         assert_eq!(
             normal
@@ -808,9 +783,7 @@ mod tests {
                 .err()
                 .expect("staged protected addition refused")
                 .message,
-            "optic.policy_denied",
-            "synthetic staged raw prefix: {:?}",
-            synthetic_diff_prefix(&fixture, true)
+            "optic.policy_denied"
         );
         let authorized = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
         let result = authorized
