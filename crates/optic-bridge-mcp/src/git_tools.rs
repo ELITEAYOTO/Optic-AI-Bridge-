@@ -683,6 +683,117 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn git_diff_requires_sensitive_content_authority_but_preserves_ordinary_diff() {
+        let fixture = RepoFixture::new("sensitive-diff");
+        fs::write(fixture.repo.join(".env"), b"first dummy only\n").expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new(".env")],
+        );
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new("fixture env"),
+            ],
+        );
+        fs::write(fixture.repo.join(".env"), b"second dummy only\n").expect("change");
+        fs::write(fixture.repo.join("tracked.txt"), b"ordinary change\n").expect("change");
+        let request = |path: Option<&str>, staged: bool| GitDiffRequest {
+            path: path.map(str::to_owned),
+            staged: Some(staged),
+            max_bytes: Some(16 * 1024),
+        };
+        let normal = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            normal
+                .git_diff(Parameters(request(None, false)))
+                .await
+                .err()
+                .expect("whole repo with secret denied")
+                .message,
+            "optic.policy_denied"
+        );
+        assert_eq!(
+            normal
+                .git_diff(Parameters(request(Some(".env"), false)))
+                .await
+                .err()
+                .expect("literal protected path denied")
+                .message,
+            "optic.policy_denied"
+        );
+        let source = normal
+            .git_diff(Parameters(request(Some("tracked.txt"), false)))
+            .await
+            .expect("ordinary source diff remains accessible")
+            .0;
+        assert!(String::from_utf8_lossy(&STANDARD.decode(source.data_base64).expect("base64"))
+            .contains("ordinary change"));
+        let wrong_scope = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
+            WorkspacePath::parse("src").expect("prefix"),
+        ));
+        assert_eq!(
+            wrong_scope
+                .git_diff(Parameters(request(None, false)))
+                .await
+                .err()
+                .expect("wrong prefix does not authorize")
+                .message,
+            "optic.policy_denied"
+        );
+        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let patch = granted
+            .git_diff(Parameters(request(None, false)))
+            .await
+            .expect("explicit protected content authority")
+            .0;
+        assert!(String::from_utf8_lossy(&STANDARD.decode(patch.data_base64).expect("base64"))
+            .contains("second dummy only"));
+    }
+
+    #[tokio::test]
+    async fn git_diff_staged_secret_is_denied_without_extra_lease() {
+        let fixture = RepoFixture::new("staged-diff");
+        fs::write(fixture.repo.join("credentials.key"), b"fixture key only\n")
+            .expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("credentials.key")],
+        );
+        let request = || GitDiffRequest {
+            path: None,
+            staged: Some(true),
+            max_bytes: Some(16 * 1024),
+        };
+        let only_git = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            only_git
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("staged protected addition refused")
+                .message,
+            "optic.policy_denied"
+        );
+        let authorized = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let result = authorized
+            .git_diff(Parameters(request()))
+            .await
+            .expect("explicit sensitive authority")
+            .0;
+        assert!(
+            String::from_utf8_lossy(&STANDARD.decode(result.data_base64).expect("base64"))
+                .contains("fixture key only")
+        );
+    }
+
+    #[tokio::test]
     async fn git_runtime_does_not_bypass_missing_session_capability() {
         let fixture = RepoFixture::new("deny");
         let server = fixture.server(&[Capability::FileRead]);
