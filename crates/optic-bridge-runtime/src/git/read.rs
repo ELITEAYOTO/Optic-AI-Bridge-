@@ -571,9 +571,9 @@ fn verify_raw_diff_header(header: &[u8]) -> Result<u8, GitReadError> {
     if fields.next().is_some()
         || old_mode.len() != 7
         || old_mode[0] != b':'
-        || !old_mode[1..].iter().all(|byte| matches!(byte, b'0'..=b'7'))
+        || !old_mode[1..].iter().all(|byte| matches!(*byte, b'0'..=b'7'))
         || new_mode.len() != 6
-        || !new_mode.iter().all(|byte| matches!(byte, b'0'..=b'7'))
+        || !new_mode.iter().all(|byte| matches!(*byte, b'0'..=b'7'))
         || ![old_oid, new_oid]
             .iter()
             .all(|oid| (7..=64).contains(&oid.len()) && oid.iter().all(u8::is_ascii_hexdigit))
