@@ -1,5 +1,12 @@
 # Reliability and implementation debt
 
+## Git control namespace separation — scoped correction under test (2026-10-21)
+
+[Audit issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) establishes that normalized generic FileWrite/FileDelete and DirectoryCreate have structurally accepted `.git` control paths, while GitIntegrate uses a dedicated session capability/lease and runtime. The incremental correction reserves the **exact `.git` component**, case-insensitively at any subtree depth. Atomic file mutation preparation checks both requested and **canonical observed** paths before any commit/staging; generic directory creation denies Git control names while its existing native ancestor reparse-point protections stay intact. Worktree `.git` pointer files are treated as metadata; ordinary `.gitignore` and `.gitattributes` are unaffected.
+
+This is a dedicated namespace enforcement gate, not Git repository trust policy for arbitrary hardlinks, unsafe directory namespace swaps, or Windows power-loss durability. The missing read sensitivity classifier and GitRead output policy (#176/#182) remain separate. Confirm regression and CI evidence live before closing #180 or declaring any capability safe for unattended/remote project exposure.
+
+
 ## File-search authorization target mismatch — 2026-10-21
 
 Audit of `ReadonlyMcpServer::fs_list` established a deterministic security boundary defect: prefix-scoped search authorized the **unresolved request** before following a directory alias. If `allowed/portal` links internally to `private`, a lease for `allowed` can reach names in `private` under the original code. The corrective increment first canonicalizes the requested directory, then authorizes that scope, then lists using the canonical location (and returns canonical paths), with Unix adversarial alias and portable Windows/Linux regressions.
