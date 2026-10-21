@@ -1,25 +1,15 @@
 # Changelog
 
-## Candidate: fail fast on rejected process lease registration (2026-10-21)
+## Verified integration and handoff closure — 2026-10-21
 
-- `TaskLeaseRegistry::register` previously captured pinned executable identity **before** checking existing lease ID and registry/session capacity. Candidate branch `fix/lease-capacity-before-identity-capture` rejects these known invalid admissions before file IO, then repeats the same checks under the final lock following unchanged identity capture to preserve concurrent safety. Tests cover invalid absolute executable under duplicate/session/global denial and simultaneous admission at hard capacity.
-- No modification to authenticated/authorized executable identity, capture bytes, pinning, scopes, timeouts, or features. **Not integrated until exact-head native hosted CI and merge have succeeded.** Previous `main` `72966f92cf143be6f0c561f3ef07cef3fb4d4f11` passed independent [CI #39501571657](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39501571657) first attempt; Windows Node and MCP intermittencies remain open.
+- [#293](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/293) merged `de973989`: recovery validates stable journals and staged content before discarding unrelated unpublished evidence.
+- [#294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) merged `da3ab6f1`: bounded opt-in Windows MCP child timing collection. **Independent post-merge CI passed on attempt 2**, retaining the first Windows Node/AppContainer 10s failure.
+- [#295](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/295) merged `615e6219`: further fixed Git/session/read/process-lease timing boundaries.
+- [#296](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/296) merged `72966f92`: measured canonicalization/pinned-open/reading+hashing durations. One Windows source run measured `hash_ms=4869`; this includes file reads, not BLAKE3 algorithm CPU alone.
+- [#297](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/297) merged `83329d48789c20b1fc235d3096c3199dc9dc5176`: duplicate and global/per-session capacity rejection now happens before pinned executable capture, with the same checks repeated under the final insertion lock. Negative nonexistent-file and concurrent worker regressions passed on native Windows and Linux. [Exact-source CI #39514352067](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514352067), [native preparation #39514352140](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514352140), and independent [main CI #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) all passed on their accepted exact SHAs, first attempt. Original rustfmt-only draft failure retained.
+- Live pre-documentation checkpoint: `main=83329d48789c20b1fc235d3096c3199dc9dc5176`, 0 open PRs, final main CI green first attempt. Feature freeze remains active, with Node/AppContainer 10s, MCP first response 30s, recovery atomics/ancestor/power-loss and Cargo/Electron compatibility unresolved. Historical 'candidate' entries below predate their later merges; do not treat them as open PRs.
 
-## Candidate: bounded executable identity capture timing (2026-10-20)
-
-- Confirmed [PR #295](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/295) merged at `615e62194d3c28c01530ff8993adab2447a12c19`, with independent [post-merge CI #39499240897](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39499240897) successful first attempt on the exact SHA. The Windows MCP doctor measured a 5737ms process-lease provisioning interval, not yet attributable to any specific operation.
-- Diagnostic candidate `diag/process-identity-startup-phases` emits only opt-in fixed numeric phase durations around the existing executable path resolution, native pin opening and bounded content version capture; the Windows doctor publishes at most one whitelisted record. **Not shipped until exact-head checks and merge are verified.** No modification to executable identity validation, grants, timeouts, process isolation or feature delivery.
-
-## Stabilization diagnostics — MCP startup subphase investigation (2026-10-20)
-
-- [PR #294](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/294) **merged** as `da3ab6f19a9b2544eef997cdf7edb987360c7553`. Hosted exact-source CI #39487022400 passed first attempt, while independent post-merge main CI #39487831596 succeeded only on attempt 2: the first Windows test reproduced the old 10-second Node AppContainer timeout (plus one failed serial diagnostic). Passing MCP child phases showed a ~5.4–7.8s span between profile check and process lease completion. The original failure remains in GitHub, and neither startup defect is fixed.
-- Scoped **candidate** `diag/mcp-lease-startup-subphases`: additional fixed, opt-in Git/session/read authority phase markers, emitted only as bounded numeric timing lines by the existing Windows doctor. No authorization, identity hashing, timeout, runtime capability, MCP protocol or native isolation change. Do not call delivered until exact-head CI and merge are confirmed.
-
-## Candidate: retain unpublished evidence across full recovery validation (2026-10-20)
-
-- The integrated #288 journal-only preflight and #291 staging-only preflight still left full Windows recovery able to remove unpublished prepared journal files before rejecting unrelated corrupt staged content. Candidate branch `fix/recovery-cross-phase-evidence` defers that deletion until both journal and staging validation have passed, while preserving standalone journal reconcile semantics.
-- Added a native Windows negative regression preserving staged and unpublished evidence on failure, then proving cleanup after correction. **Not shipped without the candidate PR's exact-head CI and successful merge.** No permission, journal schema, resource budget or release change. Multi-file deletion is still not atomic; path/ancestor races and power-loss guarantees remain out of scope.
-- Most recently verified prior `main` `1019fae055993c11348e99a361be1eae04ea206b` passed [CI #39396274639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39396274639) on the first attempt (hosted Windows/Linux/dependencies), with no open PRs. New functionality remains frozen by operator decision.
+## Historical changelog entries (retain dated evidence; candidate status may have since merged)
 
 ## Verified stabilization — Windows diagnostics and recovered staging evidence (2026-10-20)
 

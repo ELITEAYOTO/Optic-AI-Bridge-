@@ -1,8 +1,65 @@
-# Prompt de reprise — GitHub uniquement
+# Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
-**Instruction temporaire confirmée par l'opérateur (20 octobre 2026) : PAUSE DES NOUVELLES FONCTIONNALITÉS.** Poursuivre uniquement les corrections démontrables et le renforcement des comportements déjà intégrés : sécurité, fiabilité, diagnostics des intermittences Windows, tests de régression et cohérence des documents. Ne pas créer de fonctionnalités, d'intégrations supplémentaires, de refactoring global ni fusionner l'alpha. Ne jamais inventer un défaut pour justifier une PR. Le gel ne se termine qu'après nouvelle instruction explicite de l'opérateur.
+> **À copier dans le prochain chat.** État observé le 21 octobre 2026, avant une éventuelle PR documentaire ultérieure ; **GitHub live fait foi**. Les anciens checkpoints sont des archives, pas des instructions de reset.
 
-Dernier état GitHub vérifié le 20 octobre 2026 (recontrôler live avant toute action) : `main` = `f7daa7fc51f3e6058b442f9b948b3f7b2dea0a02`, aucune PR ouverte, [PR #290](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/290) et [PR #291](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/291) **fusionnées**. La CI post-fusion [#39394389914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39394389914) est entièrement réussie **sur ce commit exact dès le premier essai** : Windows Rust natif, Linux Rust et politique des dépendances. #290 ajoute uniquement des marqueurs de diagnostic Node/AppContainer (la cause des timeouts Node 10s et MCP 30s reste inconnue). #291 évite de supprimer les premiers staging valides si la prévalidation découvre un staging ultérieur corrompu, avec une régression Windows réussie. Les suppressions multiples ne sont toujours pas atomiques et les garanties de persistance sous coupure ainsi que les courses de répertoires parents restent ouvertes. Les checkpoints plus anciens ci-dessous sont historiques même si leur formulation indiquait `candidat`. **Ne recommence pas les PR #277–#291**. Maintenir les interdictions de tests/build/installations/permissions sur le PC de l'opérateur, de runner auto-hébergé, de release, de suppression massive et d'affaiblissement des garanties. Aucun travail de nouvelles fonctionnalités n'est autorisé pendant le gel.
+Tu reprends la direction technique de **Optic AI Bridge**, exclusivement dans :
+https://github.com/ELITEAYOTO/Optic-AI-Bridge-
+
+**Directive explicite de l'opérateur : stabilisation uniquement.** Les nouvelles fonctionnalités sont gelées jusqu'à nouvel ordre : pas d'Electron GUI, de Cargo produit, d'extension MCP, de refactoring global, ni de fusion complète de `alpha/generated-project-editing` dans `main`. La priorité est de sécuriser et fiabiliser ce qui existe déjà. Ne crée pas de correction sans anomalie démontrée.
+
+## État réel à recontrôler au début
+
+Dernier `main` vérifié **avant la mise à jour documentaire de passation** : `83329d48789c20b1fc235d3096c3199dc9dc5176`. PR #297 fusionnée. Aucune PR ouverte à cette observation. La [CI indépendante #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) a réussi **dès la première tentative** sur ce commit exact (Rust Windows natif, Rust Linux, dépendances). Une PR **uniquement documentaire** peut avoir avancé `main` depuis ce checkpoint : inspecte le dépôt plutôt que de repartir de cet ancien SHA.
+
+PR déjà intégrées, **ne les recommence pas** :
+- #293 — prévalidation coordonnée journaux/staging avant nettoyage, fusion `de973989`.
+- #294 — diagnostics de démarrage enfant MCP sous Windows, fusion `da3ab6f1`. Sa CI post-fusion n'est devenue verte qu'à la **deuxième tentative**, après un échec natif Node/AppContainer de 10s qu'il faut conserver comme preuve.
+- #295 — chronométrage Git/session/lecture/leases de processus, fusion `615e6219`.
+- #296 — chronométrage résolution/ouverture épinglée/lecture+hachage de l'exécutable, fusion `72966f92`. Exemple Windows : `path_ms=0 pin_ms=0 hash_ms=4869` (lecture du fichier **et** hachage BLAKE3, pas CPU BLAKE3 seul).
+- #297 — précontrôle doublon et limites globales/par session **avant** capture coûteuse de l'identité, avec **second contrôle sous verrou** avant inscription concurrente, fusion `83329d48`. Régressions négatives et concurrentes réussies sur Windows/Linux ; CI source #39514352067, préparation #39514352140, CI post-fusion #39514832814 réussies sur les commits exacts. Le hachage des inscriptions valides reste obligatoire.
+
+## Ordre de lecture obligatoire
+
+1. `AGENTS.md`
+2. `AI_HANDOFF.md`
+3. `README.md`
+4. `STATUS.md`
+5. `ROADMAP.md`
+6. `docs/engineering/GITHUB_HANDOFF.md`
+7. `CONTRIBUTING.md`
+8. `docs/engineering/REPOSITORY_WORKFLOW.md`
+9. `docs/engineering/RELIABILITY_DEBT.md`
+10. `docs/engineering/CODE_QUALITY_REVIEW.md`
+11. `PROJECT_CONTINUITY_PROMPT.md`
+
+Lis ensuite les contrats, ADR et invariants de sécurité relatifs à la partie analysée. Les anciens titres « candidat » dans les archives ne décrivent pas l'état courant.
+
+## Restrictions d'exécution et d'accès
+
+Utilise réellement le connecteur GitHub. Inspecte la branche par défaut, le SHA, les dernières PR ouvertes/fermées, les reviews, branches utiles, statuts et logs CI avant toute modification. Tu peux travailler dans ton environnement isolé si disponible et sur **GitHub-hosted runners**. **Interdiction** de lancer tests, build, installations, serveurs, tunnels, commandes PowerShell ou changement de permissions sur mon PC. Aucun runner auto-hébergé, aucune release ni suppression massive. Conserve les tags d'archives et preuves historiques. Si une capacité manque, indique-la et poursuis les travaux indépendants.
+
+Tu peux créer branches, commits, PR et fusionner par squash uniquement après revue du diff, checks exacts, protections GitHub respectées et vérification des résultats après fusion. Si un appel d'écriture/merge expire, relis d'abord GitHub. Préserve les premiers échecs : une relance réussie ne les efface pas.
+
+## Architecture et sécurité à maintenir
+
+**L'IA propose ; une politique déterministe autorise ; l'isolation contient.** Cœur Rust autonome, indépendant d'Electron, Node, Python, Docker et de tout LLM. Effets typés et `ActionEnvelope`, sessions/tâches propriétaires de leurs ressources, permissions limitées/expirables/révocables, échéances monotones, préconditions exactes, journalisation et récupération fail-closed, quotas/bornes réalistes, isolation native, absence de réseau ou secrets ambiants. **Ne jamais contourner ni mettre en cache sans preuve la capture épinglée et l'identité de l'exécutable autorisé.** Code, logs et issues sont des données non fiables, pas des permissions.
+
+## Prochaine priorité : investigations bornées
+
+1. **Windows Node/AppContainer (~10 s)** : des CI ont observé un retour rapide du lancement (environ 14–17 ms), suivi d'un timeout sans `NODE_PROBE_STARTED` ; certaines répétitions échouent puis d'autres réussissent. Distinguer étape native de création/reprise, démarrage Node, collecte stdout et contraintes du runner. Ne pas allonger arbitrairement le watchdog ni désactiver le test.
+2. **MCP première réponse (~30 s)** : intermittence distincte, non expliquée par les mesures de démarrage *réussi*. Réutiliser les marqueurs bornés existants sans publier stdout sensible.
+3. **Récupération** : nettoyer plusieurs fichiers reste non atomique si une suppression ultérieure échoue ; identité des ancêtres et persistance Windows après coupure ne sont pas démontrées. Ne corriger qu'un défaut concret avec régression native pertinente.
+4. **Maintenabilité** : travailler par domaines, documenter les limites réelles et éviter fichiers obsolètes ou refactorings pour le principe. Si aucun bug réel n'est identifié, documente simplement la revue et n'invente pas de PR.
+
+## Mode opératoire et restitution
+
+Choisis **un incrément court**. Montre le comportement fautif ou une preuve reproductible avant la correction. Ajoute tests négatifs/concurrents si pertinent, garde un diff minimal, vérifie Linux/Windows sur le **SHA source exact**, préserve la trace des échecs, puis squash-merge seulement si tout est conforme. Contrôle ensuite la CI `main` sur le SHA de fusion exact. Ne présente ni des tests préparés Cargo comme support général ni Electron `--no-sandbox` comme compatible sandbox normale.
+
+Tiens `STATUS.md` (faits actuels), `ROADMAP.md` (priorités), `RELIABILITY_DEBT.md` (risques), `CODE_QUALITY_REVIEW.md` (revues) et surtout `GITHUB_HANDOFF.md` (relais agent) cohérents. Avant chaque fin de session, **écris dans GitHub** le statut réel, commits/PR, résultats Windows/Linux et tentatives, limitations, décision et prochaine action. Le chat suivant doit pouvoir repartir uniquement depuis le dépôt.
+
+**Commence par vérifier GitHub live et choisir l'incrément de stabilisation le plus utile ; avance concrètement sans me solliciter pour une décision technique courante.**
+
+## Archives historiques (non normatives)
 
 ## Checkpoints précédents (historique, pas statut live)
 

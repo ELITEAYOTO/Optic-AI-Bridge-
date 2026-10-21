@@ -1,5 +1,11 @@
 # Code quality review and bounded refactoring tracker
 
+## Reconciled source-review checkpoint — 2026-10-21
+
+Last verified main before this documentation change: `83329d48789c20b1fc235d3096c3199dc9dc5176`, [CI #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) green first attempt on exact SHA, zero open PRs. #293–#297 are merged. A focused registry review established and fixed a specific resource-usage ordering fault in `task_lease_registry.rs`: duplicate and global/session capacity conditions are now preflighted before potentially costly pinned executable identity capture, and **rechecked under the final insertion lock**. Hosted native Windows and Linux negative/concurrency regressions passed (#297). #294–#296 supply narrow startup timing observations; they do not constitute a general performance or security audit.
+
+The file-by-file quality audit is **not complete**. Do not transform this targeted finding into an assertion that the repository is 100% clean or that the 10s Node and 30s MCP timing intermittencies are resolved. The reviewed core remains pre-alpha; the operator's freeze on new features and speculative refactors is in force. Historical sections below reflect their dated scopes; live GitHub and the top-level status own the integrated state.
+
 Status: IN PROGRESS, source inventory recorded 2026-10-20. This is a
 review plan and partial source inspection, **not** a completed file-by-file audit
 or a claim of production security.
