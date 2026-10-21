@@ -914,6 +914,35 @@ mod tests {
     }
 
     #[test]
+    fn git_raw_and_patch_framing_from_real_hardened_command_is_verifiable() {
+        let fixture = RepoFixture::new("diff-framing");
+        fs::write(fixture.repo.join("a.txt"), b"modified synthetic content\n")
+            .expect("fixture");
+        let output = fixture
+            .service()
+            .run_success(
+                &os_args([
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--no-color",
+                    "--no-renames",
+                    "--ignore-submodules=all",
+                    "--raw",
+                    "-z",
+                    "--patch",
+                ]),
+                64 * 1024,
+            )
+            .expect("hardened Git raw + patch");
+        assert!(
+            parse_verified_diff(output.stdout.clone()).is_ok(),
+            "real Git format is unverified (first 200 synthetic bytes): {:?}",
+            &output.stdout[..output.stdout.len().min(200)]
+        );
+    }
+
+    #[test]
     fn diff_single_invocation_classifies_worktree_and_staged_sensitive_paths() {
         let fixture = RepoFixture::new("diff-sensitive");
         fs::write(fixture.repo.join(".env"), b"first fixture only\n").expect("fixture");
