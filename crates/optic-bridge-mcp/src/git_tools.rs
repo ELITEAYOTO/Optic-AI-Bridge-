@@ -343,8 +343,9 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
             ErrorData::internal_error("optic.git_output_too_large", None)
         }
         GitReadError::CommandTimedOut => ErrorData::internal_error("optic.request_timeout", None),
-        GitReadError::UnverifiableStatus | GitReadError::UnverifiableDiff => {
-            ErrorData::invalid_request("optic.policy_denied", None)
+        GitReadError::UnverifiableStatus => ErrorData::invalid_request("optic.policy_denied", None),
+        GitReadError::UnverifiableDiff => {
+            ErrorData::invalid_request("optic.git_diff_unverifiable", None)
         }
         GitReadError::InvalidLimits
         | GitReadError::GitExecutableMustBeAbsolute
