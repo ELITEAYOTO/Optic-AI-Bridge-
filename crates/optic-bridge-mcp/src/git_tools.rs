@@ -468,6 +468,84 @@ mod tests {
         assert!(status.success(), "Git fixture command failed");
     }
 
+    #[test]
+    fn trimmed_git_log_refits_the_new_cursor_before_returning() {
+        let fixture = RepoFixture::new("log-cursor-budget");
+        let mut server = fixture.server(&[Capability::GitRead]);
+        let head = "a".repeat(40);
+        let entry = GitLogEntryResponse {
+            id: "b".repeat(40),
+            parents: vec!["c".repeat(40), "d".repeat(40)],
+            commit_time_unix_seconds: 1,
+        };
+        let one_without_cursor = GitLogResponse {
+            snapshot_head: Some(head.clone()),
+            entries: vec![entry.clone()],
+            next_cursor: None,
+        };
+        let one_with_cursor = GitLogResponse {
+            snapshot_head: Some(head.clone()),
+            entries: vec![entry.clone()],
+            next_cursor: Some(GitLogCursorResponse {
+                head: head.clone(),
+                offset: 1,
+            }),
+        };
+        let without_bytes = serde_json::to_vec(&one_without_cursor)
+            .expect("one entry without cursor")
+            .len() as u64;
+        let with_bytes = serde_json::to_vec(&one_with_cursor)
+            .expect("one entry and continuation cursor")
+            .len() as u64;
+        assert!(with_bytes > without_bytes, "new cursor consumes more bytes");
+
+        let overhead = server.limits.max_response_bytes - server.structured_payload_budget();
+        let two_entries = || GitLogResponse {
+            snapshot_head: Some(head.clone()),
+            entries: vec![entry.clone(), entry.clone()],
+            next_cursor: None,
+        };
+        assert!(
+            serde_json::to_vec(&two_entries())
+                .expect("two entries")
+                .len() as u64
+                > with_bytes,
+            "two entries must exceed even the cursor-aware budget"
+        );
+
+        server.limits.max_response_bytes = overhead + without_bytes;
+        let mut insufficient = two_entries();
+        let error = server
+            .fit_git_log_response(0, &mut insufficient)
+            .err()
+            .expect("a cursor must not push an otherwise fitting page over budget");
+        assert_eq!(error.message, "optic.response_too_large");
+
+        server.limits.max_response_bytes = overhead + with_bytes;
+        let mut sufficient = two_entries();
+        server
+            .fit_git_log_response(0, &mut sufficient)
+            .expect("one entry with its cursor fits");
+        assert_eq!(sufficient.entries.len(), 1);
+        assert_eq!(
+            sufficient.next_cursor.as_ref().expect("continuation").offset,
+            1
+        );
+        assert_eq!(
+            sufficient.next_cursor.as_ref().expect("continuation").head,
+            head
+        );
+        server
+            .ensure_structured_payload_fits(&sufficient)
+            .expect("final serialized response respects the budget");
+
+        let mut complete = one_without_cursor;
+        server
+            .fit_git_log_response(0, &mut complete)
+            .expect("complete last page remains cursor-free");
+        assert!(complete.next_cursor.is_none());
+    }
+
     #[tokio::test]
     async fn git_status_routes_through_operator_owned_runtime() {
         let fixture = RepoFixture::new("status");
