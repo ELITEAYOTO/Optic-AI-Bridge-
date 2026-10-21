@@ -129,6 +129,7 @@ impl BoundedFileSystem {
             if !metadata.is_file() {
                 return Err(FileSystemError::NotFile);
             }
+            let has_multiple_links = opened.has_multiple_links()?;
             let observation = ReadTargetObservation {
                 canonical_path,
                 windows_identity: opened.identity(),
@@ -137,6 +138,7 @@ impl BoundedFileSystem {
                 observation,
                 offset,
                 buffer_len,
+                has_multiple_links,
                 opened,
             })
         }
@@ -150,10 +152,20 @@ impl BoundedFileSystem {
             if !metadata.is_file() {
                 return Err(FileSystemError::NotFile);
             }
+            // A hard link can give a protected file a harmless-looking name.
+            // Use metadata from the already-opened file, not a pathname stat.
+            #[cfg(unix)]
+            let has_multiple_links = {
+                use std::os::unix::fs::MetadataExt;
+                metadata.nlink() != 1
+            };
+            #[cfg(not(unix))]
+            let has_multiple_links = true; // Unknown host link semantics: fail closed.
             Ok(PreparedFileRead {
                 observation: ReadTargetObservation { canonical_path },
                 offset,
                 buffer_len,
+                has_multiple_links,
                 file,
             })
         }
@@ -432,6 +444,7 @@ pub struct PreparedFileRead {
     observation: ReadTargetObservation,
     offset: u64,
     buffer_len: usize,
+    has_multiple_links: bool,
     #[cfg(windows)]
     opened: OpenedWindowsFile,
     #[cfg(not(windows))]
@@ -442,6 +455,13 @@ impl PreparedFileRead {
     #[must_use]
     pub fn observation(&self) -> &ReadTargetObservation {
         &self.observation
+    }
+
+    /// A multi-linked inode/file-id has other names which a lexical path
+    /// classifier cannot verify. Require explicit sensitive-read authority.
+    #[must_use]
+    pub const fn has_multiple_links(&self) -> bool {
+        self.has_multiple_links
     }
 
     pub fn read(mut self) -> Result<FsReadChunk, FileSystemError> {
@@ -660,6 +680,40 @@ mod tests {
         assert_eq!(chunk.next_offset, 4);
         assert!(!chunk.eof);
 
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn prepared_read_reports_link_aliases_from_open_file_identity() {
+        let root = workspace("read-hardlinks");
+        fs::write(root.join(".env"), b"synthetic-private-bytes").expect("secret fixture");
+        fs::hard_link(root.join(".env"), root.join("public.txt")).expect("hard link fixture");
+        fs::write(root.join("independent.txt"), b"ordinary").expect("ordinary fixture");
+        let files = BoundedFileSystem::new(&root, 128, 4, 16).expect("filesystem");
+        let link = files
+            .prepare_read(
+                &WorkspacePath::parse("public.txt").expect("path"),
+                0,
+                Some(64),
+            )
+            .expect("prepare hardlink read");
+        assert!(
+            link.has_multiple_links(),
+            "opened hardlink identity must be recognized"
+        );
+        let normal = files
+            .prepare_read(
+                &WorkspacePath::parse("independent.txt").expect("path"),
+                0,
+                Some(64),
+            )
+            .expect("prepare ordinary read");
+        assert!(
+            !normal.has_multiple_links(),
+            "ordinary single-name file stays readable"
+        );
+        drop(link);
+        drop(normal);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

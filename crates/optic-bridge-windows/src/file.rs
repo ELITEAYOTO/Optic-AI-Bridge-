@@ -106,6 +106,22 @@ impl OpenedWindowsFile {
         self.identity
     }
 
+    /// Number of names sharing the opened file's native identity. Read from
+    /// this pinned handle, never from a second pathname lookup.
+    pub fn has_multiple_links(&self) -> Result<bool, WindowsFileError> {
+        let mut standard = FILE_STANDARD_INFO::default();
+        // SAFETY: the live handle and the exact native buffer are valid.
+        unsafe {
+            GetFileInformationByHandleEx(
+                file_handle(&self.file),
+                FileStandardInfo,
+                (&mut standard as *mut FILE_STANDARD_INFO).cast(),
+                size_of::<FILE_STANDARD_INFO>() as u32,
+            )?;
+        }
+        Ok(standard.NumberOfLinks != 1)
+    }
+
     #[must_use]
     pub fn final_path(&self) -> &Path {
         &self.final_path
