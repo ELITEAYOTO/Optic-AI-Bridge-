@@ -488,12 +488,7 @@ mod tests {
             // Fixed-label aggregate timings only: no path, digest or data.
             eprintln!(
                 "OPTIC_IDENTITY_BUFFER_CAPACITY size_bytes={} buffer_bytes={} read_ms={} total_ms={} calls={} max_read_ms={}",
-                size,
-                capacity,
-                result.read_ms,
-                result.total_ms,
-                result.calls,
-                result.max_read_ms,
+                size, capacity, result.read_ms, result.total_ms, result.calls, result.max_read_ms,
             );
         }
     }
