@@ -1,5 +1,10 @@
 # Changelog
 
+## Git log malformed record fail-closed correction (2026-10-21)
+
+- The bounded Git log parser now rejects empty record rows rather than silently skipping them. A blank intermediate record would otherwise make parsed entry counts disagree with Git's offset-based cursor progression. Synthetic regression covers valid consecutive commits, a legitimately empty result, and blank leading/intermediate/trailing rows. No change to Git arguments, permissions, cursor format, limits, process or sandbox behavior. Exact-head native CI remains the acceptance gate.
+
+
 ## Verified FileRead hard-link identity safeguard — PR #314 (2026-10-21)
 
 - [#314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) squash-merged at `7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`: prepared `fs_read` now conservatively requires an explicit sensitive lease for an opened file identity having multiple hard-link names, even through an ordinary-looking alias. Synthetic deny/grant/ordinary-file native regressions cover Windows and Linux. Harmless multi-linked files may be denied absent extra authority.
