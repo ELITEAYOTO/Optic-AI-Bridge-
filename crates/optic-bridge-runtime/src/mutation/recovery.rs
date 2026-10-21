@@ -237,7 +237,7 @@ impl MutationRecoveryJournal {
     }
 
     pub fn retire(&self, ticket: &JournalTicket) -> Result<(), RecoveryJournalError> {
-        self.remove_regular_file(&self.journal_path(&ticket.action_id))
+        self.remove_regular_file(&self.journal_path(&ticket.action_id), true)
     }
 
     pub fn reconcile(
@@ -334,17 +334,23 @@ impl MutationRecoveryJournal {
         &self,
         scan: &PendingRecoveryScan,
     ) -> Result<(), RecoveryJournalError> {
-        // Unpublished files cannot represent committed effects. Their
-        // deletion must follow all relevant validation phases, not just
-        // stable-journal classification. Deletion remains non-atomic.
+        // Classify *all* unpublished entries before discarding even the first.
+        // Otherwise a later hard-linked/reparse/nonfile entry could fail
+        // closed only after earlier evidence had already been erased.
         for path in &scan.unpublished {
-            self.remove_regular_file(path)?;
+            self.remove_regular_file(path, false)?;
+        }
+        // Each delete must re-open/revalidate the exact object: preflight
+        // cannot guarantee identity against later concurrent namespace races.
+        // A later deletion failure can still leave partial cleanup.
+        for path in &scan.unpublished {
+            self.remove_regular_file(path, true)?;
         }
         Ok(())
     }
 
     pub(crate) fn retire_action(&self, action_id: &ActionId) -> Result<(), RecoveryJournalError> {
-        self.remove_regular_file(&self.journal_path(action_id))
+        self.remove_regular_file(&self.journal_path(action_id), true)
     }
 
     fn ensure_action_path_absent(
@@ -514,7 +520,7 @@ impl MutationRecoveryJournal {
             .join(format!("{}{}", action_id.to_token(), PREPARED_TEMP_SUFFIX))
     }
 
-    fn remove_regular_file(&self, path: &Path) -> Result<(), RecoveryJournalError> {
+    fn remove_regular_file(&self, path: &Path, delete: bool) -> Result<(), RecoveryJournalError> {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -531,9 +537,13 @@ impl MutationRecoveryJournal {
             // also rejects reparse points and hard-link aliases.
             let opened = optic_bridge_windows::open_exclusive_file_for_delete_no_reparse(path)
                 .map_err(RecoveryJournalError::NativeJournalFile)?;
-            opened
-                .delete()
-                .map_err(RecoveryJournalError::NativeJournalFile)
+            if delete {
+                opened
+                    .delete()
+                    .map_err(RecoveryJournalError::NativeJournalFile)
+            } else {
+                Ok(())
+            }
         }
         #[cfg(not(windows))]
         {
@@ -554,7 +564,9 @@ impl MutationRecoveryJournal {
             // Unix does not offer the native Windows handle-based delete
             // primitive here; a concurrent pathname replacement remains
             // outside this bounded alias-rejection improvement.
-            fs::remove_file(path)?;
+            if delete {
+                fs::remove_file(path)?;
+            }
             Ok(())
         }
     }
@@ -1150,6 +1162,64 @@ mod tests {
             "unpublished evidence is discarded only after a clean scan"
         );
         assert!(!unpublished_path.exists());
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
+    fn later_aliased_unpublished_entry_preserves_all_earlier_evidence() {
+        let (workspace, state) = fixture("unpublished-all-preflight");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let first = ActionId::generate().expect("first id");
+        let second = ActionId::generate().expect("second id");
+        assert_ne!(first.to_token(), second.to_token());
+        let (valid_id, aliased_id) = if first.to_token() < second.to_token() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let valid_path = journal.prepared_temp_path(&valid_id);
+        let aliased_path = journal.prepared_temp_path(&aliased_id);
+        assert!(valid_path < aliased_path, "valid entry must sort first");
+        let original_valid = b"earlier unpublished evidence";
+        let original_external = b"external evidence must be retained";
+        let external_path = state.parent().expect("fixture base").join("external-proof");
+        fs::write(&valid_path, original_valid).expect("earlier unpublished entry");
+        fs::write(&external_path, original_external).expect("external evidence");
+        fs::hard_link(&external_path, &aliased_path).expect("later hard-link alias");
+
+        assert!(
+            journal.reconcile(atomic.filesystem()).is_err(),
+            "later aliased file must fail closed before any cleanup"
+        );
+        assert_eq!(
+            fs::read(&valid_path).expect("earlier evidence retained"),
+            original_valid
+        );
+        assert_eq!(
+            fs::read(&aliased_path).expect("aliased entry retained"),
+            original_external
+        );
+        assert_eq!(
+            fs::read(&external_path).expect("external evidence retained"),
+            original_external
+        );
+
+        // Resolve the unsafe alias; both now-independent unpublished entries
+        // can be cleaned normally after a fresh successful preflight.
+        fs::remove_file(&aliased_path).expect("remove test alias");
+        fs::write(&aliased_path, b"independent unpublished").expect("repair entry");
+        assert!(
+            journal
+                .reconcile(atomic.filesystem())
+                .expect("retry after repairing unsafe entry")
+                .is_empty()
+        );
+        assert!(!valid_path.exists());
+        assert!(!aliased_path.exists());
+        assert_eq!(
+            fs::read(&external_path).expect("external evidence preserved"),
+            original_external
+        );
         fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
     }
 
