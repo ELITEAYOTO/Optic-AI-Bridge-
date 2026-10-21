@@ -1,5 +1,10 @@
 # Changelog
 
+## Git log cursor-aware response fitting
+
+- Correct bounded `git_log` response fitting: if trimming an end-of-history page requires adding a continuation cursor, the response is now checked again with that cursor included. Return a bounded error rather than emit oversized JSON when even one entry plus cursor cannot fit; retain forward-progressing offsets without overflow. Add a deterministic byte-budget regression. Existing GitRead isolation, authority, cursor-head pinning and public tool surface remain unchanged. CI and merge status must be verified live.
+
+
 ## Git metadata authority segregation — bounded stabilization candidate (2026-10-21)
 
 - Prevent generic workspace file mutation from addressing canonical `.git` control metadata (including linked worktree pointer files and ASCII case variants) without affecting ordinary dotfiles; keep dedicated Git integration authority separate. Deny generic creation of Git-control directories and provide a stable MCP error. Add native Windows/Unix regressions for requested and canonical paths. This entry describes a **PR candidate**, not a verified merge; require exact-head CI and independent main CI before claiming final delivery. Open risks: concurrent namespace races, hardlinks, sensitive GitRead/content policy and remote access.
