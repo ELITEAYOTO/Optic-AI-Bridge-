@@ -1,5 +1,12 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Réserve de sécurité Git — candidat en cours (21 octobre 2026)
+
+Le checkpoint GitHub réel au début de l'incrément est `main=9c6c91096590f9f005dabc51253b9b5f8b1abcca`, 0 PR ouverte et [CI indépendante #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408) réussie du premier coup. L'[issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) signale une faille de séparation d'autorités : l'écriture générique peut cibler les contrôles `.git` sans pouvoir Git dédié. Le changement candidat refuse les composants exacts `.git` (sans distinction de casse) **après la résolution canonique** lors de la préparation de fichier, ainsi qu'en création de répertoire. Des tests visent Windows natif, Unix, le pointeur `.git` des worktrees liés et le code d'erreur MCP ; `.gitignore` reste ordinaire.
+
+IMPORTANT : ce paragraphe décrit **un travail non encore fusionné**. Revérifier l'état GitHub, les PR, tous les checks sur leur SHA exact et le résultat de la CI post-fusion avant de conclure. Une seule PR à la fois, correctif + tests + docs dans la même PR, aucune action sur le PC de l'utilisateur. Les permissions, sandbox, délais et le gel des fonctionnalités restent inchangés. Les races de chemins, hardlinks, lectures sensibles et GitRead demeurent des dettes distinctes.
+
+
 ## Dernier relais — 21 octobre 2026, PR #301 intégrée
 
 GitHub `main` observé juste après le squash de la [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) : `05b5a928c862601926e8b0cc11540ce020caf271`, zéro PR ouverte. [CI source #39529419994](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529419994) passée **seulement à la deuxième tentative**, suite à l'intermittence native Windows Node/AppContainer (~10s) sur la première. Les trois diagnostics suivants ont réussi, avec des durées d'exécution internes très variables et une observation importante dans [l'issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185#issuecomment-6306039365). Le test négatif de récupération est passé sur **Windows natif et Linux** ; la préparation native #39529420240 a réussi au premier essai. La CI indépendante post-fusion [#39530161176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530161176) a **réussi dès la première tentative** sur le SHA exact de fusion `05b5a928c862601926e8b0cc11540ce020caf271`, Windows/Linux/dépendances.

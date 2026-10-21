@@ -699,6 +699,90 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn authorized_workspace_all_mutations_cannot_change_git_control_state() {
+        let (base, workspace, state) = fixture("protected-git-control");
+        fs::create_dir(workspace.join(".git")).expect("Git control directory");
+        fs::create_dir(workspace.join("nested")).expect("nested directory");
+        fs::write(workspace.join(".git/config"), b"original").expect("Git control file");
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let leases = Arc::new(TaskLeaseRegistry::new());
+        let grant = session(&[
+            Capability::FileWrite,
+            Capability::FileDelete,
+            Capability::DirectoryCreate,
+        ]);
+        sessions.register(grant.clone()).expect("register session");
+        let task = lease(
+            &grant,
+            &[
+                Capability::FileWrite,
+                Capability::FileDelete,
+                Capability::DirectoryCreate,
+            ],
+            &[LeaseScope::WorkspaceAll],
+        );
+        leases.register(task.clone()).expect("register lease");
+        let service = service(&workspace, &state, HardLimits::default(), sessions, leases);
+
+        let target = path(".git/config");
+        let version = ContentVersion::from_bytes(b"original");
+        let write = envelope(
+            &grant,
+            Some(&task),
+            Effect::FileWrite {
+                path: target.clone(),
+                expected: ExpectedState::Content(version),
+            },
+        );
+        assert!(matches!(
+            service.write(&write, b"replacement"),
+            Err(AuthorizedFileMutationError::Transaction(
+                TransactionalFileError::Mutation(crate::JournaledMutationError::Atomic(
+                    crate::AtomicMutationError::ReservedGitMetadata
+                ))
+            ))
+        ));
+
+        let delete = envelope(
+            &grant,
+            Some(&task),
+            Effect::FileDelete {
+                path: target,
+                expected: version,
+            },
+        );
+        assert!(matches!(
+            service.delete(&delete),
+            Err(AuthorizedFileMutationError::Transaction(
+                TransactionalFileError::Mutation(crate::JournaledMutationError::Atomic(
+                    crate::AtomicMutationError::ReservedGitMetadata
+                ))
+            ))
+        ));
+        let directory = envelope(
+            &grant,
+            Some(&task),
+            Effect::DirectoryCreate {
+                path: path("nested/.GiT"),
+            },
+        );
+        assert!(matches!(
+            service.create_directory(&directory),
+            Err(AuthorizedFileMutationError::Directory(
+                crate::DirectoryCreateError::ReservedGitMetadata
+            ))
+        ));
+        assert_eq!(
+            fs::read(workspace.join(".git/config")).expect("unchanged Git control bytes"),
+            b"original"
+        );
+        assert!(!workspace.join("nested/.GiT").exists());
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn authorized_write_and_delete_reach_only_the_transactional_runtime() {
         let (base, workspace, state) = fixture("windows-end-to-end");
         let sessions = Arc::new(SessionRegistry::new());

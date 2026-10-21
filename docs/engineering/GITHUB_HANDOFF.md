@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Active single-PR stabilization: reserve .git metadata (2026-10-21)
+
+At the start of this increment GitHub `main=9c6c91096590f9f005dabc51253b9b5f8b1abcca`, zero PRs open and [independent #303 post-merge CI #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408) passed on attempt 1. [Issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) documents an actual separation-of-authorities defect: generic FileWrite/FileDelete could target Git-owned `.git` data without GitIntegrate authority.
+
+The focused branch implements an explicit reserved Git-control namespace at transactional **canonical** mutation preparation and directory creation, rejecting any exact case-insensitive `.git` segment while leaving `.gitignore` etc. usable. Tests cover existing/absent `.git` file content, linked worktree pointer `.git` file, alias into Git metadata (Unix), Windows authenticated WorkspaceAll write/delete and directory denial, and stable MCP invalid-request error. Do not treat the branch as merged until exact-head native Windows/Linux and policy CI confirms it; integrate documentation **in the same PR**; afterward check independent main CI on the squash SHA. Keep first failed attempts.
+
+Scope limits: no expanded Git integration ability, no sensitive-read classifier, no remote transport, no general Cargo or Electron. Concurrent directory replacement races, alternate hardlinks and power-loss persistence are not globally solved. Continue one PR at a time, preserve the Windows Node/AppContainer #185 evidence and use hosted GitHub runners only.
+
+
 ## Security stabilization candidate: canonical fs_list scope — 2026-10-21
 
 Source audit identified a **real** `fs_list` authority mismatch: an alias path inside an allowed `SearchMetadataScope::Prefix` could resolve to a different workspace directory, because policy had used the lexical alias while the bounded filesystem resolved the actual target only after authorization. The scoped candidate adds `BoundedFileSystem::canonical_list_root`, evaluates `Effect::FileSearch` on that canonical directory, and enumerates/returns canonical-path entries. Regressions cover a Unix in-workspace symlink out of a permitted prefix, whole-workspace canonical listing, and an ordinary directory on native Windows/Linux.

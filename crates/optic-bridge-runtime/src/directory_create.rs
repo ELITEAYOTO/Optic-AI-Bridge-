@@ -35,6 +35,11 @@ impl DirectoryCreationService {
     }
 
     pub(crate) fn create(&self, path: &WorkspacePath) -> Result<(), DirectoryCreateError> {
+        // Windows pins/rejects reparse ancestors below; an exact .git segment
+        // is reserved even when requested through a broad workspace lease.
+        if crate::mutation::is_git_control_metadata_path(path) {
+            return Err(DirectoryCreateError::ReservedGitMetadata);
+        }
         if path.as_str().split('/').count() > 32 {
             return Err(DirectoryCreateError::DepthExceeded);
         }
@@ -113,6 +118,8 @@ fn validate_names(path: &WorkspacePath) -> Result<(), DirectoryCreateError> {
 
 #[derive(Debug, Error)]
 pub enum DirectoryCreateError {
+    #[error("generic directory creation cannot change Git control metadata")]
+    ReservedGitMetadata,
     #[error(
         "directory names must not use Windows device, control or ambiguous trailing characters"
     )]
@@ -172,6 +179,29 @@ mod tests {
         for name in ["projet français/assets", "日本語", "COM10", "my folder"] {
             validate_names(&WorkspacePath::parse(name).unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn generic_directory_creation_rejects_git_control_names() {
+        let root = env::temp_dir().join(format!(
+            "optic-directory-git-boundary-{}",
+            ActionId::generate().expect("entropy").to_token()
+        ));
+        fs::create_dir(&root).expect("root");
+        fs::create_dir(root.join("nested")).expect("nested");
+        let service = DirectoryCreationService::new(&root, HardLimits::default()).expect("service");
+        for name in [".git", ".GiT", "nested/.git", "nested/.GiT"] {
+            assert!(matches!(
+                service.create(&WorkspacePath::parse(name).expect("path")),
+                Err(DirectoryCreateError::ReservedGitMetadata)
+            ));
+            assert!(!root.join(name).exists(), "{name} must not be created");
+        }
+        service
+            .create(&WorkspacePath::parse("ordinary-project").expect("normal path"))
+            .expect("normal directory creation remains available");
+        assert!(root.join("ordinary-project").is_dir());
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

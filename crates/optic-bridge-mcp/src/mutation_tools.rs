@@ -359,6 +359,9 @@ fn map_authorized_mutation_error(error: AuthorizedFileMutationError) -> ErrorDat
             optic_bridge_runtime::DirectoryCreateError::InvalidName => {
                 ErrorData::invalid_params("optic.invalid_directory_name", None)
             }
+            optic_bridge_runtime::DirectoryCreateError::ReservedGitMetadata => {
+                ErrorData::invalid_request("optic.git_metadata_protected", None)
+            }
             optic_bridge_runtime::DirectoryCreateError::UnsupportedPlatform => {
                 ErrorData::invalid_request("optic.unsupported_platform", None)
             }
@@ -452,6 +455,9 @@ fn map_atomic_mutation_error(error: AtomicMutationError) -> ErrorData {
                 ErrorData::internal_error("optic.filesystem_error", None)
             }
         },
+        AtomicMutationError::ReservedGitMetadata => {
+            ErrorData::invalid_request("optic.git_metadata_protected", None)
+        }
         AtomicMutationError::NewContentTooLarge { .. } => {
             ErrorData::invalid_params("optic.fs_mutation_limit_exceeded", None)
         }
@@ -510,6 +516,16 @@ fn map_filesystem_error(error: FileSystemError) -> ErrorData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_control_mutation_denial_is_reported_without_filesystem_details() {
+        let write = map_atomic_mutation_error(AtomicMutationError::ReservedGitMetadata);
+        assert_eq!(write.message, "optic.git_metadata_protected");
+        let directory = map_authorized_mutation_error(AuthorizedFileMutationError::Directory(
+            optic_bridge_runtime::DirectoryCreateError::ReservedGitMetadata,
+        ));
+        assert_eq!(directory.message, "optic.git_metadata_protected");
+    }
 
     #[test]
     fn expected_state_request_is_never_blind() {

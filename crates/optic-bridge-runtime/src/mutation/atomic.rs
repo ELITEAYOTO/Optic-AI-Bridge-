@@ -34,6 +34,17 @@ pub struct AtomicMutationService {
     windows_root_final_path: PathBuf,
 }
 
+/// The generic workspace mutation capability never owns Git control state.
+/// Reserve the exact .git component at any depth (including linked-worktree
+/// .git files); ordinary dotfiles such as .gitignore remain regular content.
+/// Windows filesystem matching is case-insensitive, so always reject all
+/// ASCII casing variants across platforms.
+pub(crate) fn is_git_control_metadata_path(path: &WorkspacePath) -> bool {
+    path.as_str()
+        .split('/')
+        .any(|segment| segment.eq_ignore_ascii_case(".git"))
+}
+
 impl AtomicMutationService {
     pub fn from_hard_limits(
         root: impl AsRef<Path>,
@@ -60,6 +71,13 @@ impl AtomicMutationService {
         expected: ExpectedState,
     ) -> Result<PreparedMutation, AtomicMutationError> {
         let observation = self.filesystem.require_expected_state(path, expected)?;
+        // Apply this only after resolving the real workspace target: a
+        // representable alias in the requested path must not bypass it.
+        if is_git_control_metadata_path(path)
+            || is_git_control_metadata_path(&observation.canonical_path)
+        {
+            return Err(AtomicMutationError::ReservedGitMetadata);
+        }
 
         #[cfg(windows)]
         let windows_guard = self.prepare_windows_guard(&observation.canonical_path, expected)?;
@@ -81,6 +99,11 @@ impl AtomicMutationService {
         let observation = self
             .filesystem
             .require_expected_state(path, expected_state)?;
+        if is_git_control_metadata_path(path)
+            || is_git_control_metadata_path(&observation.canonical_path)
+        {
+            return Err(AtomicMutationError::ReservedGitMetadata);
+        }
 
         #[cfg(windows)]
         let windows_identity =
@@ -579,6 +602,8 @@ pub enum AtomicMutationError {
     Io(#[from] std::io::Error),
     #[error("new mutation content exceeds hard byte ceiling {limit}")]
     NewContentTooLarge { limit: u64 },
+    #[error("generic file mutation cannot change Git control metadata")]
+    ReservedGitMetadata,
     #[error("prepared mutation target is invalid")]
     InvalidTarget,
     #[error("prepared mutation state is internally inconsistent")]
@@ -614,6 +639,116 @@ mod tests {
         let root = env::temp_dir().join(format!("optic-bridge-mutation-{label}-{token}"));
         fs::create_dir_all(&root).expect("create temp workspace");
         root
+    }
+
+    #[test]
+    fn git_control_metadata_is_reserved_without_blocking_regular_dotfiles() {
+        for reserved in [
+            ".git",
+            ".git/config",
+            ".GiT/HEAD",
+            "nested/.GIT/hooks/pre-commit",
+        ] {
+            assert!(
+                is_git_control_metadata_path(&WorkspacePath::parse(reserved).expect("valid path")),
+                "{reserved} must remain Git-owned"
+            );
+        }
+        for ordinary in [
+            ".gitignore",
+            ".gitattributes",
+            "src/.github/workflows/ci.yml",
+        ] {
+            assert!(
+                !is_git_control_metadata_path(&WorkspacePath::parse(ordinary).expect("valid path")),
+                "{ordinary} must remain normal workspace content"
+            );
+        }
+
+        let root = workspace("reserved-git-controls");
+        fs::create_dir(root.join(".git")).expect("git directory");
+        fs::write(root.join(".git").join("config"), b"git config").expect("config");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let config = WorkspacePath::parse(".git/config").expect("config path");
+        let version = ContentVersion::from_bytes(b"git config");
+        assert!(matches!(
+            service.prepare_write(&config, ExpectedState::Content(version)),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert!(matches!(
+            service.prepare_delete(&config, version),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert!(matches!(
+            service.prepare_write(
+                &WorkspacePath::parse(".git/new-control").expect("new git path"),
+                ExpectedState::Absent
+            ),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert!(
+            service
+                .prepare_write(
+                    &WorkspacePath::parse(".gitignore").expect("normal dotfile"),
+                    ExpectedState::Absent
+                )
+                .is_ok(),
+            "ordinary project dotfiles must remain available"
+        );
+        assert_eq!(
+            fs::read(root.join(".git/config")).expect("config"),
+            b"git config"
+        );
+        assert!(!root.join(".git/new-control").exists());
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn linked_worktree_git_pointer_file_is_reserved() {
+        let root = workspace("worktree-git-pointer");
+        let pointer = b"gitdir: ../private-git/worktrees/x\\n";
+        fs::write(root.join(".git"), pointer).expect("linked worktree pointer");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let git_file = WorkspacePath::parse(".git").expect("metadata path");
+        let version = ContentVersion::from_bytes(pointer);
+        assert!(matches!(
+            service.prepare_write(&git_file, ExpectedState::Content(version)),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert!(matches!(
+            service.prepare_delete(&git_file, version),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert_eq!(fs::read(root.join(".git")).expect("pointer"), pointer);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_alias_to_git_control_file_is_reserved() {
+        use std::os::unix::fs::symlink;
+
+        let root = workspace("git-metadata-alias");
+        fs::create_dir(root.join(".git")).expect("git metadata");
+        fs::write(root.join(".git/config"), b"private").expect("config");
+        symlink(".git", root.join("alias")).expect("alias to git control directory");
+        let service =
+            AtomicMutationService::from_hard_limits(&root, HardLimits::default()).expect("service");
+        let path = WorkspacePath::parse("alias/config").expect("alias request");
+        assert!(matches!(
+            service.prepare_write(
+                &path,
+                ExpectedState::Content(ContentVersion::from_bytes(b"private"))
+            ),
+            Err(AtomicMutationError::ReservedGitMetadata)
+        ));
+        assert_eq!(
+            fs::read(root.join(".git/config")).expect("config"),
+            b"private"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[cfg(not(windows))]
