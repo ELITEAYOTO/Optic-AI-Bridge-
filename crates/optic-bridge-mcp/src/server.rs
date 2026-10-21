@@ -1012,8 +1012,7 @@ mod tests {
         fs::create_dir(root.join("private")).expect("private");
         fs::write(root.join("private").join("names-only.txt"), b"private")
             .expect("private fixture");
-        symlink("../private", root.join("allowed").join("portal"))
-            .expect("internal alias");
+        symlink("../private", root.join("allowed").join("portal")).expect("internal alias");
 
         let scoped_server = server_with_search_scope(
             &root,
