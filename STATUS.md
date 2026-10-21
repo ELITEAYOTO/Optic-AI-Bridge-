@@ -1,5 +1,12 @@
 # Current project status
 
+## Scoped fs_list canonical-target authorization — security stabilization (2026-10-21)
+
+Source review of the existing local MCP `fs_list` found a concrete lexical/canonical scope mismatch: policy evaluated a requested directory alias before `BoundedFileSystem::list` followed the alias to a different workspace subtree. Under prefix-scoped `SearchMetadataScope`, this permits metadata enumeration outside the granted prefix. The bounded correction resolves the **canonical directory target before policy evaluation** and lists that resolved canonical root; returned paths identify the actual directory. A Unix symlink regression distinguishes restricted-prefix denial from whole-workspace allowed canonical listing; a portable root/normal-directory regression runs on hosted Windows and Linux.
+
+The change does not grant new permissions, create a transport, add a sensitive-content classifier, pin ancestor directory handles, or eliminate concurrent namespace replacement races. Review the exact source PR and native CI before claiming delivery. [Security issue #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) remains open for its separate sensitive-read classifier and remaining path/race boundaries; #301 recovery and Node #185 remain independent. Feature freeze remains in force.
+
+
 ## Stabilization: unpublished recovery evidence — PR #301 (2026-10-21)
 
 [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) was squash-merged into `main` at `05b5a928c862601926e8b0cc11540ce020caf271`. Its scoped fix preflights **all** unpublished `*.prepared.tmp` entries with existing native opened-file, single-link and no-reparse checks before the first deletion, and rechecks each immediately before removal. The new ordered-fixture regression proves a later hard-linked unsafe entry cannot erase earlier unrelated evidence; repair permits normal cleanup. Windows and Linux logs explicitly record `later_aliased_unpublished_entry_preserves_all_earlier_evidence ... ok` on accepted source `089e64a2b6c95dc0705eeaaa22f90194dfb7be66`.
