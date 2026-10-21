@@ -517,8 +517,7 @@ mod tests {
         let mut insufficient = two_entries();
         let error = server
             .fit_git_log_response(0, &mut insufficient)
-            .err()
-            .expect("a cursor must not push an otherwise fitting page over budget");
+            .expect_err("a cursor must not push an otherwise fitting page over budget");
         assert_eq!(error.message, "optic.response_too_large");
 
         server.limits.max_response_bytes = overhead + with_bytes;
