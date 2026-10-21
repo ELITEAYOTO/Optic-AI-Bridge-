@@ -1,5 +1,12 @@
 # GitHub-only project handoff
 
+## Security stabilization candidate: canonical fs_list scope — 2026-10-21
+
+Source audit identified a **real** `fs_list` authority mismatch: an alias path inside an allowed `SearchMetadataScope::Prefix` could resolve to a different workspace directory, because policy had used the lexical alias while the bounded filesystem resolved the actual target only after authorization. The scoped candidate adds `BoundedFileSystem::canonical_list_root`, evaluates `Effect::FileSearch` on that canonical directory, and enumerates/returns canonical-path entries. Regressions cover a Unix in-workspace symlink out of a permitted prefix, whole-workspace canonical listing, and an ordinary directory on native Windows/Linux.
+
+This is **not** a fix for simultaneous directory swaps (there is no lifetime-pinned directory handle), unclassified sensitive-file reads, or remote transport safety. [Security audit #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) retains those independent requirements. Verify the actual PR, exact source head, all CI results and independent `main` status live before claiming integration. Use one PR at a time; no operator-PC execution or runner self-hosting, no GUI/Cargo features. The earlier #301/#302 integration and preserved Windows #185 first-failure evidence remain canonical.
+
+
 ## Most recent recovery correction — 2026-10-21, after PR #301
 
 **Live at post-merge inspection:** `main=05b5a928c862601926e8b0cc11540ce020caf271`, zero open PRs. [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) squash-merged from source `089e64a2b6c95dc0705eeaaa22f90194dfb7be66`. [Source CI #39529419994](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529419994) passed **on attempt 2** after an unrelated but significant initial native Windows Node/AppContainer timeout; [native preparation #39529420240](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529420240) passed first attempt. The **exact same new recovery regression** passed on Linux and on the Windows second attempt. [Independent post-merge main run #39530161176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530161176) **passed first attempt** on exact squash SHA `05b5a928c862601926e8b0cc11540ce020caf271`, Windows Rust, Linux Rust and dependency policy.

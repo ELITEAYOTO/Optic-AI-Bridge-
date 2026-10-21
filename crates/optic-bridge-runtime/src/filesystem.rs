@@ -159,6 +159,32 @@ impl BoundedFileSystem {
         }
     }
 
+    /// Resolve the actual directory to a workspace-relative canonical scope
+    /// before a caller authorizes FileSearch. A requested alias must never
+    /// substitute for the target directory in a prefix-scoped policy decision.
+    /// None represents the workspace root and requires whole-workspace search.
+    ///
+    /// This does not pin ancestor directories against concurrent replacement.
+    pub fn canonical_list_root(
+        &self,
+        path: Option<&WorkspacePath>,
+    ) -> Result<Option<WorkspacePath>, FileSystemError> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let resolved = self.resolve_existing(path)?;
+        if !resolved.is_dir() {
+            return Err(FileSystemError::NotDirectory);
+        }
+        if resolved == self.root {
+            return Ok(None);
+        }
+        let relative = resolved
+            .strip_prefix(&self.root)
+            .map_err(|_| FileSystemError::OutsideWorkspace)?;
+        Ok(Some(workspace_path_from_relative(relative)?))
+    }
+
     pub fn list(
         &self,
         path: Option<&WorkspacePath>,
@@ -660,6 +686,54 @@ mod tests {
         assert_eq!(second.entries[0].name, "z.txt");
         assert_eq!(second.next_cursor, None);
 
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn canonical_list_root_preserves_regular_directory_across_platforms() {
+        let root = workspace("canonical-list-regular");
+        fs::create_dir(root.join("allowed")).expect("allowed");
+        let service = BoundedFileSystem::new(&root, 128, 4, 32).expect("filesystem service");
+        let expected = WorkspacePath::parse("allowed").expect("scope");
+        assert_eq!(
+            service.canonical_list_root(Some(&expected)).expect("scope"),
+            Some(expected)
+        );
+        assert_eq!(
+            service.canonical_list_root(None).expect("workspace root"),
+            None
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_list_root_resolves_internal_alias_to_actual_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = workspace("canonical-list-alias");
+        fs::create_dir(root.join("allowed")).expect("allowed");
+        fs::create_dir(root.join("private")).expect("private");
+        fs::write(root.join("private").join("evidence.txt"), b"evidence")
+            .expect("private evidence");
+        symlink("../private", root.join("allowed").join("portal")).expect("create internal alias");
+
+        let service = BoundedFileSystem::new(&root, 128, 4, 32).expect("filesystem service");
+        let alias = WorkspacePath::parse("allowed/portal").expect("alias");
+        let expected = WorkspacePath::parse("private").expect("canonical");
+        assert_eq!(
+            service
+                .canonical_list_root(Some(&alias))
+                .expect("resolve alias"),
+            Some(expected.clone())
+        );
+        let page = service.list(Some(&expected), 0, 4).expect("canonical list");
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(
+            page.entries[0].path,
+            WorkspacePath::parse("private/evidence.txt").expect("file")
+        );
+        assert_eq!(service.canonical_list_root(None).expect("root"), None);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
