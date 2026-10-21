@@ -363,10 +363,12 @@ mod tests {
     };
 
     use optic_bridge_core::{
-        Capability, HardLimits, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
+        Capability, HardLimits, MonotonicTime, PrincipalId, ProjectId, ReadContentScope,
+        ReadSensitiveScope, SessionGrant, SessionHandle,
     };
     use optic_bridge_runtime::{
-        Clock, MutationAuthoritySet, ProcessManager, SessionRegistry, TaskLeaseRegistry,
+        Clock, MutationAuthoritySet, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec,
+        SessionRegistry, TaskLeaseRegistry, read_authority_resource_budget,
     };
 
     use super::*;
@@ -466,6 +468,26 @@ mod tests {
                 Some(git_service),
             )
             .expect("server")
+        }
+
+        fn server_with_sensitive_read(&self, scope: ReadSensitiveScope) -> ReadonlyMcpServer {
+            let server = self.server(&[Capability::FileRead, Capability::GitRead]);
+            let limits = HardLimits::default();
+            let spec = ReadAuthoritySpec {
+                search_metadata: BTreeSet::new(),
+                read_content: BTreeSet::from([ReadContentScope::all()]),
+                read_sensitive: BTreeSet::from([scope]),
+            };
+            let read = ReadAuthoritySet::provision(
+                &server.task_leases,
+                &server.session,
+                &spec,
+                read_authority_resource_budget(limits),
+                MonotonicTime::from_millis(10_000),
+                1,
+            )
+            .expect("explicit scoped authority");
+            server.with_read_authorities(read)
         }
     }
 
@@ -597,6 +619,51 @@ mod tests {
         assert!(
             raw.windows(b"tracked.txt".len())
                 .any(|window| window == b"tracked.txt")
+        );
+    }
+
+    #[tokio::test]
+    async fn git_status_does_not_expose_sensitive_staged_or_untracked_names() {
+        let fixture = RepoFixture::new("sensitive-status");
+        fs::write(fixture.repo.join(".env"), b"synthetic-only").expect("staged fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new(".env")],
+        );
+        fs::write(fixture.repo.join("access_token.txt"), b"synthetic-only")
+            .expect("untracked fixture");
+        let ordinary = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            ordinary
+                .git_status()
+                .await
+                .err()
+                .expect("sensitive names must be denied")
+                .message,
+            "optic.policy_denied"
+        );
+        let mismatched = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
+            WorkspacePath::parse("src").expect("prefix"),
+        ));
+        assert_eq!(
+            mismatched
+                .git_status()
+                .await
+                .err()
+                .expect("incorrect sensitive prefix must not authorize names")
+                .message,
+            "optic.policy_denied"
+        );
+        let permitted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let response = permitted.git_status().await.expect("explicit sensitive authority").0;
+        let raw = STANDARD
+            .decode(response.porcelain_v2_base64)
+            .expect("status base64");
+        assert!(raw.windows(b".env".len()).any(|value| value == b".env"));
+        assert!(
+            raw.windows(b"access_token.txt".len())
+                .any(|value| value == b"access_token.txt")
         );
     }
 
