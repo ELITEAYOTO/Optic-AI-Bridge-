@@ -9,6 +9,7 @@ mod windows_launcher {
         io::{Error as IoError, ErrorKind, Read},
         os::windows::{ffi::OsStrExt, io::AsHandle},
         path::{Path, PathBuf},
+        time::Instant,
     };
 
     use optic_bridge_core::HardLimits;
@@ -26,6 +27,31 @@ mod windows_launcher {
     const INTERNAL_FAILURE_EXIT: i32 = 126;
 
     type LauncherResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+    // Emits only a fixed vocabulary of phases and monotonic elapsed time.
+    // Disabled by default; never emit request contents, paths, SIDs or handles.
+    struct LauncherPhaseTiming {
+        started: Instant,
+        enabled: bool,
+    }
+
+    impl LauncherPhaseTiming {
+        fn new() -> Self {
+            Self {
+                started: Instant::now(),
+                enabled: std::env::var("OPTIC_LAUNCHER_PHASES").as_deref() == Ok("1"),
+            }
+        }
+
+        fn mark(&self, phase: &'static str) {
+            if self.enabled {
+                eprintln!(
+                    "OPTIC_LAUNCHER_PHASE phase={phase} elapsed_ms={}",
+                    self.started.elapsed().as_millis()
+                );
+            }
+        }
+    }
 
     #[derive(Debug, Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -50,14 +76,19 @@ mod windows_launcher {
     }
 
     fn run() -> LauncherResult<i32> {
+        let timing = LauncherPhaseTiming::new();
+        timing.mark("entered");
         let request = read_request(std::io::stdin().lock())?;
+        timing.mark("request_read");
         let executable = canonical_file(&request.executable)?;
         let cwd = canonical_directory(&request.cwd)?;
         validate_command_size(&executable, &request.args)?;
+        timing.mark("inputs_validated");
 
         let workspace_root = absolute_path(&request.workspace_root, "workspace root")?;
         let profile = AppContainerProfile::create_ephemeral()
             .map_err(|error| IoError::other(format!("create AppContainer profile: {error}")))?;
+        timing.mark("profile_created");
         let mut _metadata_grants = Vec::new();
         if !request.workspace_read_files.is_empty() {
             // Pin the root before resolving ancestors. Never grant volume/user
@@ -99,6 +130,7 @@ mod windows_launcher {
                     })?,
             );
         }
+        timing.mark("grants_prepared");
         let null_stdin = OpenOptions::new()
             .read(true)
             .open("NUL")
@@ -119,21 +151,25 @@ mod windows_launcher {
             },
         )
         .map_err(|error| IoError::other(format!("spawn AppContainer target: {error}")))?;
+        timing.mark("target_created_suspended");
         let is_appcontainer = child
             .is_appcontainer()
             .map_err(|error| IoError::other(format!("verify AppContainer token: {error}")))?;
         if !is_appcontainer {
             return Err(IoError::other("child token is not an AppContainer token").into());
         }
+        timing.mark("token_verified");
         child
             .resume()
             .map_err(|error| IoError::other(format!("resume AppContainer target: {error}")))?;
+        timing.mark("target_resumed");
         let timeout_ms = u32::try_from(request.timeout_ms).map_err(|_| {
             IoError::new(ErrorKind::InvalidInput, "launcher timeout does not fit u32")
         })?;
         let exit = child
             .wait_exit(timeout_ms)
             .map_err(|error| IoError::other(format!("wait AppContainer target: {error}")))?;
+        timing.mark("target_exited");
         Ok(exit as i32)
     }
 
