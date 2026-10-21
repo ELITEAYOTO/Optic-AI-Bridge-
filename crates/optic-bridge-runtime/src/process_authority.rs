@@ -469,9 +469,10 @@ mod tests {
             }
         }
 
-        // Keep the deliberately first 1-MiB pass explicit. Subsequent
-        // measurements share its file-cache state and cannot compare cold I/O.
-        let measures = [1024 * 1024, 64 * 1024, 256 * 1024];
+        // Run 64 KiB first to contrast the previous 1-MiB-first experiment.
+        // Later measurements inherit the first pass's OS cache state; this
+        // is not a causal cold-cache comparison across runner instances.
+        let measures = [64 * 1024, 1024 * 1024, 256 * 1024];
         let mut baseline = None;
         for capacity in measures {
             pinned
