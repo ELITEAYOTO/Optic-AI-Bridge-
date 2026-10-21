@@ -1,5 +1,16 @@
 # Code quality review and bounded refactoring tracker
 
+## Narrow read-only process launch / error-path review — 2026-10-21
+
+**Reviewed source SHA:** `30295539fc6911f221cee6ac3c59785398c7a050` (`main` immediately after #312). Files and boundaries: `crates/optic-bridge-runtime/src/process.rs` Windows isolation launcher stdin delivery and process monitor, `crates/optic-bridge-app/tests/appcontainer_network_isolation_windows.rs` native network-denial proof, plus `.github/workflows/ci.yml` diagnostic triggers. Scoped to launcher handoff, *not* a complete process lifecycle, filesystem, CI or codebase audit.
+
+- **Input/effect/authority:** app-owned, bounded serialized isolation request is piped to a fixed pinned outer launcher; current native CI uses an explicitly opt-in phase marker. No model-supplied path/secret is published by the fixed-label launcher diagnostics.
+- **Error/uncertainty:** detached async `stdin.write_all` and `shutdown` results are ignored. Parent return marks outer process spawn, not confirmation that payload was delivered, parsed or inner Node resumed. This is an **observability gap**; actual delivery failures have not been observed in failed runs, so the 10s root cause is unresolved.
+- **Ceilings/cleanup/test:** existing 10s test deadline, owned Job Object containment, termination-uncertain handling, no-accepted-connection requirement and normal Node attempt/exit assertions must not be weakened. Previous natural CI failures and repeat timings are recorded in [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185#issuecomment-6312184351); accepted #312 and independent main CI are green, **not** failure reproduction.
+- **Finding status:** reviewed-with-observability-gap, no demonstrated runtime correctness fix; no patch/CI added from this review. Future optional fixed-label delivery timing/error measurements require synthetic failure injection and native Windows validation. No claim of line-by-line coverage of other components.
+
+Older review records follow with their own exact SHAs and may not describe current integration.
+
 ## Audit coverage clarification — 2026-10-21 after verified #305 integration
 
 At verified `main=43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, post-merge [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed first attempt. Further **scoped** source corrections since the prior inventory include canonical `fs_list` authority [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303), protected Git-control mutations [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304), and cursor-aware Git-log response fitting [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305), each with focused tests on hosted Windows/Linux.
