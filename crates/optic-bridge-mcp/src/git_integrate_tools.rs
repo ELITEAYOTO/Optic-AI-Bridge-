@@ -655,5 +655,4 @@ mod tests {
             "OPTIC_317_RESEARCH_GIT_TRANSPORT_CANCEL_GAP worker_active=true permit_released=true capacity_reusable=true"
         );
     }
-
 }
