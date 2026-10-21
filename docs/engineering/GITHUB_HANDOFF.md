@@ -1,5 +1,13 @@
 # GitHub-only project handoff
 
+## Next Policy B step — Git diff candidate after verified #309 (2026-10-21)
+
+Verified before branch creation: `main=ccaa7c05af27cfaab02d5dcb93369f60a0c01f53`, zero open PRs; merged #309 protects Git porcelain-v2 status including sensitive rename/untracked names, independent push [CI #39549267903](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39549267903) green first attempt on exact squash SHA. New **unmerged** candidate `security/git-diff-raw-output-authority` targets distinct #182 bypass: unclassified `git_diff` patch contents.
+
+Intended diff strategy: produce the machine-readable `--raw -z` changed-file prelude and `--patch` bytes in *one* existing hardened Git subprocess, validate each path with the shared classifier, refuse unparseable/unknown path records, and require a matching active FileRead (ReadContent + ReadSensitive) lease for protected contents, inside session admission. Return the original bounded patch without internal raw prefix. Test Windows/Linux staged additions, worktree edits, path- and directory-scoped diffs, ordinary source content and adversarial malformed byte streams. Keep no-ext-diff/no-textconv/no-renames, exact executable, output ceilings, revoke draining and no permissions by default.
+
+**Do not infer integration until GitHub verifies accepted source SHA and independent post-merge main.** Git-diff content is not automatically harmless when its filename looks ordinary; Git's paired output does not promise atomic snapshots across concurrent file changes. #176/#182 remain OPEN, no real-project remote use. Don't expand features or relax isolation/CI.
+
 ## Follow-up after verified #308 — Git status candidate (2026-10-21)
 
 Reverified `main=bfba4b97a531440de08012ca50106797d995646b`, zero open PRs, independent [#308 post-squash CI #39546153987](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39546153987) passed first attempt (native Windows, Ubuntu, dependency policy). **New candidate only:** `security/git-status-sensitive-paths`. Do not infer merge until exact-head CI and independent main checks.
