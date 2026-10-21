@@ -1,5 +1,14 @@
 # Current project status
 
+## Stabilization: unpublished recovery evidence — PR #301 (2026-10-21)
+
+[PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) was squash-merged into `main` at `05b5a928c862601926e8b0cc11540ce020caf271`. Its scoped fix preflights **all** unpublished `*.prepared.tmp` entries with existing native opened-file, single-link and no-reparse checks before the first deletion, and rechecks each immediately before removal. The new ordered-fixture regression proves a later hard-linked unsafe entry cannot erase earlier unrelated evidence; repair permits normal cleanup. Windows and Linux logs explicitly record `later_aliased_unpublished_entry_preserves_all_earlier_evidence ... ok` on accepted source `089e64a2b6c95dc0705eeaaa22f90194dfb7be66`.
+
+[Source CI #39529419994](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529419994) passed after **attempt 2**, not on first attempt. Initial Windows attempt failed in the already-known native Node/AppContainer 10s timeout (no captured launcher/Node marker); three serial same-head diagnostics passed and remain evidence in [issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185#issuecomment-6306039365). Linux and dependency checks passed on the original attempt; [native preparation #39529420240](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529420240) passed first attempt. A failed-Windows-job-only rerun passed the full native suite and smokes on unchanged SHA. Independent [main CI #39530161176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530161176) was started on the exact squash SHA; inspect its conclusion live.
+
+**Limit:** This closes one demonstrable early-cleanup-on-later-unsafe-entry defect. It does **not** guarantee atomicity of multiple deletions if a later actual deletion fails, concurrent ancestor/path identity, Unix unlink race safety or Windows power-loss directory persistence. Node/AppContainer (~10s) and separate MCP first response (~30s) intermittencies remain open. Feature freeze and GitHub-only execution restrictions unchanged.
+
+
 
 ## Stabilisation Windows — PR #299 fusionnée le 21 octobre 2026
 
