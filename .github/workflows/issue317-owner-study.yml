@@ -1,0 +1,69 @@
+name: Issue317 owner feasibility
+on:
+  push:
+    branches: ["bootstrap/issue-317-owned-cleanup-study"]
+    paths:
+      - "scripts/research/issue317_*.py"
+      - "crates/optic-bridge-runtime/examples/issue317_pipe_fixture.rs"
+      - ".github/workflows/issue317-owner-study.yml"
+      - "docs/research/ISSUE317_OWNED_CLEANUP_2026-10-21.md"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Pinned toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Build unchanged synthetic fixture
+        run: cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_pipe_fixture
+      - name: Independently supervised owner experiments
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+          python scripts/research/issue317_owner_study.py --fixture-exe "target/debug/examples/issue317_pipe_fixture$suffix" --output "evidence/owner-$RUNNER_OS.json"
+      - name: Preserve exact results including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: owner-results-${{ runner.os }}
+          path: evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+  evidence:
+    needs: native
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: owner-results-*
+          path: evidence
+      - name: Assemble completed experiments and independent CI snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/research/issue317_pack.py
+      - name: Publish evidence without converting pending CI into success
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optic-bridge-issue317-owned-cleanup-2026-10-21
+          path: package/*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require complete native experiments
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: |
+          python -c "import json,os; p=json.load(open('package/PROVENANCE.json')); assert p['primitive_experiments_complete'] and os.environ['NATIVE_RESULT']=='success'"
