@@ -806,7 +806,7 @@ fn capability_name(capability: Capability) -> &'static str {
 mod tests {
     use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
-    use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId};
+    use optic_bridge_core::{MonotonicTime, PrincipalId, ProjectId, SearchMetadataScope};
     use optic_bridge_runtime::{
         ApprovalBrokerError, ApprovalSpec, GitIntegrationAuthoritySpec, ReadAuthoritySet,
         ReadAuthoritySpec, git_integration_resource_budget, read_authority_resource_budget,
@@ -831,6 +831,14 @@ mod tests {
     }
 
     fn server(root: &Path, capabilities: &[Capability]) -> ReadonlyMcpServer {
+        server_with_search_scope(root, capabilities, None)
+    }
+
+    fn server_with_search_scope(
+        root: &Path,
+        capabilities: &[Capability],
+        search_scope: Option<SearchMetadataScope>,
+    ) -> ReadonlyMcpServer {
         let clock: Arc<dyn Clock> = Arc::new(FixedClock(MonotonicTime::from_millis(10)));
         let session = SessionHandle::generate().expect("test entropy");
         let grant = SessionGrant {
@@ -848,7 +856,7 @@ mod tests {
             .expect("build server");
         let spec = ReadAuthoritySpec {
             search_metadata: if capabilities.contains(&Capability::FileSearch) {
-                BTreeSet::from([optic_bridge_core::SearchMetadataScope::all()])
+                BTreeSet::from([search_scope.unwrap_or_else(SearchMetadataScope::all)])
             } else {
                 BTreeSet::new()
             },
@@ -990,6 +998,65 @@ mod tests {
                 .await
                 .is_err()
         );
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fs_list_cannot_follow_a_permitted_alias_outside_its_search_scope() {
+        use std::os::unix::fs::symlink;
+
+        let root = workspace("list-scoped-alias");
+        fs::create_dir(root.join("allowed")).expect("allowed");
+        fs::create_dir(root.join("private")).expect("private");
+        fs::write(root.join("private").join("names-only.txt"), b"private")
+            .expect("private fixture");
+        symlink("../private", root.join("allowed").join("portal"))
+            .expect("internal alias");
+
+        let server = server_with_search_scope(
+            &root,
+            &[Capability::FileSearch],
+            Some(SearchMetadataScope::prefix(
+                WorkspacePath::parse("allowed").expect("prefix"),
+            )),
+        );
+        let denied = server
+            .fs_list(Parameters(FsListRequest {
+                path: Some("allowed/portal".to_owned()),
+                cursor: None,
+                limit: Some(8),
+            }))
+            .await
+            .expect_err("alias must not list a directory outside its search scope");
+        assert_eq!(denied.message, "optic.policy_denied");
+
+        let permitted = server
+            .fs_list(Parameters(FsListRequest {
+                path: Some("allowed".to_owned()),
+                cursor: None,
+                limit: Some(8),
+            }))
+            .await
+            .expect("authorized directory remains listable");
+        assert_eq!(permitted.0.entries.len(), 1);
+        assert_eq!(permitted.0.entries[0].name, "portal");
+        drop(server);
+
+        // A whole-workspace lease can follow the same alias, but the returned
+        // paths must describe the resolved target rather than the alias.
+        let all = server(&root, &[Capability::FileSearch]);
+        let response = all
+            .fs_list(Parameters(FsListRequest {
+                path: Some("allowed/portal".to_owned()),
+                cursor: None,
+                limit: Some(8),
+            }))
+            .await
+            .expect("whole-workspace search may list canonical target");
+        assert_eq!(response.0.entries.len(), 1);
+        assert_eq!(response.0.entries[0].path, "private/names-only.txt");
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
