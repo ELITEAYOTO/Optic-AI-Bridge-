@@ -400,6 +400,17 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
         result.status, result.exit_code
     );
 
+    if std::env::var("OPTIC_LAUNCHER_PHASES").as_deref() == Ok("1") {
+        // The existing native Windows gate also verifies that the opt-in
+        // diagnostics traverse the launcher pipe without replacing the
+        // actual network-denial and normal-exit assertions below.
+        for phase in ["entered", "profile_created", "target_resumed"] {
+            assert!(
+                stderr.contains(&format!("OPTIC_LAUNCHER_PHASE phase={phase} elapsed_ms=")),
+                "missing fixed launcher phase {phase}; stderr={stderr:?}"
+            );
+        }
+    }
     assert_eq!(
         result.status,
         ProcessStatus::Exited,
