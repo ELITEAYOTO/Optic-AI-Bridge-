@@ -314,7 +314,11 @@ mod tests {
         let path = env::var_os("OPTIC_DIAG_NODE_PATH").expect("explicit hosted Node path");
         let canonical = fs::canonicalize(path).expect("canonical runner executable path");
         let mut pinned = open_identity_pin(&canonical).expect("pin runner executable");
-        let size = pinned.file_mut().metadata().expect("opened file metadata").len();
+        let size = pinned
+            .file_mut()
+            .metadata()
+            .expect("opened file metadata")
+            .len();
         assert!(size > 0 && size <= MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES);
 
         fn one_pass(file: &mut fs::File) -> (ContentVersion, u128, u128, u32) {
