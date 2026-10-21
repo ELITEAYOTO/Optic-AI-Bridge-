@@ -1,5 +1,11 @@
 # Reliability and implementation debt
 
+## Verified shared read/Git sensitive-path floor and residual gates (2026-10-21)
+
+At this historical checkpoint `main=bd2915c3a9833c1da5a8fc5005445d1884260d4f` after #310, with zero open PRs and first-attempt successful [independent native Windows/Linux/dependencies main CI #39552523257](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39552523257). #308 (core, FileRead and fs_list), #309 (Git status `-z` metadata), #310 (Git diff same-command NUL raw names + bounded patch and explicit FileRead dual-scope gate for flagged paths) are **fully merged**. #310 accepted-source CI #39551993433 and native preparation #39551993151 were successful on the exact PR head, following preserved earlier failing commits. Historical *candidate* entries below describe the steps leading to integration, **not current unfixed status**.
+
+**Open limitations:** filename-sensitive floor cannot inspect secrets embedded in ordinary filenames; Git diff worktree/index races remain non-atomic despite one command; alternate names/identity, branch metadata and canonical ancestor/pinned-handle concerns need targeted audit (#176, #182). #176 was unexpectedly auto-completed by GitHub as part of #310's wording and has been explicitly reopened. No real project workspace remote exposure. Other unreconciled risks remain #185 Windows intermittent Node/AppContainer, separate MCP initial response, crash recovery and durable multi-file cleanup, fault/soak tests and incomplete file-by-file audit. No new features or broad grants.
+
 ## Candidate Git diff output verification and sensitive content lease (2026-10-21)
 
 Historical starting point: `main=ccaa7c05af27cfaab02d5dcb93369f60a0c01f53`, [#309 independent post-merge CI #39549267903](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39549267903) succeeded first attempt. Proposed #182 increment, **not yet CI-proven**: one Git diff invocation with paired `--raw -z --patch` output, parse/validate raw path records before releasing patch, deny unverifiable formats, and authorize typed FileRead dual scopes for flagged sensitive patch paths; native Windows/Linux regressions required.

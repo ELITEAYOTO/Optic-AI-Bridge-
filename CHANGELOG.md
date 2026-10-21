@@ -1,5 +1,11 @@
 # Changelog
 
+## Verified security integration through #310 (2026-10-21)
+
+- **Merged:** [#308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/308) shared deterministic sensitive-name classifier for FileRead/fs_list, [#309](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/309) checked Git status protected names, and [#310](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/310) checked bounded `--raw -z --patch` from the same hardened Git invocation with strict extra-NUL framing and explicit additional FileRead content/sensitive authorization on classified paths.
+- **Verified:** #310 squash commit `bd2915c3a9833c1da5a8fc5005445d1884260d4f`, [first-attempt green post-merge Windows/Linux/dependency CI #39552523257](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39552523257); exact accepted source `154d7ea6ab6b10aa967ab0a2f2034f2f06400fe9` passed #39551993433 and #39551993151. Earlier formatting and failed Git-protocol tests remain retained as historical evidence.
+- **Open:** #176 ordinary-named secret content / native filesystem identities, #182 residual Git-read coverage, provenance and races, and existing Windows/recovery/soak risks. #176 was accidentally closed by a GitHub keyword on #310 merge and reopened; do not infer a completed security gate from issue auto-closure. Older candidate entries below are historical only. No remote real-workspace guarantee, new feature, self-hosted run or PC execution.
+
 ## Git diff sensitive-content guard candidate (2026-10-21)
 
 - Operator-approved Policy B, next #182 increment: request raw NUL-delimited Git changed-file metadata and ordinary patch in one hardened Git diff call; verify each changed path, refuse unparseable outputs, and return only the bounded patch.
