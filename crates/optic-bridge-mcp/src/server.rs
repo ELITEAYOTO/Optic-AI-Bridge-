@@ -1039,6 +1039,7 @@ mod tests {
     async fn sensitive_fs_read_is_denied_without_extra_scope_and_works_with_explicit_scope() {
         let root = workspace("sensitive-read");
         fs::write(root.join(".env"), b"fixture-only-secret").expect("fixture");
+        fs::write(root.join(".envrc.private"), b"direnv-fixture-only").expect("fixture");
         fs::write(root.join("README.md"), b"ordinary").expect("fixture");
         let read = |path: &str| FsReadRequest {
             path: path.to_owned(),
@@ -1052,6 +1053,15 @@ mod tests {
                 .await
                 .err()
                 .expect("sensitive read requires extra scope")
+                .message,
+            "optic.policy_denied"
+        );
+        assert_eq!(
+            ordinary
+                .fs_read(Parameters(read(".envrc.private")))
+                .await
+                .err()
+                .expect("direnv private content requires extra scope")
                 .message,
             "optic.policy_denied"
         );
@@ -1073,6 +1083,15 @@ mod tests {
         assert_eq!(
             STANDARD.decode(response.data).expect("base64"),
             b"fixture-only-secret"
+        );
+        let direnv = elevated
+            .fs_read(Parameters(read(".envrc.private")))
+            .await
+            .expect("explicitly authorized direnv content")
+            .0;
+        assert_eq!(
+            STANDARD.decode(direnv.data).expect("base64"),
+            b"direnv-fixture-only"
         );
         fs::remove_dir_all(root).expect("remove fixture");
     }
