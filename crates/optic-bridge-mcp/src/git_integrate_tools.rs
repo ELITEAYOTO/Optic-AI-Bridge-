@@ -754,13 +754,13 @@ mod tests {
 
         let revoke_sessions = Arc::clone(&server.sessions);
         let revoke_session = server.session.clone();
-        let revoke = tokio::task::spawn_blocking(move || {
-            revoke_sessions.revoke(&revoke_session)
-        });
+        let revoke = tokio::task::spawn_blocking(move || revoke_sessions.revoke(&revoke_session));
 
         tokio::time::timeout(Duration::from_secs(5), async {
             while !matches!(
-                server.sessions.get_active(&server.session, server.clock.now()),
+                server
+                    .sessions
+                    .get_active(&server.session, server.clock.now()),
                 Err(SessionRegistryError::Revoked)
             ) {
                 tokio::task::yield_now().await;
@@ -773,7 +773,9 @@ mod tests {
             "revoke must not claim quiescence with admitted work held"
         );
         assert!(matches!(
-            server.sessions.begin_admission(&server.session, server.clock.now()),
+            server
+                .sessions
+                .begin_admission(&server.session, server.clock.now()),
             Err(SessionRegistryError::Revoked)
         ));
         assert_eq!(server.transport_guard.active_requests(), 1);
