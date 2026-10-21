@@ -1,5 +1,10 @@
 # Changelog
 
+## Fail-closed raw Git diff file-mode validation (2026-10-21)
+
+- The raw `-z` diff header parser rejects non-octal file-mode digits (`8`, `9`) instead of treating impossible Git modes as verified provenance. Synthetic regressions verify both old/new invalid modes and legitimate symlink/gitlink octal formats. No Git arguments, API schema, permission, timeout, process or sandbox changes. Native Windows and Linux CI on the exact head remain the acceptance proof.
+
+
 ## Git log malformed record fail-closed correction (2026-10-21)
 
 - The bounded Git log parser now rejects empty record rows rather than silently skipping them. A blank intermediate record would otherwise make parsed entry counts disagree with Git's offset-based cursor progression. Synthetic regression covers valid consecutive commits, a legitimately empty result, and blank leading/intermediate/trailing rows. No change to Git arguments, permissions, cursor format, limits, process or sandbox behavior. Exact-head native CI remains the acceptance gate.
