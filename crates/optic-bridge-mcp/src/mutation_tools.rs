@@ -518,6 +518,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn git_control_mutation_denial_is_reported_without_filesystem_details() {
+        let write = map_atomic_mutation_error(AtomicMutationError::ReservedGitMetadata);
+        assert_eq!(write.message, "optic.git_metadata_protected");
+        let directory = map_authorized_mutation_error(
+            AuthorizedFileMutationError::Directory(
+                optic_bridge_runtime::DirectoryCreateError::ReservedGitMetadata,
+            ),
+        );
+        assert_eq!(directory.message, "optic.git_metadata_protected");
+    }
+
+    #[test]
     fn expected_state_request_is_never_blind() {
         assert!(matches!(
             ExpectedStateRequest::Absent {}
