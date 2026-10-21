@@ -81,6 +81,10 @@ function Throw-McpTimeout {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
                 $printed++
             }
+            elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms=([0-9]{1,12}) nonread_ms=([0-9]{1,12}) total_ms=([0-9]{1,12}) calls=([0-9]{1,12})$') {
+                Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_IO read_ms=$($Matches[1]) nonread_ms=$($Matches[2]) total_ms=$($Matches[3]) calls=$($Matches[4])"
+                $printed++
+            }
         }
     }
 
@@ -428,6 +432,11 @@ finally {
                     elseif (-not $seenProcessIdentityTiming -and $startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
                         $seenProcessIdentityTiming = $true
                         Write-Host "OPTIC_DOCTOR_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
+                    }
+                    elseif ($startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms=([0-9]{1,12}) nonread_ms=([0-9]{1,12}) total_ms=([0-9]{1,12}) calls=([0-9]{1,12})$') {
+                        if ($seenPhases.Add('identity-io')) {
+                            Write-Host "OPTIC_DOCTOR_IDENTITY_IO read_ms=$($Matches[1]) nonread_ms=$($Matches[2]) total_ms=$($Matches[3]) calls=$($Matches[4])"
+                        }
                     }
                 }
             }
