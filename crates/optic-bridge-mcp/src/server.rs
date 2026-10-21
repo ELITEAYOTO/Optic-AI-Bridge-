@@ -1050,7 +1050,8 @@ mod tests {
             ordinary
                 .fs_read(Parameters(read(".env")))
                 .await
-                .expect_err("sensitive read requires extra scope")
+                .err()
+                .expect("sensitive read requires extra scope")
                 .message,
             "optic.policy_denied"
         );
@@ -1091,7 +1092,8 @@ mod tests {
             ordinary
                 .fs_list(Parameters(list()))
                 .await
-                .expect_err("sensitive filename must not be returned")
+                .err()
+                .expect("sensitive filename must not be returned")
                 .message,
             "optic.policy_denied"
         );
@@ -1112,7 +1114,8 @@ mod tests {
             no_read
                 .fs_list(Parameters(list()))
                 .await
-                .expect_err("no read lease")
+                .err()
+                .expect("no read lease")
                 .message,
             "optic.policy_denied"
         );
