@@ -1101,11 +1101,19 @@ mod tests {
             None,
             Some(optic_bridge_core::ReadSensitiveScope::all()),
         );
-        let response = elevated.fs_list(Parameters(list())).await.expect("authorized listing").0;
+        let response = elevated
+            .fs_list(Parameters(list()))
+            .await
+            .expect("authorized listing")
+            .0;
         assert!(response.entries.iter().any(|entry| entry.name == ".env"));
         let no_read = server(&root, &[Capability::FileSearch]);
         assert_eq!(
-            no_read.fs_list(Parameters(list())).await.expect_err("no read lease").message,
+            no_read
+                .fs_list(Parameters(list()))
+                .await
+                .expect_err("no read lease")
+                .message,
             "optic.policy_denied"
         );
         fs::remove_dir_all(root).expect("remove fixture");
