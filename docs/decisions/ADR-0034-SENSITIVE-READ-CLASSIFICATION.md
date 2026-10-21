@@ -2,6 +2,22 @@
 
 Status: **Accepted policy B; path-name floor verified through #312; full sensitive-content guarantee unresolved**.
 
+## Native hard-link alias safeguard (bounded FileRead defense)
+
+The canonical-name floor cannot distinguish two hard-link names for one physical
+file. For prepared `fs_read`, a multi-linked opened file is conservatively
+treated as **potentially sensitive**, even when the selected path looks ordinary.
+The caller must hold the normal ReadContent lease plus explicit matching
+ReadSensitive authority for the observed path. The link count comes from the
+same opened native file, not an independently re-resolved filename. This is
+intentional conservative denial for ordinary multi-linked files and does not
+change FileSearch or GitRead contracts.
+
+This safeguard cannot detect secrets copied into ordinary files, unrecognized
+paths, staged Git blobs or all concurrent namespace/identity races. It does
+not justify real-project remote access; #176 and #182 remain open. Native
+Windows and Linux regressions are required for acceptance.
+
 ## Subsequent bounded filename-floor extension — #312 (2026-10-21)
 
 The shared classifier now recognizes direnv `.envrc` and `.envrc.*`, including ASCII case variations. [PR #312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) was squash-merged as `30295539fc6911f221cee6ac3c59785398c7a050`: accepted head `4e61a8f0aa0b65872d76ea9a2584b4ab79b89f33` passed [source CI #39571281997](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571281997), and independent [main CI #39571875338](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571875338) passed first attempt on exact squash SHA (Windows native, Ubuntu and dependencies). This only improves an existing deterministic lexical floor; it neither detects secrets inside innocently named files nor resolves #176/#182. No default permission or Git/process/runtime policy widened.
