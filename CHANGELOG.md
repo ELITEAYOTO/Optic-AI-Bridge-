@@ -1,5 +1,11 @@
 # Changelog
 
+## Verified security read-boundary increment — PR #312 (2026-10-21)
+
+- Squash-merged [#312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) at `30295539fc6911f221cee6ac3c59785398c7a050`: deterministic sensitivity guard for direnv `.envrc` and `.envrc.*` names in the shared classifier. Synthetic Rust core, MCP FileRead, Git status and Git diff tests verify denial without explicit sensitive authority and permitted reads with the matching lease. ADR-0034 updated.
+- Exact accepted head `4e61a8f0aa0b65872d76ea9a2584b4ab79b89f33` passed [PR CI #39571281997](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571281997); independent [main push CI #39571875338](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571875338) passed first attempt on the squash SHA, hosted Windows/Linux/dependency checks. First superseded [CI #39570589090](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39570589090) failed formatting and remains preserved.
+- Open boundaries unchanged: secrets inside ordinary names, Git provenance/races (#176/#182), the Windows timeout (#185), independent first MCP response timeout, recovery/durability and soak limits. No default permission, timeout, sandbox, transport, feature or operator-PC change.
+
 ## Verified security integration through #310 (2026-10-21)
 
 - **Merged:** [#308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/308) shared deterministic sensitive-name classifier for FileRead/fs_list, [#309](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/309) checked Git status protected names, and [#310](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/310) checked bounded `--raw -z --patch` from the same hardened Git invocation with strict extra-NUL framing and explicit additional FileRead content/sensitive authorization on classified paths.
