@@ -87,7 +87,8 @@ pub fn requires_sensitive_authority(path: &WorkspacePath) -> bool {
         let name = segment.to_ascii_lowercase();
         matches!(
             name.as_str(),
-            ".ssh"
+            ".envrc"
+                | ".ssh"
                 | ".aws"
                 | ".azure"
                 | ".gnupg"
@@ -103,7 +104,8 @@ pub fn requires_sensitive_authority(path: &WorkspacePath) -> bool {
                 | "id_dsa"
                 | "id_ecdsa"
                 | "id_ed25519"
-        ) || name == ".env"
+        ) || name.starts_with(".envrc.")
+            || name == ".env"
             || name.starts_with(".env.")
             || name.contains("secret")
             || name.contains("credential")
@@ -165,6 +167,8 @@ mod tests {
         for candidate in [
             ".env",
             ".ENV.production",
+            ".envrc",
+            "nested/.ENVRC.private",
             "config/.aws/credentials",
             "nested/private.KEY",
             "keys/id_ed25519",
