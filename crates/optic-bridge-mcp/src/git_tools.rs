@@ -140,11 +140,7 @@ impl ReadonlyMcpServer {
 
     /// Validate sensitive metadata before dropping admission and returning
     /// bytes to the caller. Revocation must drain this entire decision.
-    async fn run_git_read_checked<T, F, V>(
-        &self,
-        operation: F,
-        verify: V,
-    ) -> Result<T, ErrorData>
+    async fn run_git_read_checked<T, F, V>(&self, operation: F, verify: V) -> Result<T, ErrorData>
     where
         T: Send + 'static,
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
@@ -332,9 +328,7 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
             ErrorData::internal_error("optic.git_output_too_large", None)
         }
         GitReadError::CommandTimedOut => ErrorData::internal_error("optic.request_timeout", None),
-        GitReadError::UnverifiableStatus => {
-            ErrorData::invalid_request("optic.policy_denied", None)
-        }
+        GitReadError::UnverifiableStatus => ErrorData::invalid_request("optic.policy_denied", None),
         GitReadError::InvalidLimits
         | GitReadError::GitExecutableMustBeAbsolute
         | GitReadError::GitExecutableNotFile
@@ -656,7 +650,11 @@ mod tests {
             "optic.policy_denied"
         );
         let permitted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
-        let response = permitted.git_status().await.expect("explicit sensitive authority").0;
+        let response = permitted
+            .git_status()
+            .await
+            .expect("explicit sensitive authority")
+            .0;
         let raw = STANDARD
             .decode(response.porcelain_v2_base64)
             .expect("status base64");
