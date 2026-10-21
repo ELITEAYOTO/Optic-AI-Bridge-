@@ -689,6 +689,24 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[test]
+    fn canonical_list_root_preserves_regular_directory_across_platforms() {
+        let root = workspace("canonical-list-regular");
+        fs::create_dir(root.join("allowed")).expect("allowed");
+        let service = BoundedFileSystem::new(&root, 128, 4, 32)
+            .expect("filesystem service");
+        let expected = WorkspacePath::parse("allowed").expect("scope");
+        assert_eq!(
+            service.canonical_list_root(Some(&expected)).expect("scope"),
+            Some(expected)
+        );
+        assert_eq!(
+            service.canonical_list_root(None).expect("workspace root"),
+            None
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
     #[cfg(unix)]
     #[test]
     fn canonical_list_root_resolves_internal_alias_to_actual_directory() {
