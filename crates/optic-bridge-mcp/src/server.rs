@@ -560,7 +560,7 @@ impl ReadonlyMcpServer {
 
     /// FileSearch permission alone does not disclose protected filenames.
     /// For now this denies the entire affected page (no unsafe cursor skipping).
-    fn ensure_sensitive_metadata_authorized(
+    pub(crate) fn ensure_sensitive_metadata_authorized(
         &self,
         grant: &SessionGrant,
         path: &WorkspacePath,

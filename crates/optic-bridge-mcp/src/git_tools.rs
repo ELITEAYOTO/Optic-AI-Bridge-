@@ -24,7 +24,19 @@ impl ReadonlyMcpServer {
     pub async fn git_status(&self) -> Result<Json<GitStatusResponse>, ErrorData> {
         let max_bytes = self.max_mcp_git_read_bytes();
         let snapshot = self
-            .run_git_read(move |service| service.status_with_max_bytes(max_bytes))
+            .run_git_read_checked(
+                move |service| service.status_with_max_bytes(max_bytes),
+                |server, grant, snapshot| {
+                    for path in &snapshot.sensitive_paths {
+                        server.ensure_sensitive_metadata_authorized(
+                            grant,
+                            path,
+                            server.clock.now(),
+                        )?;
+                    }
+                    Ok(())
+                },
+            )
             .await?;
         let response = GitStatusResponse {
             head: snapshot.head.map(|value| value.as_str().to_owned()),
@@ -123,13 +135,27 @@ impl ReadonlyMcpServer {
         T: Send + 'static,
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
     {
+        self.run_git_read_checked(operation, |_, _, _| Ok(())).await
+    }
+
+    /// Validate sensitive metadata before dropping admission and returning
+    /// bytes to the caller. Revocation must drain this entire decision.
+    async fn run_git_read_checked<T, F, V>(&self, operation: F, verify: V) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
+        V: FnOnce(&Self, &SessionGrant, &T) -> Result<(), ErrorData> + Send + 'static,
+    {
         self.run_admitted_read(move |server, grant, permit| {
             server.ensure_read_deadline(permit)?;
             server.authorize_git_read(grant, server.clock.now())?;
             let service = server.git_service.as_ref().cloned().ok_or_else(|| {
                 ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
             })?;
-            operation(service).map_err(map_git_read_error)
+            let output = operation(service).map_err(map_git_read_error)?;
+            server.ensure_read_deadline(permit)?;
+            verify(server, grant, &output)?;
+            Ok(output)
         })
         .await
     }
@@ -302,6 +328,7 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
             ErrorData::internal_error("optic.git_output_too_large", None)
         }
         GitReadError::CommandTimedOut => ErrorData::internal_error("optic.request_timeout", None),
+        GitReadError::UnverifiableStatus => ErrorData::invalid_request("optic.policy_denied", None),
         GitReadError::InvalidLimits
         | GitReadError::GitExecutableMustBeAbsolute
         | GitReadError::GitExecutableNotFile
@@ -330,10 +357,12 @@ mod tests {
     };
 
     use optic_bridge_core::{
-        Capability, HardLimits, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
+        Capability, HardLimits, MonotonicTime, PrincipalId, ProjectId, ReadContentScope,
+        ReadSensitiveScope, SessionGrant, SessionHandle,
     };
     use optic_bridge_runtime::{
-        Clock, MutationAuthoritySet, ProcessManager, SessionRegistry, TaskLeaseRegistry,
+        Clock, MutationAuthoritySet, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec,
+        SessionRegistry, TaskLeaseRegistry, read_authority_resource_budget,
     };
 
     use super::*;
@@ -433,6 +462,26 @@ mod tests {
                 Some(git_service),
             )
             .expect("server")
+        }
+
+        fn server_with_sensitive_read(&self, scope: ReadSensitiveScope) -> ReadonlyMcpServer {
+            let server = self.server(&[Capability::FileRead, Capability::GitRead]);
+            let limits = HardLimits::default();
+            let spec = ReadAuthoritySpec {
+                search_metadata: BTreeSet::new(),
+                read_content: BTreeSet::from([ReadContentScope::all()]),
+                read_sensitive: BTreeSet::from([scope]),
+            };
+            let read = ReadAuthoritySet::provision(
+                &server.task_leases,
+                &server.session,
+                &spec,
+                read_authority_resource_budget(limits),
+                MonotonicTime::from_millis(10_000),
+                1,
+            )
+            .expect("explicit scoped authority");
+            server.with_read_authorities(read)
         }
     }
 
@@ -564,6 +613,55 @@ mod tests {
         assert!(
             raw.windows(b"tracked.txt".len())
                 .any(|window| window == b"tracked.txt")
+        );
+    }
+
+    #[tokio::test]
+    async fn git_status_does_not_expose_sensitive_staged_or_untracked_names() {
+        let fixture = RepoFixture::new("sensitive-status");
+        fs::write(fixture.repo.join(".env"), b"synthetic-only").expect("staged fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new(".env")],
+        );
+        fs::write(fixture.repo.join("access_token.txt"), b"synthetic-only")
+            .expect("untracked fixture");
+        let ordinary = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            ordinary
+                .git_status()
+                .await
+                .err()
+                .expect("sensitive names must be denied")
+                .message,
+            "optic.policy_denied"
+        );
+        let mismatched = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
+            WorkspacePath::parse("src").expect("prefix"),
+        ));
+        assert_eq!(
+            mismatched
+                .git_status()
+                .await
+                .err()
+                .expect("incorrect sensitive prefix must not authorize names")
+                .message,
+            "optic.policy_denied"
+        );
+        let permitted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let response = permitted
+            .git_status()
+            .await
+            .expect("explicit sensitive authority")
+            .0;
+        let raw = STANDARD
+            .decode(response.porcelain_v2_base64)
+            .expect("status base64");
+        assert!(raw.windows(b".env".len()).any(|value| value == b".env"));
+        assert!(
+            raw.windows(b"access_token.txt".len())
+                .any(|value| value == b"access_token.txt")
         );
     }
 

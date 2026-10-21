@@ -1,5 +1,22 @@
 # Reliability and implementation debt
 
+## Git porcelain status classification — candidate, issue #182 still open (2026-10-21)
+
+Baseline: `main=bfba4b97a531440de08012ca50106797d995646b`
+after #308; post-squash CI #39546153987 fully green first attempt.
+Candidate status-only enforcement uses the shared core sensitivity rules
+on every Git porcelain-v2 `-z` pathname and checks a matching active
+sensitive lease before releasing response bytes. Unknown/malformed/native
+unrepresentable records are refused. Regression fixtures include tracked
+and untracked sensitive names, rename/original, ordinary status, missing
+grants and malformed records. This paragraph is not evidence of CI success.
+
+**Unresolved #182:** raw `git_diff` may still disclose protected paths or
+content (including staged and repository-wide diffs). The path-name floor
+does not classify arbitrary secrets inside normal-looking files. Keep #176,
+#182 and real-workspace remote access gated until a complete checked
+Git-diff output policy and relevant Windows/Linux regressions are verified.
+
 ## Policy B classifier implementation boundary — candidate (2026-10-21)
 
 Operator approved common deterministic sensitive classification for file content,

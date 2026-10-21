@@ -1,5 +1,19 @@
 # Changelog
 
+## Git status sensitive metadata gate — PR candidate (2026-10-21)
+
+- Validate the complete Git porcelain-v2 `-z` status record stream before
+  exposing it through MCP; unknown, malformed or unrepresentable native
+  paths fail closed.
+- Enforce the existing shared sensitive-name classifier and explicit
+  sensitive read lease for tracked/staged/untracked/renamed status entries.
+  No new default authority is granted; ordinary status remains usable.
+- Add Windows/Linux-targeted unit and MCP regressions; update ADR-0034
+  and stabilization handoff. This remains a **candidate** pending exact
+  SHA CI, squash and independent main CI.
+- **#182 still open:** Git diff bytes are not yet classified; #176 also
+  remains open. Do not enable real project remote exposure.
+
 ## Security stabilization candidate: first sensitive read/list boundary — 2026-10-21
 
 - Operator approved Policy B: a shared deterministic sensitive classifier across

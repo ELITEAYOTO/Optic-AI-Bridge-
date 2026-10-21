@@ -57,6 +57,31 @@ project remotely.
 - No new capability, transport, GUI, identity scheme, Git command, override
   channel, network grant or default sensitive permission is authorized.
 
+## Second scoped increment — Git status porcelain verification (candidate)
+
+The Git status path stream is a separate source from canonical filesystem
+objects. Under Policy B it must be parsed from the actual `--porcelain=v2 -z`
+result **before releasing any raw bytes**. Verify each changed, untracked,
+unmerged, ignored or renamed/copy name (including *both* rename names)
+using `WorkspacePath::from_native_relative` and the shared classifier.
+Unknown records, absent terminators, unrepresentable native paths and
+unexpected header types must deny the response, not be skipped.
+
+A classified Git status name requires the same additional active
+`ReadSensitiveScope` as `fs_list`, alongside explicit `FileRead` and
+`GitRead` session authorization. No default grant is created. Admission
+remains held across command execution and classification so revocation cannot
+complete while verification is in flight. Ordinary status remains available
+with only GitRead when no protected pathname appears.
+
+**This is a candidate, not a merged guarantee.** Exact-head native Windows
+and Linux CI, malformed-record tests and staged/untracked fixtures must pass.
+`git_diff` is **still unrestricted by sensitive paths** and remains the
+next independent security gate. Branch-name metadata, harmless-looking files
+containing secrets, alternate filesystem identities and concurrent Git
+repository changes require separate review. Real-workspace remote exposure
+continues to be blocked.
+
 ## Regressions / future acceptance
 
 Exercise sensitive and ordinary canonical paths, directory ancestry,

@@ -1,5 +1,13 @@
 # Current project status
 
+## Git status sensitive-path classification — candidate (2026-10-21)
+
+Live baseline for this increment: `main=bfba4b97a531440de08012ca50106797d995646b`, [#308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/308) squash-merged, independent [post-merge CI #39546153987](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39546153987) green first attempt, zero open PRs. Operator-approved Policy B remains binding, with no remote exposure to real workspaces.
+
+**Candidate `security/git-status-sensitive-paths` (unmerged until exact-head CI):** validate every path in the returned Git porcelain-v2 `-z` status output, including rename original names, before returning status bytes. Reuse the Rust-core classifier and require an active matching sensitive read lease in the admitted MCP worker; refuse malformed/unknown/unrepresentable records. Native Windows/Linux tests cover sensitive staged and untracked files, mixed normal content, explicit grants, prefix mismatches and invalid output. No new CLI, transport, grant, override or runtime privilege.
+
+**Open:** #182 remains blocked by the *independently unclassified raw `git_diff`*; harmless-looking files can carry secrets and #176 remains incomplete. Do not close either issue or enable real-workspace remote access. Inspect GitHub CI and final SHA before considering this candidate merged.
+
 ## Sensitive-read authority — policy B approved, first scoped fix under CI review (2026-10-21)
 
 After merged #307, live `main=3d9a0f78304578af53fd23b9fed7d08603348e0b`, zero open PRs, and post-merge hosted Windows/Linux/dependency CI #39542505029 passed first attempt. The operator has now approved **Policy B**: shared deterministic classification of sensitive path/content across FileRead, FileSearch and GitRead, with fail-closed handling of unverifiable outputs. **This paragraph describes a candidate increment on `security/sensitive-file-authority-scope`, not a verified merge.**
