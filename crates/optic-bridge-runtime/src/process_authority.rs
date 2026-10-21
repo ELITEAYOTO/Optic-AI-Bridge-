@@ -376,7 +376,10 @@ mod tests {
             .seek(SeekFrom::Start(0))
             .expect("rewind same pinned handle");
         let second = one_pass(pinned.file_mut());
-        assert_eq!(first.version, second.version, "repeat read must preserve identity");
+        assert_eq!(
+            first.version, second.version,
+            "repeat read must preserve identity"
+        );
         assert!(first.calls > 0 && second.calls > 0);
         assert_eq!(
             first.buckets.iter().sum::<u32>(),
@@ -388,7 +391,13 @@ mod tests {
         // Aggregate fixed-label measurements only: no path, digest or bytes.
         eprintln!(
             "OPTIC_IDENTITY_READ_PAIR size_bytes={} first_read_ms={} first_total_ms={} first_calls={} second_read_ms={} second_total_ms={} second_calls={}",
-            size, first.read_ms, first.total_ms, first.calls, second.read_ms, second.total_ms, second.calls
+            size,
+            first.read_ms,
+            first.total_ms,
+            first.calls,
+            second.read_ms,
+            second.total_ms,
+            second.calls
         );
         eprintln!(
             "OPTIC_IDENTITY_READ_DISTRIBUTION first_lt1={} first_1to9={} first_10to99={} first_ge100={} first_max_ms={} second_lt1={} second_1to9={} second_10to99={} second_ge100={} second_max_ms={}",
