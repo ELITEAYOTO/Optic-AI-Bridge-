@@ -1,5 +1,12 @@
 # Code quality review and bounded refactoring tracker
 
+## Audit coverage clarification — 2026-10-21 after verified #305 integration
+
+At verified `main=43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, post-merge [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed first attempt. Further **scoped** source corrections since the prior inventory include canonical `fs_list` authority [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303), protected Git-control mutations [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304), and cursor-aware Git-log response fitting [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305), each with focused tests on hosted Windows/Linux.
+
+These do **not** establish a line-by-line review of every crate, script or workflow. The original 212-file/95-Rust-file counts below were recorded at an **older SHA** and must not be treated as a live inventory. High-risk native process, directory-race and recovery/persistence boundaries remain only partially covered. Future audits should record (path, exact source SHA, trust boundary, limits, errors/uncertain state, tests, concrete finding/no-finding); only demonstrated defects justify changes. No mass formatting/refactoring in the name of cleanliness. See [reliability register](RELIABILITY_DEBT.md).
+
+
 ## Reconciled source-review checkpoint — 2026-10-21
 
 Last verified main before this documentation change: `83329d48789c20b1fc235d3096c3199dc9dc5176`, [CI #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) green first attempt on exact SHA, zero open PRs. #293–#297 are merged. A focused registry review established and fixed a specific resource-usage ordering fault in `task_lease_registry.rs`: duplicate and global/session capacity conditions are now preflighted before potentially costly pinned executable identity capture, and **rechecked under the final insertion lock**. Hosted native Windows and Linux negative/concurrency regressions passed (#297). #294–#296 supply narrow startup timing observations; they do not constitute a general performance or security audit.

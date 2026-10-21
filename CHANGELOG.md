@@ -1,5 +1,14 @@
 # Changelog
 
+## Verified stabilization integrations through #305 — 2026-10-21
+
+- [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303) merged on `main` at `9c6c91096590f9f005dabc51253b9b5f8b1abcca`: authorize `fs_list` on canonical target, with alias-scope denial regression and [first-attempt green post-merge CI #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408).
+- [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304) merged at `9d90485fce2a044a71fb7d6986a591f36cd4a60f`: reserve exact case-insensitive `.git` control components from generic file/directory mutation; Windows/Linux regressions and [first-attempt green post-merge CI #39536541153](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39536541153).
+- [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305) merged at `43d3a4aeedee04dd03e895e27e81d3bc5af6652c`: refit `git_log` output after adding continuation cursor, or refuse oversized response; [first-attempt green post-merge CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) on exact merge SHA. The earlier source-head formatting/lint failures remain visible and were corrected in that **same** PR before final green acceptance.
+- #301 and #302 were also previously merged (exact integration evidence in [STATUS](STATUS.md)). Sections below calling #303–#305 “candidate” are **historical pre-merge observations**, not the current branch state.
+- Remaining: Windows 10s Node AppContainer and independent ~30s MCP initial-response intermittencies, recovery/ancestor/power-loss limits, sensitive file/GitRead exposure decisions. Green CI is not a full security or stability certification. No runtime change in this documentation reconciliation.
+
+
 ## Git log cursor-aware response fitting
 
 - Correct bounded `git_log` response fitting: if trimming an end-of-history page requires adding a continuation cursor, the response is now checked again with that cursor included. Return a bounded error rather than emit oversized JSON when even one entry plus cursor cannot fit; retain forward-progressing offsets without overflow. Add a deterministic byte-budget regression. Existing GitRead isolation, authority, cursor-head pinning and public tool surface remain unchanged. CI and merge status must be verified live.

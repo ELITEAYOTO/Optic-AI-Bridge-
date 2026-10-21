@@ -21,6 +21,15 @@ native checks where applicable. If no defect is demonstrated, do not create
 a change merely to show activity. Feature work resumes only on a new operator
 decision. This freeze does not relax any existing security or CI requirement.
 
+## Stabilization exit criteria — objective gates, not a claim of zero bugs
+
+Two **distinct** decisions are required:
+
+1. **Resume bounded headless development** only after an exact-head Windows/Linux CI baseline and targeted safety checks for any newly exposed effect; the known Windows AppContainer/Node and MCP first-response flakes must be explained, corrected, or explicitly excluded from that narrowly permitted workflow **without weakening a security test**. The operator must explicitly authorize lifting the feature freeze for this limited scope.
+2. **Enable real-project remote/autonomous work** only after deterministic classification/enforcement of sensitive filesystem content/list metadata ([#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176)) and a matching GitRead authority decision ([#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182)); authenticated principal, session and host correlation proof (H-01–H-03), local approval/revocation contracts (H-04/H-05), process/namespace and recovery boundaries, and appropriately reproducible soak/fault-injection evidence. A green short CI is insufficient.
+
+**Before either decision:** retain actual red-run evidence, avoid speculative timeout increases and redundant PRs, explicitly classify partial Windows power-loss/ancestor/race guarantees, and reconcile code review coverage and handoff docs with the exact `main` SHA. Existing documentation and PR status inconsistencies are a real continuity risk, not evidence of a new runtime defect. Owner approval is required before changing GitHub branch-protection requirements; the last GitHub query reported `main.protected=false` and no rulesets.
+
 ## Deferred feature delivery sequence (not currently authorized)
 
 1. **Maintain coherent integration.** Repository consolidation and bounded

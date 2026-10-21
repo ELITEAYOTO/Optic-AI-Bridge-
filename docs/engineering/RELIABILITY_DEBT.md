@@ -1,5 +1,23 @@
 # Reliability and implementation debt
 
+## Active stabilization risk register — live evidence snapshot 2026-10-21
+
+At inspection `main=43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, no PRs open; [post-merge CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) green first attempt, exact SHA. Scoped PRs #301–#305 are **merged**, not candidates. Do not infer global safety from this CI.
+
+| Risk / boundary | Evidence-backed status | Exit criterion |
+| --- | --- | --- |
+| Native AppContainer Node 10s failure [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) | **OPEN**; earlier failed attempts and later green retries recorded, cause unknown | Reliable failure-phase capture and root-cause fix with native regression, or documented safe scoped restriction; never accept timeout as network denial |
+| MCP first response ~30s | **OPEN** and independent from Node loopback | Reproduce/locate actual stage, validate bounded targeted fix on hosted Windows |
+| Recovery and filesystem identity | **OPEN**: multi-file cleanup is not atomic after a later actual deletion failure; ancestor swaps and Windows power-loss persistence unproved | Fault-injection/native proof and explicit handling of uncertain outcomes; no deletion of remaining evidence |
+| Sensitive read authority [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) | **BLOCKER before real remote workspace**: no enforced sensitive classifier | Decide classifier/path policy and test canonical ordinary vs sensitive content/list metadata |
+| GitRead sensitivity [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182) | **BLOCKER before real remote workspace**: status/diff can expose secret-bearing content or names | Choose explicitly trusted GitRead vs sensitive-path enforcement or narrow capabilities, then prove cross-capability separation |
+| Long-running soak/fault injection | **NOT fully evidenced**: design specifies 1h/4h mixed workloads and interruption/restart | CI-based resource, drain and recovery evidence appropriate to allowed hosted runners |
+| Full file-by-file code quality audit | **PARTIAL**, as [review tracker](CODE_QUALITY_REVIEW.md) states | Record exact code SHA, input/authority/side-effect/error/test status for each reviewed area; avoid unjustified refactors |
+| GitHub required protections | **Governance gap**: observed `main.protected=false`, no rulesets reported | Owner decides if required status/review protections should be enabled; no unilateral change |
+
+**Reconciliation, not fresh bugs:** #303 fixed the lexical-versus-canonical `fs_list` authorization mismatch; #304 blocked generic `.git` mutation; #305 fixed pagination overflow. #180/#181/#183 remain open as issues but have documented bounded protections/regressions; check whether their *acceptance criteria* are truly satisfied before closing. Deferred product gates (normal Electron sandbox, generalized Cargo, authentication, host session mapping, operator approval) are not part of the active stabilization work. The dated sections below may retain pre-merge candidate wording and should not be used as a live work queue.
+
+
 ## Git-log serialization cap and cursor progress
 
 A bounded output bug was demonstrated in `fit_git_log_response`: when a final page originally had no `next_cursor`, trimming its entries to fit the structured response budget required synthesizing a continuation cursor. The old code did not remeasure the page **after** synthesizing that cursor. The narrow correction refits entries and cursor together and fails closed if retaining one entry is impossible, without changing the existing maximum response budget. Numeric cursor overflow must not produce a non-progressing saturated offset. Dedicated synthetic-budget tests cover these constraints.
