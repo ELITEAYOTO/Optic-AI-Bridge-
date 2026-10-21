@@ -24,13 +24,27 @@ struct TimedIdentityReader<'a, R: Read> {
     inner: &'a mut R,
     read_elapsed: Duration,
     read_calls: u32,
+    latency_buckets: [u32; 4],
+    max_read_elapsed: Duration,
 }
 
 impl<R: Read> Read for TimedIdentityReader<'_, R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let began = Instant::now();
         let result = self.inner.read(buffer);
-        self.read_elapsed += began.elapsed();
+        let elapsed = began.elapsed();
+        self.read_elapsed += elapsed;
+        self.max_read_elapsed = self.max_read_elapsed.max(elapsed);
+        let bucket = if elapsed < Duration::from_millis(1) {
+            0
+        } else if elapsed < Duration::from_millis(10) {
+            1
+        } else if elapsed < Duration::from_millis(100) {
+            2
+        } else {
+            3
+        };
+        self.latency_buckets[bucket] = self.latency_buckets[bucket].saturating_add(1);
         self.read_calls = self.read_calls.saturating_add(1);
         result
     }
@@ -90,6 +104,8 @@ impl ProcessExecutableIdentity {
                 inner: pin.file_mut(),
                 read_elapsed: Duration::ZERO,
                 read_calls: 0,
+                latency_buckets: [0; 4],
+                max_read_elapsed: Duration::ZERO,
             };
             let observed = ContentVersion::from_reader_bounded(&mut timed, max_bytes)?;
             let hash_elapsed = hash_started.elapsed();
@@ -321,25 +337,37 @@ mod tests {
             .len();
         assert!(size > 0 && size <= MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES);
 
-        fn one_pass(file: &mut fs::File) -> (ContentVersion, u128, u128, u32) {
+        struct ReadPass {
+            version: ContentVersion,
+            read_ms: u128,
+            total_ms: u128,
+            calls: u32,
+            buckets: [u32; 4],
+            max_read_ms: u128,
+        }
+
+        fn one_pass(file: &mut fs::File) -> ReadPass {
             let began = Instant::now();
             let mut reader = TimedIdentityReader {
                 inner: file,
                 read_elapsed: Duration::ZERO,
                 read_calls: 0,
+                latency_buckets: [0; 4],
+                max_read_elapsed: Duration::ZERO,
             };
-            let digest = ContentVersion::from_reader_bounded(
+            let version = ContentVersion::from_reader_bounded(
                 &mut reader,
                 MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
             )
             .expect("bounded identity of pinned executable");
-            let total = began.elapsed();
-            (
-                digest,
-                reader.read_elapsed.as_millis(),
-                total.as_millis(),
-                reader.read_calls,
-            )
+            ReadPass {
+                version,
+                read_ms: reader.read_elapsed.as_millis(),
+                total_ms: began.elapsed().as_millis(),
+                calls: reader.read_calls,
+                buckets: reader.latency_buckets,
+                max_read_ms: reader.max_read_elapsed.as_millis(),
+            }
         }
 
         let first = one_pass(pinned.file_mut());
@@ -348,12 +376,32 @@ mod tests {
             .seek(SeekFrom::Start(0))
             .expect("rewind same pinned handle");
         let second = one_pass(pinned.file_mut());
-        assert_eq!(first.0, second.0, "repeat read must preserve identity");
-        assert!(first.3 > 0 && second.3 > 0);
-        // Aggregate numeric measurements only: never log path, digest or bytes.
+        assert_eq!(first.version, second.version, "repeat read must preserve identity");
+        assert!(first.calls > 0 && second.calls > 0);
+        assert_eq!(
+            first.buckets.iter().sum::<u32>(),
+            first.calls,
+            "each observed native read must fall in one latency bucket"
+        );
+        assert_eq!(second.buckets.iter().sum::<u32>(), second.calls);
+
+        // Aggregate fixed-label measurements only: no path, digest or bytes.
         eprintln!(
             "OPTIC_IDENTITY_READ_PAIR size_bytes={} first_read_ms={} first_total_ms={} first_calls={} second_read_ms={} second_total_ms={} second_calls={}",
-            size, first.1, first.2, first.3, second.1, second.2, second.3
+            size, first.read_ms, first.total_ms, first.calls, second.read_ms, second.total_ms, second.calls
+        );
+        eprintln!(
+            "OPTIC_IDENTITY_READ_DISTRIBUTION first_lt1={} first_1to9={} first_10to99={} first_ge100={} first_max_ms={} second_lt1={} second_1to9={} second_10to99={} second_ge100={} second_max_ms={}",
+            first.buckets[0],
+            first.buckets[1],
+            first.buckets[2],
+            first.buckets[3],
+            first.max_read_ms,
+            second.buckets[0],
+            second.buckets[1],
+            second.buckets[2],
+            second.buckets[3],
+            second.max_read_ms,
         );
     }
 
