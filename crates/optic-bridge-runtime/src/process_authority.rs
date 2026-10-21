@@ -302,6 +302,57 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture root");
     }
 
+    /// Dedicated, ignored probe: executes only with an explicit hosted-CI
+    /// command and a known runner-owned Node binary. It neither changes the
+    /// production identity check nor attempts to clear the OS cache.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "explicit hosted-Windows identity I/O diagnostic only"]
+    fn diagnostic_native_executable_read_pair() {
+        use std::io::{Seek, SeekFrom};
+
+        let path = env::var_os("OPTIC_DIAG_NODE_PATH").expect("explicit hosted Node path");
+        let canonical = fs::canonicalize(path).expect("canonical runner executable path");
+        let mut pinned = open_identity_pin(&canonical).expect("pin runner executable");
+        let size = pinned.file_mut().metadata().expect("opened file metadata").len();
+        assert!(size > 0 && size <= MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES);
+
+        fn one_pass(file: &mut fs::File) -> (ContentVersion, u128, u128, u32) {
+            let began = Instant::now();
+            let mut reader = TimedIdentityReader {
+                inner: file,
+                read_elapsed: Duration::ZERO,
+                read_calls: 0,
+            };
+            let digest = ContentVersion::from_reader_bounded(
+                &mut reader,
+                MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
+            )
+            .expect("bounded identity of pinned executable");
+            let total = began.elapsed();
+            (
+                digest,
+                reader.read_elapsed.as_millis(),
+                total.as_millis(),
+                reader.read_calls,
+            )
+        }
+
+        let first = one_pass(pinned.file_mut());
+        pinned
+            .file_mut()
+            .seek(SeekFrom::Start(0))
+            .expect("rewind same pinned handle");
+        let second = one_pass(pinned.file_mut());
+        assert_eq!(first.0, second.0, "repeat read must preserve identity");
+        assert!(first.3 > 0 && second.3 > 0);
+        // Aggregate numeric measurements only: never log path, digest or bytes.
+        eprintln!(
+            "OPTIC_IDENTITY_READ_PAIR size_bytes={} first_read_ms={} first_total_ms={} first_calls={} second_read_ms={} second_total_ms={} second_calls={}",
+            size, first.1, first.2, first.3, second.1, second.2, second.3
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     fn authority_pin_prevents_same_path_rewrite_while_lease_is_alive() {
