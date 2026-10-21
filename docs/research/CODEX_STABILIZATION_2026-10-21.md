@@ -112,8 +112,9 @@ the next native syscall being blocked.
 
 Doctor fixed-label extraction recognizes the eleven new labels; the 24-line,
 32,768-character / 400-ms collection and 4,096-character preview caps remain.
-With many earlier approved markers, later markers can still fall outside these
-caps. Progress covers only the first capture, not later verify() calls. Diagnostic
+The final collector retains the most recent 24 approved messages, so later
+transport milestones displace old messages rather than disappearing; earlier
+messages can still fall outside the fixed cap. Progress covers only the first capture, not later verify() calls. Diagnostic
 stderr writes themselves are synchronous and can block a non-draining peer;
 the added eleven short lines are fixed per process, not an unrestricted trace.
 No instrumentation is a security attestation or a proven root-cause correction.
@@ -282,3 +283,29 @@ held stdout/stderr/stdin, child timeout, output exhaustion, writer BrokenPipe,
 reader errors, simultaneous cancellation, post-exit drain and uncertain kill/
 wait outcomes. Require exact-head Windows/Linux and prove no detached workers,
 residual descendants or released authority/capacity before cleanup.
+
+
+## Final consolidation — diagnostic visibility and retained research failure
+
+Research workflow 39611781237 at source
+5ee95745a85188c2b6d5323a913700d22c52ab7f failed before the new pipe cases ran:
+the source inspector expected RMCP under Cargo registry, but building only the
+runtime example does not fetch the MCP crate. This is a deterministic harness
+precondition error, not a Bridge/runtime failure. Keep the attempt. Move source
+inspection after the independent pipe cases, explicitly fetch the pinned lock
+dependencies, and retain the inspector's unambiguous-version guard.
+
+Review also found that adding fixed in-flight milestones can push late
+server/transport markers beyond the doctor's original FIRST-24 selection.
+A new synthetic regression (24 approved prefix markers followed by a transport
+marker) fails that old policy. The final collector is a queue of the LAST 24
+strictly approved messages, preserving the same 24-message / 32768-character /
+400ms / 4096-preview caps. It changes diagnostic selection only, not protocol
+timeouts or acceptance. Unknown/malformed data remains rejected. This avoids
+fixing early visibility at the cost of obscuring late startup progress.
+
+No further runtime modification is planned in this campaign. Final hosted
+VALIDATION.md and PROVENANCE.json record actual extended-case and independent
+CI results on the final exact source, and the first failures remain linked above.
+
+Normal CI 39611781103 on source 5ee95745a85188c2b6d5323a913700d22c52ab7f completed successfully on attempt 1; this did not turn the separate failed research workflow green.

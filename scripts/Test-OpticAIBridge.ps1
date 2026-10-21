@@ -92,31 +92,32 @@ function Throw-McpTimeout {
 
     if (-not [string]::IsNullOrWhiteSpace($stderr) -and $stderr -ne '<empty>') {
         # Opt-in labels and numeric durations only; never echo raw diagnostic data.
-        $printed = 0
+        $phaseMessages = [System.Collections.Generic.Queue[string]]::new()
         foreach ($phaseLine in ($rawStderr -split "\r?\n")) {
-            if ($printed -ge 24) { break }
+            $safeLine = $null
             if ($phaseLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-lease-entered|process-lease-eligibility-checked|process-lease-id-started|process-lease-id-generated|process-lease-registration-started|process-lease-registered|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
-                Write-Host "OPTIC_DOCTOR_TIMEOUT_PHASE phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
-                $printed++
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_PHASE phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
             }
             elseif ($phaseLine -cmatch '^OPTIC_PROCESS_LEASE_TIMING phase=(entered|eligibility-checked|id-started|id-generated|registration-started|registered) elapsed_ms=([0-9]{1,12})$') {
-                Write-Host "OPTIC_DOCTOR_TIMEOUT_LEASE_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
-                $printed++
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_LEASE_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
             }
             elseif ($phaseLine -cmatch '^OPTIC_IDENTITY_PROGRESS phase=(capture-entered|canonical-ready|pin-ready|hash-started|read-entered|first-read-returned|read-16m|read-64m|read-256m|eof-observed|hash-complete) elapsed_ms=([0-9]{1,12})$') {
-                Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_PROGRESS phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
-                $printed++
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_PROGRESS phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
             }
             elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
-                Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
-                $printed++
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
             }
             elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms=([0-9]{1,12}) nonread_ms=([0-9]{1,12}) total_ms=([0-9]{1,12}) calls=([0-9]{1,12})$') {
-                Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_IO read_ms=$($Matches[1]) nonread_ms=$($Matches[2]) total_ms=$($Matches[3]) calls=$($Matches[4])"
-                $printed++
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_IO read_ms=$($Matches[1]) nonread_ms=$($Matches[2]) total_ms=$($Matches[3]) calls=$($Matches[4])"
+            }
+            if ($null -ne $safeLine) {
+                if ($phaseMessages.Count -eq 24) { $phaseMessages.Dequeue() | Out-Null }
+                $phaseMessages.Enqueue($safeLine)
             }
         }
+        foreach ($message in $phaseMessages) { Write-Host $message }
     }
+
 
     $initialState = if ($wasRunning) { 'still running' } else { 'already exited' }
     throw "Timed out after ${Timeout}ms waiting for MCP response id=$Id; bridge was $initialState; final state: $finalState; stderr: $stderr"

@@ -126,3 +126,14 @@ if ($script:timingLines.Count -ne 1 -or $script:timingLines[0] -cne 'OPTIC_DOCTO
 $script:timingLines.Clear()
 $result = Assert-TimedOut -InputText 'OPTIC_IDENTITY_PROGRESS phase=secret-path elapsed_ms=1'
 if ($script:timingLines.Count) { throw 'Unapproved progress label escaped.' }
+
+# A first-24 policy loses transport/server milestones after the added bounded
+# identity trace. Keep the LAST 24 approved messages without raising any cap.
+$script:timingLines.Clear()
+$prefix = (('OPTIC_STARTUP phase=entry elapsed_ms=1' + [Environment]::NewLine) * 24)
+$tail = 'OPTIC_STARTUP phase=transport-created elapsed_ms=999'
+$result = Assert-TimedOut -InputText ($prefix + $tail)
+if ($script:timingLines.Count -ne 24 -or $script:timingLines[23] -cne 'OPTIC_DOCTOR_TIMEOUT_PHASE phase=transport-created elapsed_ms=999') {
+    throw 'Late transport milestone was displaced by the fixed diagnostic cap.'
+}
+Microsoft.PowerShell.Utility\Write-Host 'OPTIC_DOCTOR_RECENT_PHASES max_lines=24 late_transport=retained'
