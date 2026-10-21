@@ -34,6 +34,17 @@ pub struct AtomicMutationService {
     windows_root_final_path: PathBuf,
 }
 
+/// The generic workspace mutation capability never owns Git control state.
+/// Reserve the exact .git component at any depth (including linked-worktree
+/// .git files); ordinary dotfiles such as .gitignore remain regular content.
+/// Windows filesystem matching is case-insensitive, so always reject all
+/// ASCII casing variants across platforms.
+pub(crate) fn is_git_control_metadata_path(path: &WorkspacePath) -> bool {
+    path.as_str()
+        .split('/')
+        .any(|segment| segment.eq_ignore_ascii_case(".git"))
+}
+
 impl AtomicMutationService {
     pub fn from_hard_limits(
         root: impl AsRef<Path>,
@@ -60,6 +71,13 @@ impl AtomicMutationService {
         expected: ExpectedState,
     ) -> Result<PreparedMutation, AtomicMutationError> {
         let observation = self.filesystem.require_expected_state(path, expected)?;
+        // Apply this only after resolving the real workspace target: a
+        // representable alias in the requested path must not bypass it.
+        if is_git_control_metadata_path(path)
+            || is_git_control_metadata_path(&observation.canonical_path)
+        {
+            return Err(AtomicMutationError::ReservedGitMetadata);
+        }
 
         #[cfg(windows)]
         let windows_guard = self.prepare_windows_guard(&observation.canonical_path, expected)?;
@@ -81,6 +99,11 @@ impl AtomicMutationService {
         let observation = self
             .filesystem
             .require_expected_state(path, expected_state)?;
+        if is_git_control_metadata_path(path)
+            || is_git_control_metadata_path(&observation.canonical_path)
+        {
+            return Err(AtomicMutationError::ReservedGitMetadata);
+        }
 
         #[cfg(windows)]
         let windows_identity =
@@ -579,6 +602,8 @@ pub enum AtomicMutationError {
     Io(#[from] std::io::Error),
     #[error("new mutation content exceeds hard byte ceiling {limit}")]
     NewContentTooLarge { limit: u64 },
+    #[error("generic file mutation cannot change Git control metadata")]
+    ReservedGitMetadata,
     #[error("prepared mutation target is invalid")]
     InvalidTarget,
     #[error("prepared mutation state is internally inconsistent")]
