@@ -1,5 +1,13 @@
 # GitHub-only project handoff
 
+## Follow-up after verified #308 — Git status candidate (2026-10-21)
+
+Reverified `main=bfba4b97a531440de08012ca50106797d995646b`, zero open PRs, independent [#308 post-squash CI #39546153987](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39546153987) passed first attempt (native Windows, Ubuntu, dependency policy). **New candidate only:** `security/git-status-sensitive-paths`. Do not infer merge until exact-head CI and independent main checks.
+
+Source confirmed: `git_status` was returning Git porcelain-v2 bytes without checking protected tracked/untracked/renamed pathnames despite #308's classifier. Proposed narrow fix: parse complete NUL-delimited status records in the hardened runtime, refuse malformed/unrepresentable/unknown output, and check all sensitive names against a matching active `ReadSensitiveScope` before releasing bytes while session admission is held. Test both rename names, staged/untracked names, prefix mismatch, normal status and Windows/Unix behavior. See [ADR-0034](../decisions/ADR-0034-SENSITIVE-READ-CLASSIFICATION.md).
+
+**Major remaining #182 bypass:** `git_diff` still emits unclassified raw patch bytes; do not treat status correction as GitRead completion. Whole-repo and path-scoped Git diffs need an independent, trustworthy output-boundary design that cannot be bypassed by untracked/renamed/symlink/ancestor/native-path cases or repository races; deny unverifiable output. #176 content classifier and Windows/recovery/soak limitations also remain. No operator-PC activity, new features or security grant expansion.
+
 ## Approved Policy B — first narrow correction candidate (2026-10-21)
 
 Live baseline before branching: `main=3d9a0f78304578af53fd23b9fed7d08603348e0b` after merged #307, zero open PRs, independent push CI #39542505029 green on first attempt (Windows native/Linux/dependencies). The operator **approved Policy B**: a shared deterministic sensitive classifier for FileRead, FileSearch and GitRead, rejecting unverifiable outputs. The first scoped branch `security/sensitive-file-authority-scope` adds a shared pure core lexical classifier, file-read dual-scope enforcement and `fs_list` sensitive-name page denial with targeted unit/MCP regressions; acceptance depends on exact-head hosted CI and post-merge main CI. See [ADR-0034](../decisions/ADR-0034-SENSITIVE-READ-CLASSIFICATION.md). Do not assume this candidate is merged: inspect GitHub live.
