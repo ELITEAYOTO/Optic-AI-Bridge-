@@ -916,8 +916,7 @@ mod tests {
     #[test]
     fn git_raw_and_patch_framing_from_real_hardened_command_is_verifiable() {
         let fixture = RepoFixture::new("diff-framing");
-        fs::write(fixture.repo.join("a.txt"), b"modified synthetic content\n")
-            .expect("fixture");
+        fs::write(fixture.repo.join("a.txt"), b"modified synthetic content\n").expect("fixture");
         let output = fixture
             .service()
             .run_success(
