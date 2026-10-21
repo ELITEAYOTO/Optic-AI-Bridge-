@@ -1,5 +1,15 @@
 # Reliability and implementation debt
 
+
+## Actual startup debt after PR #299 — 2026-10-21
+
+[PR #299](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/299) merged into `main` at `6fe41ba2ce0e66f245acb7ea7c6c253e3f0f77ea`. It adds **opt-in, fixed-label, monotonic stderr phase diagnostics in the outer Windows isolation launcher**, forwarded only for an exact `OPTIC_LAUNCHER_PHASES=1` test opt-in. The existing native CI Windows gate requires selected phase markers when enabled; Linux, dependency-policy and hosted native-preparation checks passed on accepted source head `aca382535f24b6f6b1c26c2313302d315099ed4e`, first attempt. The original network denial, 10s process budget, sandbox and output assertions remain unchanged.
+
+A passing hosted Windows proof measured, relative to **launcher entry**, `profile_created=10ms`, `target_created_suspended=14ms`, `token_verified=14ms`, `target_resumed=14ms`, `target_exited=361ms`. Separately, parent-side `launch_returned_ms=13` and terminal observation `407ms` use a **different clock origin**. Those phases demonstrate marker delivery, **not** the cause of earlier intermittent timeouts. In particular, the earlier 10s failure had `stdout="" stderr=""` without instrumentation; the next natural failure with opt-in internal phases should be examined without suppressing original failures. If the only visible marker is `entered` or earlier, distinguish request delivery from profile creation; if `target_resumed` exists without Node entry, investigate inner loader/start/output forwarding, not just outer launch. Markers on shared stderr are diagnostic untrusted observations, not security attestations.
+
+**Unresolved:** Windows Node/AppContainer occasional timeout/no script output (~10s; issue [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185)), independently the MCP TEMP-only first response (~30s), non-atomic multi-file recovery cleanup, ancestor path races and Windows power-loss directory persistence. No demonstrated root cause or correctness fix for these was delivered in #299. No timeout extension, extra network grant, runner self-hosting, operator-PC execution or feature expansion. The completion of independent post-merge [main CI #39526677098](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526677098) must be checked against exact SHA before describing it as green.
+
+
 ## Current open reliability risks — reconciled after #297 (2026-10-21)
 
 The last independently verified `main` is `83329d48789c20b1fc235d3096c3199dc9dc5176`; [post-merge CI #39514832814](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39514832814) passed first attempt on exact SHA (hosted Rust Windows, Linux, dependencies), zero open PRs. **#293–#297 are merged**, not pending candidates. Their corrections and opt-in instrumentation are described in [STATUS](../../STATUS.md) and [handoff](GITHUB_HANDOFF.md).
