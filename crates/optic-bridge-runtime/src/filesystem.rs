@@ -693,8 +693,7 @@ mod tests {
     fn canonical_list_root_preserves_regular_directory_across_platforms() {
         let root = workspace("canonical-list-regular");
         fs::create_dir(root.join("allowed")).expect("allowed");
-        let service = BoundedFileSystem::new(&root, 128, 4, 32)
-            .expect("filesystem service");
+        let service = BoundedFileSystem::new(&root, 128, 4, 32).expect("filesystem service");
         let expected = WorkspacePath::parse("allowed").expect("scope");
         assert_eq!(
             service.canonical_list_root(Some(&expected)).expect("scope"),
@@ -717,15 +716,15 @@ mod tests {
         fs::create_dir(root.join("private")).expect("private");
         fs::write(root.join("private").join("evidence.txt"), b"evidence")
             .expect("private evidence");
-        symlink("../private", root.join("allowed").join("portal"))
-            .expect("create internal alias");
+        symlink("../private", root.join("allowed").join("portal")).expect("create internal alias");
 
-        let service = BoundedFileSystem::new(&root, 128, 4, 32)
-            .expect("filesystem service");
+        let service = BoundedFileSystem::new(&root, 128, 4, 32).expect("filesystem service");
         let alias = WorkspacePath::parse("allowed/portal").expect("alias");
         let expected = WorkspacePath::parse("private").expect("canonical");
         assert_eq!(
-            service.canonical_list_root(Some(&alias)).expect("resolve alias"),
+            service
+                .canonical_list_root(Some(&alias))
+                .expect("resolve alias"),
             Some(expected.clone())
         );
         let page = service.list(Some(&expected), 0, 4).expect("canonical list");
@@ -734,10 +733,7 @@ mod tests {
             page.entries[0].path,
             WorkspacePath::parse("private/evidence.txt").expect("file")
         );
-        assert_eq!(
-            service.canonical_list_root(None).expect("root"),
-            None
-        );
+        assert_eq!(service.canonical_list_root(None).expect("root"), None);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
