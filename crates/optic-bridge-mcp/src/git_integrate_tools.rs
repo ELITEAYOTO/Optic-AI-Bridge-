@@ -856,10 +856,13 @@ mod tests {
         );
         assert_eq!(server.transport_guard.active_requests(), 1);
 
-        let denied = tokio::time::timeout(Duration::from_secs(5), server.session_cancel())
+        let denied = match tokio::time::timeout(Duration::from_secs(5), server.session_cancel())
             .await
             .expect("session_cancel response deadline")
-            .expect_err("cancel cannot admit with transport capacity occupied");
+        {
+            Ok(_) => panic!("cancel must fail closed when transport capacity is occupied"),
+            Err(error) => error,
+        };
         assert_eq!(denied.message.as_ref(), "optic.server_busy");
         assert!(
             server
