@@ -75,7 +75,22 @@ impl ReadonlyMcpServer {
         }
 
         let diff = self
-            .run_git_read(move |service| service.diff(path.as_ref(), staged, Some(max_bytes)))
+            .run_git_read_checked(
+                move |service| service.diff(path.as_ref(), staged, Some(max_bytes)),
+                |server, grant, diff| {
+                    for path in &diff.sensitive_paths {
+                        // A patch discloses content, not only a filename.
+                        // Do not let GitRead substitute for either FileRead
+                        // or its matching ReadContent + ReadSensitive lease.
+                        server.authorize(
+                            grant,
+                            Effect::FileRead { path: path.clone() },
+                            server.clock.now(),
+                        )?;
+                    }
+                    Ok(())
+                },
+            )
             .await?;
         let response = GitDiffResponse {
             encoding: "base64".to_owned(),
@@ -328,7 +343,9 @@ fn map_git_read_error(error: GitReadError) -> ErrorData {
             ErrorData::internal_error("optic.git_output_too_large", None)
         }
         GitReadError::CommandTimedOut => ErrorData::internal_error("optic.request_timeout", None),
-        GitReadError::UnverifiableStatus => ErrorData::invalid_request("optic.policy_denied", None),
+        GitReadError::UnverifiableStatus | GitReadError::UnverifiableDiff => {
+            ErrorData::invalid_request("optic.policy_denied", None)
+        }
         GitReadError::InvalidLimits
         | GitReadError::GitExecutableMustBeAbsolute
         | GitReadError::GitExecutableNotFile
