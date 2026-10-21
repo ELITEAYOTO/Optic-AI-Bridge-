@@ -801,4 +801,96 @@ mod tests {
         .expect("released worker transport capacity");
         assert_eq!(server.transport_guard.active_requests(), 0);
     }
+
+    // Research-only service-level test: session_cancel shares the transport
+    // concurrency gate with operations it may need to revoke. This documents
+    // availability under saturation; it does NOT test native process stopping.
+    #[tokio::test]
+    async fn research_session_cancel_is_denied_with_only_slot_owned_by_git_worker() {
+        use std::{sync::mpsc, time::Duration};
+
+        use optic_bridge_runtime::{SessionRegistryError, TransportGuard, TransportLimits};
+
+        let fixture = RepoFixture::new("cancel-saturation");
+        let mut server = fixture.server();
+        let limits = server.transport_guard.limits();
+        server.transport_guard = TransportGuard::new(TransportLimits {
+            max_concurrent_requests: 1,
+            ..limits
+        })
+        .expect("one request capacity");
+        let worker_sessions = Arc::clone(&server.sessions);
+        let worker_session = server.session.clone();
+        let worker_clock = Arc::clone(&server.clock);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let worker_server = server.clone();
+        let waiter = tokio::spawn(async move {
+            worker_server
+                .run_git_integration(move |_service| {
+                    let _admission = worker_sessions
+                        .begin_admission(&worker_session, worker_clock.now())
+                        .expect("synthetic Git admission");
+                    entered_tx.send(()).expect("worker entered");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("worker released by test");
+                    finished_tx.send(()).expect("worker finished");
+                    Ok::<(), AuthorizedGitIntegrationError>(())
+                })
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("worker start deadline")
+            .expect("worker start signal");
+        waiter.abort();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("waiter abort deadline")
+                .expect_err("waiter cancelled")
+                .is_cancelled()
+        );
+        assert_eq!(server.transport_guard.active_requests(), 1);
+
+        let denied = tokio::time::timeout(Duration::from_secs(5), server.session_cancel())
+            .await
+            .expect("session_cancel response deadline")
+            .expect_err("cancel cannot admit with transport capacity occupied");
+        assert_eq!(denied.message.as_ref(), "optic.server_busy");
+        assert!(
+            server
+                .sessions
+                .get_active(&server.session, server.clock.now())
+                .is_ok(),
+            "capacity-denied cancellation must not claim to have revoked session"
+        );
+
+        release_tx.send(()).expect("release retained Git worker");
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .expect("worker finish deadline")
+            .expect("worker finish signal");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server.transport_guard.active_requests() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("worker released transport capacity");
+
+        tokio::time::timeout(Duration::from_secs(5), server.session_cancel())
+            .await
+            .expect("session_cancel after worker finish deadline")
+            .expect("session revoke after capacity restored");
+        assert!(matches!(
+            server
+                .sessions
+                .get_active(&server.session, server.clock.now()),
+            Err(SessionRegistryError::Revoked)
+        ));
+    }
 }
