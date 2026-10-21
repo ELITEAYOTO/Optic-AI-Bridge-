@@ -74,14 +74,26 @@ fn main() {
                 // only the research subreaper/watchdog may recover that fixture.
                 let python = env::var_os("OPTIC_RESEARCH_PYTHON").expect("fixture Python");
                 let script = "import subprocess,sys; subprocess.Popen([sys.argv[1],'holder',sys.argv[2],sys.argv[3]],stdin=subprocess.DEVNULL,stdout=None if sys.argv[3]=='escape-both' else subprocess.DEVNULL,stderr=None if sys.argv[3]=='escape-both' else subprocess.DEVNULL,close_fds=True,start_new_session=sys.argv[3]=='escape-both')";
+                // The escape case MUST carry the parent's actual pipe fds
+                // into Python, or stdout=None/stderr=None inherit /dev/null
+                // and cannot exercise a retained pipe across setsid().
+                let escape_pipes = case == "escape-both";
                 let status = Command::new(python)
                     .args(["-I", "-S", "-c", script])
                     .arg(env::current_exe().expect("fixture exe"))
                     .arg(&root)
                     .arg(case)
                     .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
+                    .stdout(if escape_pipes {
+                        Stdio::inherit()
+                    } else {
+                        Stdio::null()
+                    })
+                    .stderr(if escape_pipes {
+                        Stdio::inherit()
+                    } else {
+                        Stdio::null()
+                    })
                     .status()
                     .expect("selective inheritance helper");
                 assert!(status.success());
