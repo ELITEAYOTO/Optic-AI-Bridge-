@@ -183,18 +183,30 @@ impl ReadonlyMcpServer {
         self.ensure_structured_payload_fits(response)?;
 
         if response.entries.len() < original_len {
-            if response.entries.is_empty() {
-                return Err(ErrorData::internal_error("optic.response_too_large", None));
-            }
             let head = response.snapshot_head.clone().ok_or_else(|| {
                 ErrorData::internal_error("optic.git_log_cursor_missing_head", None)
             })?;
-            let kept = u64::try_from(response.entries.len())
-                .map_err(|_| ErrorData::internal_error("optic.response_too_large", None))?;
-            response.next_cursor = Some(GitLogCursorResponse {
-                head,
-                offset: start_offset.saturating_add(kept),
-            });
+            // The original last page can have no cursor. Adding one after
+            // trimming increases the response size, so fit the final cursor
+            // and entries together. A page must retain forward progress.
+            loop {
+                if response.entries.is_empty() {
+                    return Err(ErrorData::internal_error("optic.response_too_large", None));
+                }
+                let kept = u64::try_from(response.entries.len())
+                    .map_err(|_| ErrorData::internal_error("optic.response_too_large", None))?;
+                let offset = start_offset
+                    .checked_add(kept)
+                    .ok_or_else(|| ErrorData::internal_error("optic.response_too_large", None))?;
+                response.next_cursor = Some(GitLogCursorResponse {
+                    head: head.clone(),
+                    offset,
+                });
+                if self.ensure_structured_payload_fits(response).is_ok() {
+                    break;
+                }
+                response.entries.pop();
+            }
         }
         Ok(())
     }
