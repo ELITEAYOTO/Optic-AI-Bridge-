@@ -689,6 +689,40 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn canonical_list_root_resolves_internal_alias_to_actual_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = workspace("canonical-list-alias");
+        fs::create_dir(root.join("allowed")).expect("allowed");
+        fs::create_dir(root.join("private")).expect("private");
+        fs::write(root.join("private").join("evidence.txt"), b"evidence")
+            .expect("private evidence");
+        symlink("../private", root.join("allowed").join("portal"))
+            .expect("create internal alias");
+
+        let service = BoundedFileSystem::new(&root, 128, 4, 32)
+            .expect("filesystem service");
+        let alias = WorkspacePath::parse("allowed/portal").expect("alias");
+        let expected = WorkspacePath::parse("private").expect("canonical");
+        assert_eq!(
+            service.canonical_list_root(Some(&alias)).expect("resolve alias"),
+            Some(expected.clone())
+        );
+        let page = service.list(Some(&expected), 0, 4).expect("canonical list");
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(
+            page.entries[0].path,
+            WorkspacePath::parse("private/evidence.txt").expect("file")
+        );
+        assert_eq!(
+            service.canonical_list_root(None).expect("root"),
+            None
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
     #[test]
     fn deterministic_scan_has_a_hard_ceiling() {
         let root = workspace("scan");
