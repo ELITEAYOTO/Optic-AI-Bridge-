@@ -696,4 +696,107 @@ mod tests {
         );
         assert_eq!(server.transport_guard.active_requests(), 0);
     }
+
+    // Experimental ownership-contract test, not a process-tree reproduction.
+    // A synthetic Git worker models holding the application's admission while
+    // the caller future is cancelled and session revoke drains admitted work.
+    #[tokio::test]
+    async fn research_cancelled_git_worker_admission_drains_on_revoke() {
+        use std::{sync::mpsc, time::Duration};
+
+        use optic_bridge_runtime::SessionRegistryError;
+
+        let fixture = RepoFixture::new("git-revoke-worker-ownership");
+        let server = fixture.server();
+        let worker_sessions = Arc::clone(&server.sessions);
+        let worker_session = server.session.clone();
+        let worker_clock = Arc::clone(&server.clock);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let task_server = server.clone();
+
+        let waiter = tokio::spawn(async move {
+            task_server
+                .run_git_integration(move |_service| {
+                    let _admission = worker_sessions
+                        .begin_admission(&worker_session, worker_clock.now())
+                        .expect("synthetic Git admission");
+                    entered_tx.send(()).expect("worker entered");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("finite external release");
+                    finished_tx.send(()).expect("worker finished");
+                    Ok::<(), AuthorizedGitIntegrationError>(())
+                })
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("worker admission deadline")
+            .expect("worker admission observed");
+        assert_eq!(server.transport_guard.active_requests(), 1);
+
+        waiter.abort();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("caller cancel deadline")
+                .expect_err("caller cancelled")
+                .is_cancelled()
+        );
+        assert_eq!(
+            server.transport_guard.active_requests(),
+            1,
+            "cancelled caller cannot release worker transport capacity"
+        );
+
+        let revoke_sessions = Arc::clone(&server.sessions);
+        let revoke_session = server.session.clone();
+        let revoke = tokio::task::spawn_blocking(move || {
+            revoke_sessions.revoke(&revoke_session)
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !matches!(
+                server.sessions.get_active(&server.session, server.clock.now()),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("session revoke flag deadline");
+        assert!(
+            !revoke.is_finished(),
+            "revoke must not claim quiescence with admitted work held"
+        );
+        assert!(matches!(
+            server.sessions.begin_admission(&server.session, server.clock.now()),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert_eq!(server.transport_guard.active_requests(), 1);
+
+        release_tx.send(()).expect("release admitted worker");
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .expect("worker completion deadline")
+            .expect("worker completion observed");
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), revoke)
+                .await
+                .expect("revocation completion deadline")
+                .expect("revoke task")
+                .expect("revoke result")
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server.transport_guard.active_requests() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("released worker transport capacity");
+        assert_eq!(server.transport_guard.active_requests(), 0);
+    }
 }
