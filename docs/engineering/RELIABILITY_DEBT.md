@@ -1,5 +1,12 @@
 # Reliability and implementation debt
 
+## File-search authorization target mismatch — 2026-10-21
+
+Audit of `ReadonlyMcpServer::fs_list` established a deterministic security boundary defect: prefix-scoped search authorized the **unresolved request** before following a directory alias. If `allowed/portal` links internally to `private`, a lease for `allowed` can reach names in `private` under the original code. The corrective increment first canonicalizes the requested directory, then authorizes that scope, then lists using the canonical location (and returns canonical paths), with Unix adversarial alias and portable Windows/Linux regressions.
+
+**Still unresolved:** races replacing canonical directory ancestors between the authorization and enumeration, no directory-handle pinning, and `ReadSensitiveScope`'s missing content classifier. This scoped change cannot justify exposing real project data over remote MCP. Keep [issue #176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) open for independent unresolved findings. Do not relax other process/mutation containment invariants.
+
+
 ## Updated recovery and Windows debt after #301 — 2026-10-21
 
 [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) is **merged** at `05b5a928c862601926e8b0cc11540ce020caf271`. Before the fix, `discard_unpublished` could erase a valid early `*.prepared.tmp` artifact before a later unsafe hard-linked entry failed closed; `scan_pending` classified filenames but did not validate unopened aliases. The new two-pass sequence inspects all unpublished entries with the existing native opened identity/link checks, then independently revalidates every deletion. A regression with sorted entries and an external hard link passed on native Windows and Linux, including post-repair cleanup. The source CI passed on attempt 2 following a known **first-attempt** Node/AppContainer 10s failure, preserved in [issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185).
