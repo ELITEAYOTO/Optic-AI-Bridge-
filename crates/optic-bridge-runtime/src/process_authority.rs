@@ -414,6 +414,90 @@ mod tests {
         );
     }
 
+    /// Hosted-only research: compare native read sizes without changing the
+    /// 64-KiB hashing contract, pinned handle, digest or observation ceiling.
+    /// The first pass may have a different cache state than later passes.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "explicit hosted-Windows buffer-capacity diagnostic only"]
+    fn diagnostic_native_buffer_capacity_probe() {
+        use std::io::{BufReader, Seek, SeekFrom};
+
+        let path = env::var_os("OPTIC_DIAG_NODE_PATH").expect("explicit hosted Node path");
+        let canonical = fs::canonicalize(path).expect("canonical runner executable path");
+        let mut pinned = open_identity_pin(&canonical).expect("pin runner executable");
+        let size = pinned
+            .file_mut()
+            .metadata()
+            .expect("opened file metadata")
+            .len();
+        assert!(size > 0 && size <= MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES);
+
+        struct BufferPass {
+            version: ContentVersion,
+            read_ms: u128,
+            total_ms: u128,
+            calls: u32,
+            max_read_ms: u128,
+        }
+
+        fn one_pass(file: &mut fs::File, capacity: usize) -> BufferPass {
+            let started = Instant::now();
+            let mut timed = TimedIdentityReader {
+                inner: file,
+                read_elapsed: Duration::ZERO,
+                read_calls: 0,
+                latency_buckets: [0; 4],
+                max_read_elapsed: Duration::ZERO,
+            };
+            // This buffer is diagnostic-only; the trusted BLAKE3 function
+            // still requests 64 KiB and enforces the same 512-MiB ceiling.
+            let version = {
+                let mut buffered = BufReader::with_capacity(capacity, &mut timed);
+                ContentVersion::from_reader_bounded(
+                    &mut buffered,
+                    MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
+                )
+                .expect("bounded identity of pinned executable")
+            };
+            BufferPass {
+                version,
+                read_ms: timed.read_elapsed.as_millis(),
+                total_ms: started.elapsed().as_millis(),
+                calls: timed.read_calls,
+                max_read_ms: timed.max_read_elapsed.as_millis(),
+            }
+        }
+
+        // Keep the deliberately first 1-MiB pass explicit. Subsequent
+        // measurements share its file-cache state and cannot compare cold I/O.
+        let measures = [1024 * 1024, 64 * 1024, 256 * 1024];
+        let mut baseline = None;
+        for capacity in measures {
+            pinned
+                .file_mut()
+                .seek(SeekFrom::Start(0))
+                .expect("rewind pinned executable before each complete read");
+            let result = one_pass(pinned.file_mut(), capacity);
+            assert!(result.calls > 0);
+            if let Some(expected) = baseline {
+                assert_eq!(result.version, expected, "content identity must match");
+            } else {
+                baseline = Some(result.version);
+            }
+            // Fixed-label aggregate timings only: no path, digest or data.
+            eprintln!(
+                "OPTIC_IDENTITY_BUFFER_CAPACITY size_bytes={} buffer_bytes={} read_ms={} total_ms={} calls={} max_read_ms={}",
+                size,
+                capacity,
+                result.read_ms,
+                result.total_ms,
+                result.calls,
+                result.max_read_ms,
+            );
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn authority_pin_prevents_same_path_rewrite_while_lease_is_alive() {
