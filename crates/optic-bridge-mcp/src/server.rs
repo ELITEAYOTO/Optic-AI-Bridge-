@@ -373,6 +373,7 @@ impl ReadonlyMcpServer {
                     .prepare_read(&path, offset, Some(max_bytes))
                     .map_err(map_filesystem_error)?;
                 let canonical_path = prepared.observation().canonical_path.clone();
+                let has_multiple_links = prepared.has_multiple_links();
                 server.ensure_read_deadline(permit)?;
                 server.authorize(
                     grant,
@@ -381,6 +382,15 @@ impl ReadonlyMcpServer {
                     },
                     server.clock.now(),
                 )?;
+                // A hard link can alias a sensitive file through an ordinary
+                // name. The lexical classifier alone cannot prove its origin.
+                if has_multiple_links {
+                    server.require_sensitive_read_scope(
+                        grant,
+                        &canonical_path,
+                        server.clock.now(),
+                    )?;
+                }
                 let chunk = prepared.read().map_err(map_filesystem_error)?;
                 Ok((canonical_path, chunk))
             })
@@ -569,6 +579,17 @@ impl ReadonlyMcpServer {
         if !optic_bridge_core::requires_sensitive_authority(path) {
             return Ok(());
         }
+        self.require_sensitive_read_scope(grant, path, now)
+    }
+
+    /// Explicit additional FileRead scope for a potentially sensitive native
+    /// alias, even if its observed workspace name looks ordinary.
+    fn require_sensitive_read_scope(
+        &self,
+        grant: &SessionGrant,
+        path: &WorkspacePath,
+        now: optic_bridge_core::MonotonicTime,
+    ) -> Result<(), ErrorData> {
         let denied = || ErrorData::invalid_request("optic.policy_denied", None);
         if !grant.allows(Capability::FileRead) {
             return Err(denied());
@@ -1092,6 +1113,49 @@ mod tests {
         assert_eq!(
             STANDARD.decode(direnv.data).expect("base64"),
             b"direnv-fixture-only"
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn hard_link_alias_cannot_downgrade_sensitive_file_read_authority() {
+        let root = workspace("hardlink-sensitive-read");
+        fs::write(root.join(".env"), b"synthetic-secret").expect("fixture");
+        fs::hard_link(root.join(".env"), root.join("README.txt")).expect("alias");
+        fs::write(root.join("ordinary.txt"), b"ordinary fixture").expect("fixture");
+        let read = |name: &str| FsReadRequest {
+            path: name.to_owned(),
+            offset: None,
+            max_bytes: Some(64),
+        };
+        let ordinary = server(&root, &[Capability::FileRead]);
+        assert_eq!(
+            ordinary
+                .fs_read(Parameters(read("README.txt")))
+                .await
+                .err()
+                .expect("ordinary name cannot bypass protected hardlink")
+                .message,
+            "optic.policy_denied"
+        );
+        ordinary
+            .fs_read(Parameters(read("ordinary.txt")))
+            .await
+            .expect("independent regular file is still readable");
+        let elevated = server_with_scopes(
+            &root,
+            &[Capability::FileRead],
+            None,
+            Some(optic_bridge_core::ReadSensitiveScope::all()),
+        );
+        let result = elevated
+            .fs_read(Parameters(read("README.txt")))
+            .await
+            .expect("explicitly scoped sensitive read")
+            .0;
+        assert_eq!(
+            STANDARD.decode(result.data).expect("base64"),
+            b"synthetic-secret"
         );
         fs::remove_dir_all(root).expect("remove fixture");
     }
