@@ -650,17 +650,17 @@ mod tests {
             "nested/.GIT/hooks/pre-commit",
         ] {
             assert!(
-                is_git_control_metadata_path(
-                    &WorkspacePath::parse(reserved).expect("valid path")
-                ),
+                is_git_control_metadata_path(&WorkspacePath::parse(reserved).expect("valid path")),
                 "{reserved} must remain Git-owned"
             );
         }
-        for ordinary in [".gitignore", ".gitattributes", "src/.github/workflows/ci.yml"] {
+        for ordinary in [
+            ".gitignore",
+            ".gitattributes",
+            "src/.github/workflows/ci.yml",
+        ] {
             assert!(
-                !is_git_control_metadata_path(
-                    &WorkspacePath::parse(ordinary).expect("valid path")
-                ),
+                !is_git_control_metadata_path(&WorkspacePath::parse(ordinary).expect("valid path")),
                 "{ordinary} must remain normal workspace content"
             );
         }
@@ -696,7 +696,10 @@ mod tests {
                 .is_ok(),
             "ordinary project dotfiles must remain available"
         );
-        assert_eq!(fs::read(root.join(".git/config")).expect("config"), b"git config");
+        assert_eq!(
+            fs::read(root.join(".git/config")).expect("config"),
+            b"git config"
+        );
         assert!(!root.join(".git/new-control").exists());
         fs::remove_dir_all(root).expect("cleanup");
     }
@@ -741,7 +744,10 @@ mod tests {
             ),
             Err(AtomicMutationError::ReservedGitMetadata)
         ));
-        assert_eq!(fs::read(root.join(".git/config")).expect("config"), b"private");
+        assert_eq!(
+            fs::read(root.join(".git/config")).expect("config"),
+            b"private"
+        );
         fs::remove_dir_all(root).expect("cleanup");
     }
 
