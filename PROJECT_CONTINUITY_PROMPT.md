@@ -1,5 +1,12 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Contrôle de fiabilité Git — curseur et limite de réponse
+
+L'audit a identifié un dépassement possible de la limite JSON de `git_log` : la réponse pouvait être ajustée à la limite, puis recevoir un `next_cursor` supplémentaire sans vérification de taille finale. La correction candidate revérifie la taille `entrées + curseur`, conserve une pagination strictement progressive ou refuse l'émission par `optic.response_too_large`. Les tests utilisent un budget synthétique déterministe avec et sans place pour le nouveau curseur. Aucune modification de droit Git, d'isolation, de réseau ou de fonctionnalité.
+
+**Ne pas présumer de la fusion :** inspecter l'état réel de `main`, l'unique PR éventuelle, les reviews et les CI sur le SHA exact, puis la CI indépendante post-fusion. Une seule PR à la fois ; Windows natif sur runners hébergés ; aucune action sur le PC utilisateur. Les dettes Node/AppContainer 10 s, MCP 30 s, protection sensible GitRead et courses de chemins restent séparées.
+
+
 ## Réserve de sécurité Git — candidat en cours (21 octobre 2026)
 
 Le checkpoint GitHub réel au début de l'incrément est `main=9c6c91096590f9f005dabc51253b9b5f8b1abcca`, 0 PR ouverte et [CI indépendante #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408) réussie du premier coup. L'[issue #180](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/180) signale une faille de séparation d'autorités : l'écriture générique peut cibler les contrôles `.git` sans pouvoir Git dédié. Le changement candidat refuse les composants exacts `.git` (sans distinction de casse) **après la résolution canonique** lors de la préparation de fichier, ainsi qu'en création de répertoire. Des tests visent Windows natif, Unix, le pointeur `.git` des worktrees liés et le code d'erreur MCP ; `.gitignore` reste ordinaire.
