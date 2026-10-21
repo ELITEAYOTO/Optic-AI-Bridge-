@@ -1,5 +1,24 @@
 # Current project status
 
+## Verified integration checkpoint — 2026-10-21 (before this documentation update)
+
+At the **live GitHub check**, `main` was `43d3a4aeedee04dd03e895e27e81d3bc5af6652c`, with **zero open PRs**. Independent push [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed **first attempt** on this exact commit (hosted Windows Rust, Linux Rust, dependency policy). This is a dated observation, **not** an instruction to reset or a claim about later commits.
+
+The recent stabilization work is **already merged**:
+
+| PR | Main merge SHA | Narrow effect and verified integration |
+| --- | --- | --- |
+| [#301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) | `05b5a928` | Preflight all unpublished recovery artifacts before deleting; [main CI #39530161176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530161176) passed first attempt. Source CI #39529419994 needed an unchanged-SHA Windows job retry after the known 10s Node/AppContainer failure. |
+| [#302](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/302) | `c8c1110f` | Documentary continuity; [main CI #39530925055](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530925055) passed first attempt. |
+| [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303) | `9c6c9109` | Canonical directory scope before `fs_list` authorization; [main CI #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408) passed first attempt. |
+| [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304) | `9d90485f` | Reserve canonical `.git` control paths from generic mutation; [main CI #39536541153](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39536541153) passed first attempt. |
+| [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305) | `43d3a4ae` | Fit the final `git_log` response **including** newly added continuation cursor; [main CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed first attempt. |
+
+**Not closed by green CI:** Windows Node/AppContainer 10-second no-output intermittency ([#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185)); separate ~30-second MCP first-response intermittency; recovery multi-delete non-atomicity, ancestor namespace races and Windows power-loss durability; sensitive-file read classification ([#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176)) and GitRead sensitivity composition ([#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182)). #180/#181/#183 still appear **open administratively** despite already-integrated scoped corrections/tests; reconcile their *remaining acceptance criteria*, do not repeat the implementation or silently close them.
+
+The core is **pre-alpha**. The feature freeze and GitHub-hosted-only restrictions remain. See [stabilization exit gates](ROADMAP.md), [current handoff](docs/engineering/GITHUB_HANDOFF.md) and [reliability debt](docs/engineering/RELIABILITY_DEBT.md). The older sections below are **dated historical reports**, including wording such as “candidate” written before those PRs merged.
+
+
 ## Git-log response size & pagination — bounded regression
 
 A deterministic `git_log` response-fitting flaw existed when the final history page had `next_cursor: None`: trimming entries to meet the structured response-byte limit then **added** a cursor containing the snapshot HEAD and new offset without checking the resulting serialized size. A too-large MCP response could be emitted despite the configured output budget. The narrow fix repeatedly refits after cursor insertion, reducing the page while preserving at least one advancing entry; if no entry plus cursor fits, it fails closed with `optic.response_too_large`. Cursor arithmetic now rejects overflow rather than saturating into a non-advancing token.
