@@ -1,5 +1,16 @@
 # GitHub-only project handoff
 
+## Most recent recovery correction — 2026-10-21, after PR #301
+
+**Live at post-merge inspection:** `main=05b5a928c862601926e8b0cc11540ce020caf271`, zero open PRs. [PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) squash-merged from source `089e64a2b6c95dc0705eeaaa22f90194dfb7be66`. [Source CI #39529419994](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529419994) passed **on attempt 2** after an unrelated but significant initial native Windows Node/AppContainer timeout; [native preparation #39529420240](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39529420240) passed first attempt. The **exact same new recovery regression** passed on Linux and on the Windows second attempt. [Independent post-merge main run #39530161176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39530161176) **passed first attempt** on exact squash SHA `05b5a928c862601926e8b0cc11540ce020caf271`, Windows Rust, Linux Rust and dependency policy.
+
+**Concrete source bug corrected:** `MutationRecoveryJournal::discard_unpublished` formerly deleted sorted `*.prepared.tmp` files one at a time. A valid first file disappeared before a later dangerous hard-link alias failed the deletion check. Now the whole list is preflighted via existing identity/link/regular-file checks before any delete; a second pass reopens/revalidates each handle immediately before deleting. A cross-platform negative regression preserves earlier temporary bytes, aliased bytes, and the external hard-linked evidence after rejection, then repairs and confirms successful cleanup. These are scoped preflight-order guarantees, **not** transactional multi-file atomicity or race/durability proof.
+
+**New real Windows failure evidence from the #301 source CI first attempt:** parent outer-helper launch returned in 9ms, then 10s `TimedOut` without captured stderr or Node marker. On the same SHA, diagnostic #1 reached inner `target_resumed=14ms` but only `target_exited=8952ms`, normal network-denied exit 42. Two later diagnostics exited ~360ms from helper entry. See [issue #185 diagnostic entry](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185#issuecomment-6306039365). No cause established; do not infer loader/scheduling fault as fact, weaken the 10s bound, or treat retries as a fix. MCP first-response 30s issue is distinct.
+
+**Next allowed step:** recheck live branch, PRs and exact-head post-merge CI, then investigate the next *demonstrable* isolation/recovery/security defect. Do not repeat #299/#301 or create speculative PRs. Stabilization only, GitHub-hosted Windows for Windows claims, no operator PC, self-hosted runners, release, new features or alpha-wide merge. Historical checkpoints below are not reset targets.
+
+
 
 ## Handoff verified through PR #299 — 2026-10-21
 

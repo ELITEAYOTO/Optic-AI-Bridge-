@@ -1,5 +1,12 @@
 # Reliability and implementation debt
 
+## Updated recovery and Windows debt after #301 — 2026-10-21
+
+[PR #301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) is **merged** at `05b5a928c862601926e8b0cc11540ce020caf271`. Before the fix, `discard_unpublished` could erase a valid early `*.prepared.tmp` artifact before a later unsafe hard-linked entry failed closed; `scan_pending` classified filenames but did not validate unopened aliases. The new two-pass sequence inspects all unpublished entries with the existing native opened identity/link checks, then independently revalidates every deletion. A regression with sorted entries and an external hard link passed on native Windows and Linux, including post-repair cleanup. The source CI passed on attempt 2 following a known **first-attempt** Node/AppContainer 10s failure, preserved in [issue #185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185).
+
+**Still open:** subsequent *actual* multi-file deletion failures can remain partial; directory ancestor replacements and Unix path-based unlink races are not eliminated, nor are Windows directory/power-loss durability guarantees. The separate 10-second native AppContainer Node intermittency now has both no-helper-output failure and an 8.95-second **passing** inner runtime diagnostic following a rapid `target_resumed`; cause remains unproven. The 30-second MCP first response remains separate. Neither test retries nor instrumentation alone fix them. No feature work is permitted.
+
+
 
 ## Actual startup debt after PR #299 — 2026-10-21
 
