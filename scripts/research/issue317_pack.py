@@ -20,7 +20,7 @@ try:
 except Exception as error:
     normal = {"state": "unavailable", "error_type": type(error).__name__}
 results = [json.loads(p.read_text()) for p in Path("evidence").rglob("owner-*.json")]
-complete = (len(results) == 2 and all(r["complete"] and len(r["cases"]) == 16 and r["sha"] == sha for r in results))
+complete = (len(results) == 2 and all(r["complete"] and len(r["cases"]) == (17 if r["platform"] == "linux" else 16) and r["sha"] == sha for r in results))
 provenance = {"sha": sha, "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "primitive_experiments_complete": complete, "production_fix_validated": False,
               "independent_ci_at_archive_creation": normal, "results": results}

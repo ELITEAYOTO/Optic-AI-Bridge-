@@ -68,11 +68,12 @@ fn main() {
                 }
                 return;
             }
-            if case == "selective-null" {
+            if case == "selective-null" || case == "escape-both" {
                 // Contrast: Python explicitly closes non-standard inherited
-                // handles. This known fixture helper remains in the outer job/group.
+                // handles. escape-both deliberately creates a separate Unix session;
+                // only the research subreaper/watchdog may recover that fixture.
                 let python = env::var_os("OPTIC_RESEARCH_PYTHON").expect("fixture Python");
-                let script = "import subprocess,sys; subprocess.Popen([sys.argv[1],'holder',sys.argv[2],sys.argv[3]],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)";
+                let script = "import subprocess,sys; subprocess.Popen([sys.argv[1],'holder',sys.argv[2],sys.argv[3]],stdin=subprocess.DEVNULL,stdout=None if sys.argv[3]=='escape-both' else subprocess.DEVNULL,stderr=None if sys.argv[3]=='escape-both' else subprocess.DEVNULL,close_fds=True,start_new_session=sys.argv[3]=='escape-both')";
                 let status = Command::new(python)
                     .args(["-I", "-S", "-c", script])
                     .arg(env::current_exe().expect("fixture exe"))

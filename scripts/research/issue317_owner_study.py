@@ -83,6 +83,7 @@ class Owner:
         self.state = "Reserved"
         self.injected = []
         self.closed = False
+        self.group_gone = False
 
     def start(self, exe, case, fault):
         assert self.slot and self.process is None
@@ -178,6 +179,7 @@ class Owner:
             os.killpg(self.process.pid, 0)
             return False
         except ProcessLookupError:
+            self.group_gone = True
             return True
 
     def finish(self, fault=None):
@@ -187,7 +189,7 @@ class Owner:
                 self.injected.append("terminate")
             elif self.job:
                 self.job.kill()
-            else:
+            elif not self.group_gone:
                 try:
                     os.killpg(self.process.pid, signal.SIGKILL)
                 except ProcessLookupError:
@@ -245,6 +247,20 @@ def worker(exe, root, case, fault):
             assert not admission_allowed
             if fault == "terminate":
                 assert pid_alive(int((root / "holder.pid").read_text()))
+            if case == "escape-both":
+                holder = int((root / "holder.pid").read_text())
+                assert owner.empty(), "original group should already be empty"
+                assert pid_alive(holder) and any(t.is_alive() for t in owner.threads)
+                assert os.getpgid(holder) != owner.process.pid
+                retained["escaped_live_pipe_holder"] = True
+                # A private subreaper can recover this known adopted fixture.
+                # An ordinary library process-group API cannot claim this power.
+                fd = os.pidfd_open(holder)
+                try:
+                    assert holder in adopted_children()
+                    signal.pidfd_send_signal(fd, signal.SIGKILL)
+                finally:
+                    os.close(fd)
             assert owner.finish(), "retry could not reclaim retained owner"
         assert owner.closed and not owner.slot
         assert all(not t.is_alive() for t in owner.threads)
@@ -307,7 +323,11 @@ def guarded(exe, case, fault, directory):
             raise RuntimeError("worker failed: " + case + "/" + fault + "\n" + detail)
         result = json.loads((root / "result.json").read_text())
         if outer_job:
-            assert outer_job.active() == 0
+            initial_active = outer_job.active()
+            cleanup_started = time.monotonic()
+            wait_for(lambda: outer_job.active() == 0, 2, "outer job quiescence")
+            result["outer_initial_active"] = initial_active
+            result["outer_confirmation_ms"] = round((time.monotonic()-cleanup_started)*1000)
         else:
             reap()
             assert adopted_children() == [], "residual adopted fixture"
@@ -315,8 +335,11 @@ def guarded(exe, case, fault, directory):
         return result
     finally:
         if outer_job:
-            outer_job.kill()
-            outer_job.close()
+            try:
+                outer_job.kill()
+                wait_for(lambda: outer_job.active() == 0, 2, "outer fallback quiescence")
+            finally:
+                outer_job.close()
         elif process and process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
         if process:
@@ -366,6 +389,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix="optic-owner-study-") as directory:
             matrix = [(c, "none") for c in ["control", "nonzero", "null-stdio", "selective-null",
                       "stdout", "stderr", "both", "stdin", "timeout-both", "limit-both"]]
+            if sys.platform.startswith("linux"):
+                matrix.append(("escape-both", "none"))
             matrix += [("both", f) for f in ["spawn", "thread-start", "read", "wait", "terminate", "query"]]
             for case, fault in matrix:
                 result["cases"].append(guarded(exe, case, fault, Path(directory)))

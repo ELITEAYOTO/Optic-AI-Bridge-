@@ -153,3 +153,28 @@ Next:
    preservation. Finite cleanup latency and resource recovery are distinct checks.
 3. Only when those gates pass, review a minimal production delta on exact hosted
    Windows/Linux SHA; PR318 still occupies the PR slot. No merge authorized.
+
+## Added falsifiable Unix boundary comparison
+
+The Linux-only escape-both fixture starts its known holder in a new session and
+retains stdout/stderr. The first cleanup must observe original group empty while
+holder and reader threads remain live, enter Uncertain and retain capacity.
+Recovery then uses a pidfd for the known adopted child of the PRIVATE test
+subreaper, followed by all joins. This deliberately demonstrates why group-empty
+is insufficient; it is not a proposed production PID-scanning escape repair.
+The independent outer subreaper/watchdog still owns all synthetic descendants.
+The final matrix is17 Linux/16 Windows. The original16-case first head remains
+separate evidence. No original timeout or output ceiling changes.
+
+## Preserved first native attempt
+
+Source7959bc93adc03c360fc074d539d781ade56de988, research39681209526 attempt1:
+Linux passed all16 primitive cases; Windows passed control then failed the
+supervisor's instantaneous outer Job active-count assertion after worker wait.
+This is a harness confirmation failure, not a new Rust runner failure. The initial
+result is preserved and is NOT Windows acceptance. Hypothesis: root wait need not
+coincide with outer accounting reaching zero. Replace the one-shot assertion with
+the already specified bounded2s cleanup confirmation, record initial count and
+confirmation elapsed, and also confirm fallback termination before closing the
+guard. Command deadline200ms and acceptance of zero active processes are unchanged.
+A still-nonempty job remains a failure. No workflow retry on unchanged SHA.
