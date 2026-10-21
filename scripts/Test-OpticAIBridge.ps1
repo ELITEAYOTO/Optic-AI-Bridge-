@@ -50,10 +50,28 @@ function Throw-McpTimeout {
         'still running after bounded kill attempt'
     }
 
-    $stderr = ''
+    # Bound failed-run stderr collection as well as the diagnostic output.
+    # Child descendants can retain the pipe: no unbounded ReadToEnd or wait.
+    $rawStderr = ''
     if ($Process.HasExited) {
-        try { $stderr = $Process.StandardError.ReadToEnd() } catch { }
+        try {
+            $chars = New-Object char[] 32768
+            $used = 0
+            $readClock = [Diagnostics.Stopwatch]::StartNew()
+            while ($used -lt $chars.Length -and $readClock.ElapsedMilliseconds -lt 400) {
+                $remaining = [Math]::Max(1, 400 - [int]$readClock.ElapsedMilliseconds)
+                $readTask = $Process.StandardError.ReadAsync($chars, $used, $chars.Length - $used)
+                if (-not $readTask.Wait($remaining)) { break }
+                if ($readTask.Result -eq 0) { break }
+                $used += $readTask.Result
+            }
+            $rawStderr = [string]::new($chars, 0, $used)
+        }
+        catch {
+            # Best-effort diagnostic collection never changes timeout failure.
+        }
     }
+    $stderr = $rawStderr
     if ([string]::IsNullOrWhiteSpace($stderr)) {
         $stderr = '<empty>'
     }
@@ -67,7 +85,7 @@ function Throw-McpTimeout {
     if (-not [string]::IsNullOrWhiteSpace($stderr) -and $stderr -ne '<empty>') {
         # Opt-in labels and numeric durations only; never echo raw diagnostic data.
         $printed = 0
-        foreach ($phaseLine in ($stderr -split "\r?\n")) {
+        foreach ($phaseLine in ($rawStderr -split "\r?\n")) {
             if ($printed -ge 24) { break }
             if ($phaseLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-lease-entered|process-lease-eligibility-checked|process-lease-id-started|process-lease-id-generated|process-lease-registration-started|process-lease-registered|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_PHASE phase=$($Matches[1]) elapsed_ms=$($Matches[2])"

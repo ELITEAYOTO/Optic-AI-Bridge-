@@ -37,6 +37,10 @@ jobs:
           Get-ChildItem scripts -Filter '*.ps1' | ForEach-Object {
             [scriptblock]::Create((Get-Content -Raw -LiteralPath $_.FullName)) | Out-Null
           }
+      - name: Prove bounded MCP doctor timeout diagnostics (bootstrap only)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/heads/bootstrap/')
+        shell: pwsh
+        run: .\scripts\tests\Test-DoctorTimeoutDiagnostics.ps1
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
