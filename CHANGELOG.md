@@ -1,5 +1,12 @@
 # Changelog
 
+
+## Windows launcher timing diagnostics — 2026-10-21
+
+- [PR #299](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/299) squash-merged as `6fe41ba2ce0e66f245acb7ea7c6c253e3f0f77ea`: opt-in fixed-label monotonic `stderr` phases for the native Windows isolation launcher, exact-`1` flag forwarding and a native test requiring selected phases without relaxing Node loopback denial. [CI #39526324369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526324369) on exact source `aca382535f24b6f6b1c26c2313302d315099ed4e` and [preparation #39526324493](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526324493) passed on first attempts. Independent main [CI #39526677098](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39526677098) is a separate acceptance check whose final result must be confirmed live.
+- One successful native loopback test observed `target_created_suspended=14ms`, `target_resumed=14ms` and `target_exited=361ms` relative to the *outer helper entry*. No conclusion about the earlier missing-child-output ~10s failure or separate MCP 30s response timeout. No permissions, network grants, process budgets or UI features changed. Core remains pre-alpha.
+
+
 ## Verified integration and handoff closure — 2026-10-21
 
 - [#293](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/293) merged `de973989`: recovery validates stable journals and staged content before discarding unrelated unpublished evidence.
