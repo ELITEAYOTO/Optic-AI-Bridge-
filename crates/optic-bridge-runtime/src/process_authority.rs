@@ -1,4 +1,9 @@
-use std::{fs, io::{self, Read}, path::Path, time::{Duration, Instant}};
+use std::{
+    fs,
+    io::{self, Read},
+    path::Path,
+    time::{Duration, Instant},
+};
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -30,7 +35,6 @@ impl<R: Read> Read for TimedIdentityReader<'_, R> {
         result
     }
 }
-
 
 #[cfg(windows)]
 type ExecutablePin = PinnedExecutableFile;
@@ -79,8 +83,7 @@ impl ProcessExecutableIdentity {
         let path_done = started.elapsed();
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let pin_done = started.elapsed();
-        let timing_enabled =
-            std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
+        let timing_enabled = std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
         let version = if timing_enabled {
             let hash_started = Instant::now();
             let mut timed = TimedIdentityReader {
