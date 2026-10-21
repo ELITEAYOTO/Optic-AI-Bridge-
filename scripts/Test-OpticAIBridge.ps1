@@ -30,6 +30,29 @@ function Quote-ProcessArgument {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
+function Read-OpticBoundedStderr {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    # A descendant can retain the pipe even after the direct child exits.
+    # Capture only bounded evidence; never await an unbounded ReadToEnd.
+    $chars = New-Object char[] 32768
+    $used = 0
+    $readClock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        while ($used -lt $chars.Length -and $readClock.ElapsedMilliseconds -lt 400) {
+            $remaining = [Math]::Max(1, 400 - [int]$readClock.ElapsedMilliseconds)
+            $readTask = $Process.StandardError.ReadAsync($chars, $used, $chars.Length - $used)
+            if (-not $readTask.Wait($remaining)) { break }
+            if ($readTask.Result -eq 0) { break }
+            $used += $readTask.Result
+        }
+    }
+    catch {
+        # Diagnostics never replace the primary MCP error.
+    }
+    return [string]::new($chars, 0, $used)
+}
+
 function Throw-McpTimeout {
     param(
         [Parameter(Mandatory = $true)]$Process,
@@ -50,26 +73,11 @@ function Throw-McpTimeout {
         'still running after bounded kill attempt'
     }
 
-    # Bound failed-run stderr collection as well as the diagnostic output.
-    # Child descendants can retain the pipe: no unbounded ReadToEnd or wait.
+    # Preserve the original 30-second response failure while collecting only
+    # bounded stderr evidence, even if a descendant retains the pipe.
     $rawStderr = ''
     if ($Process.HasExited) {
-        try {
-            $chars = New-Object char[] 32768
-            $used = 0
-            $readClock = [Diagnostics.Stopwatch]::StartNew()
-            while ($used -lt $chars.Length -and $readClock.ElapsedMilliseconds -lt 400) {
-                $remaining = [Math]::Max(1, 400 - [int]$readClock.ElapsedMilliseconds)
-                $readTask = $Process.StandardError.ReadAsync($chars, $used, $chars.Length - $used)
-                if (-not $readTask.Wait($remaining)) { break }
-                if ($readTask.Result -eq 0) { break }
-                $used += $readTask.Result
-            }
-            $rawStderr = [string]::new($chars, 0, $used)
-        }
-        catch {
-            # Best-effort diagnostic collection never changes timeout failure.
-        }
+        $rawStderr = Read-OpticBoundedStderr -Process $Process
     }
     $stderr = $rawStderr
     if ([string]::IsNullOrWhiteSpace($stderr)) {
@@ -127,7 +135,13 @@ function Read-McpResponse {
 
         $line = $task.Result
         if ($null -eq $line) {
-            $stderr = $Process.StandardError.ReadToEnd()
+            # An early stdout EOF is a failure, not permission to wait forever
+            # for stderr or emit unlimited child-controlled diagnostic bytes.
+            $stderr = Read-OpticBoundedStderr -Process $Process
+            if ($stderr.Length -gt 4096) {
+                $stderr = $stderr.Substring(0, 4096) + '...[truncated]'
+            }
+            if ([string]::IsNullOrWhiteSpace($stderr)) { $stderr = '<empty>' }
             throw "Optic AI Bridge closed before MCP response id=$Id. stderr: $stderr"
         }
 

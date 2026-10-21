@@ -11,9 +11,12 @@ if ($parseErrors.Count) { throw 'Doctor script has parse errors.' }
 $definitions = @($ast.FindAll({
     param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
-}, $true) | Where-Object { $_.Name -eq 'Throw-McpTimeout' })
-if ($definitions.Count -ne 1) { throw 'Exactly one timeout function is required.' }
-. ([scriptblock]::Create($definitions[0].Extent.Text))
+}, $true))
+foreach ($functionName in @('Read-OpticBoundedStderr', 'Throw-McpTimeout', 'Read-McpResponse')) {
+    $matched = @($definitions | Where-Object { $_.Name -eq $functionName })
+    if ($matched.Count -ne 1) { throw "Exactly one $functionName function is required." }
+    . ([scriptblock]::Create($matched[0].Extent.Text))
+}
 
 # Capture only the function's fixed-label diagnostic host messages.
 $script:timingLines = [System.Collections.Generic.List[string]]::new()
@@ -81,4 +84,35 @@ if ($result.Remaining -ne (40000 - 32768)) {
     throw 'Timeout diagnostic reader consumed beyond its 32768-character ceiling.'
 }
 if ($script:timingLines.Count -ne 0) { throw 'Untrusted filler became a diagnostic marker.' }
-Microsoft.PowerShell.Utility\Write-Host 'OPTIC_DOCTOR_TIMEOUT_SYNTHETIC bounded_read=32768 marker_beyond_4096=ok fixed_labels=ok max_lines=24'
+
+# Early stdout EOF used to call ReadToEnd with no byte ceiling or separate
+# deadline. Prove the same bounded capture for that distinct failure branch.
+$stderrReader = [System.IO.StringReader]::new('Q' * 40000)
+$stdoutReader = [System.IO.StringReader]::new('')
+try {
+    $fakeEarlyEof = [pscustomobject]@{
+        StandardOutput = $stdoutReader
+        StandardError = $stderrReader
+    }
+    $eofError = ''
+    try {
+        Read-McpResponse -Process $fakeEarlyEof -Id 7 -Timeout 30000 | Out-Null
+    }
+    catch {
+        $eofError = $_.Exception.Message
+    }
+    if (-not $eofError.StartsWith('Optic AI Bridge closed before MCP response id=7.')) {
+        throw 'Early stdout EOF did not remain a distinct MCP error.'
+    }
+    if (-not $eofError.Contains('...[truncated]') -or $eofError.Length -gt 4300) {
+        throw 'Early stdout EOF diagnostic preview exceeded the original 4096-character bound.'
+    }
+    if ($stderrReader.ReadToEnd().Length -ne (40000 - 32768)) {
+        throw 'Early stdout EOF consumed stderr beyond the 32768-character limit.'
+    }
+}
+finally {
+    $stdoutReader.Dispose()
+    $stderrReader.Dispose()
+}
+Microsoft.PowerShell.Utility\Write-Host 'OPTIC_DOCTOR_TIMEOUT_SYNTHETIC bounded_read=32768 marker_beyond_4096=ok fixed_labels=ok max_lines=24 early_eof=bounded'
