@@ -182,6 +182,29 @@ mod tests {
     }
 
     #[test]
+    fn generic_directory_creation_rejects_git_control_names() {
+        let root = env::temp_dir().join(format!(
+            "optic-directory-git-boundary-{}",
+            ActionId::generate().expect("entropy").to_token()
+        ));
+        fs::create_dir(&root).expect("root");
+        fs::create_dir(root.join("nested")).expect("nested");
+        let service = DirectoryCreationService::new(&root, HardLimits::default()).expect("service");
+        for name in [".git", ".GiT", "nested/.git", "nested/.GiT"] {
+            assert!(matches!(
+                service.create(&WorkspacePath::parse(name).expect("path")),
+                Err(DirectoryCreateError::ReservedGitMetadata)
+            ));
+            assert!(!root.join(name).exists(), "{name} must not be created");
+        }
+        service
+            .create(&WorkspacePath::parse("ordinary-project").expect("normal path"))
+            .expect("normal directory creation remains available");
+        assert!(root.join("ordinary-project").is_dir());
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
     fn absent_leaf_only_and_root_identity_are_enforced() {
         let root = env::temp_dir().join(format!(
             "optic-directory-{}",
