@@ -64,6 +64,21 @@ jobs:
           if (@($DiagnosticResults | Where-Object { $_.exit_code -ne 0 }).Count) {
             throw 'Isolated Node loopback comparison also failed; inspect startup/exit/output evidence.'
           }
+      - name: Diagnose repeat native Node executable reads (hosted bootstrap only)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/heads/bootstrap/')
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $env:OPTIC_DIAG_NODE_PATH = (Get-Command node.exe -ErrorAction Stop).Source
+          # Ignored test: one pinned handle, two bounded observations, no child
+          # execution, process changes, cache flush or external network.
+          $testOutput = @(cargo test --locked -p optic-bridge-runtime process_authority::tests::diagnostic_native_executable_read_pair -- --exact --ignored --nocapture --test-threads=1 2>&1)
+          $exit = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($exit -ne 0) { throw "Native identity read comparison failed ($exit)." }
+          if (-not (@($testOutput | Where-Object { $_ -match '^test process_authority::tests::diagnostic_native_executable_read_pair \.\.\. ok$' }).Count)) {
+            throw 'Expected ignored identity diagnostic test did not run.'
+          }
       - name: Characterize isolated toolchain compatibility
         if: runner.os == 'Windows'
         shell: pwsh
