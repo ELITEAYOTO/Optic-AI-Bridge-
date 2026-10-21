@@ -1166,6 +1166,64 @@ mod tests {
     }
 
     #[test]
+    fn later_aliased_unpublished_entry_preserves_all_earlier_evidence() {
+        let (workspace, state) = fixture("unpublished-all-preflight");
+        let (atomic, journal) = service(&workspace, &state, HardLimits::default());
+        let first = ActionId::generate().expect("first id");
+        let second = ActionId::generate().expect("second id");
+        assert_ne!(first.to_token(), second.to_token());
+        let (valid_id, aliased_id) = if first.to_token() < second.to_token() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let valid_path = journal.prepared_temp_path(&valid_id);
+        let aliased_path = journal.prepared_temp_path(&aliased_id);
+        assert!(valid_path < aliased_path, "valid entry must sort first");
+        let original_valid = b"earlier unpublished evidence";
+        let original_external = b"external evidence must be retained";
+        let external_path = state.parent().expect("fixture base").join("external-proof");
+        fs::write(&valid_path, original_valid).expect("earlier unpublished entry");
+        fs::write(&external_path, original_external).expect("external evidence");
+        fs::hard_link(&external_path, &aliased_path).expect("later hard-link alias");
+
+        assert!(
+            journal.reconcile(atomic.filesystem()).is_err(),
+            "later aliased file must fail closed before any cleanup"
+        );
+        assert_eq!(
+            fs::read(&valid_path).expect("earlier evidence retained"),
+            original_valid
+        );
+        assert_eq!(
+            fs::read(&aliased_path).expect("aliased entry retained"),
+            original_external
+        );
+        assert_eq!(
+            fs::read(&external_path).expect("external evidence retained"),
+            original_external
+        );
+
+        // Resolve the unsafe alias; both now-independent unpublished entries
+        // can be cleaned normally after a fresh successful preflight.
+        fs::remove_file(&aliased_path).expect("remove test alias");
+        fs::write(&aliased_path, b"independent unpublished").expect("repair entry");
+        assert!(
+            journal
+                .reconcile(atomic.filesystem())
+                .expect("retry after repairing unsafe entry")
+                .is_empty()
+        );
+        assert!(!valid_path.exists());
+        assert!(!aliased_path.exists());
+        assert_eq!(
+            fs::read(&external_path).expect("external evidence preserved"),
+            original_external
+        );
+        fs::remove_dir_all(workspace.parent().expect("base")).expect("cleanup");
+    }
+
+    #[test]
     fn prepared_only_is_recovered_as_not_committed() {
         let (workspace, state) = fixture("prepared");
         let limits = HardLimits::default();
