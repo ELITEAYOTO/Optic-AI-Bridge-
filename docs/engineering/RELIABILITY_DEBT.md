@@ -1,5 +1,21 @@
 # Reliability and implementation debt
 
+## Bounded FileRead multi-link alias safeguard — source-level finding (2026-10-21)
+
+Path-based sensitive authorization alone does not distinguish hard-linked
+names for the same native file. A protected `.env` and ordinary
+`README.txt` hard link resolve as separate canonical pathnames but the same
+opened file identity; without a shared-link check, FileRead through the
+ordinary alias could bypass the lexical sensitivity floor. The scoped safeguard
+treats multi-linked opened files as potentially sensitive and requires the
+existing matching sensitive scope in addition to ordinary FileRead. It is
+conservative for harmless hard links. Tests use **synthetic bytes** on native
+Windows/Linux; they must pass on exact CI head before this can be considered
+integrated. Staged Git blob metadata, arbitrary benign-name secrets,
+concurrent identity changes and cross-tool GitRead proof remain open under
+#176/#182. No timeout/sandbox/network/process or feature change.
+
+
 ## Verified after #312; Windows transport evidence remains open (2026-10-21)
 
 [PR #312](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/312) extended the shared lexical sensitive-path floor to direnv files. Exact accepted-head [CI #39571281997](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571281997) and independent post-merge main [CI #39571875338](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39571875338), at `30295539fc6911f221cee6ac3c59785398c7a050`, each passed first attempt on native Windows, Ubuntu and dependency policy. This strengthens a **filename** guard only: #176 and #182 remain open for content/alias/provenance problems; remote real-workspace use is still blocked.
