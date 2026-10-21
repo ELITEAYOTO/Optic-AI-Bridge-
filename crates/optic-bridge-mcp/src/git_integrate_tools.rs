@@ -586,4 +586,74 @@ mod tests {
             );
         }
     }
+    // Research-only characterization on the #317 branch. This intentionally
+    // records the CURRENT permit-accounting gap; success is NOT an acceptance
+    // test for correct cancellation ownership. No production Git worker runs.
+    #[tokio::test]
+    async fn research_cancelled_git_waiter_releases_capacity_while_worker_is_active() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let fixture = RepoFixture::new("research-cancel-capacity");
+        let server = fixture.server();
+        assert_eq!(server.transport_guard.active_requests(), 0);
+
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let task_server = server.clone();
+
+        let waiter = tokio::spawn(async move {
+            task_server
+                .run_git_integration(move |_service| {
+                    entered_tx.send(()).expect("blocking worker entry observed");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("external test supervisor released worker");
+                    let _ = finished_tx.send(());
+                    Ok::<(), AuthorizedGitIntegrationError>(())
+                })
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("worker entry deadline")
+            .expect("worker entry signal");
+        assert_eq!(server.transport_guard.active_requests(), 1);
+
+        // Aborting the async JoinHandle does not cancel a started spawn_blocking
+        // closure. The blocking closure is deliberately held at a finite barrier.
+        waiter.abort();
+        let cancelled = tokio::time::timeout(Duration::from_secs(5), waiter)
+            .await
+            .expect("caller abort deadline")
+            .expect_err("caller must be cancelled");
+        assert!(cancelled.is_cancelled());
+
+        // The current implementation drops RequestPermit in the caller future,
+        // even though the worker has NOT reached its release barrier.
+        assert_eq!(
+            server.transport_guard.active_requests(),
+            0,
+            "research baseline changed: transport permit no longer drops early"
+        );
+        let reused = server
+            .transport_guard
+            .begin_execution(server.clock.now())
+            .expect("research: freed capacity currently admits new request");
+        assert_eq!(server.transport_guard.active_requests(), 1);
+        drop(reused);
+
+        release_tx.send(()).expect("release retained worker");
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .expect("worker completion deadline")
+            .expect("worker completion signal");
+        assert_eq!(server.transport_guard.active_requests(), 0);
+        eprintln!(
+            "OPTIC_317_RESEARCH_GIT_TRANSPORT_CANCEL_GAP worker_active=true permit_released=true capacity_reusable=true"
+        );
+    }
+
 }
