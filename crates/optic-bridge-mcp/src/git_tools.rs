@@ -528,7 +528,11 @@ mod tests {
             .expect("one entry with its cursor fits");
         assert_eq!(sufficient.entries.len(), 1);
         assert_eq!(
-            sufficient.next_cursor.as_ref().expect("continuation").offset,
+            sufficient
+                .next_cursor
+                .as_ref()
+                .expect("continuation")
+                .offset,
             1
         );
         assert_eq!(
