@@ -61,6 +61,17 @@ impl StartupTiming {
             );
         }
     }
+
+    /// Local duration since entry into process-lease provisioning, not since
+    /// application startup; fixed, opt-in names only.
+    fn mark_process_lease(&self, phase: &'static str) {
+        if self.enabled {
+            eprintln!(
+                "OPTIC_PROCESS_LEASE_TIMING phase={phase} elapsed_ms={}",
+                self.started.elapsed().as_millis()
+            );
+        }
+    }
 }
 
 fn startup_timing_enabled(value: Option<&str>) -> bool {
@@ -293,7 +304,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             expires_at,
             policy_epoch: args.policy_epoch,
         },
-        &startup_timing,
     )?;
     let tool_profile_count = configured_tool_profiles.len();
     startup_timing.mark("process-leases-provisioned");
@@ -679,13 +689,13 @@ fn provision_process_leases(
     isolation_eligible: &BTreeSet<String>,
     tool_profiles: &[ToolProfile],
     terms: ProcessLeaseTerms,
-    startup_timing: &StartupTiming,
 ) -> Result<BTreeMap<String, TaskLeaseId>, Box<dyn Error + Send + Sync>> {
-    startup_timing.mark("process-lease-entered");
+    let lease_timing = StartupTiming::new();
+    lease_timing.mark_process_lease("entered");
     // Validate every server-owned eligibility selection before registering any
     // lease so a bad marker can never leave partial process authority behind.
     validate_process_isolation_eligibility(executables, isolation_eligible)?;
-    startup_timing.mark("process-lease-eligibility-checked");
+    lease_timing.mark_process_lease("eligibility-checked");
 
     #[cfg(not(windows))]
     if read_grants.values().any(|paths| !paths.is_empty()) {
@@ -702,12 +712,12 @@ fn provision_process_leases(
         // or identify individual executables, workspaces or authority scopes.
         let trace_first = process_leases.is_empty();
         if trace_first {
-            startup_timing.mark("process-lease-id-started");
+            lease_timing.mark_process_lease("id-started");
         }
         let id = TaskLeaseId::generate()
             .map_err(|_| std::io::Error::other("failed to create process task lease id"))?;
         if trace_first {
-            startup_timing.mark("process-lease-id-generated");
+            lease_timing.mark_process_lease("id-generated");
         }
         let mut capabilities = BTreeSet::from([Capability::ProcessRun]);
         let mut scopes = BTreeSet::from([LeaseScope::ProcessExecutable {
@@ -744,7 +754,7 @@ fn provision_process_leases(
             terms.resource_ceiling
         };
         if trace_first {
-            startup_timing.mark("process-lease-registration-started");
+            lease_timing.mark_process_lease("registration-started");
         }
         task_leases.register(TaskLease {
             id: id.clone(),
@@ -757,7 +767,7 @@ fn provision_process_leases(
             policy_epoch: terms.policy_epoch,
         })?;
         if trace_first {
-            startup_timing.mark("process-lease-registered");
+            lease_timing.mark_process_lease("registered");
         }
         process_leases.insert(canonical.clone(), id);
     }
