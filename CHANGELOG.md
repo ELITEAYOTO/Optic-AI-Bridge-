@@ -1,5 +1,18 @@
 # Changelog
 
+## Security stabilization candidate: first sensitive read/list boundary — 2026-10-21
+
+- Operator approved Policy B: a shared deterministic sensitive classifier across
+  filesystem and Git output, fail-closed for unverifiable results (ADR-0034).
+- Candidate `security/sensitive-file-authority-scope`: classify common sensitive
+  path components in Rust core; require both ordinary and sensitive scopes for
+  FileRead; deny fs_list pages with protected names unless a separate active
+  sensitive scope exists. Add Windows/Linux-targeted core, policy and MCP regressions.
+- **Not yet integrated:** verify exact PR-head CI, review code, squash and then
+  verify independent main CI. GitRead status/diff **remain unfiltered**, arbitrary
+  ordinary files may contain secrets, and #176/#182 still block remote real
+  project exposure. No features, broader grants or workstation activity.
+
 ## Verified stabilization integrations through #305 — 2026-10-21
 
 - [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303) merged on `main` at `9c6c91096590f9f005dabc51253b9b5f8b1abcca`: authorize `fs_list` on canonical target, with alias-scope denial regression and [first-attempt green post-merge CI #39534614408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39534614408).
