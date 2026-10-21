@@ -1015,14 +1015,14 @@ mod tests {
         symlink("../private", root.join("allowed").join("portal"))
             .expect("internal alias");
 
-        let server = server_with_search_scope(
+        let scoped_server = server_with_search_scope(
             &root,
             &[Capability::FileSearch],
             Some(SearchMetadataScope::prefix(
                 WorkspacePath::parse("allowed").expect("prefix"),
             )),
         );
-        let denied = server
+        let denied = scoped_server
             .fs_list(Parameters(FsListRequest {
                 path: Some("allowed/portal".to_owned()),
                 cursor: None,
@@ -1032,7 +1032,7 @@ mod tests {
             .expect_err("alias must not list a directory outside its search scope");
         assert_eq!(denied.message, "optic.policy_denied");
 
-        let permitted = server
+        let permitted = scoped_server
             .fs_list(Parameters(FsListRequest {
                 path: Some("allowed".to_owned()),
                 cursor: None,
@@ -1042,7 +1042,7 @@ mod tests {
             .expect("authorized directory remains listable");
         assert_eq!(permitted.0.entries.len(), 1);
         assert_eq!(permitted.0.entries[0].name, "portal");
-        drop(server);
+        drop(scoped_server);
 
         // A whole-workspace lease can follow the same alias, but the returned
         // paths must describe the resolved target rather than the alias.
