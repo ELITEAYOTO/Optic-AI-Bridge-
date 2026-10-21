@@ -1,0 +1,68 @@
+name: Supervised stabilization research
+
+on:
+  push:
+    branches: [bootstrap/issue-319-process-lease-phases]
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+      - name: Record formatter diff for review
+        shell: bash
+        run: |
+          cargo +1.99.0 fmt --all
+          git diff -- '*.rs'
+      - name: Build synthetic runner fixture
+        run: cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_pipe_fixture
+      - name: Supervised inherited pipe characterization
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          suffix=''
+          if [ '${{ runner.os }}' = 'Windows' ]; then suffix='.exe'; fi
+          python scripts/research/issue317_supervisor.py --fixture-exe "target/debug/examples/issue317_pipe_fixture${suffix}" --output "target/research-evidence/issue317-${{ runner.os }}.json"
+      - name: Preserve bounded synthetic result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: supervised-research-${{ runner.os }}-${{ github.run_id }}
+          path: target/research-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  evidence:
+    needs: reproduce
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: supervised-research-*-${{ github.run_id }}
+          path: target/collected
+      - name: Assemble sanitized restitution
+        env:
+          RESEARCH_JOB_RESULT: ${{ needs.reproduce.result }}
+        run: python scripts/research/pack_stabilization_evidence.py
+      - name: Upload restitution archive
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: optic-bridge-codex-stabilization-2026-10-21
+          path: target/optic-bridge-codex-stabilization-2026-10-21.zip
+          if-no-files-found: error
+          retention-days: 7

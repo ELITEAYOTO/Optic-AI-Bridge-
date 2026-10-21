@@ -68,21 +68,6 @@ jobs:
           if (@($DiagnosticResults | Where-Object { $_.exit_code -ne 0 }).Count) {
             throw 'Isolated Node loopback comparison also failed; inspect startup/exit/output evidence.'
           }
-      - name: Diagnose native Node read buffer sizes (hosted bootstrap only)
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/heads/bootstrap/')
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
-          $env:OPTIC_DIAG_NODE_PATH = (Get-Command node.exe -ErrorAction Stop).Source
-          # One pinned file and complete equal digests at 1 MiB, 64 KiB, 256 KiB.
-          # First pass has an unmatched cache state; results are diagnostic.
-          $testOutput = @(cargo test --locked -p optic-bridge-runtime process_authority::tests::diagnostic_native_buffer_capacity_probe -- --exact --ignored --nocapture --test-threads=1 2>&1)
-          $exit = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($exit -ne 0) { throw "Native buffer-capacity comparison failed ($exit)." }
-          if (-not (@($testOutput | Where-Object { $_ -match 'diagnostic_native_buffer_capacity_probe \.\.\. ok' }).Count)) {
-            throw 'Expected ignored native buffer-capacity diagnostic did not run.'
-          }
       - name: Characterize isolated toolchain compatibility
         if: runner.os == 'Windows'
         shell: pwsh

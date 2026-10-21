@@ -50,6 +50,66 @@ impl<R: Read> Read for TimedIdentityReader<'_, R> {
     }
 }
 
+
+// First-observation diagnostics only; a fixed set of events, no file data.
+static IDENTITY_PROGRESS_CLAIMED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+struct IdentityProgressReader<R, F> {
+    inner: R,
+    mark: F,
+    entered: bool,
+    returned: bool,
+    eof: bool,
+    bytes: u64,
+    checkpoint: usize,
+}
+
+impl<R, F: FnMut(&'static str)> IdentityProgressReader<R, F> {
+    fn new(inner: R, mark: F) -> Self {
+        Self {
+            inner,
+            mark,
+            entered: false,
+            returned: false,
+            eof: false,
+            bytes: 0,
+            checkpoint: 0,
+        }
+    }
+}
+
+impl<R: Read, F: FnMut(&'static str)> Read for IdentityProgressReader<R, F> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if !self.entered {
+            (self.mark)("read-entered");
+            self.entered = true;
+        }
+        let result = self.inner.read(buffer);
+        if !self.returned {
+            (self.mark)("first-read-returned");
+            self.returned = true;
+        }
+        if let Ok(read) = result {
+            self.bytes = self.bytes.saturating_add(read as u64);
+            const POINTS: [(u64, &str); 3] = [
+                (16 * 1024 * 1024, "read-16m"),
+                (64 * 1024 * 1024, "read-64m"),
+                (256 * 1024 * 1024, "read-256m"),
+            ];
+            while self.checkpoint < POINTS.len() && self.bytes >= POINTS[self.checkpoint].0 {
+                (self.mark)(POINTS[self.checkpoint].1);
+                self.checkpoint += 1;
+            }
+            if read == 0 && !self.eof {
+                (self.mark)("eof-observed");
+                self.eof = true;
+            }
+        }
+        result
+    }
+}
+
 #[cfg(windows)]
 type ExecutablePin = PinnedExecutableFile;
 
@@ -93,21 +153,37 @@ impl ProcessExecutableIdentity {
         // startup timings. Never reveal an executable path, file contents,
         // identity hash, or additional authority through this diagnostic.
         let started = Instant::now();
+        let timing_enabled = std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
+        let trace_progress = timing_enabled
+            && !IDENTITY_PROGRESS_CLAIMED.swap(true, std::sync::atomic::Ordering::Relaxed);
+        let mark_progress = |phase: &'static str| {
+            if trace_progress {
+                eprintln!(
+                    "OPTIC_IDENTITY_PROGRESS phase={phase} elapsed_ms={}",
+                    started.elapsed().as_millis()
+                );
+            }
+        };
+        mark_progress("capture-entered");
         let canonical_path = canonical_executable(executable)?;
+        mark_progress("canonical-ready");
         let path_done = started.elapsed();
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
+        mark_progress("pin-ready");
         let pin_done = started.elapsed();
-        let timing_enabled = std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
         let version = if timing_enabled {
             let hash_started = Instant::now();
+            mark_progress("hash-started");
+            let mut progress = IdentityProgressReader::new(pin.file_mut(), mark_progress);
             let mut timed = TimedIdentityReader {
-                inner: pin.file_mut(),
+                inner: &mut progress,
                 read_elapsed: Duration::ZERO,
                 read_calls: 0,
                 latency_buckets: [0; 4],
                 max_read_elapsed: Duration::ZERO,
             };
             let observed = ContentVersion::from_reader_bounded(&mut timed, max_bytes)?;
+            mark_progress("hash-complete");
             let hash_elapsed = hash_started.elapsed();
             eprintln!(
                 "OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms={} nonread_ms={} total_ms={} calls={}",
@@ -270,6 +346,90 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture root");
         root
+    }
+
+
+    #[test]
+    fn identity_progress_is_visible_while_the_first_read_is_pending() {
+        use std::sync::mpsc;
+        use std::thread;
+
+        struct HeldRead {
+            released: mpsc::Receiver<()>,
+            first: bool,
+        }
+        impl Read for HeldRead {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if self.first {
+                    self.first = false;
+                    self.released
+                        .recv_timeout(Duration::from_secs(2))
+                        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "synthetic guard"))?;
+                    buffer[0] = b'x';
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }
+        }
+        let (events_tx, events_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let source = HeldRead { released: release_rx, first: true };
+            let reader = IdentityProgressReader::new(source, |phase| {
+                events_tx.send(phase).expect("observer");
+            });
+            ContentVersion::from_reader_bounded(reader, 1)
+        });
+        let first = events_rx.recv_timeout(Duration::from_secs(1));
+        let before_release = events_rx.try_recv();
+        release_tx.send(()).expect("release synthetic read");
+        let observed = worker.join().expect("reader thread").expect("hash");
+        assert_eq!(first.expect("in-flight marker"), "read-entered");
+        assert!(matches!(before_release, Err(mpsc::TryRecvError::Empty)));
+        assert_eq!(observed, ContentVersion::from_bytes(b"x"));
+        let remaining: Vec<_> = events_rx.iter().collect();
+        assert_eq!(remaining, ["first-read-returned", "eof-observed"]);
+    }
+
+    #[test]
+    fn identity_progress_preserves_underlying_read_ceiling_and_digest() {
+        for max in [0, 7, 8] {
+            let mut source = std::io::Cursor::new(b"12345678");
+            let mut events = Vec::new();
+            let reader = IdentityProgressReader::new(&mut source, |phase| events.push(phase));
+            let result = ContentVersion::from_reader_bounded(reader, max);
+            if max == 0 {
+                assert!(matches!(result, Err(ContentVersionReadError::LimitExceeded)));
+                assert_eq!(source.position(), 0);
+                assert!(events.is_empty());
+            } else if max == 7 {
+                assert!(matches!(result, Err(ContentVersionReadError::LimitExceeded)));
+                assert_eq!(source.position(), 8);
+                assert!(!events.contains(&"eof-observed"));
+            } else {
+                assert_eq!(result.expect("complete digest"), ContentVersion::from_bytes(b"12345678"));
+                assert_eq!(source.position(), 8);
+                assert_eq!(events, ["read-entered", "first-read-returned", "eof-observed"]);
+            }
+        }
+    }
+
+    #[test]
+    fn identity_progress_emits_each_fixed_checkpoint_only_once() {
+        let mut events = Vec::new();
+        let mut reader = IdentityProgressReader::new(
+            io::repeat(0).take(257 * 1024 * 1024),
+            |phase| events.push(phase),
+        );
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        while reader.read(&mut buffer).expect("synthetic read") != 0 {}
+        assert_eq!(reader.read(&mut buffer).expect("repeated EOF"), 0);
+        drop(reader);
+        assert_eq!(events, [
+            "read-entered", "first-read-returned", "read-16m",
+            "read-64m", "read-256m", "eof-observed",
+        ]);
     }
 
     /// Research-only bounded outer buffer. `Take` wraps the *underlying*

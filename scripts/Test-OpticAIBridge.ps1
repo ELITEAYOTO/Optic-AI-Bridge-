@@ -103,6 +103,10 @@ function Throw-McpTimeout {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_LEASE_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
                 $printed++
             }
+            elseif ($phaseLine -cmatch '^OPTIC_IDENTITY_PROGRESS phase=(capture-entered|canonical-ready|pin-ready|hash-started|read-entered|first-read-returned|read-16m|read-64m|read-256m|eof-observed|hash-complete) elapsed_ms=([0-9]{1,12})$') {
+                Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_PROGRESS phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+                $printed++
+            }
             elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
                 Write-Host "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
                 $printed++

@@ -116,3 +116,13 @@ finally {
     $stderrReader.Dispose()
 }
 Microsoft.PowerShell.Utility\Write-Host 'OPTIC_DOCTOR_TIMEOUT_SYNTHETIC bounded_read=32768 marker_beyond_4096=ok fixed_labels=ok max_lines=24 early_eof=bounded'
+
+$script:timingLines.Clear()
+$progressInput = 'OPTIC_IDENTITY_PROGRESS phase=read-entered elapsed_ms=123'
+$result = Assert-TimedOut -InputText $progressInput
+if ($script:timingLines.Count -ne 1 -or $script:timingLines[0] -cne 'OPTIC_DOCTOR_TIMEOUT_IDENTITY_PROGRESS phase=read-entered elapsed_ms=123') {
+    throw 'In-flight fixed progress marker was not retained.'
+}
+$script:timingLines.Clear()
+$result = Assert-TimedOut -InputText 'OPTIC_IDENTITY_PROGRESS phase=secret-path elapsed_ms=1'
+if ($script:timingLines.Count) { throw 'Unapproved progress label escaped.' }
