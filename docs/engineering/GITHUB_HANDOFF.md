@@ -1,5 +1,20 @@
 # GitHub-only project handoff
 
+## Latest verified handoff — 2026-10-21 after merged PR #305
+
+**Previously verified live `main`:** `43d3a4aeedee04dd03e895e27e81d3bc5af6652c`; **zero open PRs**. Independent [CI #39538634249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39538634249) passed first attempt **on the exact merge SHA**, hosted Windows Rust, Linux Rust, dependencies. Requery GitHub before acting: this is a timestamped checkpoint, never a reset target.
+
+**Do not redo merged increments.** [#301](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/301) preserved unpublished recovery evidence (source Windows first attempt exposed the separate known timeout; independent main CI passed). [#302](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/302) delivered earlier handoff docs. [#303](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/303) authorized canonical `fs_list` directory scopes. [#304](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/304) protected canonical `.git` control namespace against generic mutations. [#305](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/305) refit bounded `git_log` output after insertion of a continuation cursor. All five were merged; their independent main CI results are linked in [STATUS.md](../../STATUS.md).
+
+**Actual remaining stabilization investigations:** (1) natural Windows AppContainer/Node 10s no-output failure [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), *not fixed by opt-in timings*; (2) distinct 30s first MCP response timeout; (3) non-atomic recovery cleanup, ancestor races and unproven power-loss persistence; (4) sensitive read classification [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) plus GitRead content/status sensitivity [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182). These last two need a written policy/product decision **before remote access to a real workspace**, not an improvised broad grant. Cargo and sandboxed Electron remain deferred, not production support. Issues #180/#181/#183 are administratively open although code/tests contain scoped fixes; reconcile criteria with evidence before closure, and avoid speculative duplicates.
+
+**Completion discipline:** preserve one PR at a time (fix + focused regression + docs), exact-head native Windows tests for Windows claims, the first failed CI attempts, review and post-squash independent main CI. The [quality audit](CODE_QUALITY_REVIEW.md) is partial. No user-PC commands, self-hosted runners, releases, new features, permission expansion or whole-alpha merge.
+
+**Governance observation:** GitHub branch lookup indicated `main.protected=false` and ruleset listing returned no rules at the above checkpoint. This is *not* authorization to change branch protections. Operator approval is needed for any protection-policy change; continue enforcing exact-head CI and review in the meantime.
+
+Below are **historical checkpoints**. Their “active PR”, “candidate”, and old main SHAs describe *that date* only.
+
+
 ## Focused Git-log response-budget regression
 
 Source review of `ReadonlyMcpServer::fit_git_log_response` identified that adding a continuation cursor **after** clipping an end-of-history page could grow serialized JSON beyond `max_response_bytes`. The scoped correction refits the **final** entries+cursor combination and rejects a page if no entry plus cursor can fit. It also checks offset addition instead of using saturating addition. Regressions cover insufficient budget, sufficient budget with exactly one advancing entry, and a complete page that stays cursor-free.
