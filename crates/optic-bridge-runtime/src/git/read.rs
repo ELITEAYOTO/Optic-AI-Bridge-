@@ -779,7 +779,7 @@ mod tests {
             b"# branch.oid (initial)\0? ..\\.env\0".as_slice(),
             b"# branch.oid (initial)\0? ../.env\0".as_slice(),
             b"# branch.oid (initial)\0? \xff\0".as_slice(),
-            b"# branch.oid (initial)\02 R. N... 100644 100644 100644 aa bb R100 path.txt\0"
+            b"# branch.oid (initial)\x002 R. N... 100644 100644 100644 aa bb R100 path.txt\0"
                 .as_slice(),
             b"# branch.stash 1\0".as_slice(),
         ] {
