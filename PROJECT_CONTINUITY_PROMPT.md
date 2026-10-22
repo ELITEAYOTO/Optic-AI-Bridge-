@@ -1,5 +1,11 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Reprise prioritaire du 22 octobre 2026 — document de recherche NON fusionné
+
+Pour le prochain chat, **lire d'abord** [la passation complète](docs/engineering/HANDOFF_STABILIZATION_2026-10-22.md) et [le registre de preuves Astra/Codex](docs/research/ASTRA_CODEX_ISSUE317_EVIDENCE_2026-10-22.md), après `AGENTS.md` et `AI_HANDOFF.md`. Les anciennes sections ci-dessous restent historiques. Avant ce commit documentaire : `main=80fe108b288d2b0b6676d6128d9e9beb922eda3f` ; seule PR #318 ouverte, CI Windows rouge ; #317 recherche `7b36d971022f6cd732a01b7440b09022e17e277d`, CI exacte [#39696149147](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39696149147) verte Windows/Linux/dépendances. **Ne pas confondre recherche et code livré.** Recontrôler live toutes les têtes, issues et CI. Priorité #317 : contrat d'owner de commande Git, révocation et cleanup incertain ; pas de rust runner patch spéculatif. #319 et #185 séparées, #176/#182 bloquantes pour remote réel. Règles permanentes : GitHub-only, une PR (#318) jusqu'à résolution, pas de merge forcé, pas de test affaibli, pas d'exécution sur PC utilisateur. Astra a épuisé sa fenêtre de crédits précédemment; 04 h 37 et les pourcentages anciens ne garantissent pas un quota actuel.
+
+---
+
 ## Checkpoint prioritaire vérifié — 21 octobre 2026, après PR #314
 
 **Dépôt unique :** https://github.com/ELITEAYOTO/Optic-AI-Bridge-. Point de référence au contrôle : `main=7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`, **aucune PR ouverte**. Ne jamais réinitialiser la branche depuis ce SHA sans vérifier l'état GitHub en direct.

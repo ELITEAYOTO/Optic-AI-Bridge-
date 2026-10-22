@@ -1,5 +1,11 @@
 # GitHub-only project handoff
 
+## Research-branch successor checkpoint — 22 October 2026 (not merged into main)
+
+This newer handoff is **staged only on `bootstrap/issue-317-owned-cleanup-study`**, not on canonical `main`. Read [the complete 22 Oct handoff](HANDOFF_STABILIZATION_2026-10-22.md) and [the Astra/Codex evidence ledger](../research/ASTRA_CODEX_ISSUE317_EVIDENCE_2026-10-22.md), then recheck GitHub live. At the pre-doc check main was `80fe108b288d2b0b6676d6128d9e9beb922eda3f`, only PR #318 was open and its exact-head Windows CI was red. #317 research code on `7b36d971022f6cd732a01b7440b09022e17e277d` passed hosted Windows/Ubuntu/dependencies [#39696149147](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39696149147). **These older SHAs are checkpoints, not current branch heads after this docs commit.** No merge or user-PC activity permitted.
+
+---
+
 ## Verified successor checkpoint — after #314 and GitRead review (2026-10-21)
 
 At review, `main=7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`, **0 open PRs**. [PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) is squash-merged. Accepted source `fbf7c9f40bbae18d4017f237b8783a19964620c8` passed [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127) (native Windows, Ubuntu, dependencies) and three specialized native Windows workflows; independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) succeeded first attempt at the exact squash SHA. [Verification comment](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381). First superseded PR-head rustfmt failure was retained, not retried to conceal it.

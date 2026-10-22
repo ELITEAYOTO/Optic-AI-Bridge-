@@ -1,5 +1,7 @@
 # Issue 317: owned cleanup feasibility study
 
+> **Historique Astra, mis en perspective le 22 octobre 2026 :** ce texte décrit la campagne initiale seulement. Depuis, sur la même branche de recherche, la fixture `escape-both` a été corrigée et validée ([#39688523435](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39688523435), 17 Linux + 16 Windows), un **correctif expérimental de production** dans `git_integrate_tools.rs` a été testé ([#39690755337](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39690755337)), puis la révocation, la saturation `session_cancel` et la CAS Git malgré timeout ont été reproduites jusqu'au SHA `7b36d971...` ([#39696149147](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39696149147)). **Cela n'a pas été fusionné dans main** et aucun vrai owner natif #317 n'a été livré. Pour reprendre, lire [le handoff](../engineering/HANDOFF_STABILIZATION_2026-10-22.md) et [le registre détaillé](ASTRA_CODEX_ISSUE317_EVIDENCE_2026-10-22.md). Conserver cette étude et ses négatifs comme historiques.
+
 Date: 2026-10-21. Status: experimental design and native primitive tests, NOT a production fix.
 
 ## Decision before production changes

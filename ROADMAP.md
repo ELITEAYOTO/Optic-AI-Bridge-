@@ -1,5 +1,11 @@
 # Delivery roadmap
 
+## Research-only stabilization handoff — 22 October 2026
+
+This branch stages a new [continuation handoff](docs/engineering/HANDOFF_STABILIZATION_2026-10-22.md) and [#317 evidence/Astra context](docs/research/ASTRA_CODEX_ISSUE317_EVIDENCE_2026-10-22.md). It does **not** revise the frozen feature roadmap or authorize a new product feature or PR. After exact-head CI, the next order remains: keep #318 blocked until its own gate is understood, design/test a retained Git process owner before any #317 production change, investigate #319 only on new first-initialize evidence, and #185 independently. #176/#182 continue blocking real-project remote access. This header is staged on `bootstrap/issue-317-owned-cleanup-study` only, not merged `main`.
+
+---
+
 Reviewed: 2026-10-20. [STATUS.md](STATUS.md) owns current evidence; this page owns
 the next delivery order. Earlier phase/H-track snapshots remain historical
 planning inputs, not a second statement of current completion.
