@@ -1,5 +1,13 @@
 # Current project status
 
+## Latest verified research / handoff checkpoint — 22 October 2026
+
+At the handoff audit, **main was `82ad1234f184591e0f2c80c86296a65a883ecc20`**, with **zero open PRs**, `main.protected=false`, and **no approved V1 release**. This is a dated checkpoint; re-query live GitHub, especially after the documentation PR. Production `HardenedCommandRunner` remains uncorrected for [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317). The research branch `bootstrap/issue-317-windows-rust-owner` reached `33c95e00aa384774ccac6ccbab24b8f54fa5ab11`, with exact-head [CI #39748924515](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39748924515) green (native Windows Rust/MCP/Node, Ubuntu Rust, dependency policy). It includes 13 independently supervised native fixture cases (earlier [#39735459098](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39735459098)), true SessionRegistry/Job regression and a private **unwired** owner-registry prototype using inert owners in unit tests. **Neither branch research nor successful CI fixes #317 on main.**
+
+[Canonical next-chat technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) and [copyable full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md) record accepted evidence, all limitations and next development steps. [V1 freeze gate #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) remains **NO-GO**. Other open local-gate reviews: #176/#182 sensitive read and Git provenance, #319 MCP 30s intermittency, #185 Windows Node/AppContainer intermittency; #171–175 and #177 are out-of-scope remote milestones for the proposed local V1, not authorized exposure. Windows10/11 physical-device acceptance is absent; no PC execution, release, feature/Electron resumption or branch-protection changes.
+
+Older status paragraphs below are historical dated snapshots and do not override this checkpoint.
+
 ## Current verified checkpoint — Windows V1 after PR #321 (2026-10-22)
 
 At this audit: `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`; PR [#320](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/320) and [#321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/321) squash-merged, zero PRs open. Exact-merge independent [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh native #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496), [Windows PowerShell 5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) completed/success, attempt 1. **Recheck live heads/checks before each operation.**

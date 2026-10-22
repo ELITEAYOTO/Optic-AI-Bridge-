@@ -1,5 +1,8 @@
 # Repository entry point for coding agents
 
+**Newest continuation (2026-10-22):** [Windows V1 technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) and [copy-ready next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md). Historical dated sections remain checkpoints; inspect live SHA and CI first.
+
+
 Read [AI_HANDOFF.md](AI_HANDOFF.md), [the current handoff](docs/engineering/GITHUB_HANDOFF.md),
 [STATUS.md](STATUS.md) and [ROADMAP.md](ROADMAP.md) before choosing work.
 The reusable operator prompt is [PROJECT_CONTINUITY_PROMPT.md](PROJECT_CONTINUITY_PROMPT.md).

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — documentation of Windows V1 continuation (2026-10-22)
+
+- Updated the canonical handoff/roadmap/status pointers for the forthcoming chat and created a comprehensive [Windows V1 engineering takeover](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) with a [standalone successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md). This is **documentation only**; no runtime behavior, feature, permission, packaging, timeout, protection, tag or release change.
+- At the handoff check: production main `82ad1234` was separate from test-only research `33c95e00` (Windows/Ubuntu/dependency [CI #39748924515](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39748924515) green). #317 remains open: its native fixtures and inert owner registry are not the production fix. V1 freeze [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) remains NO-GO.
+
+
 ## Unreleased — Windows stabilization
 
 - [PR #320](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/320) merged at `751bc72a3090b934ee8e20c860bc7293ea357c29` (prerelease exact integrated-main CI source gate, 26 deterministic fixtures). [PR #321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/321) merged at `65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9` (Windows PowerShell 5.1 BOM-free MCP stdin, Unicode, failed-start and real Bridge/Node tests). Exact-main [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572) and [native pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496)/[Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed attempt 1. Separate #317 Rust native owner research is not a production fix; #319/#185 and #176/#182 remain open. No V1 release.
