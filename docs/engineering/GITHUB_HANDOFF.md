@@ -1,24 +1,12 @@
 # GitHub-only project handoff
 
-## Windows V1 continuation — 22 October 2026
+## Current handoff — Windows V1, after PRs #320/#321 (2026-10-22)
 
-Use the Windows-first order in [ROADMAP](../../ROADMAP.md), retain Ubuntu CI and
-do not restart Linux confinement research. PR318 owns octal Git validation plus
-the bounded doctor error-path correction; verify its actual head/checks/review
-and, if merged, independent main CI. Original red39585600089 remains evidence.
-No different-branch green run or passing error-path fixture resolves319.
+`main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9` and zero PRs open were verified. Both #320 (exact-main-CI prerelease provenance gate) and #321 (Windows PowerShell 5.1 no-BOM MCP stdin) are squash-integrated. Independent same-source runs [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496) and [Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed attempt 1. Read [release gate](RELEASE_SOURCE_GATE.md), [PowerShell proof](WINDOWS_POWERSHELL_ACCEPTANCE.md) and [current status](../../STATUS.md). No release and no Windows10/11 device certification.
 
-Read [the doctor proof and reusable handoff](../research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md).
-Native32KiB/400ms stderr polling is sole-consumer Windows-specific and best-effort;
-it creates no stderr read worker, but does not replace production tree ownership.
-First priorities after a verified narrow integration: capture a natural319
-failure with bounded in-flight markers, investigate185 separately, then integrate
-real Windows317 ownership/reservations/cancellation/revoke/seal/reap contracts.
-Retain unclear Git CAS outcomes separately from process TerminationUncertain.
+**Next #317 Windows:** native Rust test-only owner slice at research head `d295d92ec813612a3a919b56143ed23dcbb89485` (eight supervised cases, #39718651623; normal CI #39718651583) is **not merged**. The [research-only audit](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/d295d92ec813612a3a919b56143ed23dcbb89485/docs/research/WINDOWS_V1_OWNER_AUDIT_2026-10-22.md) and [ADR-0035 proposal](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/d295d92ec813612a3a919b56143ed23dcbb89485/docs/decisions/ADR-0035-WINDOWS-GIT-OWNER-STAGING.md) are not yet on main. Test stdin, native OS error/handle cleanup and fail-closed retained resources before a long-lived Session/HostStartup owner service, trusted stop-before-drain and seal/reap wiring. Separate Git CAS effect uncertainty. Do not bulk merge research.
 
-No user-PC project execution, self-hosted runner, broad grant, new feature, alpha
-merge or security limit change. Canonical old source/PR counts below are dated
-history; requery GitHub before acting.
+Remaining issues #317, #176/#182 (real-project remote sensitive/provenance), #319 (natural 30s first response) and #185 (separate AppContainer flake) remain open. The #321 framing fix does **not** explain #319. `main.protected=false` and zero rulesets at last audit; settings require approval. Release build's broader `contents:write` needs separate review. No feature/Electron work, user-PC execution, self-hosted runner, Linux confinement research, remote access to real projects or relaxation of limits. Retain Ubuntu CI and first red attempts. Full [2026-10-22 Codex handoff](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319#issuecomment-6332848895). Historical sections below are not current live state.
 
 ## Historical successor checkpoint — after #314 and GitRead review (2026-10-21)
 

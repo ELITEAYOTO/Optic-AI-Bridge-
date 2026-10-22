@@ -1,18 +1,14 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
-## Direction actuelle — Windows V1, 22 octobre 2026
+## Current Windows V1 continuation — verified after #321 (2026-10-22)
 
-Windows10/11 prioritaire, versions effectivement supportées à vérifier.
-Conserver Ubuntu comme contrôle de non-régression ; Linux fonctionnel post-V1.
-Ne pas relancer cgroups/pidfd/PDEATHSIG ni les superviseurs Linux.
-Reprendre PR318 sur son SHA réel et ses checks ; consulter la preuve doctor
-dans docs/research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md et la passation canonique.
-Les chemins d'erreur du doctor et le parsing Git sont des correctifs distincts
-du timeout naturel319, toujours inexpliqué.185 reste séparé ;317 reste démontré
-sans correctif Rust de propriété/récupération. Ne jamais déduire la maturité V1
-d'une seule CI verte. Vérifier la CI indépendante de main après toute fusion.
-Aucun code projet exécuté sur le PC utilisateur, aucun runner auto-hébergé,
-aucune protection assouplie ni fusion globale de branche expérimentale.
+At last check `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`, **0 PRs open**, #320 and #321 squash-merged. [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496), [Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed, attempt 1, on that exact SHA. Requery `main`, PRs, issues, CI and quotas at start: older heads are checkpoints, not integration targets.
+
+The release gate #320 requires successful exact-source integrated-main CI before tagged prerelease. Windows PowerShell 5.1 #321 fixed a **demonstrated** stdin JSON UTF-8 BOM under Framework; byte/Unicode/real isolated Bridge proofs pass. These changes do not solve the unexplained *natural* #319 first MCP 30s timeout or the separate #185 AppContainer intermittent Node probe. Read `docs/engineering/RELEASE_SOURCE_GATE.md` and `docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md`.
+
+**Immediate Windows #317 mission:** read `HardenedCommandRunner`, session lifecycle, issue #317, plus [research audit](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/d295d92ec813612a3a919b56143ed23dcbb89485/docs/research/WINDOWS_V1_OWNER_AUDIT_2026-10-22.md) and [ADR-0035 proposal](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/d295d92ec813612a3a919b56143ed23dcbb89485/docs/decisions/ADR-0035-WINDOWS-GIT-OWNER-STAGING.md), **both research-only**, SHA `d295d92ec813612a3a919b56143ed23dcbb89485`. Eight native Windows fixture cases passed in [#39718651623](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39718651623); they did not migrate the real runner. First prove stdin cancellation, native errors/handle ownership and incomplete cleanup, then service owner registry/capacity with Session and HostStartup authority, stop-before-admission-drain, seal/reap, and separate CAS-mutation uncertainty. No naive timeout/detached `join()` or bulk research merge. Make an isolated PR only for a concrete demonstrated fix with exact-head CI.
+
+Security #176/#182 remains blocking for real-project remote exposure; #319/#185 require new natural phase evidence, not retry-to-green. Preserve red original runs. The release job retains `contents:write` during build and `main` protection still needs the operator's explicit approval. One PR at a time; Windows V1 first, existing Ubuntu CI retained, no new Linux experiments, GUI/features/remote work or operator-PC execution. Full context: [current status](STATUS.md), [GitHub handoff](docs/engineering/GITHUB_HANDOFF.md), [Codex checkpoint](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319#issuecomment-6332848895). Codex quota last *reported* at 8%; remeasure, do not assume it persists.
 
 ## Checkpoint historique vérifié — 21 octobre 2026, après PR #314
 

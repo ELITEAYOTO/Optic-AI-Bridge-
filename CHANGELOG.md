@@ -2,6 +2,7 @@
 
 ## Unreleased — Windows stabilization
 
+- [PR #320](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/320) merged at `751bc72a3090b934ee8e20c860bc7293ea357c29` (prerelease exact integrated-main CI source gate, 26 deterministic fixtures). [PR #321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/321) merged at `65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9` (Windows PowerShell 5.1 BOM-free MCP stdin, Unicode, failed-start and real Bridge/Node tests). Exact-main [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572) and [native pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496)/[Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed attempt 1. Separate #317 Rust native owner research is not a production fix; #319/#185 and #176/#182 remain open. No V1 release.
 - Fix demonstrated Windows PowerShell5.1 MCP stdin BOM framing: explicit no-BOM UTF-8, scoped Framework console-encoding restoration and safe failed-start cleanup. Add actual-byte/Unicode/start-failure, real Bridge and owned-pipe regressions.
 - Require an exact-source successful main CI and main ancestry before tag builds/publication; fail closed on incomplete evidence. Add offline and read-only API regressions. No release or V1 readiness is implied.
 

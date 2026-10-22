@@ -59,16 +59,6 @@ token scope is a future independent hardening option, not silently claimed here.
 
 ## Current stabilization checkpoint and next priority
 
-#318 is squash-integrated at main c94461446a49ee61dc527a74f4e198afc8e55b4d;
-main CI39716573989 and native doctor39716574009 succeeded attempt1.
-The #317 Rust native slice at d295d92ec813612a3a919b56143ed23dcbb89485
-passed CI39718651583 and supervised native39718651623 attempt1 (8 cases).
-It is research only; proposed ADR0035 and the risk matrix live on branch
-bootstrap/issue-317-windows-rust-owner. Production runner still has pipe-join risk.
-See issue317 comment6332249104. No #317/#319 bulk merge or Linux experiment.
+PR [#320](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/320) introduced this release guard and squash-integrated it at `751bc72a3090b934ee8e20c860bc7293ea357c29`; [CI #39720011889](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39720011889) passed. PR [#321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/321) subsequently integrated at `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`; independent [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496), [Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed attempt 1. **No release or tag created**; this gate does not establish release readiness.
 
-Next #317 work: prove native stdin cancellation/retention and OS failure paths;
-then bounded service-owned Session/HostStartup registry, stop-before-drain,
-seal/reap proof and a single GitRead migration. Keep CAS outcome separate.
-#176/#182 sensitive/provenance, #319 startup and #185 AppContainer remain open.
-No real-project remote exposure or feature unfreeze follows from this guard.
+The #321 no-BOM stdin fix is distinct from unresolved #319 natural MCP initialization and #185 AppContainer startup. The #317 native Rust eight-case research head `d295d92ec813612a3a919b56143ed23dcbb89485` ([native #39718651623](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39718651623)) has NOT changed production `HardenedCommandRunner`: stdin cancellation, native failure/handles, service owner accounting, session/HostStartup stop-before-drain, seal/reap and CAS uncertainty are still pending. Sensitive/provenance #176/#182 gates remain open for real-project remote access. `main` branch protection and publish-job token lifetime need separately authorized security decisions. Always refresh live status before work.
