@@ -1,0 +1,64 @@
+name: Windows Rust command owner slice
+
+on:
+  push:
+    branches: ["bootstrap/issue-317-windows-rust-owner"]
+    paths:
+      - "crates/optic-bridge-windows/src/command_owner_probe.rs"
+      - "crates/optic-bridge-windows/src/job.rs"
+      - "scripts/research/issue317_windows_native.py"
+      - ".github/workflows/issue317-windows-native.yml"
+      - "docs/decisions/ADR-0035-WINDOWS-GIT-OWNER-STAGING.md"
+      - "docs/research/WINDOWS_V1_OWNER_AUDIT_2026-10-22.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows317-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.99.0
+      - name: Formatting
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) {
+            cargo fmt --all
+            Write-Output 'OPTIC317_FORMATTED_SOURCE_BEGIN'
+            Get-Content -Raw crates/optic-bridge-windows/src/command_owner_probe.rs
+            Write-Output 'OPTIC317_FORMATTED_SOURCE_END'
+            throw 'Source requires formatting; native proof was not run.'
+          }
+      - name: Clippy native component
+        run: cargo clippy --locked -p optic-bridge-windows --all-targets -- -D warnings
+      - name: Build Rust native test executable
+        shell: pwsh
+        run: |
+          cargo test --locked -p optic-bridge-windows --lib --no-run --message-format=json | Out-File -Encoding utf8 native-build.jsonl
+          if ($LASTEXITCODE -ne 0) { throw 'Native test build failed' }
+          $artifact = Get-Content native-build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_windows' -and $_.executable } | Select-Object -Last 1
+          if (-not $artifact.executable) { throw 'Native test executable missing' }
+          "OPTIC317_TEST_EXE=$($artifact.executable)" >> $env:GITHUB_ENV
+      - name: Independently supervised Rust slice
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_windows_native.py --test-exe "$env:OPTIC317_TEST_EXE" --output evidence/native-owner.json
+      - name: Preserve bounded evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic-windows-317-native-owner
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7

@@ -656,3 +656,7 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove fixture dir");
     }
 }
+
+#[cfg(test)]
+#[path = "command_owner_probe.rs"]
+mod command_owner_probe;
