@@ -1054,8 +1054,58 @@ mod tests {
             "known #182 gap: FileRead-denied GitRead must be recorded"
         );
 
+        // A *single* ordinary current pathname is not proof of the staged
+        // Git blob's source. Replace the hardlink AFTER Git has indexed it.
+        fs::remove_file(fixture.repo.join("tracked.txt")).expect("remove alias");
+        fs::write(fixture.repo.join("tracked.txt"), b"ordinary replacement only\n")
+            .expect("ordinary replacement");
+        assert_eq!(
+            fs::read(fixture.repo.join("tracked.txt")).expect("new ordinary file"),
+            b"ordinary replacement only\n"
+        );
+        assert!(
+            server
+                .fs_read(Parameters(read("tracked.txt")))
+                .await
+                .is_ok(),
+            "FileRead now sees a safe ordinary, single-link file"
+        );
+
+        // The staged blob still holds data obtained from the prior alias.
+        let staged_after_replacement = git_only
+            .git_diff(Parameters(request(true)))
+            .await
+            .expect("index still contains original synthetic data")
+            .0;
+        let bytes = STANDARD
+            .decode(staged_after_replacement.data_base64)
+            .expect("staged snapshot base64");
+        assert!(
+            bytes
+                .windows(MARKER.trim_ascii_end().len())
+                .any(|s| s == MARKER.trim_ascii_end()),
+            "index retained synthetic data after the alias disappeared"
+        );
+
+        // A worktree diff can disclose the old indexed blob even when its
+        // current on-disk source is only the ordinary replacement.
+        let unstaged_after_replacement = git_only
+            .git_diff(Parameters(request(false)))
+            .await
+            .expect("worktree diff relative to sensitive staged blob")
+            .0;
+        let bytes = STANDARD
+            .decode(unstaged_after_replacement.data_base64)
+            .expect("worktree snapshot base64");
+        assert!(
+            bytes
+                .windows(MARKER.trim_ascii_end().len())
+                .any(|s| s == MARKER.trim_ascii_end()),
+            "current safe pathname did not constrain historical indexed data"
+        );
+
         println!(
-            "OPTIC182_RESEARCH {{\"synthetic_only\":true,\"file_read_hardlink_denied\":true,\"git_worktree_alias_exposed\":true,\"git_index_alias_exposed\":true,\"git_read_without_file_read_exposed\":true,\"production_security_fixed\":false}}"
+            "OPTIC182_RESEARCH {{\"synthetic_only\":true,\"file_read_hardlink_denied\":true,\"git_worktree_alias_exposed\":true,\"git_index_alias_exposed\":true,\"git_read_without_file_read_exposed\":true,\"index_exposed_after_alias_replaced\":true,\"worktree_diff_exposed_old_index_after_alias_replaced\":true,\"production_security_fixed\":false}}"
         );
     }
 }
