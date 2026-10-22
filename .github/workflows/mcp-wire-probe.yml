@@ -1,0 +1,26 @@
+name: Supervised MCP stdin wire probe
+on:
+  push:
+    branches: ["diag/ps51-stdin-framing"]
+permissions:
+  contents: read
+jobs:
+  wire:
+    runs-on: windows-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Native framing controls
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          python scripts/tests/mcp_wire_supervisor.py --shell (Get-Command powershell.exe).Source --output evidence/desktop.json
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop wire probe failed' }
+          python scripts/tests/mcp_wire_supervisor.py --shell (Get-Command pwsh).Source --output evidence/core.json
+          if ($LASTEXITCODE -ne 0) { throw 'Core wire probe failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: optic-mcp-wire-framing
+          path: evidence/*.json
+          retention-days: 7
