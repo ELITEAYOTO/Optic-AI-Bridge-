@@ -974,7 +974,8 @@ mod tests {
             server
                 .fs_read(Parameters(read(".env")))
                 .await
-                .expect_err("protected filename denied")
+                .err()
+                .expect("protected filename denied")
                 .message,
             "optic.policy_denied"
         );
@@ -982,7 +983,8 @@ mod tests {
             server
                 .fs_read(Parameters(read("tracked.txt")))
                 .await
-                .expect_err("ordinary hardlink also denied by FileRead")
+                .err()
+                .expect("ordinary hardlink also denied by FileRead")
                 .message,
             "optic.policy_denied"
         );
@@ -990,7 +992,8 @@ mod tests {
             server
                 .git_status()
                 .await
-                .expect_err("untracked protected name cannot escape status")
+                .err()
+                .expect("untracked protected name cannot escape status")
                 .message,
             "optic.policy_denied"
         );
