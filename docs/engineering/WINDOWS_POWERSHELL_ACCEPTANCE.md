@@ -1,5 +1,9 @@
 # Windows PowerShell doctor acceptance and UTF-8 framing
 
+## Exact integration after PR #321 (2026-10-22)
+
+`main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`; [candidate PR #321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/321) squash-merged. Exact-merge independent Windows/Ubuntu/dependency [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh pipe #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496), and [Windows PowerShell 5.1 bytes/real Bridge #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) all completed/success, attempt 1. Preserve first red actual Desktop smoke [#39720869986](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39720869986) and independent BOM probe [#39721750628](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39721750628). No Windows10/11 operator-device, installation or intermittence #319 certification follows.
+
 Scope: hosted Windows Server, Windows PowerShell 5.1/Desktop and current pwsh.
 This is not Windows10/11 installation/client/profile certification.
 

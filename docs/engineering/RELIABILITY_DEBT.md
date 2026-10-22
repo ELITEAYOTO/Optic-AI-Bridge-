@@ -1,5 +1,15 @@
 # Reliability and implementation debt
 
+## Current Windows V1 reliability/security debt (2026-10-22)
+
+- **P0 #317:** production Rust runner still risks unbounded pipe `join()` after child exit; missing native stdin/OS-failure cleanup, held Session/HostStartup owner resources and stop-before-drain / seal-reap guarantees. Eight test-only Windows native cases passed at `d295d92e` ([#39718651623](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39718651623)); no production fix or bulk merge.
+- **P0 before real-project remote use #176/#182:** existing scoped lexical FileRead/GitRead/path/hard-link guards do not prove arbitrary secret-content filtering, atomic Git metadata provenance or complete alias/race defense. Do not claim a demonstrated leak without a reproduction.
+- **P1 #319/#185:** natural MCP 30s and AppContainer Node startup flakiness remain unexplained. #321's real PS5.1 BOM fault is fixed and distinct; exact-main Windows + Ubuntu + dependency CI passed [#39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572).
+- **Release/repository hardening:** #320's exact-main-CI source gate passed; there is still a `contents:write` token during publish-job build. `main.protected=false`/no rulesets observed; operator approval needed for enforcement.
+- **P2 V1 acceptance:** hosted Windows Server evidence does not cover all Windows 10/11 installations, interrupted updates, power loss, long soak, or remote session/approval H-02–H-05.
+
+At checkpoint `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`, no PRs open, 3 independent exact-head workflows passed. See [STATUS](../../STATUS.md), [owner audit](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/d295d92ec813612a3a919b56143ed23dcbb89485/docs/research/WINDOWS_V1_OWNER_AUDIT_2026-10-22.md), and [Codex record](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319#issuecomment-6332848895). The rest of this file is dated history, not a claim all defects remain as originally recorded.
+
 ## Verified FileRead hard-link alias safeguard — after #314 (2026-10-21)
 
 An ordinary-looking hard-link alias can refer to the same file identity as a sensitive-named `.env`. Previously only the canonical lexical alias was classified, so FileRead authority could differ between the names. [PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) now checks the link count **on the opened native handle/descriptor** and conservatively requires an existing matching sensitive scope for files with multiple names, alongside ordinary FileRead authorization. Valid synthetic alias denial, explicit approval and normal single-link reads passed both Windows and Linux. Accepted source [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127), specialized workflows and independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) passed on exact SHAs; current integrated commit `7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`. [Full evidence](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381).
