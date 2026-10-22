@@ -1,6 +1,31 @@
 # Current project status
 
-## Latest verified stabilization checkpoint — #314 (2026-10-21)
+## Windows V1 stabilization — operator direction, 22 October 2026
+
+Windows10/11 is the V1 target; supported OS/PowerShell combinations still require
+their own acceptance. Hosted Windows Server checks are native Windows evidence,
+not proof that every Windows10/11 installation works. Functional Linux delivery
+is post-V1; existing Ubuntu Rust/dependency checks remain required regression guards.
+
+The #318 change rejects non-octal raw Git modes and bounds Windows doctor stderr
+capture after EOF/timeout using a sole-consumer native pipe snapshot. Tests preserve
+primary failures, cap bytes/messages, reject unknown labels and supervise all fixture
+processes. No startup deadline, full executable identity/pin, resource/permission,
+AppContainer or network boundary is relaxed. Exact integration status and source
+checks are in [PR318](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/318);
+the [native proof](docs/research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md)
+distinguishes demonstrated error-path failures from startup hypotheses.
+
+**Still open:**319 natural first MCP30s timeout (cause not established),185 separate
+Node/AppContainer10s failure,317 demonstrated generic command pipe-join overrun
+(no production Rust ownership correction),176/182 sensitive/provenance boundaries.
+These remain V1/release gates where applicable. An unrelated Git/parser correction
+and a green current CI do not certify startup reliability or real-workspace safety.
+No feature unfreeze, Electron, generalized Cargo, alpha merge or user-PC execution.
+
+Older checkpoints below describe their dates, not current branch heads.
+
+## Historical verified checkpoint — #314 (2026-10-21)
 
 **Verified source of truth:** `main=7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`, 0 open PRs. [PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) is squash-merged: a hard-linked file can bear both a classified sensitive name (`.env`) and an innocent-looking alias (`README.txt`); `fs_read` now requires existing matching `ReadSensitiveScope` in addition to ordinary FileRead for multi-linked opened native identities. This is intentionally conservative for harmless hard links. Native Windows/Linux regression tests passed on accepted source SHA `fbf7c9f40bbae18d4017f237b8783a19964620c8` in [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127); three specialized native workflows also passed. Independent [push CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) passed **first attempt on the exact squash SHA**, Windows Rust, Linux Rust and dependencies. Earlier rustfmt failure on a superseded PR head remains preserved. [Complete proof](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381).
 

@@ -1,0 +1,74 @@
+name: Windows doctor pipe lifetime
+on:
+  push:
+    branches: [main, "bootstrap/issue-319-doctor-bounded-pipes"]
+    paths:
+      - "scripts/Test-OpticAIBridge.ps1"
+      - "scripts/tests/DoctorPipeWorker.ps1"
+      - "scripts/tests/doctor_pipe_*.py"
+      - "scripts/research/pack_windows_v1_evidence.py"
+      - ".github/workflows/windows-doctor-pipes.yml"
+  pull_request:
+    paths:
+      - "scripts/Test-OpticAIBridge.ps1"
+      - "scripts/tests/DoctorPipeWorker.ps1"
+      - "scripts/tests/doctor_pipe_*.py"
+      - "scripts/research/pack_windows_v1_evidence.py"
+      - ".github/workflows/windows-doctor-pipes.yml"
+env:
+  OPTIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Recover exact original PR doctor for negative control
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028
+          git show 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028:scripts/Test-OpticAIBridge.ps1 | Set-Content -LiteralPath baseline-doctor.ps1 -Encoding utf8
+      - name: Real inherited-pipe regressions with independent native ownership
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python scripts/tests/doctor_pipe_supervisor.py --baseline baseline-doctor.ps1 --candidate scripts/Test-OpticAIBridge.ps1 --pwsh (Get-Command pwsh).Source --output evidence/doctor-pipes.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native doctor pipe proof failed' }
+      - name: Preserve proof, including incomplete failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-doctor-pipe-proof
+          path: evidence/*.json
+          if-no-files-found: error
+          retention-days: 7
+  evidence:
+    needs: native
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-doctor-pipe-proof
+          path: evidence
+      - name: Package native proof and independent CI snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/research/pack_windows_v1_evidence.py
+      - name: Preserve evidence even if native proof failed
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optic-bridge-windows-v1-stabilization-2026-10-22
+          path: package/*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require completed native proof
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: python -c "import json,os; p=json.load(open('package/PROVENANCE.json')); assert p['native_doctor_proof_complete'] and os.environ['NATIVE_RESULT']=='success'"

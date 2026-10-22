@@ -1,6 +1,20 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
-## Checkpoint prioritaire vérifié — 21 octobre 2026, après PR #314
+## Direction actuelle — Windows V1, 22 octobre 2026
+
+Windows10/11 prioritaire, versions effectivement supportées à vérifier.
+Conserver Ubuntu comme contrôle de non-régression ; Linux fonctionnel post-V1.
+Ne pas relancer cgroups/pidfd/PDEATHSIG ni les superviseurs Linux.
+Reprendre PR318 sur son SHA réel et ses checks ; consulter la preuve doctor
+dans docs/research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md et la passation canonique.
+Les chemins d'erreur du doctor et le parsing Git sont des correctifs distincts
+du timeout naturel319, toujours inexpliqué.185 reste séparé ;317 reste démontré
+sans correctif Rust de propriété/récupération. Ne jamais déduire la maturité V1
+d'une seule CI verte. Vérifier la CI indépendante de main après toute fusion.
+Aucun code projet exécuté sur le PC utilisateur, aucun runner auto-hébergé,
+aucune protection assouplie ni fusion globale de branche expérimentale.
+
+## Checkpoint historique vérifié — 21 octobre 2026, après PR #314
 
 **Dépôt unique :** https://github.com/ELITEAYOTO/Optic-AI-Bridge-. Point de référence au contrôle : `main=7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`, **aucune PR ouverte**. Ne jamais réinitialiser la branche depuis ce SHA sans vérifier l'état GitHub en direct.
 

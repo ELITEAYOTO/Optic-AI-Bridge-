@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Reviewed: 2026-10-20. [STATUS.md](STATUS.md) owns current evidence; this page owns
+Reviewed: 2026-10-22. [STATUS.md](STATUS.md) owns current evidence; this page owns
 the next delivery order. Earlier phase/H-track snapshots remain historical
 planning inputs, not a second statement of current completion.
 
@@ -8,6 +8,18 @@ Execution mode for the current continuation: agent-owned isolated environment
 and GitHub-hosted CI only; no operator-PC tests or runtime changes. See the
 [handoff](docs/engineering/GITHUB_HANDOFF.md). This does not remove native Windows
 acceptance gates or imply they can be established on Linux.
+
+## Windows V1 first — operator decision, 22 October 2026
+
+Target Windows10/11; verify actual supported versions rather than inferring them
+from hosted Windows Server. Prioritize MCP startup319, AppContainer/Node185,
+owned Windows command cleanup317, then proven recovery/authorization/resource and
+installation defects. Keep these distinct; doctor error-path diagnostics do not
+explain natural startup latency. Linux functional support is post-V1. Do not start
+new cgroup/pidfd/PDEATHSIG/confinement research unless shared-code regression
+actually blocks Windows; retain existing Ubuntu CI as non-regression checks.
+Rust/MCP remains core; Electron can resume only after the relevant foundation
+gates and a delivery decision, never as a mandatory Rust runtime dependency.
 
 ## Temporary stabilization gate (operator directive, 2026-10-20)
 

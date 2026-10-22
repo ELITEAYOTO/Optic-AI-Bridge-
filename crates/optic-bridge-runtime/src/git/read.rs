@@ -571,9 +571,11 @@ fn verify_raw_diff_header(header: &[u8]) -> Result<u8, GitReadError> {
     if fields.next().is_some()
         || old_mode.len() != 7
         || old_mode[0] != b':'
-        || !old_mode[1..].iter().all(u8::is_ascii_digit)
+        || !old_mode[1..]
+            .iter()
+            .all(|byte| matches!(*byte, b'0'..=b'7'))
         || new_mode.len() != 6
-        || !new_mode.iter().all(u8::is_ascii_digit)
+        || !new_mode.iter().all(|byte| matches!(*byte, b'0'..=b'7'))
         || ![old_oid, new_oid]
             .iter()
             .all(|oid| (7..=64).contains(&oid.len()) && oid.iter().all(u8::is_ascii_hexdigit))
@@ -1040,7 +1042,18 @@ mod tests {
                 .as_str(),
             "src/.env"
         );
+        // Git's six-digit modes are octal, including the gitlink and symlink
+        // shapes. Do not reject valid future values by constraining them to
+        // the regular-file mode alone.
+        let valid_symlink = b":120000 120000 abcdef0 1234567 M\0link\0\0diff --git a/link b/link\n";
+        parse_verified_diff(valid_symlink.to_vec()).expect("octal symlink mode is valid");
+        let valid_gitlink =
+            b":160000 160000 abcdef0 1234567 M\0module\0\0diff --git a/module b/module\n";
+        parse_verified_diff(valid_gitlink.to_vec()).expect("octal gitlink mode is valid");
+
         for invalid in [
+            b":100648 100644 abcdef0 1234567 M\0src/main.rs\0\0diff --git a/src/main.rs b/src/main.rs\n".as_slice(),
+            b":100644 100649 abcdef0 1234567 M\0src/main.rs\0\0diff --git a/src/main.rs b/src/main.rs\n".as_slice(),
             b"diff --git a/.env b/.env\n".as_slice(),
             b":100644 100644 abcdef0 1234567 M\0src/.env".as_slice(),
             b":100644 100644 abcdef0 1234567 X\0src/.env\0\ndiff --git ".as_slice(),
