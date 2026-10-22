@@ -43,7 +43,11 @@ impl ProbeOwner {
             .env_clear()
             .env("OPTIC317_ROOT", root)
             .env("OPTIC317_MODE", mode)
-            .stdin(Stdio::null())
+            .stdin(if mode == "stdin_block" {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::from(out.writer_handle()?.try_clone_to_owned()?))
             .stderr(Stdio::from(err.writer_handle()?.try_clone_to_owned()?))
             .creation_flags(CREATE_SUSPENDED.0);
@@ -230,7 +234,7 @@ fn fixture() {
             eprintln!("holder-err");
             thread::sleep(Duration::from_secs(8));
         }
-        "idle" => thread::sleep(Duration::from_secs(8)),
+        "idle" | "stdin_block" => thread::sleep(Duration::from_secs(8)),
         "output" => {
             let data = [b'x'; 8192];
             for _ in 0..32 {
@@ -318,6 +322,45 @@ fn native_windows_owner_matrix() {
     cases += 1;
     println!(
         "OPTIC317_CASE {{\"case\":\"partial-before-assignment\",\"tree_empty\":true,\"never_resumed\":true}}"
+    );
+
+    // A child that never reads stdin must not retain a blocked writer after
+    // owned tree termination. This is a test-only interruption proof, not a
+    // general guarantee of writer cancellation when cleanup is uncertain.
+    let root = base.join("stdin-block");
+    std::fs::create_dir(&root).unwrap();
+    let mut blocked = ProbeOwner::create(&root, "stdin_block").unwrap();
+    blocked.assign().unwrap();
+    blocked.resume().unwrap();
+    wait_marker(&root, "started");
+    let mut stdin = blocked.child.stdin.take().expect("piped child stdin");
+    let (writer_tx, writer_rx) = std::sync::mpsc::channel();
+    let writer = thread::spawn(move || {
+        let result = stdin.write_all(&vec![b'i'; 2 * 1024 * 1024]);
+        writer_tx.send(result.is_err()).unwrap();
+    });
+    assert!(
+        matches!(
+            writer_rx.recv_timeout(Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ),
+        "writer did not encounter backpressure"
+    );
+    assert!(blocked.stop_and_confirm().unwrap());
+    assert!(
+        writer_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("blocked stdin writer did not unblock"),
+        "unread input completed successfully"
+    );
+    writer.join().unwrap();
+    let observation = collect(&mut blocked, Duration::from_millis(200), false).unwrap();
+    assert_eq!(observation.reason, "exit");
+    assert!(blocked.terminal_proven);
+    assert!(observation.elapsed_ms < 2000);
+    cases += 1;
+    println!(
+        "OPTIC317_CASE {{\"case\":\"stdin-backpressure-stop\",\"tree_empty\":true,\"pipes_eof\":true,\"writer_unblocked\":true,\"writer_joined\":true}}"
     );
 
     // Missing observation is injected, not an actual OS termination failure.

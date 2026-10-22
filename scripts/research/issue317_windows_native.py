@@ -54,8 +54,11 @@ def main():
                 elif line.startswith("OPTIC317_NATIVE_COMPLETE "):
                     result["native"] = json.loads(line.removeprefix("OPTIC317_NATIVE_COMPLETE "))
             assert process.returncode == 0, "native fixture failed; raw log withheld"
-            assert len(result["cases"]) == 8
-            assert result["native"]["cases"] == 8
+            assert len(result["cases"]) == 9
+            assert result["native"]["cases"] == 9
+            stdin = next(case for case in result["cases"] if case["case"] == "stdin-backpressure-stop")
+            assert all(stdin[key] for key in ("tree_empty", "pipes_eof", "writer_unblocked", "writer_joined"))
+            result["stdin_blocked_writer_stop_proven"] = True
             result["complete"] = True
     finally:
         try:
