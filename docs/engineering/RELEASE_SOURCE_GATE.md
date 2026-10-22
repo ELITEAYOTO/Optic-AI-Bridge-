@@ -26,6 +26,10 @@ verification. A later workflow rerun may produce different evidence; the guard
 does not claim future reproducibility. An older green run never substitutes for
 a newer matching failure.
 
+Both release checkouts explicitly select github.sha, so build and verification
+consume the event commit rather than following a mutable tag name. Tag protection
+and a concurrent operator tag move remain separate repository controls.
+
 The verify job has contents:read/actions:read only; release-windows keeps the
 existing contents:write needed for gh release. Ref/repository values enter
 PowerShell as environment data, not interpolated script source. No branch
