@@ -1,0 +1,51 @@
+name: Windows Git registry native transfer
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-runtime/**'
+      - 'scripts/research/issue317_*'
+      - '.github/workflows/issue317-registry-native.yml'
+  push:
+    branches: ['bootstrap/issue-317-windows-rust-owner']
+    paths:
+      - 'crates/optic-bridge-runtime/src/git/owner_registry.rs'
+      - 'scripts/research/issue317_*'
+      - '.github/workflows/issue317-registry-native.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact source
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib --no-run --message-format=json > runtime-build.jsonl
+          if ($LASTEXITCODE -ne 0) { throw 'native build failed' }
+          $tests = @(Get-Content runtime-build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_runtime' -and $_.executable })
+          if ($tests.Count -ne 1) { throw 'ambiguous runtime test identity' }
+          "OPTIC317_RUNTIME_EXE=$($tests[0].executable)" >> $env:GITHUB_ENV
+          cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_baseline
+          if ($LASTEXITCODE -ne 0) { throw 'baseline example build failed' }
+      - name: Original runner baseline under independent ownership
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_baseline_supervisor.py --example-exe "$PWD/target/debug/examples/issue317_baseline.exe" --output evidence/baseline-native.json
+      - name: Native adoption and retained capacity
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_registry_native.py --test-exe "$env:OPTIC317_RUNTIME_EXE" --output evidence/registry-native.json
+      - name: Preserve evidence including incomplete runs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic317-registry-native
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: warn

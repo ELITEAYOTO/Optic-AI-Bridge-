@@ -198,11 +198,14 @@ impl<T> GitOwnerRegistry<T> {
         Ok(id)
     }
 
+    // Commit the transfer only after every fallible registry check. On error
+    // the service worker still owns the native payload and must recover it.
+    // Taking T by value here would run its Drop on rejected adoption.
     pub(super) fn adopt(
         &self,
         id: OwnerId,
         domain: &OwnerDomain,
-        owner: T,
+        owner: &mut Option<T>,
     ) -> Result<(), OwnerError> {
         let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
         let record = state.records.get_mut(&id).ok_or(OwnerError::WrongOwner)?;
@@ -213,7 +216,7 @@ impl<T> GitOwnerRegistry<T> {
             return Err(OwnerError::Adopted);
         }
         record.stage = Stage::Adopted {
-            owner: Arc::new(Mutex::new(owner)),
+            owner: Arc::new(Mutex::new(owner.take().ok_or(OwnerError::NotAdopted)?)),
             observing: Arc::new(AtomicBool::new(false)),
         };
         Ok(())
@@ -357,6 +360,221 @@ mod tests {
     use optic_bridge_core::{Capability, PrincipalId, ProjectId, SessionGrant};
     use std::collections::BTreeSet;
 
+    #[test]
+    fn rejected_adoption_must_not_destroy_native_owner() {
+        use std::sync::atomic::AtomicUsize;
+        struct Payload(Arc<AtomicUsize>);
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let owners = GitOwnerRegistry::new(OwnerCeiling {
+            count: 1,
+            memory: 100,
+            output: 40,
+            cpu: 80,
+        })
+        .unwrap();
+        let id = owners.reserve_host_startup(budget()).unwrap();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut payload = Some(Payload(Arc::clone(&drops)));
+        assert!(matches!(
+            owners.adopt(
+                id,
+                &OwnerDomain::Session(grant("wrong").handle),
+                &mut payload
+            ),
+            Err(OwnerError::WrongOwner)
+        ));
+        assert_eq!(
+            drops.load(Ordering::SeqCst),
+            0,
+            "rejected native resources must remain owned by the caller"
+        );
+        assert!(payload.is_some());
+        owners
+            .adopt(id, &OwnerDomain::HostStartup, &mut payload)
+            .unwrap();
+        assert!(payload.is_none());
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        owners
+            .reap_if_proven(id, &OwnerDomain::HostStartup, |_| Ok::<bool, ()>(true))
+            .unwrap()
+            .unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn failed_adoption_keeps_payload_for_duplicate_unknown_and_poisoned_registry() {
+        let owners = ledger();
+        let id = owners.reserve_host_startup(budget()).unwrap();
+        let domain = OwnerDomain::HostStartup;
+        let mut missing = None;
+        assert!(matches!(
+            owners.adopt(id, &domain, &mut missing),
+            Err(OwnerError::NotAdopted)
+        ));
+        let mut payload = Some("original");
+        owners.adopt(id, &domain, &mut payload).unwrap();
+        assert!(payload.is_none());
+        let mut duplicate = Some("must survive");
+        assert!(matches!(
+            owners.adopt(id, &domain, &mut duplicate),
+            Err(OwnerError::Adopted)
+        ));
+        assert_eq!(duplicate, Some("must survive"));
+        assert!(matches!(
+            owners.adopt(OwnerId(u64::MAX), &domain, &mut duplicate),
+            Err(OwnerError::WrongOwner)
+        ));
+        assert_eq!(duplicate, Some("must survive"));
+        assert!(
+            std::panic::catch_unwind(|| {
+                let _guard = owners.state.lock().unwrap();
+                panic!("synthetic registry poisoning");
+            })
+            .is_err()
+        );
+        assert!(matches!(
+            owners.adopt(id, &domain, &mut duplicate),
+            Err(OwnerError::Unavailable)
+        ));
+        assert_eq!(duplicate, Some("must survive"));
+        // The poisoned registry itself deliberately retains the original;
+        // this test does not authorize dropping a live native registry.
+    }
+
+    // Run only under scripts/research/issue317_registry_native.py. The gate
+    // ensures the independent supervisor owns this process tree before spawn.
+    #[test]
+    #[ignore = "requires independent Windows Job supervisor"]
+    fn native_rejected_adoption_retains_owner_until_tree_and_pipes_end() {
+        use optic_bridge_windows::LimitedJobObject;
+        use process_wrap::tokio::CommandWrap;
+        use std::{
+            env,
+            process::Stdio,
+            thread,
+            time::{Duration, Instant},
+        };
+        use tokio::{io::AsyncReadExt, process::Command};
+
+        let gate = std::path::PathBuf::from(
+            env::var_os("OPTIC317_REGISTRY_GATE").expect("supervisor gate"),
+        );
+        let until = Instant::now() + Duration::from_secs(5);
+        while !gate.exists() {
+            assert!(Instant::now() < until, "outer ownership gate absent");
+            thread::sleep(Duration::from_millis(5));
+        }
+        let started = gate.with_extension("started");
+        let sessions = SessionRegistry::new();
+        let a = grant("native");
+        sessions.register(a.clone()).unwrap();
+        let admission = sessions
+            .begin_admission(&a.handle, MonotonicTime::from_millis(1))
+            .unwrap();
+        let owners = GitOwnerRegistry::new(OwnerCeiling {
+            count: 1,
+            memory: 512 * 1024 * 1024,
+            output: 16384,
+            cpu: 25,
+        })
+        .unwrap();
+        let budget = OwnerBudget {
+            memory: 512 * 1024 * 1024,
+            output: 16384,
+            cpu: 25,
+        };
+        let id = owners
+            .reserve_session(&sessions, &admission, MonotonicTime::from_millis(1), budget)
+            .unwrap();
+        let domain = OwnerDomain::Session(a.handle.clone());
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut command = Command::new(env::current_exe().unwrap());
+            command.args(["--exact", "git_owner_registry::tests::native_registry_fixture_child", "--ignored", "--nocapture"])
+                .env_clear().env("OPTIC317_REGISTRY_CHILD", "1")
+                .env("OPTIC317_REGISTRY_STARTED", &started)
+                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+            if let Some(root) = env::var_os("SystemRoot") { command.env("SystemRoot", root); }
+            let mut command = CommandWrap::from(command);
+            command.wrap(LimitedJobObject::new(1, budget.memory, budget.cpu).unwrap());
+            let mut child = command.spawn().unwrap();
+            let start_deadline = Instant::now() + Duration::from_secs(3);
+            while !started.exists() {
+                assert!(Instant::now() < start_deadline, "native child did not execute");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            let out = child.stdout().take().unwrap();
+            let err = child.stderr().take().unwrap();
+            let mut payload = Some((child, out, err));
+            assert!(matches!(owners.adopt(id, &OwnerDomain::HostStartup, &mut payload), Err(OwnerError::WrongOwner)));
+            assert!(payload.as_mut().unwrap().0.try_wait().unwrap().is_none(), "rejected child still owned, not killed by Drop");
+            owners.adopt(id, &domain, &mut payload).unwrap();
+            assert!(payload.is_none());
+            let (reply_tx, reply_rx) = std::sync::mpsc::channel::<()>();
+            drop(reply_rx);
+            assert!(reply_tx.send(()).is_err());
+            assert_eq!(owners.outstanding(&a.handle).unwrap(), 1);
+            assert!(matches!(owners.reserve_session(&sessions, &admission, MonotonicTime::from_millis(1), budget), Err(OwnerError::Capacity)));
+            owners.stop_session(&a.handle).unwrap();
+            assert!(owners.stop_signal(id, &domain).unwrap().load(Ordering::Acquire));
+            // Stop is a request, not proof. The observer keeps the real child
+            // and pipes registered after requesting native termination.
+            assert!(!owners.reap_if_proven(id, &domain, |(child, _, _)| {
+                child.start_kill()?;
+                Ok::<bool, std::io::Error>(false)
+            }).unwrap().unwrap());
+            assert_eq!(owners.outstanding(&a.handle).unwrap(), 1);
+            let proof = owners.reap_if_proven(id, &domain, |(child, out, err)| {
+                // Drive the synchronous proof outside Tokio's worker context;
+                // never hold the global registry lock while waiting for I/O.
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        tokio::time::timeout(Duration::from_secs(3), async {
+                            loop {
+                                if child.try_wait()?.is_some() { break; }
+                                tokio::time::sleep(Duration::from_millis(5)).await;
+                            }
+                            for pipe in [&mut *out as &mut (dyn tokio::io::AsyncRead + Unpin), &mut *err] {
+                                let mut buffer = [0_u8; 512];
+                                let mut total = 0;
+                                loop {
+                                    let n = pipe.read(&mut buffer).await?;
+                                    if n == 0 { break; }
+                                    total += n;
+                                    if total > 8192 { return Err(std::io::Error::other("fixture output cap")); }
+                                }
+                            }
+                            Ok::<bool, std::io::Error>(true)
+                        }).await.map_err(|_| std::io::Error::other("native proof timed out"))?
+                    })
+                })
+            }).unwrap().unwrap();
+            assert!(proof);
+            assert_eq!(owners.outstanding(&a.handle).unwrap(), 0);
+            println!("OPTIC317_REGISTRY_NATIVE tree_empty=true pipes_eof=true rejected_payload_retained=true capacity_released_after_proof=true");
+        });
+    }
+
+    #[test]
+    #[ignore = "synthetic child selected only by independent supervisor"]
+    fn native_registry_fixture_child() {
+        assert_eq!(std::env::var("OPTIC317_REGISTRY_CHILD").as_deref(), Ok("1"));
+        std::fs::write(
+            std::env::var_os("OPTIC317_REGISTRY_STARTED").expect("started marker"),
+            b"executed",
+        )
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(8));
+    }
+
     fn grant(name: &str) -> SessionGrant {
         SessionGrant {
             handle: SessionHandle::generate().unwrap(),
@@ -408,8 +626,12 @@ mod tests {
         ));
         let ad = OwnerDomain::Session(a.handle.clone());
         let bd = OwnerDomain::Session(b.handle.clone());
-        owners.adopt(aid, &ad, "real owner retained here").unwrap();
-        owners.adopt(bid, &bd, "independent owner").unwrap();
+        owners
+            .adopt(aid, &ad, &mut Some("real owner retained here"))
+            .unwrap();
+        owners
+            .adopt(bid, &bd, &mut Some("independent owner"))
+            .unwrap();
         assert!(matches!(
             owners.should_stop(aid, &bd),
             Err(OwnerError::WrongOwner)
@@ -471,7 +693,9 @@ mod tests {
             .reserve_session(&sessions, &admission, now, budget())
             .unwrap();
         let domain = OwnerDomain::Session(grant.handle.clone());
-        owners.adopt(id, &domain, "held native owner").unwrap();
+        owners
+            .adopt(id, &domain, &mut Some("held native owner"))
+            .unwrap();
         let stop_signal = owners.stop_signal(id, &domain).unwrap();
         assert!(!stop_signal.load(Ordering::Acquire));
 
