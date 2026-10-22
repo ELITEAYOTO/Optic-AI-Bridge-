@@ -3,7 +3,9 @@ on:
   push:
     branches: ["bootstrap/issue-317-owned-cleanup-study"]
     paths:
-      - "scripts/research/issue317_*.py"
+      - "scripts/research/issue317_owner_study.py"
+      - "scripts/research/issue317_supervisor.py"
+      - "scripts/research/issue317_pack.py"
       - "crates/optic-bridge-runtime/examples/issue317_pipe_fixture.rs"
       - ".github/workflows/issue317-owner-study.yml"
       - "docs/research/ISSUE317_OWNED_CLEANUP_2026-10-21.md"
