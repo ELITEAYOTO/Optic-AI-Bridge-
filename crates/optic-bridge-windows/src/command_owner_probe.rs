@@ -69,9 +69,13 @@ impl ProbeOwner {
         Ok(owner)
     }
     fn assign(&mut self) -> io::Result<()> {
-        // SAFETY: exact live child and Job handles are owned by self. The root
-        // was created suspended and cannot execute fixture code before resume.
-        unsafe { AssignProcessToJobObject(self.job.raw(), HANDLE(self.child.as_raw_handle())) }
+        self.assign_native(HANDLE(self.child.as_raw_handle()))
+    }
+    fn assign_native(&mut self, process: HANDLE) -> io::Result<()> {
+        // SAFETY: the Job handle is owned here. Windows validates the opaque
+        // process handle; the test deliberately passes a null handle and
+        // requires native rejection before any root thread may resume.
+        unsafe { AssignProcessToJobObject(self.job.raw(), process) }
             .map_err(io::Error::other)?;
         self.assigned = true;
         Ok(())
@@ -322,6 +326,29 @@ fn native_windows_owner_matrix() {
     cases += 1;
     println!(
         "OPTIC317_CASE {{\"case\":\"partial-before-assignment\",\"tree_empty\":true,\"never_resumed\":true}}"
+    );
+
+    // Demonstrate a real Win32 assignment error while a suspended root is
+    // owned but not yet in the Job. The invalid native handle is intentional.
+    // This does not simulate a failure after a successful real assignment.
+    let root = base.join("assign-invalid-handle");
+    std::fs::create_dir(&root).unwrap();
+    let mut failed = ProbeOwner::create(&root, "idle").unwrap();
+    assert!(
+        failed.assign_native(HANDLE::default()).is_err(),
+        "native assignment unexpectedly accepted invalid process handle"
+    );
+    assert!(!failed.assigned);
+    assert_eq!(failed.job.active_processes().unwrap(), 0);
+    assert!(failed.resume().is_err());
+    assert!(!root.join("started").exists());
+    assert!(failed.stop_and_confirm().unwrap());
+    assert!(!root.join("started").exists());
+    assert!(failed.out.try_read(4096).unwrap().eof);
+    assert!(failed.err.try_read(4096).unwrap().eof);
+    cases += 1;
+    println!(
+        "OPTIC317_CASE {{\"case\":\"native-assignment-error\",\"tree_empty\":true,\"never_resumed\":true,\"pipes_eof\":true,\"native_error\":true}}"
     );
 
     // A child that never reads stdin must not retain a blocked writer after
