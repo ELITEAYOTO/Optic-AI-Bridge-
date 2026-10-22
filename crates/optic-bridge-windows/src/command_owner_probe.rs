@@ -3,10 +3,10 @@ use super::{OwnedJob, resume_process_threads};
 use crate::CapturedOutputPipe;
 use std::{
     io::{self, Write},
-    sync::{Arc, Mutex},
     os::windows::{io::AsRawHandle, process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -481,7 +481,10 @@ fn native_windows_owner_matrix() {
         if registry.lock().unwrap().try_reap(ticket, false).unwrap() {
             break;
         }
-        assert!(Instant::now() < reap_until, "retained native owner never reaped");
+        assert!(
+            Instant::now() < reap_until,
+            "retained native owner never reaped"
+        );
         thread::sleep(POLL);
     }
     let next_ticket = registry.lock().unwrap().reserve().expect("slot reclaimed");
