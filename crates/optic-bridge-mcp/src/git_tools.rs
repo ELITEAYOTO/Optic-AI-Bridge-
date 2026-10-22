@@ -950,11 +950,8 @@ mod tests {
         fs::write(fixture.repo.join("ordinary.txt"), b"ordinary fixture\n")
             .expect("ordinary control");
         fs::remove_file(fixture.repo.join("tracked.txt")).expect("replace committed path");
-        fs::hard_link(
-            fixture.repo.join(".env"),
-            fixture.repo.join("tracked.txt"),
-        )
-        .expect("same-volume NTFS hardlink");
+        fs::hard_link(fixture.repo.join(".env"), fixture.repo.join("tracked.txt"))
+            .expect("same-volume NTFS hardlink");
 
         // Ordinary content rights exist, but sensitive rights are deliberately
         // scoped to the wrong directory. No default sensitive grant is added.
@@ -1011,7 +1008,8 @@ mod tests {
             .decode(worktree.data_base64)
             .expect("real MCP handler base64 output");
         assert!(
-            bytes.windows(MARKER.trim_ascii_end().len())
+            bytes
+                .windows(MARKER.trim_ascii_end().len())
                 .any(|s| s == MARKER.trim_ascii_end()),
             "known #182 gap: worktree patch should currently reproduce"
         );
@@ -1030,7 +1028,8 @@ mod tests {
             .decode(staged.data_base64)
             .expect("staged patch base64");
         assert!(
-            bytes.windows(MARKER.trim_ascii_end().len())
+            bytes
+                .windows(MARKER.trim_ascii_end().len())
                 .any(|s| s == MARKER.trim_ascii_end()),
             "known #182 gap: index patch should currently reproduce"
         );
@@ -1046,7 +1045,8 @@ mod tests {
             .decode(leaked.data_base64)
             .expect("GitRead-only patch base64");
         assert!(
-            bytes.windows(MARKER.trim_ascii_end().len())
+            bytes
+                .windows(MARKER.trim_ascii_end().len())
                 .any(|s| s == MARKER.trim_ascii_end()),
             "known #182 gap: FileRead-denied GitRead must be recorded"
         );
