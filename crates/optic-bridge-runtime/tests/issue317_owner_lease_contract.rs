@@ -580,7 +580,9 @@ fn research_real_lifecycle_seal_after_test_owner_drop() {
     // Show which guarantees disappear when the synthetic owner is dropped.
     let root = std::env::temp_dir().join(format!(
         "optic-issue317-seal-{}",
-        SessionHandle::generate().expect("unique test root").to_token()
+        SessionHandle::generate()
+            .expect("unique test root")
+            .to_token()
     ));
     std::fs::create_dir_all(&root).expect("create disposable root");
 
@@ -646,10 +648,7 @@ fn research_real_lifecycle_seal_after_test_owner_drop() {
         sessions.get_active(&session.handle, now),
         Err(SessionRegistryError::Revoked)
     );
-    let seal_waited = matches!(
-        result_rx.try_recv(),
-        Err(mpsc::TryRecvError::Empty)
-    );
+    let seal_waited = matches!(result_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
     assert_eq!(guard.active_requests(), 1);
 
     // This is intentionally NOT the guarded Owner::release: it is ordinary
@@ -662,7 +661,10 @@ fn research_real_lifecycle_seal_after_test_owner_drop() {
     std::fs::remove_dir_all(&root).expect("remove disposable root");
 
     assert!(revoked_before_release, "real revoke must signal promptly");
-    assert!(seal_waited, "real seal must wait while admission is retained");
+    assert!(
+        seal_waited,
+        "real seal must wait while admission is retained"
+    );
     assert!(joined.is_ok(), "seal worker must complete");
     assert_eq!(
         after_drop
