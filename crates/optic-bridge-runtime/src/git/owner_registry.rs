@@ -472,31 +472,32 @@ mod tests {
         let sessions = SessionRegistry::new();
         let a = grant("native");
         sessions.register(a.clone()).unwrap();
-        let admission = sessions
-            .begin_admission(&a.handle, MonotonicTime::from_millis(1))
+        thread::scope(|scope| {
+            let admission = sessions
+                .begin_admission(&a.handle, MonotonicTime::from_millis(1))
+                .unwrap();
+            let owners = GitOwnerRegistry::new(OwnerCeiling {
+                count: 1,
+                memory: 512 * 1024 * 1024,
+                output: 16384,
+                cpu: 25,
+            })
             .unwrap();
-        let owners = GitOwnerRegistry::new(OwnerCeiling {
-            count: 1,
-            memory: 512 * 1024 * 1024,
-            output: 16384,
-            cpu: 25,
-        })
-        .unwrap();
-        let budget = OwnerBudget {
-            memory: 512 * 1024 * 1024,
-            output: 16384,
-            cpu: 25,
-        };
-        let id = owners
-            .reserve_session(&sessions, &admission, MonotonicTime::from_millis(1), budget)
-            .unwrap();
-        let domain = OwnerDomain::Session(a.handle.clone());
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
+            let budget = OwnerBudget {
+                memory: 512 * 1024 * 1024,
+                output: 16384,
+                cpu: 25,
+            };
+            let id = owners
+                .reserve_session(&sessions, &admission, MonotonicTime::from_millis(1), budget)
+                .unwrap();
+            let domain = OwnerDomain::Session(a.handle.clone());
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
             let mut command = Command::new(env::current_exe().unwrap());
             command.args(["--exact", "git_owner_registry::tests::native_registry_fixture_child", "--ignored", "--nocapture"])
                 .env_clear().env("OPTIC317_REGISTRY_CHILD", "1")
@@ -523,6 +524,15 @@ mod tests {
             assert!(reply_tx.send(()).is_err());
             assert_eq!(owners.outstanding(&a.handle).unwrap(), 1);
             assert!(matches!(owners.reserve_session(&sessions, &admission, MonotonicTime::from_millis(1), budget), Err(OwnerError::Capacity)));
+            let (revoked, _) = sessions.watch_active(&a.handle, MonotonicTime::from_millis(1)).unwrap();
+            scope.spawn(|| { sessions.revoke(&a.handle).unwrap(); });
+            let revoke_deadline = Instant::now() + Duration::from_secs(3);
+            while !revoked.load(Ordering::Acquire) {
+                assert!(Instant::now() < revoke_deadline, "real session revocation missing");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            assert!(owners.should_stop(id, &domain).unwrap());
+            assert!(matches!(sessions.begin_admission(&a.handle, MonotonicTime::from_millis(1)), Err(SessionRegistryError::Revoked)));
             owners.stop_session(&a.handle).unwrap();
             assert!(owners.stop_signal(id, &domain).unwrap().load(Ordering::Acquire));
             // Stop is a request, not proof. The observer keeps the real child
@@ -559,7 +569,9 @@ mod tests {
             }).unwrap().unwrap();
             assert!(proof);
             assert_eq!(owners.outstanding(&a.handle).unwrap(), 0);
-            println!("OPTIC317_REGISTRY_NATIVE tree_empty=true pipes_eof=true rejected_payload_retained=true capacity_released_after_proof=true");
+            println!("OPTIC317_REGISTRY_NATIVE tree_empty=true pipes_eof=true rejected_payload_retained=true capacity_released_after_proof=true real_revoke_observed_before_admission_drain=true");
+        });
+            drop(admission);
         });
     }
 

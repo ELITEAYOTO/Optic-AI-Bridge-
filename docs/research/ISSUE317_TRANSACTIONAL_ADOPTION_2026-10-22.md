@@ -20,7 +20,7 @@ payload; this API is never a cleanup or cancellation substitute.
 The independently Job-supervised ignored runtime test uses a real
 LimitedJobObject child and real stdout/stderr. Wrong-domain adoption retains
 that live child, then legitimate adoption consumes the payload. Dropping a
-reply receiver does not remove the record. Native stop with missing observation
+reply receiver does not remove the record. A genuine SessionRegistry::revoke runs on a scoped thread and signals stop while the real admission is held. New admission is refused; the native owner is stopped and observed before that permit is dropped and revoke drains. Native stop with missing observation
 retains capacity. Release requires LimitedJobChild::try_wait (root exit AND Job
 empty) plus bounded stdout and stderr EOF reads. A separate outer Job confirms
 recovery on success and failure. Child lifetime is independently capped at 8s.
