@@ -99,3 +99,23 @@ not a generic400ms syscall-cancellation claim. dotnet/runtime Process.Windows.cs
 and issue84290 document FileStream-backed redirected anonymous pipes and Windows
 async-cancellation limitations. Native tests establish the scoped error cases,
 not all possible kernel or concurrent-reader states.
+
+## Verified native result and independent review
+
+At6518b0d1ef74b6afaefc8325af799fe9eb2fcf29, native proof39713678757 attempt1
+passed both original blocked controls and seven candidate cases. Candidate:
+normal38ms; EOF/live stderr431ms with actual entry marker; EOF/descendant433ms;
+1000ms timeout+descendant1451ms; partial UTF-8 replacement427ms; oversized stderr
+27ms with4167-char bounded error; four silent captures1634ms, handle delta0.
+All fixture Jobs confirmed empty. These timings include worker protocol overhead;
+400ms describes native polling only, not Add-Type compilation or OS scheduling.
+
+Independent read-only review found type initialization outside best-effort catch.
+Final candidate covers initialization too; two additional deterministic failures
+shadow Add-Type in the isolated worker only, proving EOF/timeout primary errors
+survive without changing Windows security settings. Hosted proof uses pwsh only,
+not Windows PowerShell5.1. Native Windows Server runner success does not certify
+Windows10/11 operational acceptance. Existing packaging copies this self-contained
+.ps1, so no helper file/binary or mandatory core runtime dependency is added.
+Normal independent CI39713678739 remains a separate result on6518b0; inspect
+final exact-source checks rather than treating preceding-head success as final.

@@ -15,6 +15,10 @@ foreach($name in @('Read-OpticBoundedStderr','Throw-McpTimeout','Read-McpRespons
     $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$false)
     if($null -ne $function){ . ([scriptblock]::Create($function.Extent.Text)) }
 }
+if($Mode -in @('eof-init-failure','timeout-init-failure')) {
+    # Deterministic failure only; no host policy/security change.
+    function Add-Type { throw 'injected diagnostic initialization failure' }
+}
 # Warm compilation before timings and before any fixture can run.
 if(Get-Command Read-OpticBoundedStderr -ErrorAction SilentlyContinue) {
     try { Read-OpticBoundedStderr -Process ([pscustomobject]@{StandardError=$null}) | Out-Null } catch {}
@@ -29,7 +33,12 @@ $psi=[Diagnostics.ProcessStartInfo]::new()
 $psi.FileName=$Python
 $ready=Join-Path $Root 'ready'
 $psi.ArgumentList.Add('-I');$psi.ArgumentList.Add($Fixture)
-$psi.ArgumentList.Add($Mode);$psi.ArgumentList.Add($ready)
+$fixtureMode = switch ($Mode) {
+    'eof-init-failure' { 'eof-live' }
+    'timeout-init-failure' { 'timeout-descendant' }
+    default { $Mode }
+}
+$psi.ArgumentList.Add($fixtureMode);$psi.ArgumentList.Add($ready)
 $psi.UseShellExecute=$false
 $psi.RedirectStandardInput=$true
 $psi.RedirectStandardOutput=$true
@@ -66,7 +75,7 @@ try {
         if($Mode -eq 'eof-live' -and $protocolError -notmatch 'OPTIC_STARTUP phase=entry elapsed_ms=0'){throw 'Actual stderr evidence was discarded'}
         if($Mode -eq 'oversized' -and $protocolError -notmatch '\.\.\.\[truncated\]'){throw 'Oversized stderr was not captured and capped'}
         if($Mode -eq 'partial-utf8' -and $protocolError -notmatch [char]0xFFFD){throw 'Partial UTF-8 was not bounded-decoded'}
-        if($Mode -eq 'timeout-descendant'){
+        if($Mode -in @('timeout-descendant','timeout-init-failure')){
             if($protocolError -notmatch 'Timed out after 1000ms'){throw 'Primary timeout lost'}
         } elseif($protocolError -notmatch 'closed before MCP response'){throw 'Primary EOF lost'}
     }

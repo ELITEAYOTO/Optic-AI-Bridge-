@@ -35,6 +35,7 @@ function Read-OpticBoundedStderr {
 
     # This Windows doctor is the ONLY stderr consumer. Never start ReadAsync:
     # timing out its Task.Wait does not cancel an inherited anonymous-pipe read.
+    try {
     if ($null -eq ('OpticDoctor.NativePipeCapture' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -92,7 +93,6 @@ namespace OpticDoctor {
 }
 '@
     }
-    try {
         return [OpticDoctor.NativePipeCapture]::Read($Process.StandardError.BaseStream)
     }
     catch {
