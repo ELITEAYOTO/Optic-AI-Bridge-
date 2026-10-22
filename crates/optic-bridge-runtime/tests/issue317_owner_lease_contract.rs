@@ -16,8 +16,8 @@ use optic_bridge_core::{
     Capability, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
 };
 use optic_bridge_runtime::{
-    RequestPermit, SessionAdmissionPermit, SessionRegistry, SessionRegistryError, TransportGuard,
-    TransportError, TransportLimits,
+    RequestPermit, SessionAdmissionPermit, SessionRegistry, SessionRegistryError, TransportError,
+    TransportGuard, TransportLimits,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -120,11 +120,7 @@ impl<'a> ContractRegistry<'a> {
         Ok(())
     }
 
-    fn prove_native_terminal(
-        &mut self,
-        id: u64,
-        actor: &Authority,
-    ) -> Result<(), &'static str> {
+    fn prove_native_terminal(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
         let owner = self.owner_mut(id, actor)?;
         if !matches!(owner.phase, Phase::StopRequested | Phase::RetainedUncertain) {
             return Err("native termination not requested");
@@ -157,9 +153,10 @@ impl<'a> ContractRegistry<'a> {
     }
 
     fn may_seal(&self, session: &SessionHandle) -> bool {
-        !self.entries.iter().any(|entry| {
-            matches!(&entry.authority, Authority::Session(owner) if owner == session)
-        })
+        !self
+            .entries
+            .iter()
+            .any(|entry| matches!(&entry.authority, Authority::Session(owner) if owner == session))
     }
 
     fn slots_held(&self) -> usize {
@@ -234,8 +231,12 @@ fn retained_uncertain_owner_blocks_admission_drain_seal_and_slot_reuse() {
     assert!(done_rx.try_recv().is_err(), "admission cannot drain yet");
 
     // Stop must remain reachable with the sole normal request slot occupied.
-    owners.request_stop(id, &authority).expect("owned stop signal");
-    owners.retain_uncertain(id, &authority).expect("injected uncertainty");
+    owners
+        .request_stop(id, &authority)
+        .expect("owned stop signal");
+    owners
+        .retain_uncertain(id, &authority)
+        .expect("injected uncertainty");
     assert_eq!(owners.slots_held(), 1);
     assert!(!owners.may_seal(&session.handle));
     assert!(owners.release(id, &authority).is_err());
@@ -248,14 +249,26 @@ fn retained_uncertain_owner_blocks_admission_drain_seal_and_slot_reuse() {
         .prove_native_terminal(id, &authority)
         .expect("native proof");
     assert!(owners.release(id, &authority).is_err(), "pipes still held");
-    owners.prove_io_joined(id, &authority).expect("joined proof");
-    owners.release(id, &authority).expect("release only after both");
+    owners
+        .prove_io_joined(id, &authority)
+        .expect("joined proof");
+    owners
+        .release(id, &authority)
+        .expect("release only after both");
     assert_eq!(owners.slots_held(), 0);
     assert!(owners.may_seal(&session.handle));
     assert_eq!(guard.active_requests(), 0);
-    assert!(done_rx.recv_timeout(Duration::from_secs(2)).expect("revoke bounded").expect("revoke"));
+    assert!(
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("revoke bounded")
+            .expect("revoke")
+    );
     revoke_thread.join().expect("revoke join");
-    assert!(guard.begin_execution(now).is_ok(), "slot returned after proof");
+    assert!(
+        guard.begin_execution(now).is_ok(),
+        "slot returned after proof"
+    );
 }
 
 #[test]
@@ -286,7 +299,9 @@ fn host_startup_and_foreign_session_cannot_spoof_each_other() {
     assert_eq!(owners.slots_held(), 2);
 
     owners.request_stop(id, &first_actor).expect("first stop");
-    owners.prove_native_terminal(id, &first_actor).expect("terminal");
+    owners
+        .prove_native_terminal(id, &first_actor)
+        .expect("terminal");
     owners.prove_io_joined(id, &first_actor).expect("io joined");
     owners.release(id, &first_actor).expect("first release");
     assert!(owners.may_seal(&first.handle));
