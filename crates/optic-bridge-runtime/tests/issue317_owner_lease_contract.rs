@@ -109,11 +109,7 @@ impl<'a> ContractRegistry<'a> {
 
     // Model a reserved slot becoming a native creation attempt before the OS
     // call. Once an attempt starts, the slot cannot be released as pre-spawn.
-    fn begin_native_creation(
-        &mut self,
-        id: u64,
-        actor: &Authority,
-    ) -> Result<(), &'static str> {
+    fn begin_native_creation(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
         let owner = self.owner_mut(id, actor)?;
         if owner.phase != Phase::Reserved {
             return Err("creation already started");
@@ -122,11 +118,7 @@ impl<'a> ContractRegistry<'a> {
         Ok(())
     }
 
-    fn attach_suspended_owned(
-        &mut self,
-        id: u64,
-        actor: &Authority,
-    ) -> Result<(), &'static str> {
+    fn attach_suspended_owned(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
         let owner = self.owner_mut(id, actor)?;
         if owner.phase != Phase::NativeCreationInFlight {
             return Err("native creation not declared");
@@ -145,11 +137,7 @@ impl<'a> ContractRegistry<'a> {
     }
 
     // Only safe in the model when native creation has NOT been attempted.
-    fn release_before_creation(
-        &mut self,
-        id: u64,
-        actor: &Authority,
-    ) -> Result<(), &'static str> {
+    fn release_before_creation(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
         let owner = self.owner_mut(id, actor)?;
         if owner.phase != Phase::Reserved {
             return Err("native creation may have happened");
@@ -376,7 +364,9 @@ fn host_startup_and_foreign_session_cannot_spoof_each_other() {
     owners
         .attach_suspended_owned(id, &first_actor)
         .expect("session native owner");
-    owners.mark_running(id, &first_actor).expect("session running");
+    owners
+        .mark_running(id, &first_actor)
+        .expect("session running");
     owners
         .begin_native_creation(startup_id, &Authority::HostStartup)
         .expect("host creation started");
@@ -511,6 +501,14 @@ fn admission_identity_and_interrupted_native_start_are_fail_closed() {
         .expect("only fully proven owner releases");
     assert!(owners.may_seal(&first.handle));
     assert_eq!(owners.slots_held(), 0);
-    assert!(sessions.revoke(&first.handle).expect("no stranded admission"));
-    assert!(sessions.revoke(&second.handle).expect("foreign owner untouched"));
+    assert!(
+        sessions
+            .revoke(&first.handle)
+            .expect("no stranded admission")
+    );
+    assert!(
+        sessions
+            .revoke(&second.handle)
+            .expect("foreign owner untouched")
+    );
 }
