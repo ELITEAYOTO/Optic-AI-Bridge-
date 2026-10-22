@@ -6,6 +6,37 @@ Target baseline: `main=3fe3de0c258b2f8fc4328d6c405c8bf05cb22e3d`.
 The current repo has an independent ongoing PR #327 for #317; this document
 must not be represented as a PR merging a GitRead security-policy change.
 
+### Stronger index-versus-worktree proof — accepted exact SHA b4868b39
+
+[Independent hosted Windows CI #39865183807](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39865183807)
+completed **success, attempt 1** on tested source
+`b4868b39fcee80834d5e3490154a252dc6f8962d`.
+The same opt-in synthetic test reported **1 passed, 0 failed** and its
+evidence includes
+`index_exposed_after_alias_replaced=true` and
+`worktree_diff_exposed_old_index_after_alias_replaced=true`.
+
+The test **stages** a fake marker through an ordinary-named hardlink to a
+sensitive file, then **removes the hardlink and writes a harmless,
+single-linked replacement** at the ordinary path. The true MCP `fs_read`
+handler can then read the replacement under ordinary FileRead scopes,
+while **both staged GitDiff and unstaged GitDiff still return the fake
+marker from Git's retained index object**. This establishes that even
+perfect observation of the CURRENT worktree file identity does not
+authorize the bytes emitted from a Git index snapshot. An `lstat`,
+open-file link-count probe or pathname classifier before Git is thus
+insufficient as a general Git patch provenance guard.
+
+First extension run
+[#39865005308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39865005308)
+failed one Rustfmt layout hunk on source `a1501dff`, before
+the test. The exact correction was committed at a new SHA `b4868b39`.
+The earlier [successful basic test #39864401186](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39864401186)
+remains separate valid evidence. **Research pass means reproduction succeeded,
+NOT that confidentiality was fixed.** An approved future correction must
+reverse these expectations to require denial in restricted scope.
+ADR status remains PROPOSED.
+
 ## Independent hosted Windows observation (2026-10-22)
 
 Test source `b1e002b3bcc594c8a81c173c42909bfe34271929`, independent
