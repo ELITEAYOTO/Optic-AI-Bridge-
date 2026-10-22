@@ -825,7 +825,10 @@ fn native_windows_owner_matrix() {
             if !worker_service.lock().unwrap().slots.contains_key(&ticket) {
                 break;
             }
-            assert!(Instant::now() < deadline, "admitted worker remained blocked");
+            assert!(
+                Instant::now() < deadline,
+                "admitted worker remained blocked"
+            );
             thread::sleep(POLL);
         }
         let _ = reply_tx.send(());
