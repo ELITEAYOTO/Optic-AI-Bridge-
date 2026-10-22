@@ -13,6 +13,41 @@ This proposal refines **accepted Policy B**. It does not silently convert
 `GitRead` into sensitive-read permission or override ADR-0034. No rollout
 decision is authorized by the existence of this document.
 
+## Independent hosted Windows observation (2026-10-22)
+
+Test source `b1e002b3bcc594c8a81c173c42909bfe34271929`, independent
+[hosted Windows CI #39864401186](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39864401186)
+completed **success, attempt 1** on that exact SHA. The specifically filtered,
+opt-in Windows test
+`git_tools::tests::research_git_diff_hardlink_alias_disclosure_is_reproducible`
+reported **1 passed, 0 failed, 54 filtered out** and emitted:
+
+```text
+OPTIC182_RESEARCH {"synthetic_only":true,"file_read_hardlink_denied":true,"git_worktree_alias_exposed":true,"git_index_alias_exposed":true,"git_read_without_file_read_exposed":true,"production_security_fixed":false}
+```
+
+The test exercised actual Rust MCP tool handlers and the real Git executable
+within a synthetic repository, not a full stdio JSON-RPC transport. Its fixture
+used a fake marker only. It **asserts the currently known exposure**; it is
+not a confidentiality regression test that can be promoted unchanged.
+`git_tools.rs` only registers it as `#[cfg(windows)]`, `#[ignore]` and
+the research workflow opts in explicitly. No production grant/policy has been
+changed. This hosted Windows environment is not Windows 10/11 client
+certification.
+
+First negative CI attempts preserved rather than retried to green:
+- [#39863953660](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39863953660)
+  source `e782c991`, failed Rustfmt (four exact hunks, before executing test).
+- [#39864133466](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39864133466)
+  source `2ae196af`, failed compilation because three `Result::expect_err`
+  invocations required `Debug` on `rmcp::Json`. Corrected using
+  `.err().expect()` without changing test expectations.
+
+The accepted runner passed Rustfmt, Clippy and the named test. This
+**strengthens the evidence for the trust-contract gap** without fixing it,
+authorizing the proposed restriction, or resolving the separate #317/#185
+release gates.
+
 ## Confirmed source behavior
 
 - `ReadonlyMcpServer::git_diff` first evaluates typed `Effect::GitRead`,
