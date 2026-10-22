@@ -12,9 +12,9 @@ acceptance gates or imply they can be established on Linux.
 ## Windows V1 first — operator decision, 22 October 2026
 
 Target Windows10/11; verify actual supported versions rather than inferring them
-from hosted Windows Server. Prioritize MCP startup319, AppContainer/Node185,
-owned Windows command cleanup317, then proven recovery/authorization/resource and
-installation defects. Keep these distinct; doctor error-path diagnostics do not
+from hosted Windows Server. Prioritize demonstrated Windows command ownership317, keeping sensitive-read
+176/182 gates explicit, then MCP startup319, AppContainer/Node185 and proven
+recovery/authorization/resource and installation defects. Keep these distinct; doctor error-path diagnostics do not
 explain natural startup latency. Linux functional support is post-V1. Do not start
 new cgroup/pidfd/PDEATHSIG/confinement research unless shared-code regression
 actually blocks Windows; retain existing Ubuntu CI as non-regression checks.

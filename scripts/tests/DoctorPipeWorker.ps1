@@ -23,27 +23,44 @@ $script:capturedHostMessages = [Collections.Generic.List[string]]::new()
 if($Mode -eq 'timeout-phase-flood'){
     function Write-Host { param($Object) $script:capturedHostMessages.Add([string]$Object) }
 }
-# Warm compilation before timings and before any fixture can run.
-if(Get-Command Read-OpticBoundedStderr -ErrorAction SilentlyContinue) {
-    try { Read-OpticBoundedStderr -Process ([pscustomobject]@{StandardError=$null}) | Out-Null } catch {}
-}
 'ready' | Set-Content -LiteralPath (Join-Path $Root 'worker.ready') -Encoding ascii
 $until=[Diagnostics.Stopwatch]::StartNew()
 while(-not [IO.File]::Exists((Join-Path $Root 'go'))) {
     if($until.ElapsedMilliseconds -gt 8000){throw 'Outer ownership gate missing'}
     Start-Sleep -Milliseconds 5
 }
+# Compile only AFTER the independent outer Job owns this worker, so even
+# .NET Framework compiler subprocesses inherit test ownership.
+if(Get-Command Read-OpticBoundedStderr -ErrorAction SilentlyContinue) {
+    try { Read-OpticBoundedStderr -Process ([pscustomobject]@{StandardError=$null}) | Out-Null } catch {}
+}
+'warmed' | Set-Content -LiteralPath (Join-Path $Root 'worker.warmed') -Encoding ascii
+$until.Restart()
+while(-not [IO.File]::Exists((Join-Path $Root 'fixture.go'))) {
+    if($until.ElapsedMilliseconds -gt 8000){throw 'Fixture ownership gate missing'}
+    Start-Sleep -Milliseconds 5
+}
 $psi=[Diagnostics.ProcessStartInfo]::new()
 $psi.FileName=$Python
 $ready=Join-Path $Root 'ready'
-$psi.ArgumentList.Add('-I');$psi.ArgumentList.Add($Fixture)
 $fixtureMode = switch ($Mode) {
     'eof-init-failure' { 'eof-live' }
     'timeout-init-failure' { 'timeout-descendant' }
     'timeout-phase-flood' { 'phase-flood-parent' }
     default { $Mode }
 }
-$psi.ArgumentList.Add($fixtureMode);$psi.ArgumentList.Add($ready)
+$fixtureArguments = @('-I', $Fixture, $fixtureMode, $ready)
+if ($psi.PSObject.Properties.Name -contains 'ArgumentList') {
+    foreach ($argument in $fixtureArguments) { $psi.ArgumentList.Add($argument) }
+} else {
+    # Windows PowerShell 5.1/.NET Framework lacks ArgumentList. Quote for
+    # the Windows CRT parser, including quotes and trailing backslashes.
+    $psi.Arguments = (($fixtureArguments | ForEach-Object {
+        $escaped = [regex]::Replace([string]$_, '(\\*)"', '$1$1\"')
+        $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+        '"' + $escaped + '"'
+    }) -join ' ')
+}
 $psi.UseShellExecute=$false
 $psi.RedirectStandardInput=$true
 $psi.RedirectStandardOutput=$true
@@ -90,7 +107,7 @@ try {
         if(($script:capturedHostMessages -join '') -match 'unknown-private-label'){throw 'Unknown label was published'}
     }
     if($elapsed -gt 3500){throw 'Bounded worker exceeded conservative guard'}
-    [ordered]@{mode=$Mode;elapsed_ms=$elapsed;normal=($Mode -eq 'normal');primary_error_preserved=($null -ne $protocolError);diagnostic_chars=if($protocolError){$protocolError.Length}else{0};safe_phase_count=$script:capturedHostMessages.Count;capture_handle_delta=if($Mode -eq 'capture-live'){$afterHandles-$beforeHandles}else{$null}} |
+    [ordered]@{powershell_version=$PSVersionTable.PSVersion.ToString();powershell_edition=$PSVersionTable.PSEdition;mode=$Mode;elapsed_ms=$elapsed;normal=($Mode -eq 'normal');primary_error_preserved=($null -ne $protocolError);diagnostic_chars=if($protocolError){$protocolError.Length}else{0};safe_phase_count=$script:capturedHostMessages.Count;capture_handle_delta=if($Mode -eq 'capture-live'){$afterHandles-$beforeHandles}else{$null}} |
         ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $Root 'result.json') -Encoding utf8
 } finally {
     if(-not $p.HasExited){try{$p.Kill()}catch{};try{$p.WaitForExit(1000)|Out-Null}catch{}}

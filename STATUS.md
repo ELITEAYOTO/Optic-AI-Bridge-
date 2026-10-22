@@ -1,5 +1,14 @@
 # Current project status
 
+## Windows PowerShell acceptance coverage
+
+The unchanged doctor now has separate hosted Windows PowerShell5.1 real-pipe
+regressions and a real Bridge/isolated-Node smoke, alongside current pwsh.
+The worker adapts test argument quoting for .NET Framework and records shell
+version/edition. These checks are not Windows10/11 installation certification.
+[Acceptance scope and remaining risks](docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md).
+
+
 ## Release source provenance guard — 22 October 2026
 
 The tag workflow now requires the exact source to be integrated into main and
