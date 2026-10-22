@@ -600,6 +600,91 @@ mod tests {
         assert!(!signal_b.load(Ordering::Acquire));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn git_owner_prelaunch_gate_rejects_revoke_between_watch_and_admission() {
+        // A prior valid watcher cannot authorize a later launch when revoke
+        // wins before actual admission. No native process is spawned here.
+        let registry = Arc::new(SessionRegistry::new());
+        let session = grant(1_000);
+        registry.register(session.clone()).expect("register session");
+        let now = MonotonicTime::from_millis(1);
+        let (old_signal, watched) = registry
+            .watch_active(&session.handle, now)
+            .expect("pre-revoke watcher");
+        assert_eq!(watched.handle, session.handle);
+        assert!(!old_signal.load(Ordering::Acquire));
+
+        assert!(registry.revoke(&session.handle).expect("revoke before admission"));
+        assert!(old_signal.load(Ordering::Acquire));
+        assert!(matches!(
+            registry.begin_admission(&session.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(
+            registry.watch_active(&session.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn git_owner_prelaunch_gate_observes_revoke_while_admission_is_held() {
+        // Admission is initially valid but does not indefinitely authorize a
+        // suspended child resume. A service must check this signal at the
+        // actual side-effect boundary, before resuming any native child.
+        let registry = Arc::new(SessionRegistry::new());
+        let session = grant(1_000);
+        registry.register(session.clone()).expect("register session");
+        let now = MonotonicTime::from_millis(1);
+        let (revoke_signal, watched) = registry
+            .watch_active(&session.handle, now)
+            .expect("valid watcher");
+        assert_eq!(watched.handle, session.handle);
+        let held_admission = registry
+            .begin_admission(&session.handle, now)
+            .expect("valid admission");
+        let revoker_registry = Arc::clone(&registry);
+        let revoker_handle = session.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoker = thread::spawn(move || {
+            done_tx
+                .send(revoker_registry.revoke(&revoker_handle))
+                .expect("report revoke result");
+        });
+
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while !revoke_signal.load(Ordering::Acquire) {
+            assert!(
+                std::time::Instant::now() < until,
+                "prelaunch revocation signal not observed"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(
+            registry.watch_active(&session.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(
+            registry.begin_admission(&session.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        // The old admission remains accounted until its owner exits safely;
+        // the stop intent does not equal a native terminality proof.
+        drop(held_admission);
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke waits for held admission")
+                .expect("revoke succeeds")
+        );
+        revoker.join().expect("join revoker");
+    }
+
     #[test]
     fn renewal_extends_only_active_session_expiry() {
         let registry = SessionRegistry::new();

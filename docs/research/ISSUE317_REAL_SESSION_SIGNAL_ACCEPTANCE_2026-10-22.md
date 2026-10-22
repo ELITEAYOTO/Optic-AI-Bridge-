@@ -71,6 +71,31 @@ not transitive proof of a real production integration.
 - `GitRefOutcomeUncertain` is independent of `TerminationUncertain`;
   read-only Git migration comes first, then separately audited CAS recovery.
 
+## Deterministic prelaunch revocation races (real Registry, no native spawn)
+
+A Windows-only pair of regressions on the actual `SessionRegistry` now defines
+two distinct races (exact run evidence must be checked before acceptance):
+
+1. `watch_active` succeeds, then revoke finishes before admission begins.
+   The previously obtained flag changes to true, while both
+   `begin_admission` and another `watch_active` reject the session. A
+   previously valid watcher cannot authorize a later side effect.
+2. An operation holds a real `SessionAdmissionPermit`, but another thread
+   revokes the session before any simulated native resume. The watcher sees
+   the flag, new admission and watch requests fail, and the blocking revoke
+   remains pending until the admitted operation returns its permit.
+
+The API/service must perform authoritative admission and owner reservation
+atomically enough to avoid unowned native launch. Recheck revocation
+**after** owner registration and immediately before resume. If the flag
+changes after the final pre-resume check, a service-owned watcher must
+request stop and retain resources until a genuine native terminal/I-O proof.
+
+These regressions verify the real registry's sequencing **only**. They neither
+run a Git command nor establish a trusted native stop, durable owner lifetime,
+OS error handling, or that a pre-resume flag read alone closes every
+concurrency race.
+
 ## Concurrency ordering to prove next
 
 1. Acquire real session admission and bind verified authority.
