@@ -569,3 +569,111 @@ fn research_registry_drop_recycles_capacity_despite_uncertain_cleanup() {
         "model Drop allows session drain without native cleanup evidence"
     );
 }
+
+#[test]
+fn research_real_lifecycle_seal_after_test_owner_drop() {
+    use optic_bridge_core::HardLimits;
+    use optic_bridge_runtime::{ProcessManager, SessionLifecycleManager, TaskLeaseRegistry};
+
+    // Real session lifecycle and real admission/transport permits, but NO Git
+    // process and NO integration between LifecycleManager and this test model.
+    // Show which guarantees disappear when the synthetic owner is dropped.
+    let root = std::env::temp_dir().join(format!(
+        "optic-issue317-seal-{}",
+        SessionHandle::generate().expect("unique test root").to_token()
+    ));
+    std::fs::create_dir_all(&root).expect("create disposable root");
+
+    let sessions = Arc::new(SessionRegistry::new());
+    let session = grant();
+    sessions
+        .register(session.clone())
+        .expect("register test session");
+    let processes = Arc::new(
+        ProcessManager::new(&root, HardLimits::default(), Vec::<String>::new())
+            .expect("no-job process manager"),
+    );
+    let lifecycle = Arc::new(SessionLifecycleManager::new(
+        Arc::clone(&sessions),
+        Arc::new(TaskLeaseRegistry::new()),
+        processes,
+    ));
+    let now = MonotonicTime::from_millis(1);
+    let guard = one_transport_slot();
+    let authority = Authority::Session(session.handle.clone());
+    let mut owners = ContractRegistry::new(1);
+    let id = owners
+        .reserve(
+            authority.clone(),
+            Some(
+                sessions
+                    .begin_admission(&session.handle, now)
+                    .expect("admit synthetic Git command"),
+            ),
+            Some(guard.begin_execution(now).expect("transport permit")),
+        )
+        .expect("owner reserved");
+    owners
+        .begin_native_creation(id, &authority)
+        .expect("native attempt modeled");
+    owners.request_stop(id, &authority).expect("stop modeled");
+    owners
+        .retain_uncertain(id, &authority)
+        .expect("cleanup uncertain in model");
+    assert!(!owners.may_seal(&session.handle));
+
+    // The REAL lifecycle's seal calls SessionRegistry::revoke, which waits on
+    // admission. Execute it on a separate OS thread so this test can release
+    // the modeled owner without deadlocking the test's main thread.
+    let (result_tx, result_rx) = mpsc::channel();
+    let sealing = Arc::clone(&lifecycle);
+    let sealed_session = session.handle.clone();
+    let worker = thread::spawn(move || {
+        let result = sealing
+            .seal_quiescent(&sealed_session)
+            .map(|seal| seal.session().clone());
+        result_tx.send(result).expect("send seal result");
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !matches!(
+        sessions.get_active(&session.handle, now),
+        Err(SessionRegistryError::Revoked)
+    ) && Instant::now() < deadline
+    {
+        thread::sleep(Duration::from_millis(1));
+    }
+    let revoked_before_release = matches!(
+        sessions.get_active(&session.handle, now),
+        Err(SessionRegistryError::Revoked)
+    );
+    let seal_waited = matches!(
+        result_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    );
+    assert_eq!(guard.active_requests(), 1);
+
+    // This is intentionally NOT the guarded Owner::release: it is ordinary
+    // destructor release without the synthetic native/pipe completion proofs.
+    drop(owners);
+    let after_drop = result_rx.recv_timeout(Duration::from_secs(5));
+    let joined = worker.join();
+    let reaped = lifecycle.try_reap(&session.handle, now);
+    let remaining = sessions.len();
+    std::fs::remove_dir_all(&root).expect("remove disposable root");
+
+    assert!(revoked_before_release, "real revoke must signal promptly");
+    assert!(seal_waited, "real seal must wait while admission is retained");
+    assert!(joined.is_ok(), "seal worker must complete");
+    assert_eq!(
+        after_drop
+            .expect("seal must complete after model owner Drop")
+            .expect("actual lifecycle seal"),
+        session.handle
+    );
+    assert!(
+        reaped.expect("actual lifecycle reap").session_removed,
+        "real lifecycle may reap once model-owned admission disappears"
+    );
+    assert_eq!(remaining.expect("session count"), 0);
+    assert_eq!(guard.active_requests(), 0);
+}
