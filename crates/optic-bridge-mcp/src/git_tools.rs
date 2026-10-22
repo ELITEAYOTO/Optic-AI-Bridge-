@@ -934,4 +934,125 @@ mod tests {
             "optic.session_inactive"
         );
     }
+
+    // Deliberately observational: this test verifies the PRE-FIX behavior.
+    // When #182 is fixed, replace it with a negative confidentiality test.
+    // Isolated research only; never ship an assertion that a secret is exposed.
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "research-only known #182 gap; hosted Windows opt-in"]
+    async fn research_git_diff_hardlink_alias_disclosure_is_reproducible() {
+        use crate::server::FsReadRequest;
+
+        let fixture = RepoFixture::new("issue182-alias-provenance");
+        const MARKER: &[u8] = b"OPTIC_182_FAKE_MARKER_NOT_A_SECRET\n";
+        fs::write(fixture.repo.join(".env"), MARKER).expect("synthetic protected file");
+        fs::write(fixture.repo.join("ordinary.txt"), b"ordinary fixture\n")
+            .expect("ordinary control");
+        fs::remove_file(fixture.repo.join("tracked.txt")).expect("replace committed path");
+        fs::hard_link(
+            fixture.repo.join(".env"),
+            fixture.repo.join("tracked.txt"),
+        )
+        .expect("same-volume NTFS hardlink");
+
+        // Ordinary content rights exist, but sensitive rights are deliberately
+        // scoped to the wrong directory. No default sensitive grant is added.
+        let server = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
+            WorkspacePath::parse("unrelated").expect("synthetic unrelated prefix"),
+        ));
+        let read = |path: &str| FsReadRequest {
+            path: path.to_owned(),
+            offset: Some(0),
+            max_bytes: Some(1024),
+        };
+        assert!(
+            server
+                .fs_read(Parameters(read("ordinary.txt")))
+                .await
+                .is_ok(),
+            "ordinary FileRead control must work"
+        );
+        assert_eq!(
+            server
+                .fs_read(Parameters(read(".env")))
+                .await
+                .expect_err("protected filename denied")
+                .message,
+            "optic.policy_denied"
+        );
+        assert_eq!(
+            server
+                .fs_read(Parameters(read("tracked.txt")))
+                .await
+                .expect_err("ordinary hardlink also denied by FileRead")
+                .message,
+            "optic.policy_denied"
+        );
+        assert_eq!(
+            server
+                .git_status()
+                .await
+                .expect_err("untracked protected name cannot escape status")
+                .message,
+            "optic.policy_denied"
+        );
+        let request = |staged: bool| GitDiffRequest {
+            path: Some("tracked.txt".to_owned()),
+            staged: Some(staged),
+            max_bytes: Some(16 * 1024),
+        };
+        let worktree = server
+            .git_diff(Parameters(request(false)))
+            .await
+            .expect("document currently exposed GitDiff gap")
+            .0;
+        let bytes = STANDARD
+            .decode(worktree.data_base64)
+            .expect("real MCP handler base64 output");
+        assert!(
+            bytes.windows(MARKER.trim_ascii_end().len())
+                .any(|s| s == MARKER.trim_ascii_end()),
+            "known #182 gap: worktree patch should currently reproduce"
+        );
+
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("tracked.txt")],
+        );
+        let staged = server
+            .git_diff(Parameters(request(true)))
+            .await
+            .expect("document current staged source gap")
+            .0;
+        let bytes = STANDARD
+            .decode(staged.data_base64)
+            .expect("staged patch base64");
+        assert!(
+            bytes.windows(MARKER.trim_ascii_end().len())
+                .any(|s| s == MARKER.trim_ascii_end()),
+            "known #182 gap: index patch should currently reproduce"
+        );
+
+        // Separate GitRead-only session intentionally lacks FileRead entirely.
+        let git_only = fixture.server(&[Capability::GitRead]);
+        let leaked = git_only
+            .git_diff(Parameters(request(true)))
+            .await
+            .expect("document existing independent GitRead authority")
+            .0;
+        let bytes = STANDARD
+            .decode(leaked.data_base64)
+            .expect("GitRead-only patch base64");
+        assert!(
+            bytes.windows(MARKER.trim_ascii_end().len())
+                .any(|s| s == MARKER.trim_ascii_end()),
+            "known #182 gap: FileRead-denied GitRead must be recorded"
+        );
+
+        println!(
+            "OPTIC182_RESEARCH {{\"synthetic_only\":true,\"file_read_hardlink_denied\":true,\"git_worktree_alias_exposed\":true,\"git_index_alias_exposed\":true,\"git_read_without_file_read_exposed\":true,\"production_security_fixed\":false}}"
+        );
+    }
 }

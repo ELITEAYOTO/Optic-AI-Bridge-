@@ -1,0 +1,37 @@
+name: Research GitDiff hardlink provenance 182
+on:
+  push:
+    branches:
+      - research/issue-182-git-provenance-contract
+    paths:
+      - crates/optic-bridge-mcp/src/git_tools.rs
+      - .github/workflows/issue182-git-hardlink-research.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-win:
+    runs-on: windows-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install exact Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain setup failed' }
+      - name: Format and lint research source
+        shell: pwsh
+        run: |
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'format check failed' }
+          cargo +1.99.0 clippy --locked -p optic-bridge-mcp --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'lint check failed' }
+      - name: Observe known #182 alias gap using only synthetic data
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-mcp --lib research_git_diff_hardlink_alias_disclosure_is_reproducible -- --ignored --nocapture --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'research observation failed; keep evidence and investigate' }
