@@ -1,0 +1,27 @@
+name: Issue317 Linux cgroup delegation preflight
+on:
+  push:
+    branches: ["bootstrap/issue-317-owned-cleanup-study"]
+    paths:
+      - "scripts/research/issue317_cgroup_v2_preflight.py"
+      - ".github/workflows/issue317-linux-cgroup-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  read-only-feasibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Assert parser and mount classification
+        run: python3 scripts/research/issue317_cgroup_v2_preflight.py --self-test
+      - name: Observe effective unprivileged delegation without moving processes
+        run: python3 scripts/research/issue317_cgroup_v2_preflight.py --output evidence/cgroup-preflight.json
+      - name: Archive exact-head outcome including unsupported status
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: issue317-linux-cgroup-v2-preflight
+          path: evidence/cgroup-preflight.json
+          if-no-files-found: warn
+          retention-days: 7
