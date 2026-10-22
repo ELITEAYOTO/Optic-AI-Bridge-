@@ -1057,8 +1057,11 @@ mod tests {
         // A *single* ordinary current pathname is not proof of the staged
         // Git blob's source. Replace the hardlink AFTER Git has indexed it.
         fs::remove_file(fixture.repo.join("tracked.txt")).expect("remove alias");
-        fs::write(fixture.repo.join("tracked.txt"), b"ordinary replacement only\n")
-            .expect("ordinary replacement");
+        fs::write(
+            fixture.repo.join("tracked.txt"),
+            b"ordinary replacement only\n",
+        )
+        .expect("ordinary replacement");
         assert_eq!(
             fs::read(fixture.repo.join("tracked.txt")).expect("new ordinary file"),
             b"ordinary replacement only\n"
