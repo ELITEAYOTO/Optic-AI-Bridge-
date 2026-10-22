@@ -1,0 +1,64 @@
+name: Windows PowerShell 5.1 doctor pipes
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/Test-OpticAIBridge.ps1"
+      - "scripts/tests/DoctorPipeWorker.ps1"
+      - "scripts/tests/doctor_pipe_*.py"
+      - ".github/workflows/windows-powershell51-doctor.yml"
+      - "docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md"
+  pull_request:
+    paths:
+      - "scripts/Test-OpticAIBridge.ps1"
+      - "scripts/tests/DoctorPipeWorker.ps1"
+      - "scripts/tests/doctor_pipe_*.py"
+      - ".github/workflows/windows-powershell51-doctor.yml"
+      - "docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md"
+permissions:
+  contents: read
+env:
+  OPTIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+jobs:
+  native-ps51:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Recover original negative control
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028
+          git show 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028:scripts/Test-OpticAIBridge.ps1 | Set-Content -LiteralPath baseline-doctor.ps1 -Encoding utf8
+      - name: Prove actual UTF-8 framing and console restoration
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          python scripts/tests/mcp_wire_supervisor.py --shell (Get-Command powershell.exe).Source --output evidence/wire-desktop.json
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop wire regression failed' }
+          python scripts/tests/mcp_wire_supervisor.py --shell (Get-Command pwsh).Source --output evidence/wire-core.json
+          if ($LASTEXITCODE -ne 0) { throw 'Core wire regression failed' }
+      - name: Prove real pipe behavior on Windows PowerShell 5.1
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $desktop = (Get-Command powershell.exe -ErrorAction Stop).Source
+          python scripts/tests/doctor_pipe_supervisor.py --baseline baseline-doctor.ps1 --candidate scripts/Test-OpticAIBridge.ps1 --pwsh $desktop --output evidence/ps51-doctor.json
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell doctor proof failed' }
+          $proof = Get-Content -Raw evidence/ps51-doctor.json | ConvertFrom-Json
+          $candidates = @($proof.cases | Where-Object { $_.source -eq 'candidate' })
+          if ($candidates.Count -ne 10 -or @($candidates | Where-Object { $_.powershell_version -notlike '5.1.*' -or $_.powershell_edition -ne 'Desktop' }).Count) { throw 'Wrong PowerShell edition/version tested' }
+      - name: Package useful sources and sanitized proof
+        if: always()
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path; import zipfile; p=Path('evidence'); p.mkdir(exist_ok=True); files=['evidence/wire-desktop.json','evidence/wire-core.json','scripts/tests/Probe-McpWire.ps1','scripts/tests/mcp_wire_fixture.py','scripts/tests/mcp_wire_supervisor.py','evidence/ps51-doctor.json','docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md','scripts/Test-OpticAIBridge.ps1','scripts/tests/DoctorPipeWorker.ps1','scripts/tests/doctor_pipe_supervisor.py','scripts/tests/doctor_pipe_fixture.py']; z=zipfile.ZipFile(p/'optic-windows-powershell51-proof-2026-10-22.zip','w',zipfile.ZIP_DEFLATED); [z.write(f,f) for f in files if Path(f).is_file()]; z.close()"
+      - name: Preserve proof including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optic-windows-powershell51-doctor
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7

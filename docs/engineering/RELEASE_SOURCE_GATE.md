@@ -42,8 +42,12 @@ are changed. This does not authorize publishing from a research branch.
 pending/red/wrong-branch/wrong-event/wrong-workflow CI, absent/duplicate/skipped/
 failed jobs, latest-failure selection, API failure and incomplete pagination.
 CI runs the same fixtures on hosted pwsh/Windows PowerShell and Ubuntu pwsh.
-A read-only live API check uses historical known-green main c9446144 to verify
-schema and API access, explicitly not this candidate's acceptance evidence.
+A one-time read-only live API proof was verified in PR320 and independent main
+CI39720011889 against historical known-green main c9446144. It is not repeated
+in every ordinary CI: future candidate acceptance must not depend on an old
+SHA's latest rerun or live API availability. Deterministic API-boundary mocks
+remain in the permanent 26-case suite. The ACTUAL release verify-source job
+still requires live exact-source evidence and fails closed on API failure.
 
 CI on the candidate and independent post-merge CI are separate required checks.
 No production release workflow is triggered for testing. Native release build/

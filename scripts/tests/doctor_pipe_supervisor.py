@@ -72,6 +72,9 @@ def run_case(pwsh,doctor,mode,baseline,root):
             wait_for(lambda:(root/"worker.ready").exists() or p.poll() is not None,8,"worker startup")
             assert p.poll() is None,"worker failed before ownership gate"
             (root/"go").write_text("synthetic",encoding="ascii")
+            wait_for(lambda:(root/"worker.warmed").exists() or p.poll() is not None,8,"owned compilation")
+            assert p.poll() is None,"worker failed during owned compilation"
+            (root/"fixture.go").write_text("synthetic",encoding="ascii")
             try:
                 p.wait(timeout=3 if baseline else 5)
                 blocked=False
@@ -110,7 +113,7 @@ def main():
                 claim="doctor error-path pipe lifetime; not natural issue319 root cause")
     output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="optic-doctor-pipes-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="optic doctor pipes ") as temporary:
             fixtures=[("eof-live",True),("timeout-descendant",True)]
             fixtures += [(m,False) for m in ["normal","eof-live","eof-descendant",
                         "timeout-descendant","partial-utf8","oversized","capture-live",

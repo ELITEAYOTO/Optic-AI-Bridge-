@@ -120,6 +120,19 @@ jobs:
               $env:TMP = $savedTmp
             }
           }
+      - name: Smoke isolated Node doctor on Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $workspace = Join-Path $env:GITHUB_WORKSPACE 'target\ps51 synthetic doctor workspace'
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          .\scripts\Test-OpticAIBridge.ps1 `
+            -BridgePath '.\target\debug\optic-bridge.exe' `
+            -Workspace $workspace `
+            -IsolationLauncherPath '.\target\debug\optic-bridge-isolation-launcher.exe' `
+            -IsolatedNodePath $node `
+            -StartupTiming
       - name: Smoke real isolated Node MCP admission
         if: runner.os == 'Windows'
         shell: pwsh
@@ -253,19 +266,9 @@ jobs:
   release-evidence:
     name: Release evidence guard
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Offline gate fixtures and read-only known-main API proof
+      - name: Offline release gate fixtures
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ./scripts/tests/Test-ReleaseEvidence.ps1
-          . ./scripts/Assert-OpticReleaseEvidence.ps1
-          # Historical known-green main: API/schema proof only, never a
-          # substitute for this candidate's own CI or a release operation.
-          Get-OpticReleaseEvidence -SourceSha 'c94461446a49ee61dc527a74f4e198afc8e55b4d' -Tag 'v0.1.4' -Version '0.1.4' | ConvertTo-Json -Compress
+        run: ./scripts/tests/Test-ReleaseEvidence.ps1
