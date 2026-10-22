@@ -313,6 +313,16 @@ async fn network_denied_fixed_tool_uses_appcontainer_and_cannot_connect_loopback
 
 #[tokio::test]
 async fn capability_free_appcontainer_denies_node_loopback_connection() {
+    // Research-only external ownership gate. No target process, listener or
+    // probe deadline starts until the independent supervisor owns this host.
+    if let Some(gate) = env::var_os("OPTIC_NETWORK_SUPERVISOR_GATE") {
+        let gate = PathBuf::from(gate);
+        let until = Instant::now() + Duration::from_secs(5);
+        while !gate.exists() {
+            assert!(Instant::now() < until, "external ownership gate absent");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
     let require_hosted = std::env::var_os("OPTIC_REQUIRE_HOSTED_TOOLCHAINS").is_some();
     let node = where_node();
     if require_hosted {
