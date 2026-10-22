@@ -2,7 +2,7 @@
 
 ## Unreleased — Windows stabilization
 
-- Add Windows PowerShell5.1 doctor acceptance with real Bridge and independently supervised pipes; adapt the test worker for .NET Framework. Production doctor behavior is unchanged.
+- Fix demonstrated Windows PowerShell5.1 MCP stdin BOM framing: explicit no-BOM UTF-8, scoped Framework console-encoding restoration and safe failed-start cleanup. Add actual-byte/Unicode/start-failure, real Bridge and owned-pipe regressions.
 - Require an exact-source successful main CI and main ancestry before tag builds/publication; fail closed on incomplete evidence. Add offline and read-only API regressions. No release or V1 readiness is implied.
 
 ## Windows doctor failure-path lifetime and Windows V1 priority (2026-10-22)

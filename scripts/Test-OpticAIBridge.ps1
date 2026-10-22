@@ -30,6 +30,30 @@ function Quote-ProcessArgument {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
+function Start-OpticMcpProcess {
+    param([Parameter(Mandatory = $true)][Diagnostics.Process]$Process)
+
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    $Process.StartInfo.StandardOutputEncoding = $utf8
+    $Process.StartInfo.StandardErrorEncoding = $utf8
+    if ($Process.StartInfo.PSObject.Properties.Name -contains 'StandardInputEncoding') {
+        $Process.StartInfo.StandardInputEncoding = $utf8
+        return $Process.Start()
+    }
+
+    # .NET Framework derives redirected stdin from Console.InputEncoding and
+    # flushes its preamble during Start. Scope UTF-8 WITHOUT BOM to construction
+    # of that writer only; never leave the caller's console encoding changed.
+    $previousInputEncoding = [Console]::InputEncoding
+    try {
+        [Console]::InputEncoding = $utf8
+        return $Process.Start()
+    }
+    finally {
+        [Console]::InputEncoding = $previousInputEncoding
+    }
+}
+
 function Read-OpticBoundedStderr {
     param([Parameter(Mandatory = $true)]$Process)
 
@@ -321,7 +345,7 @@ $startupClock = [Diagnostics.Stopwatch]::StartNew()
 $doctorCompleted = $false
 
 try {
-    if (-not $process.Start()) { throw 'Failed to start Optic AI Bridge.' }
+    if (-not (Start-OpticMcpProcess -Process $process)) { throw 'Failed to start Optic AI Bridge.' }
     if ($StartupTiming) {
         Write-Host "OPTIC_DOCTOR_TIMING phase=process-started elapsed_ms=$($startupClock.ElapsedMilliseconds)"
     }
@@ -465,9 +489,15 @@ try {
     }
 }
 finally {
-    if ($process -and -not $process.HasExited) {
-        try { $process.Kill() } catch { }
-        try { $process.WaitForExit(2000) | Out-Null } catch { }
+    # HasExited itself throws when Start failed before native creation.
+    # Preserve that primary error while still stopping a successfully started child.
+    if ($process) {
+        try {
+            if (-not $process.HasExited) {
+                try { $process.Kill() } catch { }
+                try { $process.WaitForExit(2000) | Out-Null } catch { }
+            }
+        } catch { }
     }
     # The bridge already emits fixed, opt-in startup phase timings to
     # stderr. Previously successful doctor runs discarded them, leaving no

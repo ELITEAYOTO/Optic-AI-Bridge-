@@ -2,10 +2,11 @@
 
 ## Windows PowerShell acceptance coverage
 
-The unchanged doctor now has separate hosted Windows PowerShell5.1 real-pipe
-regressions and a real Bridge/isolated-Node smoke, alongside current pwsh.
-The worker adapts test argument quoting for .NET Framework and records shell
-version/edition. These checks are not Windows10/11 installation certification.
+A real Desktop5.1 doctor smoke exposed UTF-8 BOM bytes before initialize.
+The doctor now starts redirected MCP streams with BOM-free UTF-8; the Framework
+fallback restores console encoding after Start, including failure. Native byte,
+Unicode, pipe and real Bridge/isolated-Node checks accompany current pwsh coverage.
+The test worker adapts Framework argument quoting and records shell version/edition. These checks are not Windows10/11 installation certification.
 [Acceptance scope and remaining risks](docs/engineering/WINDOWS_POWERSHELL_ACCEPTANCE.md).
 
 

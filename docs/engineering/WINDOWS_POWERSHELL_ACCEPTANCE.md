@@ -1,72 +1,82 @@
-# Windows PowerShell doctor acceptance
+# Windows PowerShell doctor acceptance and UTF-8 framing
 
-Scope: hosted native Windows Server, Windows PowerShell 5.1 (Desktop/.NET
-Framework) and current pwsh. This is a component/runtime acceptance slice, **not**
-certification of all Windows10/11 installations, client profiles or installers.
+Scope: hosted Windows Server, Windows PowerShell 5.1/Desktop and current pwsh.
+This is not Windows10/11 installation/client/profile certification.
 
-## Why this check is new
+## Demonstrated failure and mechanism
 
-The existing inherited-pipe harness used ProcessStartInfo.ArgumentList, which is
-available in its pwsh runtime but not the .NET Framework runtime of Windows
-PowerShell. It could not exercise the doctor under that runtime unchanged.
-The test worker now retains ArgumentList on modern .NET and uses Windows CRT
-argument quoting on the older runtime. Synthetic fixture paths include spaces.
-The worker's warm compilation also runs after the outer ownership gate; this
-covers .NET Framework compiler subprocesses too. A second fixture gate preserves
-the existing 3s baseline/5s candidate supervisor budgets after compilation.
-Only test harness/coverage changes; the production doctor is byte-for-byte unchanged.
+Source766d4aa6818db61efdebc54c5d715a106aa8d159 failed its first real doctor
+smoke in CI39720869986 attempt1 (Windows job119633850436): process-started5ms,
+initialize-sent856ms, then EOF with ConnectionClosed("initialize request").
+The preceding pwsh smoke on the same binary succeeded. Native functions-only
+pipe cases passed on both runtimes; they did not inspect initialize stdin bytes.
 
-The native workflow explicitly selects powershell.exe and checks the reported
-version is 5.1.* with PSEdition=Desktop for all ten candidate cases. The two
-original blocked controls remain independently supervised; no baseline result
-is relabeled as a production timeout or AppContainer proof.
+Independent supervised wire probe39721750628 attempt1, source
+e38e43cbfd6011bf464863360b7a108e1cfbb484, observed NATURALLY:
+- Desktop5.1.26100.33438: stdin codepage65001, preamble3, prefix efbbbf, JSON rejected.
+- Scoped no-BOM prototype: same codepage, preamble0, valid JSON, console restored.
+- Core7.6.6: legacy and explicit no-BOM both valid JSON, preamble0.
+All outer fixture Jobs confirmed empty. This establishes the managed stdin
+framing defect, not the unrelated natural30s startup319 or AppContainer185.
+The original Windows failure is retained; no same-SHA retry-to-green.
 
-## Acceptance
+.NET Framework builds/flushed redirected stdin from Console.InputEncoding;
+with UTF-8 this may emit a BOM during Process.Start, before the JSON request.
+Primary source: https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/Process.cs
 
-- The existing twelve-case real-pipe proof must also pass on pwsh, independently.
-- Windows PowerShell proof: normal MCP response, root/descendant stderr retention,
-  short synthetic timeout, partial UTF-8, oversized output, repeated handles,
-  diagnostic compilation failures and late approved markers. Every fixture tree
-  is Job-owned before launch gate and confirmed empty; fixed output is bounded.
-- Standard CI additionally runs the actual unchanged doctor with the freshly
-  built Bridge and isolated Node under Windows PowerShell 5.1 in a synthetic
-  workspace whose path contains spaces. No installer or ChatGPT profile setup.
-- Keep the existing pwsh TEMP-only smoke, AppContainer network-denial gate,
-  Ubuntu checks, release-source tests and all red attempts. No timeout extended,
-  privilege changed, containment bypass or arbitrary process stop.
+## Narrow correction and tradeoff
 
-The native JSON reports exact source SHA separately from PR checkout SHA,
-workflow/attempt, shell version/edition, case results and tree confirmation.
-The small ZIP contains only sanitized proof, this contract and relevant sources.
-Raw logs/environment/PIDs/private paths/binaries are excluded.
-A passing functions-only fixture does not substitute for the real Bridge smoke.
-The actual Bridge smoke still does not certify installation on user PCs.
+Start-OpticMcpProcess chooses explicit UTF-8 without BOM for redirected stdin,
+stdout and stderr. Modern .NET uses StandardInputEncoding. Framework lacks that
+property: scope Console.InputEncoding to no-BOM UTF-8 only around synchronous
+Start and restore the exact previous encoding in finally, including start failure.
+No persistent console/system/security setting is changed. This private CLI helper
+assumes no concurrent Console.In consumer or concurrent encoding changes; it is
+not a general thread-safe process factory. Target interactive Windows10/11 still
+needs separate acceptance. Do not use protocol-parser BOM tolerance as a workaround.
 
-## Known limits and open V1 risks
+Cleanup now tolerates HasExited throwing when native creation never happened,
+preserving the primary start error. Production Rust, full identity/pinning, MCP
+30s deadline, AppContainer, task permissions and resource ceilings are unchanged.
 
-No production Rust/doctor change is proposed in this slice. #317 production
-runner remains uncorrected: the native Rust owner proposal at d295d92e passed
-eight cases but lacks stdin, retained registry/reservations and session/CAS gates.
-[Checkpoint](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6332249104).
-#319 natural first initialize30s and #185 Node/AppContainer10s remain distinct
-intermittences; repeated passing CI does not prove their causes or resolution.
-#176/#182 remain sensitive/provenance gates, especially before real remote use.
+## Permanent native regressions
 
-PR320 integrated release source verification at751bc72a3090b934ee8e20c860bc7293ea357c29.
-Source b0c9b9fa had all four CI checks successful in run39719495246 attempt1.
-Independent main CI39720011889 subsequently succeeded attempt1 on that exact
-merge SHA. The initial actual API/schema proof is preserved there; ordinary CI
-keeps the 26 deterministic fixtures rather than coupling every future candidate
-to an old SHA's latest rerun or GitHub API availability. The real release job's
-live fail-closed check is unchanged. See RELEASE_SOURCE_GATE.md.
+The byte-level test AST-imports the ACTUAL helper, not a test-only replacement.
+It deliberately selects UTF-8 with BOM inside an independently owned worker,
+then restores its initial encoding. Desktop legacy output must show efbbbf and
+invalid JSON. Fixed input must be no-BOM UTF-8 with actual non-ASCII roundtrip;
+failed native start must restore codepage and preamble. Core controls retained.
 
-## Reprise
+The existing twelve-case real-pipe proof runs independently on both shells;
+the Desktop job requires all ten candidate cases to report5.1.* and Desktop.
+ArgumentList remains on modern .NET; the test worker uses CRT quoting on Framework.
+Fixture paths contain spaces. Warm C# compilation starts only AFTER outer Job
+ownership (including any compiler subprocess); a second fixture gate preserves
+the existing per-case budgets. Every tree is recovered and confirmed empty.
 
-Reverify main/PR/source checks and the native proof workflow. Require first
-actual failure signature before a functional patch. Read both powerShell edition
-fields and complete/cleanup fields, not only workflow badge. Native and normal CI
-must pass on the final exact PR source; then verify independent main results.
-Do not call this Windows10/11 certification. No PC tests or settings are authorized.
-Next engineering priority remains Windows #317 ownership/stdin/lifecycle proof,
-then #319/#185 diagnostics and the protected-content/recovery boundaries. Avoid
-further redundant cache benchmarks, Linux confinement studies or feature work.
+Standard CI also exercises the real rebuilt Bridge/isolated Node with the doctor
+on Windows PowerShell, in addition to the pwsh TEMP-only smoke. Functions-only
+success cannot substitute for this gate. No installer/profile/user-PC execution.
+Validation requires exact final candidate and independent post-merge results.
+The ZIP records sanitized byte/case evidence and sources; no raw logs/PIDs/env.
+
+## Other campaign results and reprise
+
+Release guard PR320 integrated at751bc72a3090b934ee8e20c860bc7293ea357c29.
+Source CI39719495246 and independent main CI39720011889 succeeded attempt1.
+Its one-time API proof is retained; ordinary CI now uses the26 deterministic
+fixtures, avoiding a permanent dependency on an old SHA's reruns/API availability.
+The actual release job's fail-closed live exact-source verification is unchanged.
+
+#317 remains OPEN and uncorrected in production. Native Rust slice d295d92e
+passed8 cases plus full CI; its proposed ADR0035/risk matrix are on isolated branch
+bootstrap/issue-317-windows-rust-owner, not bulk-merged.
+https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6332249104
+Next: native stdin/OS failure proof, bounded Session/HostStartup owner registry,
+stop-before-drain and seal/reap gates; CAS outcome stays separate.
+#176/#182 sensitive/provenance, #319 startup and #185 AppContainer stay open.
+No release, new feature, Linux experiment or real-project remote exposure.
+
+Reverify current main/PR/source/attempt, read complete JSON and cleanup fields,
+preserve the first red and distinguish the synthetic forced-BOM regression from
+the naturally observed wire probe. Never claim all Windows targets supported.
