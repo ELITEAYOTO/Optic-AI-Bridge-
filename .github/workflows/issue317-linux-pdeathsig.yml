@@ -1,0 +1,28 @@
+name: Issue317 Linux PDEATHSIG descendant boundary
+on:
+  push:
+    branches: ["bootstrap/issue-317-owned-cleanup-study"]
+    paths:
+      - "scripts/research/issue317_pdeathsig_descendants.py"
+      - ".github/workflows/issue317-linux-pdeathsig.yml"
+permissions:
+  contents: read
+jobs:
+  bounded-native-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Check isolated Python fixture syntax
+        run: python3 -m py_compile scripts/research/issue317_pdeathsig_descendants.py
+      - name: Supervised parent-death experiment (no Git or cgroup writes)
+        timeout-minutes: 1
+        run: python3 scripts/research/issue317_pdeathsig_descendants.py --output evidence/pdeathsig.json
+      - name: Retain exact outcomes even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: issue317-linux-pdeathsig-descendants
+          path: evidence/pdeathsig.json
+          if-no-files-found: warn
+          retention-days: 7
