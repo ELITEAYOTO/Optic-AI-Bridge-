@@ -511,6 +511,89 @@ mod tests {
         worker.join().expect("revoke thread");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn revoked_session_signal_reaches_admitted_worker_after_caller_drop() {
+        // Use the real production SessionRegistry and its actual Windows
+        // watch_active signal, not the research-only admission gate.
+        // The worker models service-held admission; no Git process is run.
+        let registry = Arc::new(SessionRegistry::new());
+        let session_a = grant(1_000);
+        let session_b = grant(1_000);
+        registry.register(session_a.clone()).expect("register A");
+        registry.register(session_b.clone()).expect("register B");
+        let now = MonotonicTime::from_millis(1);
+        let (signal_a, observed_a) = registry
+            .watch_active(&session_a.handle, now)
+            .expect("watch A");
+        let (signal_b, observed_b) = registry
+            .watch_active(&session_b.handle, now)
+            .expect("watch B");
+        assert_eq!(observed_a.handle, session_a.handle);
+        assert_eq!(observed_b.handle, session_b.handle);
+        let permit = registry
+            .begin_admission(&session_a.handle, now)
+            .expect("admitted owner A");
+
+        let (reply_tx, reply_rx) = mpsc::channel::<()>();
+        let (observed_tx, observed_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            // The server worker holds the admission permit even if its
+            // caller drops the reply receiver before revocation.
+            let _permit = permit;
+            let started = std::time::Instant::now();
+            while !signal_a.load(Ordering::Acquire) {
+                assert!(
+                    started.elapsed() < Duration::from_secs(2),
+                    "real session revoke signal was not observed"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+            observed_tx.send(()).expect("record observed revoke");
+            release_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("worker cleanup release");
+            assert!(reply_tx.send(()).is_err(), "requester already left");
+        });
+        drop(reply_rx);
+
+        let revoke_registry = Arc::clone(&registry);
+        let revoke_handle = session_a.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoker = thread::spawn(move || {
+            let result = revoke_registry.revoke(&revoke_handle);
+            done_tx.send(result).expect("revoke completion");
+        });
+
+        observed_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("server worker notices revocation despite caller drop");
+        assert!(matches!(
+            registry.begin_admission(&session_a.handle, now),
+            Err(SessionRegistryError::Revoked)
+        ));
+        // Revoking A must not signal or revoke the unrelated session B.
+        assert!(!signal_b.load(Ordering::Acquire));
+        let other = registry
+            .begin_admission(&session_b.handle, now)
+            .expect("B remains admitted");
+        drop(other);
+        // Revoke is still correctly waiting for the owner-held admission.
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+        release_tx.send(()).expect("complete service-held work");
+        worker.join().expect("service worker completes");
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("real registry revoke completes after worker drain")
+                .expect("revoke succeeds")
+        );
+        revoker.join().expect("revoker completes");
+        assert!(!signal_b.load(Ordering::Acquire));
+    }
+
     #[test]
     fn renewal_extends_only_active_session_expiry() {
         let registry = SessionRegistry::new();
