@@ -1,0 +1,39 @@
+name: Issue317 abrupt owner exit research
+on:
+  push:
+    branches: ["bootstrap/issue-317-owned-cleanup-study"]
+    paths:
+      - "scripts/research/issue317_abrupt_owner_exit.py"
+      - ".github/workflows/issue317-abrupt-owner-exit.yml"
+      - "crates/optic-bridge-runtime/examples/issue317_pipe_fixture.rs"
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Pinned Rust
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Build existing synthetic Rust fixture
+        run: cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_pipe_fixture
+      - name: Independent crash-boundary experiment
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+          python scripts/research/issue317_abrupt_owner_exit.py --fixture-exe "target/debug/examples/issue317_pipe_fixture$suffix" --output "evidence/crash-$RUNNER_OS.json"
+      - name: Preserve evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: issue317-crash-${{ runner.os }}
+          path: evidence/crash-*.json
+          if-no-files-found: warn
+          retention-days: 7
