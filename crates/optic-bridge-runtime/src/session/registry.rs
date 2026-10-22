@@ -607,7 +607,9 @@ mod tests {
         // wins before actual admission. No native process is spawned here.
         let registry = Arc::new(SessionRegistry::new());
         let session = grant(1_000);
-        registry.register(session.clone()).expect("register session");
+        registry
+            .register(session.clone())
+            .expect("register session");
         let now = MonotonicTime::from_millis(1);
         let (old_signal, watched) = registry
             .watch_active(&session.handle, now)
@@ -615,7 +617,11 @@ mod tests {
         assert_eq!(watched.handle, session.handle);
         assert!(!old_signal.load(Ordering::Acquire));
 
-        assert!(registry.revoke(&session.handle).expect("revoke before admission"));
+        assert!(
+            registry
+                .revoke(&session.handle)
+                .expect("revoke before admission")
+        );
         assert!(old_signal.load(Ordering::Acquire));
         assert!(matches!(
             registry.begin_admission(&session.handle, now),
@@ -635,7 +641,9 @@ mod tests {
         // actual side-effect boundary, before resuming any native child.
         let registry = Arc::new(SessionRegistry::new());
         let session = grant(1_000);
-        registry.register(session.clone()).expect("register session");
+        registry
+            .register(session.clone())
+            .expect("register session");
         let now = MonotonicTime::from_millis(1);
         let (revoke_signal, watched) = registry
             .watch_active(&session.handle, now)
@@ -669,10 +677,7 @@ mod tests {
             registry.begin_admission(&session.handle, now),
             Err(SessionRegistryError::Revoked)
         ));
-        assert!(matches!(
-            done_rx.try_recv(),
-            Err(mpsc::TryRecvError::Empty)
-        ));
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         // The old admission remains accounted until its owner exits safely;
         // the stop intent does not equal a native terminality proof.
         drop(held_admission);
