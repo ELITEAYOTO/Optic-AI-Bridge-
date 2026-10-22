@@ -75,3 +75,27 @@ Reverify main/PR318/research branch/Actions. Read this file and result JSON.
    reviewed bounded in-flight markers before claiming cause.185 remains distinct.
 4.317 Windows work needs retained ownership/reservations/session revoke/seal/reap
    integration; Python experiments are not production code. No new Linux work.
+
+## First native proof and review correction
+
+Atb536cc0af706f74590d0465dc5b7a9705c39dc98, hosted proof39713499904 attempt1
+reproduced BOTH baseline unbounded waits under the independent3s guard. All Job
+trees were recovered. Candidate returned protocol errors promptly, but its
+diagnostic strings were empty. Review found the test had checked only timely
+return, not evidence preservation: this hosted .NET Process uses FileStream for
+redirected stderr, whereas the first helper accepted PipeStream. That first green
+research result is NOT acceptance of stderr capture. Preserve it as a test gap.
+
+Correction supports borrowed SafeFileHandle from synchronous FileStream as well
+as PipeStream; refuses async handles before synchronous native ReadFile. New native
+assertions require the actual entry marker, bounded oversized content, and decoded
+partial UTF-8 replacement, so silent discarded evidence cannot pass. Existing
+normal CI for the first head was still queued when the corrected source was
+prepared; it must not be relabeled as an accepted complete check.
+
+Primary sources: Microsoft Learn PeekNamedPipe warns synchronous handles may
+block in multithreaded use; sole-consumer local-pipe contract is mandatory here,
+not a generic400ms syscall-cancellation claim. dotnet/runtime Process.Windows.cs
+and issue84290 document FileStream-backed redirected anonymous pipes and Windows
+async-cancellation limitations. Native tests establish the scoped error cases,
+not all possible kernel or concurrent-reader states.

@@ -39,6 +39,7 @@ function Read-OpticBoundedStderr {
         Add-Type -TypeDefinition @'
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -49,22 +50,26 @@ namespace OpticDoctor {
     public static class NativePipeCapture {
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool PeekNamedPipe(SafePipeHandle pipe, IntPtr buffer,
+        private static extern bool PeekNamedPipe(SafeHandle pipe, IntPtr buffer,
             uint size, IntPtr read, out uint available, IntPtr left);
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ReadFile(SafePipeHandle pipe, byte[] buffer,
+        private static extern bool ReadFile(SafeHandle pipe, byte[] buffer,
             uint size, out uint read, IntPtr overlapped);
 
         // No worker/task, no duplicated handle, no read awaiting future writes.
         // Sole-consumer invariant: consume at most the bytes already reported
         // available. Decode AFTER capture so an incomplete UTF-8 unit cannot
         // make StreamReader wait for another byte.
-        public static string Read(PipeStream stream) {
+        public static string Read(Stream stream) {
             byte[] captured = new byte[32768];
             byte[] chunk = new byte[4096];
             int used = 0;
-            SafePipeHandle handle = stream.SafePipeHandle; // borrowed, not closed
+            FileStream file = stream as FileStream;
+            SafeHandle handle = file != null ? (SafeHandle)file.SafeFileHandle
+                                            : ((PipeStream)stream).SafePipeHandle; // borrowed
+            if ((file != null && file.IsAsync) ||
+                (stream is PipeStream && ((PipeStream)stream).IsAsync)) return "";
             var clock = Stopwatch.StartNew();
             while (used < captured.Length && clock.ElapsedMilliseconds < 400) {
                 uint available;

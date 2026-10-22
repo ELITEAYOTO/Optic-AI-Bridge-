@@ -63,6 +63,9 @@ try {
     } elseif($Mode -ne 'capture-live'){
         if($null -eq $protocolError){throw 'Protocol failure was silently accepted'}
         if($protocolError.Length -gt 4600){throw 'Error diagnostic exceeded ceiling'}
+        if($Mode -eq 'eof-live' -and $protocolError -notmatch 'OPTIC_STARTUP phase=entry elapsed_ms=0'){throw 'Actual stderr evidence was discarded'}
+        if($Mode -eq 'oversized' -and $protocolError -notmatch '\.\.\.\[truncated\]'){throw 'Oversized stderr was not captured and capped'}
+        if($Mode -eq 'partial-utf8' -and $protocolError -notmatch [char]0xFFFD){throw 'Partial UTF-8 was not bounded-decoded'}
         if($Mode -eq 'timeout-descendant'){
             if($protocolError -notmatch 'Timed out after 1000ms'){throw 'Primary timeout lost'}
         } elseif($protocolError -notmatch 'closed before MCP response'){throw 'Primary EOF lost'}
