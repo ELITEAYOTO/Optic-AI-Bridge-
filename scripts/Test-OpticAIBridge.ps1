@@ -30,6 +30,72 @@ function Quote-ProcessArgument {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
+function Read-OpticBoundedStderr {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    # This Windows doctor is the ONLY stderr consumer. Never start ReadAsync:
+    # timing out its Task.Wait does not cancel an inherited anonymous-pipe read.
+    if ($null -eq ('OpticDoctor.NativePipeCapture' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.IO.Pipes;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+
+namespace OpticDoctor {
+    public static class NativePipeCapture {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool PeekNamedPipe(SafePipeHandle pipe, IntPtr buffer,
+            uint size, IntPtr read, out uint available, IntPtr left);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ReadFile(SafePipeHandle pipe, byte[] buffer,
+            uint size, out uint read, IntPtr overlapped);
+
+        // No worker/task, no duplicated handle, no read awaiting future writes.
+        // Sole-consumer invariant: consume at most the bytes already reported
+        // available. Decode AFTER capture so an incomplete UTF-8 unit cannot
+        // make StreamReader wait for another byte.
+        public static string Read(PipeStream stream) {
+            byte[] captured = new byte[32768];
+            byte[] chunk = new byte[4096];
+            int used = 0;
+            SafePipeHandle handle = stream.SafePipeHandle; // borrowed, not closed
+            var clock = Stopwatch.StartNew();
+            while (used < captured.Length && clock.ElapsedMilliseconds < 400) {
+                uint available;
+                if (!PeekNamedPipe(handle, IntPtr.Zero, 0, IntPtr.Zero,
+                                   out available, IntPtr.Zero)) break;
+                if (available == 0) {
+                    Thread.Sleep(5);
+                    continue;
+                }
+                uint count = Math.Min(available,
+                    (uint)Math.Min(chunk.Length, captured.Length - used));
+                uint read;
+                if (!ReadFile(handle, chunk, count, out read, IntPtr.Zero) || read == 0) break;
+                Buffer.BlockCopy(chunk, 0, captured, used, (int)read);
+                used += (int)read;
+            }
+            return Encoding.UTF8.GetString(captured, 0, used);
+        }
+    }
+}
+'@
+    }
+    try {
+        return [OpticDoctor.NativePipeCapture]::Read($Process.StandardError.BaseStream)
+    }
+    catch {
+        # Best-effort diagnostics cannot replace the primary protocol failure.
+        return ''
+    }
+}
+
 function Throw-McpTimeout {
     param(
         [Parameter(Mandatory = $true)]$Process,
@@ -50,10 +116,8 @@ function Throw-McpTimeout {
         'still running after bounded kill attempt'
     }
 
-    $stderr = ''
-    if ($Process.HasExited) {
-        try { $stderr = $Process.StandardError.ReadToEnd() } catch { }
-    }
+    $rawStderr = Read-OpticBoundedStderr -Process $Process
+    $stderr = $rawStderr
     if ([string]::IsNullOrWhiteSpace($stderr)) {
         $stderr = '<empty>'
     }
@@ -63,6 +127,35 @@ function Throw-McpTimeout {
             $stderr = $stderr.Substring(0, 4096) + '...[truncated]'
         }
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($stderr) -and $stderr -ne '<empty>') {
+        # Opt-in labels and numeric durations only; never echo raw diagnostic data.
+        $phaseMessages = [System.Collections.Generic.Queue[string]]::new()
+        foreach ($phaseLine in ($rawStderr -split "\r?\n")) {
+            $safeLine = $null
+            if ($phaseLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-lease-entered|process-lease-eligibility-checked|process-lease-id-started|process-lease-id-generated|process-lease-registration-started|process-lease-registered|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_PHASE phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+            }
+            elseif ($phaseLine -cmatch '^OPTIC_PROCESS_LEASE_TIMING phase=(entered|eligibility-checked|id-started|id-generated|registration-started|registered) elapsed_ms=([0-9]{1,12})$') {
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_LEASE_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+            }
+            elseif ($phaseLine -cmatch '^OPTIC_IDENTITY_PROGRESS phase=(capture-entered|canonical-ready|pin-ready|hash-started|read-entered|first-read-returned|read-16m|read-64m|read-256m|eof-observed|hash-complete) elapsed_ms=([0-9]{1,12})$') {
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_PROGRESS phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+            }
+            elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_TIMING path_ms=$($Matches[1]) pin_ms=$($Matches[2]) hash_ms=$($Matches[3]) total_ms=$($Matches[4])"
+            }
+            elseif ($phaseLine -cmatch '^OPTIC_PROCESS_IDENTITY_IO_TIMING read_ms=([0-9]{1,12}) nonread_ms=([0-9]{1,12}) total_ms=([0-9]{1,12}) calls=([0-9]{1,12})$') {
+                $safeLine = "OPTIC_DOCTOR_TIMEOUT_IDENTITY_IO read_ms=$($Matches[1]) nonread_ms=$($Matches[2]) total_ms=$($Matches[3]) calls=$($Matches[4])"
+            }
+            if ($null -ne $safeLine) {
+                if ($phaseMessages.Count -eq 24) { $phaseMessages.Dequeue() | Out-Null }
+                $phaseMessages.Enqueue($safeLine)
+            }
+        }
+        foreach ($message in $phaseMessages) { Write-Host $message }
+    }
+
 
     $initialState = if ($wasRunning) { 'still running' } else { 'already exited' }
     throw "Timed out after ${Timeout}ms waiting for MCP response id=$Id; bridge was $initialState; final state: $finalState; stderr: $stderr"
@@ -75,9 +168,9 @@ function Read-McpResponse {
         [Parameter(Mandatory = $true)][int]$Timeout
     )
 
-    $deadline = [DateTime]::UtcNow.AddMilliseconds($Timeout)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        $remaining = [Math]::Max(1, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+    $responseClock = [Diagnostics.Stopwatch]::StartNew()
+    while ($responseClock.ElapsedMilliseconds -lt $Timeout) {
+        $remaining = [Math]::Max(1, $Timeout - [int]$responseClock.ElapsedMilliseconds)
         $task = $Process.StandardOutput.ReadLineAsync()
         if (-not $task.Wait($remaining)) {
             Throw-McpTimeout -Process $Process -Id $Id -Timeout $Timeout
@@ -85,7 +178,8 @@ function Read-McpResponse {
 
         $line = $task.Result
         if ($null -eq $line) {
-            $stderr = $Process.StandardError.ReadToEnd()
+            $stderr = Read-OpticBoundedStderr -Process $Process
+            if ($stderr.Length -gt 4096) { $stderr = $stderr.Substring(0, 4096) + '...[truncated]' }
             throw "Optic AI Bridge closed before MCP response id=$Id. stderr: $stderr"
         }
 
@@ -373,23 +467,14 @@ finally {
     # The bridge already emits fixed, opt-in startup phase timings to
     # stderr. Previously successful doctor runs discarded them, leaving no
     # phase baseline for comparing intermittent slow initialization.
-    # Consume at most 4096 characters after stopping the owned bridge,
+    # Consume at most 32768 UTF-8 bytes after stopping the owned bridge,
     # never print arbitrary stderr or project data, and never block cleanup
     # for longer than 400ms on an inherited or unexpectedly live pipe.
     if ($StartupTiming -and $doctorCompleted -and $process -and $process.HasExited) {
         try {
-            $chars = New-Object char[] 4096
-            $used = 0
-            $readClock = [Diagnostics.Stopwatch]::StartNew()
-            while ($used -lt $chars.Length -and $readClock.ElapsedMilliseconds -lt 400) {
-                $remaining = [Math]::Max(1, 400 - [int]$readClock.ElapsedMilliseconds)
-                $readTask = $process.StandardError.ReadAsync($chars, $used, $chars.Length - $used)
-                if (-not $readTask.Wait($remaining)) { break }
-                if ($readTask.Result -eq 0) { break }
-                $used += $readTask.Result
-            }
-            if ($used -gt 0) {
-                $startupLines = [string]::new($chars, 0, $used) -split "\r?\n"
+            $capturedStderr = Read-OpticBoundedStderr -Process $process
+            if ($capturedStderr.Length -gt 0) {
+                $startupLines = $capturedStderr -split "\r?\n"
                 $seenPhases = New-Object 'System.Collections.Generic.HashSet[string]'
                 $seenProcessIdentityTiming = $false
                 foreach ($startupLine in $startupLines) {

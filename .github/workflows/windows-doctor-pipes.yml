@@ -1,0 +1,31 @@
+name: Windows doctor pipe lifetime
+on:
+  push:
+    branches: ["bootstrap/issue-319-doctor-bounded-pipes"]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Recover exact original PR doctor for negative control
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028
+          git show 49fe3efd34c9ffe9c10c1c5945b37da2c6a74028:scripts/Test-OpticAIBridge.ps1 | Set-Content -LiteralPath baseline-doctor.ps1 -Encoding utf8
+      - name: Real inherited-pipe regressions with independent native ownership
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          python scripts/tests/doctor_pipe_supervisor.py --baseline baseline-doctor.ps1 --candidate scripts/Test-OpticAIBridge.ps1 --pwsh (Get-Command pwsh).Source --output evidence/doctor-pipes.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native doctor pipe proof failed' }
+      - name: Preserve proof, including incomplete failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-doctor-pipe-proof
+          path: evidence/*.json
+          if-no-files-found: error
+          retention-days: 7
