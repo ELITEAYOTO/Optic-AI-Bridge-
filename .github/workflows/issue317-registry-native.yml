@@ -3,12 +3,15 @@ on:
   pull_request:
     paths:
       - 'crates/optic-bridge-runtime/**'
+      - 'crates/optic-bridge-windows/**'
       - 'scripts/research/issue317_*'
       - '.github/workflows/issue317-registry-native.yml'
   push:
     branches: ['bootstrap/issue-317-windows-rust-owner']
     paths:
       - 'crates/optic-bridge-runtime/src/git/owner_registry.rs'
+      - 'crates/optic-bridge-runtime/src/git/owner_native_tests.rs'
+      - 'crates/optic-bridge-windows/**'
       - 'scripts/research/issue317_*'
       - '.github/workflows/issue317-registry-native.yml'
 permissions:
@@ -33,6 +36,11 @@ jobs:
           "OPTIC317_RUNTIME_EXE=$($tests[0].executable)" >> $env:GITHUB_ENV
           cargo +1.99.0 build --locked -p optic-bridge-runtime --example issue317_baseline
           if ($LASTEXITCODE -ne 0) { throw 'baseline example build failed' }
+          cargo +1.99.0 test --locked -p optic-bridge-windows --lib --no-run --message-format=json > windows-build.jsonl
+          if ($LASTEXITCODE -ne 0) { throw 'native error test build failed' }
+          $native = @(Get-Content windows-build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_windows' -and $_.executable })
+          if ($native.Count -ne 1) { throw 'ambiguous native test identity' }
+          "OPTIC317_WINDOWS_EXE=$($native[0].executable)" >> $env:GITHUB_ENV
       - name: Original runner baseline under independent ownership
         shell: pwsh
         timeout-minutes: 2
@@ -41,6 +49,18 @@ jobs:
         shell: pwsh
         timeout-minutes: 2
         run: python scripts/research/issue317_registry_native.py --test-exe "$env:OPTIC317_RUNTIME_EXE" --output evidence/registry-native.json
+      - name: Real pre-drain revocation during blocked observation
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_registry_native.py --prepared --test-exe "$env:OPTIC317_RUNTIME_EXE" --output evidence/prepared-stop.json
+      - name: Native command and pipe matrix
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_registry_native.py --matrix --test-exe "$env:OPTIC317_RUNTIME_EXE" --output evidence/prepared-matrix.json
+      - name: Native partial failures and handle recovery
+        shell: pwsh
+        timeout-minutes: 2
+        run: python scripts/research/issue317_registry_native.py --native-errors --test-exe "$env:OPTIC317_WINDOWS_EXE" --output evidence/prepared-errors.json
       - name: Preserve evidence including incomplete runs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -17,7 +17,12 @@ elif mode in ("stdout", "stderr", "stdin", "timeout"):
         time.sleep(8)
 elif mode == "output":
     os.write(1, b"x" * 100000)
+elif mode == "both-output":
+    os.write(2, b"e" * 12000)
+    os.write(1, b"o" * 12000)
 elif mode == "nonzero":
     sys.exit(7)
+elif mode == "null-stdin":
+    assert sys.stdin.read() == ""
 elif mode != "normal":
     raise ValueError("unknown synthetic mode")

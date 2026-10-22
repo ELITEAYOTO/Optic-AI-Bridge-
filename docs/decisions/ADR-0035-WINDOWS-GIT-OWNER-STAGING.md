@@ -74,3 +74,13 @@ TerminateJobObject failure. Test Drop requests cleanup as a backstop only; the
 outer independent Job always terminates and confirms its own tree. Production
 retained-registry, resource reservations, session gates and shutdown are NOT
 implemented by this fixture. Do not merge it as a claimed correction of #317.
+
+## Prepared null-stdin native slice — 22 October 2026
+
+The research helper and its acceptance boundary are documented in
+[the prepared-owner contract](../research/ISSUE317_PREPARED_READ_OWNER_2026-10-22.md).
+It prepares a real limited Job/pipes/watchdog before child creation, is adopted
+before start, and proves native stop during blocked ledger observation. Null
+stdin is explicit. Shared production reservations, lifecycle seal/reap and
+service shutdown are still missing. This evidence does not accept this ADR or
+permit GitRead migration. Do not merge the whole research branch to main.
