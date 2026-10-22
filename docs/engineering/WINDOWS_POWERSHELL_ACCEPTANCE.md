@@ -54,8 +54,11 @@ intermittences; repeated passing CI does not prove their causes or resolution.
 
 PR320 integrated release source verification at751bc72a3090b934ee8e20c860bc7293ea357c29.
 Source b0c9b9fa had all four CI checks successful in run39719495246 attempt1.
-Its independent main CI39720011889 must be checked separately; this document is
-not an assertion that a pending CI succeeded. See RELEASE_SOURCE_GATE.md.
+Independent main CI39720011889 subsequently succeeded attempt1 on that exact
+merge SHA. The initial actual API/schema proof is preserved there; ordinary CI
+keeps the 26 deterministic fixtures rather than coupling every future candidate
+to an old SHA's latest rerun or GitHub API availability. The real release job's
+live fail-closed check is unchanged. See RELEASE_SOURCE_GATE.md.
 
 ## Reprise
 
