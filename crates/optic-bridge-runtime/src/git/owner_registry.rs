@@ -49,6 +49,8 @@ pub(super) enum OwnerError {
     WrongOwner,
     #[error("Git owner already contains a native payload")]
     Adopted,
+    #[error("Git owner terminal observation is already running")]
+    ObservationBusy,
     #[error("Git owner does not contain a native payload")]
     NotAdopted,
     #[error("session revoked before native launch")]
@@ -59,7 +61,20 @@ pub(super) enum OwnerError {
 
 enum Stage<T> {
     Reserved,
-    Adopted(T),
+    Adopted {
+        owner: Arc<Mutex<T>>,
+        observing: Arc<AtomicBool>,
+    },
+}
+
+// An interrupted or panicking observer must never leave the record permanently
+// busy. A panicked payload mutex stays poisoned and retains capacity.
+struct ObservationFlag(Arc<AtomicBool>);
+
+impl Drop for ObservationFlag {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 struct Record<T> {
@@ -197,7 +212,10 @@ impl<T> GitOwnerRegistry<T> {
         if !matches!(&record.stage, Stage::Reserved) {
             return Err(OwnerError::Adopted);
         }
-        record.stage = Stage::Adopted(owner);
+        record.stage = Stage::Adopted {
+            owner: Arc::new(Mutex::new(owner)),
+            observing: Arc::new(AtomicBool::new(false)),
+        };
         Ok(())
     }
 
@@ -240,34 +258,55 @@ impl<T> GitOwnerRegistry<T> {
             .count())
     }
 
-    // The callback will eventually be the native Job+stdin+both-output EOF
-    // observer. False or error MUST keep owner and capacity. It is private:
-    // no MCP/client can claim terminality. Callback must be nonblocking.
+    // Observation can block on native I/O. It holds only the per-operation
+    // payload lock, never the global reservation/stop mutex. The observer flag
+    // admits one proof at a time and is released even on callback unwind.
+    // False, error, panic or poisoned owner retains the slot and budget.
     pub(super) fn reap_if_proven<E>(
         &self,
         id: OwnerId,
         domain: &OwnerDomain,
         prove: impl FnOnce(&mut T) -> Result<bool, E>,
     ) -> Result<Result<bool, E>, OwnerError> {
-        let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
-        let record = state.records.get_mut(&id).ok_or(OwnerError::WrongOwner)?;
-        if &record.domain != domain {
-            return Err(OwnerError::WrongOwner);
-        }
-        let Stage::Adopted(owner) = &mut record.stage else {
-            return Err(OwnerError::NotAdopted);
-        };
-        match prove(owner) {
-            Ok(false) => Ok(Ok(false)),
-            Err(e) => Ok(Err(e)),
-            Ok(true) => {
-                let released = state.records.remove(&id).expect("registered");
-                state.memory -= released.budget.memory;
-                state.output -= released.budget.output;
-                state.cpu -= released.budget.cpu;
-                Ok(Ok(true))
+        let (owner, _observation) = {
+            let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
+            let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
+            if &record.domain != domain {
+                return Err(OwnerError::WrongOwner);
             }
+            let Stage::Adopted { owner, observing } = &record.stage else {
+                return Err(OwnerError::NotAdopted);
+            };
+            if observing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return Err(OwnerError::ObservationBusy);
+            }
+            (Arc::clone(owner), ObservationFlag(Arc::clone(observing)))
+        };
+
+        let result = {
+            let mut native = owner.lock().map_err(|_| OwnerError::Unavailable)?;
+            prove(&mut *native)
+        };
+
+        if matches!(&result, Ok(true)) {
+            let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
+            let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
+            if &record.domain != domain {
+                return Err(OwnerError::WrongOwner);
+            }
+            match &record.stage {
+                Stage::Adopted { owner: retained, .. } if Arc::ptr_eq(retained, &owner) => {}
+                _ => return Err(OwnerError::NotAdopted),
+            }
+            let released = state.records.remove(&id).expect("registered");
+            state.memory -= released.budget.memory;
+            state.output -= released.budget.output;
+            state.cpu -= released.budget.cpu;
         }
+        Ok(result)
     }
 
     // Only a service worker that has proven spawn never began may call this.
@@ -399,4 +438,66 @@ mod tests {
             .unwrap();
         assert!(owners.reserve_host_startup(budget()).is_ok());
     }
+    #[test]
+    fn blocked_observer_does_not_block_out_of_band_stop() {
+        use std::{sync::mpsc, thread, time::Duration};
+
+        let sessions = SessionRegistry::new();
+        let grant = grant("blocked-observer");
+        sessions.register(grant.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let admission = sessions.begin_admission(&grant.handle, now).unwrap();
+        let owners = Arc::new(ledger());
+        let id = owners
+            .reserve_session(&sessions, &admission, now, budget())
+            .unwrap();
+        let domain = OwnerDomain::Session(grant.handle.clone());
+        owners.adopt(id, &domain, "held native owner").unwrap();
+
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+        let observing = Arc::clone(&owners);
+        let observed_domain = domain.clone();
+        let observer = thread::spawn(move || {
+            observing
+                .reap_if_proven(id, &observed_domain, |_| {
+                    entered_tx.send(()).unwrap();
+                    resume_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+                    Ok::<bool, ()>(false)
+                })
+                .unwrap()
+                .unwrap()
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let (stopped_tx, stopped_rx) = mpsc::sync_channel(1);
+        let stopping = Arc::clone(&owners);
+        let handle = grant.handle.clone();
+        let stopper = thread::spawn(move || {
+            stopped_tx.send(stopping.stop_session(&handle)).unwrap();
+        });
+        let stopped_without_releasing_observer =
+            matches!(stopped_rx.recv_timeout(Duration::from_secs(1)), Ok(Ok(1)));
+        let concurrent_proof_is_rejected = stopped_without_releasing_observer
+            && matches!(
+                owners.reap_if_proven(id, &domain, |_| Ok::<bool, ()>(true)),
+                Err(OwnerError::ObservationBusy)
+            );
+
+        // Always unblock/join helpers before assertions so even a regression
+        // cannot strand test-owned threads; the native CI has an outer deadline.
+        resume_tx.send(()).unwrap();
+        stopper.join().unwrap();
+        assert!(!observer.join().unwrap());
+        assert!(stopped_without_releasing_observer);
+        assert!(concurrent_proof_is_rejected);
+        assert!(owners.should_stop(id, &domain).unwrap());
+        assert_eq!(owners.outstanding(&grant.handle).unwrap(), 1);
+        assert!(owners
+            .reap_if_proven(id, &domain, |_| Ok::<bool, ()>(true))
+            .unwrap()
+            .unwrap());
+        assert_eq!(owners.outstanding(&grant.handle).unwrap(), 0);
+    }
+
 }
