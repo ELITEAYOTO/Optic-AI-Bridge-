@@ -531,17 +531,20 @@ mod tests {
             .expect("watch B");
         assert_eq!(observed_a.handle, session_a.handle);
         assert_eq!(observed_b.handle, session_b.handle);
-        let permit = registry
-            .begin_admission(&session_a.handle, now)
-            .expect("admitted owner A");
-
         let (reply_tx, reply_rx) = mpsc::channel::<()>();
         let (observed_tx, observed_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
+        let (admitted_tx, admitted_rx) = mpsc::channel();
+        let worker_registry = Arc::clone(&registry);
+        let worker_handle = session_a.handle.clone();
         let worker = thread::spawn(move || {
-            // The server worker holds the admission permit even if its
-            // caller drops the reply receiver before revocation.
-            let _permit = permit;
+            // The service worker owns its Registry Arc and borrows the
+            // admission permit from that Arc, so no borrowed permit escapes
+            // across an independently spawned thread boundary.
+            let _permit = worker_registry
+                .begin_admission(&worker_handle, now)
+                .expect("admitted owner A");
+            admitted_tx.send(()).expect("signal owner admitted");
             let started = std::time::Instant::now();
             while !signal_a.load(Ordering::Acquire) {
                 assert!(
@@ -557,6 +560,9 @@ mod tests {
             assert!(reply_tx.send(()).is_err(), "requester already left");
         });
         drop(reply_rx);
+        admitted_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("service-held admission established before revoke");
 
         let revoke_registry = Arc::clone(&registry);
         let revoke_handle = session_a.handle.clone();
