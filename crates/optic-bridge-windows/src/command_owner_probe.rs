@@ -622,7 +622,11 @@ fn native_windows_owner_matrix() {
             .is_none()
     );
     for (ticket, authority, name) in [
-        (session_ticket, FixtureAuthority::Session, "concurrent-session"),
+        (
+            session_ticket,
+            FixtureAuthority::Session,
+            "concurrent-session",
+        ),
         (
             startup_ticket,
             FixtureAuthority::HostStartup,
