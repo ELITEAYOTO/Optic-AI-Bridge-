@@ -521,7 +521,9 @@ fn research_registry_drop_recycles_capacity_despite_uncertain_cleanup() {
     // transport capacity. No native subprocess exists in this test.
     let sessions = SessionRegistry::new();
     let session = grant();
-    sessions.register(session.clone()).expect("register session");
+    sessions
+        .register(session.clone())
+        .expect("register session");
     let authority = Authority::Session(session.handle.clone());
     let now = MonotonicTime::from_millis(1);
     let transport_guard = one_transport_slot();
