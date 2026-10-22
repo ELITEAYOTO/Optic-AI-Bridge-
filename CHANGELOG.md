@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — release source provenance
+
+- Require an exact-source successful main CI and main ancestry before tag builds/publication; fail closed on incomplete evidence. Add offline and read-only API regressions. No release or V1 readiness is implied.
+
 ## Windows doctor failure-path lifetime and Windows V1 priority (2026-10-22)
 
 - Native supervised fixtures reproduce unbounded stderr waits after stdout EOF

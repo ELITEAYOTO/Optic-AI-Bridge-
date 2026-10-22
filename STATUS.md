@@ -1,5 +1,18 @@
 # Current project status
 
+## Release source provenance guard — 22 October 2026
+
+The tag workflow now requires the exact source to be integrated into main and
+its latest matching independent main CI to be complete/successful, including
+native Windows, Ubuntu and dependency jobs. Missing, pending or ambiguous evidence
+fails closed before release build/publication. This does not authorize a release
+or certify V1 readiness. [Contract and limitations](docs/engineering/RELEASE_SOURCE_GATE.md).
+
+#317 has a new **research-only** native Rust owner slice (8 cases), not a production
+runner correction: [verified checkpoint](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6332249104).
+Stdin ownership, resource/session registry, revoke/seal/reap and CAS remain gates.
+
+
 ## Windows V1 stabilization — operator direction, 22 October 2026
 
 Windows10/11 is the V1 target; supported OS/PowerShell combinations still require

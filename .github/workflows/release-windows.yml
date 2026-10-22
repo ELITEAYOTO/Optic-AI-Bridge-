@@ -6,13 +6,37 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release-windows:
-    runs-on: windows-latest
+  verify-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Require tested source already integrated into main
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./scripts/Assert-OpticReleaseEvidence.ps1
+          $version = (Get-Content -Raw -LiteralPath 'VERSION').Trim()
+          Get-OpticReleaseEvidence -SourceSha $env:GITHUB_SHA -Tag $env:GITHUB_REF_NAME -Version $version | ConvertTo-Json -Compress
+
+  release-windows:
+    needs: verify-source
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
 
       - name: Validate release version
         shell: pwsh
@@ -21,8 +45,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) {
             throw 'VERSION must not be empty.'
           }
-          if ('${{ github.ref_name }}' -ne "v$version") {
-            throw "Release tag/version mismatch. tag=${{ github.ref_name }} version=$version"
+          if ($env:GITHUB_REF_NAME -cne "v$version") {
+            throw 'Release tag/version mismatch.'
           }
 
       - name: Install pinned Rust toolchain
@@ -73,11 +97,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" `
+          gh release create "$env:GITHUB_REF_NAME" `
             'dist\Optic-AI-Bridge-windows-x64.zip' `
             'dist\Optic-AI-Bridge-windows-x64.zip.sha256' `
-            --repo "${{ github.repository }}" `
+            --repo "$env:GITHUB_REPOSITORY" `
             --verify-tag `
             --prerelease `
             --generate-notes `
-            --title "Optic AI Bridge ${{ github.ref_name }}"
+            --title "Optic AI Bridge $env:GITHUB_REF_NAME"
