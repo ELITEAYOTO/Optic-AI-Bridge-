@@ -57,6 +57,9 @@ mod recovery;
 mod reusable_approval_broker;
 mod same_repo_coordinator;
 mod same_repo_merge;
+#[cfg(all(windows, test))]
+#[path = "session/git_owner_integration.rs"]
+mod session_git_owner_integration;
 #[path = "session/lifecycle.rs"]
 mod session_lifecycle;
 #[path = "session/registry.rs"]
