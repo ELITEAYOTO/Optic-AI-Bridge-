@@ -81,7 +81,7 @@ struct Record<T> {
     domain: OwnerDomain,
     revoked: Option<Arc<AtomicBool>>,
     budget: OwnerBudget,
-    stop: bool,
+    stop: Arc<AtomicBool>,
     stage: Stage<T>,
 }
 
@@ -191,7 +191,7 @@ impl<T> GitOwnerRegistry<T> {
                 domain,
                 revoked,
                 budget,
-                stop: false,
+                stop: Arc::new(AtomicBool::new(false)),
                 stage: Stage::Reserved,
             },
         );
@@ -229,11 +229,27 @@ impl<T> GitOwnerRegistry<T> {
         if &record.domain != domain {
             return Err(OwnerError::WrongOwner);
         }
-        Ok(record.stop
+        Ok(record.stop.load(Ordering::Acquire)
             || record
                 .revoked
                 .as_ref()
                 .is_some_and(|f| f.load(Ordering::Acquire)))
+    }
+
+    // A native owner watchdog may hold this signal without entering the
+    // payload lock or taking an operation-admission slot. It is not proof
+    // of successful native termination; the service must still observe it.
+    pub(super) fn stop_signal(
+        &self,
+        id: OwnerId,
+        domain: &OwnerDomain,
+    ) -> Result<Arc<AtomicBool>, OwnerError> {
+        let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
+        let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
+        if &record.domain != domain {
+            return Err(OwnerError::WrongOwner);
+        }
+        Ok(Arc::clone(&record.stop))
     }
 
     // Stop is independent of normal operation admission/capacity.
@@ -241,8 +257,9 @@ impl<T> GitOwnerRegistry<T> {
         let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
         let mut count = 0;
         for record in state.records.values_mut() {
-            if record.domain == OwnerDomain::Session(session.clone()) && !record.stop {
-                record.stop = true;
+            if record.domain == OwnerDomain::Session(session.clone())
+                && !record.stop.swap(true, Ordering::AcqRel)
+            {
                 count += 1;
             }
         }
@@ -298,7 +315,9 @@ impl<T> GitOwnerRegistry<T> {
                 return Err(OwnerError::WrongOwner);
             }
             match &record.stage {
-                Stage::Adopted { owner: retained, .. } if Arc::ptr_eq(retained, &owner) => {}
+                Stage::Adopted {
+                    owner: retained, ..
+                } if Arc::ptr_eq(retained, &owner) => {}
                 _ => return Err(OwnerError::NotAdopted),
             }
             let released = state.records.remove(&id).expect("registered");
@@ -453,6 +472,8 @@ mod tests {
             .unwrap();
         let domain = OwnerDomain::Session(grant.handle.clone());
         owners.adopt(id, &domain, "held native owner").unwrap();
+        let stop_signal = owners.stop_signal(id, &domain).unwrap();
+        assert!(!stop_signal.load(Ordering::Acquire));
 
         let (entered_tx, entered_rx) = mpsc::sync_channel(1);
         let (resume_tx, resume_rx) = mpsc::sync_channel(1);
@@ -492,12 +513,14 @@ mod tests {
         assert!(stopped_without_releasing_observer);
         assert!(concurrent_proof_is_rejected);
         assert!(owners.should_stop(id, &domain).unwrap());
+        assert!(stop_signal.load(Ordering::Acquire));
         assert_eq!(owners.outstanding(&grant.handle).unwrap(), 1);
-        assert!(owners
-            .reap_if_proven(id, &domain, |_| Ok::<bool, ()>(true))
-            .unwrap()
-            .unwrap());
+        assert!(
+            owners
+                .reap_if_proven(id, &domain, |_| Ok::<bool, ()>(true))
+                .unwrap()
+                .unwrap()
+        );
         assert_eq!(owners.outstanding(&grant.handle).unwrap(), 0);
     }
-
 }
