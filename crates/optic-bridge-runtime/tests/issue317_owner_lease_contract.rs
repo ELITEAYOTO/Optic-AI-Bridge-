@@ -28,6 +28,9 @@ enum Authority {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
+    Reserved,
+    NativeCreationInFlight,
+    SuspendedOwned,
     RunningOwned,
     StopRequested,
     RetainedUncertain,
@@ -70,10 +73,14 @@ impl<'a> ContractRegistry<'a> {
         if self.entries.len() >= self.max_slots {
             return Err("capacity held");
         }
-        if matches!(authority, Authority::Session(_)) != admission.is_some() {
-            return Err("session admission mismatch");
+        // Before any native creation, bind the real admitted grant to its owner:
+        // merely supplying SOME session permit is not enough.
+        match (&authority, admission.as_ref()) {
+            (Authority::Session(handle), Some(permit)) if &permit.grant().handle == handle => {}
+            (Authority::HostStartup, None) => {}
+            _ => return Err("admission owner mismatch"),
         }
-        if matches!(authority, Authority::HostStartup) && transport.is_some() {
+        if matches!(&authority, Authority::HostStartup) && transport.is_some() {
             return Err("startup must not impersonate a transport request");
         }
         let id = self.next_id;
@@ -81,7 +88,7 @@ impl<'a> ContractRegistry<'a> {
         self.entries.push(Owner {
             id,
             authority,
-            phase: Phase::RunningOwned,
+            phase: Phase::Reserved,
             _admission: admission,
             _transport: transport,
         });
@@ -100,12 +107,71 @@ impl<'a> ContractRegistry<'a> {
         Ok(owner)
     }
 
+    // Model a reserved slot becoming a native creation attempt before the OS
+    // call. Once an attempt starts, the slot cannot be released as pre-spawn.
+    fn begin_native_creation(
+        &mut self,
+        id: u64,
+        actor: &Authority,
+    ) -> Result<(), &'static str> {
+        let owner = self.owner_mut(id, actor)?;
+        if owner.phase != Phase::Reserved {
+            return Err("creation already started");
+        }
+        owner.phase = Phase::NativeCreationInFlight;
+        Ok(())
+    }
+
+    fn attach_suspended_owned(
+        &mut self,
+        id: u64,
+        actor: &Authority,
+    ) -> Result<(), &'static str> {
+        let owner = self.owner_mut(id, actor)?;
+        if owner.phase != Phase::NativeCreationInFlight {
+            return Err("native creation not declared");
+        }
+        owner.phase = Phase::SuspendedOwned;
+        Ok(())
+    }
+
+    fn mark_running(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
+        let owner = self.owner_mut(id, actor)?;
+        if owner.phase != Phase::SuspendedOwned {
+            return Err("suspended ownership not established");
+        }
+        owner.phase = Phase::RunningOwned;
+        Ok(())
+    }
+
+    // Only safe in the model when native creation has NOT been attempted.
+    fn release_before_creation(
+        &mut self,
+        id: u64,
+        actor: &Authority,
+    ) -> Result<(), &'static str> {
+        let owner = self.owner_mut(id, actor)?;
+        if owner.phase != Phase::Reserved {
+            return Err("native creation may have happened");
+        }
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| entry.id == id)
+            .ok_or("unknown owner")?;
+        self.entries.remove(index);
+        Ok(())
+    }
+
     // This path intentionally does NOT request TransportGuard capacity or wait
     // for SessionRegistry::revoke to drain its admissions.
     fn request_stop(&mut self, id: u64, actor: &Authority) -> Result<(), &'static str> {
         let owner = self.owner_mut(id, actor)?;
-        if owner.phase != Phase::RunningOwned {
-            return Err("stop already requested");
+        if !matches!(
+            owner.phase,
+            Phase::NativeCreationInFlight | Phase::SuspendedOwned | Phase::RunningOwned
+        ) {
+            return Err("stop unavailable in this phase");
         }
         owner.phase = Phase::StopRequested;
         Ok(())
@@ -202,6 +268,13 @@ fn retained_uncertain_owner_blocks_admission_drain_seal_and_slot_reuse() {
         .reserve(authority.clone(), Some(admission), Some(transport))
         .expect("reserve before launch");
 
+    owners
+        .begin_native_creation(id, &authority)
+        .expect("native creation attempt reserved");
+    owners
+        .attach_suspended_owned(id, &authority)
+        .expect("native ownership attached");
+    owners.mark_running(id, &authority).expect("running");
     assert_eq!(guard.active_requests(), 1);
     assert!(!owners.may_seal(&session.handle));
     assert!(matches!(
@@ -297,6 +370,22 @@ fn host_startup_and_foreign_session_cannot_spoof_each_other() {
     assert!(!owners.may_seal(&first.handle));
     assert!(owners.may_seal(&second.handle));
     assert_eq!(owners.slots_held(), 2);
+    owners
+        .begin_native_creation(id, &first_actor)
+        .expect("session creation started");
+    owners
+        .attach_suspended_owned(id, &first_actor)
+        .expect("session native owner");
+    owners.mark_running(id, &first_actor).expect("session running");
+    owners
+        .begin_native_creation(startup_id, &Authority::HostStartup)
+        .expect("host creation started");
+    owners
+        .attach_suspended_owned(startup_id, &Authority::HostStartup)
+        .expect("host native owner");
+    owners
+        .mark_running(startup_id, &Authority::HostStartup)
+        .expect("host running");
 
     owners.request_stop(id, &first_actor).expect("first stop");
     owners
@@ -324,4 +413,104 @@ fn host_startup_and_foreign_session_cannot_spoof_each_other() {
         .release(startup_id, &Authority::HostStartup)
         .expect("host released");
     assert_eq!(owners.slots_held(), 0);
+}
+
+#[test]
+fn admission_identity_and_interrupted_native_start_are_fail_closed() {
+    let sessions = SessionRegistry::new();
+    let first = grant();
+    let second = grant();
+    sessions.register(first.clone()).expect("first session");
+    sessions.register(second.clone()).expect("second session");
+    let now = MonotonicTime::from_millis(1);
+    let first_actor = Authority::Session(first.handle.clone());
+    let second_actor = Authority::Session(second.handle.clone());
+    let mut owners = ContractRegistry::new(1);
+
+    // A perfectly valid admission for A is not a valid reservation for B.
+    let wrong_permit = sessions
+        .begin_admission(&first.handle, now)
+        .expect("first admission");
+    assert!(
+        owners
+            .reserve(second_actor, Some(wrong_permit), None)
+            .is_err(),
+        "cannot borrow a different session's admission"
+    );
+    assert_eq!(owners.slots_held(), 0);
+
+    // Before ANY native creation attempt, failed validation is allowed to
+    // release the reservation and admission. This is not a native spawn result.
+    let before = owners
+        .reserve(
+            first_actor.clone(),
+            Some(
+                sessions
+                    .begin_admission(&first.handle, now)
+                    .expect("pre-spawn admission"),
+            ),
+            None,
+        )
+        .expect("reserve before spawn");
+    assert!(owners.release(before, &first_actor).is_err());
+    owners
+        .release_before_creation(before, &first_actor)
+        .expect("nothing native was attempted");
+    assert_eq!(owners.slots_held(), 0);
+
+    let in_flight = owners
+        .reserve(
+            first_actor.clone(),
+            Some(
+                sessions
+                    .begin_admission(&first.handle, now)
+                    .expect("second admission"),
+            ),
+            None,
+        )
+        .expect("reserved");
+    owners
+        .begin_native_creation(in_flight, &first_actor)
+        .expect("native creation intent");
+    assert!(
+        owners
+            .release_before_creation(in_flight, &first_actor)
+            .is_err(),
+        "a possible partial native creation is NOT a pre-spawn failure"
+    );
+    assert!(owners.mark_running(in_flight, &first_actor).is_err());
+    owners
+        .attach_suspended_owned(in_flight, &first_actor)
+        .expect("native owner attached");
+
+    // Deterministic fault injection: setup failed BEFORE resume. The model
+    // may signal stop but MUST retain the owner until cleanup proofs arrive.
+    owners
+        .request_stop(in_flight, &first_actor)
+        .expect("stop suspended owner");
+    owners
+        .retain_uncertain(in_flight, &first_actor)
+        .expect("setup failure uncertain");
+    assert_eq!(owners.slots_held(), 1);
+    assert!(!owners.may_seal(&first.handle));
+    assert!(owners.release(in_flight, &first_actor).is_err());
+    assert!(
+        owners.reserve(Authority::HostStartup, None, None).is_err(),
+        "uncertain native setup occupies finite capacity"
+    );
+
+    owners
+        .prove_native_terminal(in_flight, &first_actor)
+        .expect("injected native completion proof");
+    assert!(owners.release(in_flight, &first_actor).is_err());
+    owners
+        .prove_io_joined(in_flight, &first_actor)
+        .expect("injected I/O completion proof");
+    owners
+        .release(in_flight, &first_actor)
+        .expect("only fully proven owner releases");
+    assert!(owners.may_seal(&first.handle));
+    assert_eq!(owners.slots_held(), 0);
+    assert!(sessions.revoke(&first.handle).expect("no stranded admission"));
+    assert!(sessions.revoke(&second.handle).expect("foreign owner untouched"));
 }
