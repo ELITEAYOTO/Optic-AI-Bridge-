@@ -1,5 +1,18 @@
 # Changelog
 
+## Windows doctor failure-path lifetime and Windows V1 priority (2026-10-22)
+
+- Native supervised fixtures reproduce unbounded stderr waits after stdout EOF
+  and direct-child timeout with a retaining descendant. The Windows doctor uses
+  at most32768 available pipe bytes/400ms polling,4096-char preview and24 approved
+  phase messages without abandoned stderr read tasks. Preserve primary errors
+  even if helper initialization fails; response waits use a monotonic clock.
+- Keep the30-second MCP startup gate and full executable identity/pinning.
+  Natural319 startup cause and distinct185/317 issues remain open.
+- Windows V1 is the delivery priority; retain Ubuntu regression CI and defer
+  functional Linux/confinement work. Hosted native proof is not Windows10/11
+  or PowerShell5.1 acceptance.
+
 ## Fail-closed raw Git diff file-mode validation (2026-10-21)
 
 - The raw `-z` diff header parser rejects non-octal file-mode digits (`8`, `9`) instead of treating impossible Git modes as verified provenance. Synthetic regressions verify both old/new invalid modes and legitimate symlink/gitlink octal formats. No Git arguments, API schema, permission, timeout, process or sandbox changes. Native Windows and Linux CI on the exact head remain the acceptance proof.

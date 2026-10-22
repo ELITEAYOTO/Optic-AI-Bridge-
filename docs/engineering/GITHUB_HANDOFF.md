@@ -1,6 +1,26 @@
 # GitHub-only project handoff
 
-## Verified successor checkpoint — after #314 and GitRead review (2026-10-21)
+## Windows V1 continuation — 22 October 2026
+
+Use the Windows-first order in [ROADMAP](../../ROADMAP.md), retain Ubuntu CI and
+do not restart Linux confinement research. PR318 owns octal Git validation plus
+the bounded doctor error-path correction; verify its actual head/checks/review
+and, if merged, independent main CI. Original red39585600089 remains evidence.
+No different-branch green run or passing error-path fixture resolves319.
+
+Read [the doctor proof and reusable handoff](../research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md).
+Native32KiB/400ms stderr polling is sole-consumer Windows-specific and best-effort;
+it creates no stderr read worker, but does not replace production tree ownership.
+First priorities after a verified narrow integration: capture a natural319
+failure with bounded in-flight markers, investigate185 separately, then integrate
+real Windows317 ownership/reservations/cancellation/revoke/seal/reap contracts.
+Retain unclear Git CAS outcomes separately from process TerminationUncertain.
+
+No user-PC project execution, self-hosted runner, broad grant, new feature, alpha
+merge or security limit change. Canonical old source/PR counts below are dated
+history; requery GitHub before acting.
+
+## Historical successor checkpoint — after #314 and GitRead review (2026-10-21)
 
 At review, `main=7bc17c16a52383bf6fb7ba68dc4b9348b259be9a`, **0 open PRs**. [PR #314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314) is squash-merged. Accepted source `fbf7c9f40bbae18d4017f237b8783a19964620c8` passed [CI #39576724127](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39576724127) (native Windows, Ubuntu, dependencies) and three specialized native Windows workflows; independent [main CI #39577461324](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39577461324) succeeded first attempt at the exact squash SHA. [Verification comment](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/314#issuecomment-6312779381). First superseded PR-head rustfmt failure was retained, not retried to conceal it.
 
