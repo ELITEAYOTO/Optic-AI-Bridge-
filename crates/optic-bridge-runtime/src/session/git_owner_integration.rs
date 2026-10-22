@@ -3,11 +3,7 @@ use std::{
     collections::BTreeSet,
     env, fs,
     process::Stdio,
-    sync::{
-        Arc,
-        atomic::Ordering,
-        mpsc,
-    },
+    sync::{Arc, atomic::Ordering, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -90,7 +86,9 @@ fn real_session_revoke_stops_a_contained_windows_child_after_caller_abandons_rep
 
     let root = env::temp_dir().join(format!(
         "optic317-session-native-{}",
-        SessionHandle::generate().expect("unique fixture root").to_token()
+        SessionHandle::generate()
+            .expect("unique fixture root")
+            .to_token()
     ));
     fs::create_dir(&root).expect("synthetic fixture root");
     let (ready_tx, ready_rx) = mpsc::channel();
@@ -131,8 +129,7 @@ fn real_session_revoke_stops_a_contained_windows_child_after_caller_abandons_rep
             }
             let mut command = CommandWrap::from(command);
             command.wrap(
-                LimitedJobObject::new(1, 512 * 1024 * 1024, 25)
-                    .expect("finite native Job limits"),
+                LimitedJobObject::new(1, 512 * 1024 * 1024, 25).expect("finite native Job limits"),
             );
             let mut child = command.spawn().expect("suspended assigned native child");
             let stdout = child.stdout().take().expect("stdout pipe");
@@ -158,7 +155,11 @@ fn real_session_revoke_stops_a_contained_windows_child_after_caller_abandons_rep
             child.start_kill().expect("terminate native owned Job");
             let cleanup_until = Instant::now() + CLEANUP_BOUND;
             loop {
-                if child.try_wait().expect("native owner termination query").is_some() {
+                if child
+                    .try_wait()
+                    .expect("native owner termination query")
+                    .is_some()
+                {
                     break;
                 }
                 assert!(
@@ -176,7 +177,10 @@ fn real_session_revoke_stops_a_contained_windows_child_after_caller_abandons_rep
             assert!(!worker_root.join("unexpected_survivor").exists());
         });
         // Permit drops only after both native proof and bounded EOF reads.
-        assert!(reply_tx.send(()).is_err(), "requester reply already dropped");
+        assert!(
+            reply_tx.send(()).is_err(),
+            "requester reply already dropped"
+        );
     });
 
     drop(reply_rx);
@@ -204,7 +208,10 @@ fn real_session_revoke_stops_a_contained_windows_child_after_caller_abandons_rep
         .begin_admission(&session_b.handle, now)
         .expect("unrelated session remains active");
     drop(other);
-    assert!(matches!(revoke_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        revoke_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     cleanup_tx.send(()).expect("finish owned native Job");
     worker.join().expect("service worker completed");
     assert!(
