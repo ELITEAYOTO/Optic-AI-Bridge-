@@ -331,6 +331,25 @@ impl<T> GitOwnerRegistry<T> {
         Ok(result)
     }
 
+    // Service-worker access uses the same single-observer arbitration and
+    // never releases the record, even if a native start/stop returns an error.
+    pub(super) fn with_owner<R, E>(
+        &self,
+        id: OwnerId,
+        domain: &OwnerDomain,
+        visit: impl FnOnce(&mut T) -> Result<R, E>,
+    ) -> Result<Result<R, E>, OwnerError> {
+        let mut result = None;
+        let observed = self.reap_if_proven(id, domain, |native| {
+            result = Some(visit(native));
+            Ok::<bool, std::convert::Infallible>(false)
+        })?;
+        match observed {
+            Ok(false) => result.ok_or(OwnerError::Unavailable),
+            _ => unreachable!("nonterminal visit cannot release the owner"),
+        }
+    }
+
     // Only a service worker that has proven spawn never began may call this.
     // NEVER call from request Drop or an uncertain native spawn failure.
     pub(super) fn confirm_no_spawn(
@@ -353,6 +372,10 @@ impl<T> GitOwnerRegistry<T> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "owner_native_tests.rs"]
+mod native_tests;
 
 #[cfg(test)]
 mod tests {
