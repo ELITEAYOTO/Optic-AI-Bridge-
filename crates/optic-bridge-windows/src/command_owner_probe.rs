@@ -2,11 +2,12 @@
 use super::{OwnedJob, resume_process_threads};
 use crate::CapturedOutputPipe;
 use std::{
+    collections::BTreeMap,
     io::{self, Write},
     os::windows::{io::AsRawHandle, process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    sync::{Arc, Barrier, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -180,6 +181,93 @@ impl RetainedCapacityFixture {
         self.owner.take();
         self.reserved = None;
         Ok(true)
+    }
+}
+
+// Research-only two-slot registry. Operation identity and owner domain are
+// distinct; this does not authenticate a caller or provision a live session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureAuthority {
+    Session,
+    HostStartup,
+}
+
+enum ConcurrentSlot {
+    Reserved(FixtureAuthority),
+    Running(FixtureAuthority, ProbeOwner),
+}
+
+struct ConcurrentOwnerFixture {
+    slots: BTreeMap<u64, ConcurrentSlot>,
+    next_ticket: u64,
+}
+
+impl ConcurrentOwnerFixture {
+    fn new() -> Self {
+        Self {
+            slots: BTreeMap::new(),
+            next_ticket: 0,
+        }
+    }
+
+    fn reserve(&mut self, authority: FixtureAuthority) -> Option<u64> {
+        if self.slots.len() >= 2 {
+            return None;
+        }
+        self.next_ticket += 1;
+        self.slots
+            .insert(self.next_ticket, ConcurrentSlot::Reserved(authority));
+        Some(self.next_ticket)
+    }
+
+    fn attach(&mut self, ticket: u64, authority: FixtureAuthority, owner: ProbeOwner) {
+        let slot = self.slots.get_mut(&ticket).expect("reserved ticket");
+        assert!(matches!(slot, ConcurrentSlot::Reserved(a) if *a == authority));
+        *slot = ConcurrentSlot::Running(authority, owner);
+    }
+
+    fn stop(&mut self, authority: FixtureAuthority, ticket: u64) -> bool {
+        match self.slots.get_mut(&ticket) {
+            Some(ConcurrentSlot::Running(a, owner)) if *a == authority => {
+                owner.stop();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn try_reap(
+        &mut self,
+        authority: FixtureAuthority,
+        ticket: u64,
+        inject_missing_proof: bool,
+    ) -> io::Result<bool> {
+        let Some(ConcurrentSlot::Running(a, owner)) = self.slots.get_mut(&ticket) else {
+            return Ok(false);
+        };
+        if *a != authority || !owner.confirm(inject_missing_proof)? {
+            return Ok(false);
+        }
+        let mut eof = true;
+        for pipe in [&mut owner.out, &mut owner.err] {
+            eof &= pipe.try_read(4096)?.eof;
+        }
+        if !eof {
+            return Ok(false);
+        }
+        self.slots.remove(&ticket);
+        Ok(true)
+    }
+
+    fn cancel_unspawned(&mut self, authority: FixtureAuthority, ticket: u64) -> bool {
+        if !matches!(
+            self.slots.get(&ticket),
+            Some(ConcurrentSlot::Reserved(a)) if *a == authority
+        ) {
+            return false;
+        }
+        self.slots.remove(&ticket);
+        true
     }
 }
 
@@ -493,6 +581,163 @@ fn native_windows_owner_matrix() {
     cases += 1;
     println!(
         "OPTIC317_CASE {{\"case\":\"retained-capacity-until-proof\",\"pre_spawn_reservation\":true,\"caller_reference_dropped\":true,\"stop_out_of_band_thread\":true,\"uncertain_capacity_retained\":true,\"tree_empty\":true,\"pipes_eof\":true,\"capacity_reclaimed_after_proof\":true}}"
+    );
+
+    // Concurrent reservation by two owner domains: all capacity is occupied
+    // before spawn and a third request fails. A stop from a separate thread
+    // bypasses the saturated operation capacity, but a mismatched domain is
+    // denied. Incomplete proof never releases the affected ticket.
+    let registry = Arc::new(Mutex::new(ConcurrentOwnerFixture::new()));
+    let barrier = Arc::new(Barrier::new(3));
+    let session_registry = Arc::clone(&registry);
+    let session_barrier = Arc::clone(&barrier);
+    let session_ticket = thread::spawn(move || {
+        session_barrier.wait();
+        session_registry
+            .lock()
+            .unwrap()
+            .reserve(FixtureAuthority::Session)
+            .expect("session ticket")
+    });
+    let startup_registry = Arc::clone(&registry);
+    let startup_barrier = Arc::clone(&barrier);
+    let startup_ticket = thread::spawn(move || {
+        startup_barrier.wait();
+        startup_registry
+            .lock()
+            .unwrap()
+            .reserve(FixtureAuthority::HostStartup)
+            .expect("startup ticket")
+    });
+    barrier.wait();
+    let session_ticket = session_ticket.join().unwrap();
+    let startup_ticket = startup_ticket.join().unwrap();
+    assert_ne!(session_ticket, startup_ticket);
+    assert_eq!(registry.lock().unwrap().slots.len(), 2);
+    assert!(
+        registry
+            .lock()
+            .unwrap()
+            .reserve(FixtureAuthority::Session)
+            .is_none()
+    );
+    for (ticket, authority, name) in [
+        (session_ticket, FixtureAuthority::Session, "concurrent-session"),
+        (
+            startup_ticket,
+            FixtureAuthority::HostStartup,
+            "concurrent-startup",
+        ),
+    ] {
+        let root = base.join(name);
+        std::fs::create_dir(&root).unwrap();
+        let mut owner = ProbeOwner::create(&root, "idle").unwrap();
+        owner.assign().unwrap();
+        owner.resume().unwrap();
+        wait_marker(&root, "started");
+        registry.lock().unwrap().attach(ticket, authority, owner);
+    }
+    assert!(
+        !registry
+            .lock()
+            .unwrap()
+            .stop(FixtureAuthority::Session, startup_ticket),
+        "session must not stop HostStartup"
+    );
+    assert!(
+        !registry
+            .lock()
+            .unwrap()
+            .stop(FixtureAuthority::HostStartup, session_ticket),
+        "HostStartup must not stop Session"
+    );
+    let stop_registry = Arc::clone(&registry);
+    assert!(
+        thread::spawn(move || stop_registry
+            .lock()
+            .unwrap()
+            .stop(FixtureAuthority::Session, session_ticket))
+        .join()
+        .unwrap()
+    );
+    assert!(
+        !registry
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::Session, session_ticket, true)
+            .unwrap()
+    );
+    assert!(
+        registry
+            .lock()
+            .unwrap()
+            .reserve(FixtureAuthority::Session)
+            .is_none(),
+        "uncertain session must hold capacity even if other owner is healthy"
+    );
+    assert!(
+        !registry
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::Session, startup_ticket, false)
+            .unwrap(),
+        "session must not reap HostStartup"
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if registry
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::Session, session_ticket, false)
+            .unwrap()
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "session owner proof deadline");
+        thread::sleep(POLL);
+    }
+    assert_eq!(registry.lock().unwrap().slots.len(), 1);
+    let next_ticket = registry
+        .lock()
+        .unwrap()
+        .reserve(FixtureAuthority::Session)
+        .expect("capacity available only after native proof");
+    assert_ne!(session_ticket, next_ticket);
+    assert!(
+        !registry
+            .lock()
+            .unwrap()
+            .cancel_unspawned(FixtureAuthority::HostStartup, next_ticket)
+    );
+    assert!(
+        registry
+            .lock()
+            .unwrap()
+            .cancel_unspawned(FixtureAuthority::Session, next_ticket)
+    );
+    assert!(
+        registry
+            .lock()
+            .unwrap()
+            .stop(FixtureAuthority::HostStartup, startup_ticket)
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if registry
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::HostStartup, startup_ticket, false)
+            .unwrap()
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "startup owner proof deadline");
+        thread::sleep(POLL);
+    }
+    assert!(registry.lock().unwrap().slots.is_empty());
+    cases += 1;
+    println!(
+        "OPTIC317_CASE {{\"case\":\"concurrent-owner-domains\",\"parallel_reservations\":true,\"capacity_bound\":true,\"distinct_owner_domains\":true,\"wrong_owner_stop_denied\":true,\"wrong_owner_reap_denied\":true,\"out_of_band_stop\":true,\"uncertain_capacity_retained\":true,\"native_eof_gated_reap\":true,\"capacity_reused_after_proof\":true,\"all_slots_reclaimed\":true}}"
     );
 
     // Missing observation is injected, not an actual OS termination failure.
