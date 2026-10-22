@@ -102,3 +102,13 @@ case lines; never raw logs as publication proof. No self-hosted/operator PC test
 If this slice passes, record precisely which eight native cases passed and retain
 all untested gates above. If it fails, diagnose only the first actual signature.
 Do not re-run merely for a badge. Keep #317 and sensitive/security incidents open.
+
+## First validation failures preserved
+
+Source6bb52322365a10aae171518c879224141190c863: native workflow39718489770
+stopped at formatting, so no native success is claimed. Normal CI39718489667
+also found an unfulfilled clippy expectation on a synthetic deliberately Job-owned
+child; remove that unnecessary expectation rather than suppress the lint. The
+formatted source is produced only as diagnostic evidence and committed before
+any acceptance run. Native normal-case assertions additionally verify both actual
+synthetic output streams, not merely nonempty captured counts.
