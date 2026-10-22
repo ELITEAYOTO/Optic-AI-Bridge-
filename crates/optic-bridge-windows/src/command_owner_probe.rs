@@ -3,6 +3,7 @@ use super::{OwnedJob, resume_process_threads};
 use crate::CapturedOutputPipe;
 use std::{
     io::{self, Write},
+    sync::{Arc, Mutex},
     os::windows::{io::AsRawHandle, process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
@@ -119,6 +120,66 @@ impl Drop for ProbeOwner {
         if !self.terminal_proven {
             self.stop();
         }
+    }
+}
+
+// A research-only, capacity-one stand-in for the eventual service owner.
+// It is deliberately not exported, not an authority or a production registry.
+struct RetainedCapacityFixture {
+    next_ticket: u64,
+    reserved: Option<u64>,
+    owner: Option<ProbeOwner>,
+}
+
+impl RetainedCapacityFixture {
+    fn new() -> Self {
+        Self {
+            next_ticket: 0,
+            reserved: None,
+            owner: None,
+        }
+    }
+
+    // Reserve before native creation, even while no child/job exists yet.
+    fn reserve(&mut self) -> Option<u64> {
+        if self.reserved.is_some() {
+            return None;
+        }
+        self.next_ticket += 1;
+        self.reserved = Some(self.next_ticket);
+        self.reserved
+    }
+
+    fn attach(&mut self, ticket: u64, owner: ProbeOwner) {
+        assert_eq!(self.reserved, Some(ticket));
+        assert!(self.owner.is_none());
+        self.owner = Some(owner);
+    }
+
+    fn stop(&mut self, ticket: u64) {
+        assert_eq!(self.reserved, Some(ticket));
+        self.owner.as_mut().expect("attached owner").stop();
+    }
+
+    // A missing native observation, even after a stop, must retain the owner,
+    // capacity and pipes. Also require both EOF observations before release.
+    fn try_reap(&mut self, ticket: u64, missing_proof: bool) -> io::Result<bool> {
+        assert_eq!(self.reserved, Some(ticket));
+        let owner = self.owner.as_mut().expect("attached owner");
+        if !owner.confirm(missing_proof)? {
+            return Ok(false);
+        }
+        let mut both_eof = true;
+        for pipe in [&mut owner.out, &mut owner.err] {
+            let chunk = pipe.try_read(4096)?;
+            both_eof &= chunk.eof;
+        }
+        if !both_eof {
+            return Ok(false);
+        }
+        self.owner.take();
+        self.reserved = None;
+        Ok(true)
     }
 }
 
@@ -387,6 +448,48 @@ fn native_windows_owner_matrix() {
     cases += 1;
     println!(
         "OPTIC317_CASE {{\"case\":\"stdin-backpressure-stop\",\"tree_empty\":true,\"pipes_eof\":true,\"writer_unblocked\":true,\"writer_joined\":true}}"
+    );
+
+    // Capacity must be reserved *before* spawn and survive loss of a caller
+    // reference. An independent thread requests stop without acquiring a
+    // second operation slot; missing proof retains the same native owner.
+    let root = base.join("retained-capacity");
+    std::fs::create_dir(&root).unwrap();
+    let registry = Arc::new(Mutex::new(RetainedCapacityFixture::new()));
+    let ticket = registry.lock().unwrap().reserve().expect("one free slot");
+    assert!(registry.lock().unwrap().reserve().is_none());
+    let mut owner = ProbeOwner::create(&root, "idle").unwrap();
+    owner.assign().unwrap();
+    owner.resume().unwrap();
+    wait_marker(&root, "started");
+    registry.lock().unwrap().attach(ticket, owner);
+    let caller_reference = Arc::clone(&registry);
+    drop(caller_reference);
+    assert_eq!(Arc::strong_count(&registry), 1);
+    assert!(!registry.lock().unwrap().try_reap(ticket, true).unwrap());
+    assert!(registry.lock().unwrap().reserve().is_none());
+
+    let stop_registry = Arc::clone(&registry);
+    thread::spawn(move || stop_registry.lock().unwrap().stop(ticket))
+        .join()
+        .unwrap();
+    assert!(!registry.lock().unwrap().try_reap(ticket, true).unwrap());
+    assert!(registry.lock().unwrap().reserve().is_none());
+
+    let reap_until = Instant::now() + Duration::from_secs(2);
+    loop {
+        if registry.lock().unwrap().try_reap(ticket, false).unwrap() {
+            break;
+        }
+        assert!(Instant::now() < reap_until, "retained native owner never reaped");
+        thread::sleep(POLL);
+    }
+    let next_ticket = registry.lock().unwrap().reserve().expect("slot reclaimed");
+    assert_ne!(ticket, next_ticket, "operation identity reused");
+    assert!(registry.lock().unwrap().owner.is_none());
+    cases += 1;
+    println!(
+        "OPTIC317_CASE {{\"case\":\"retained-capacity-until-proof\",\"pre_spawn_reservation\":true,\"caller_reference_dropped\":true,\"stop_out_of_band_thread\":true,\"uncertain_capacity_retained\":true,\"tree_empty\":true,\"pipes_eof\":true,\"capacity_reclaimed_after_proof\":true}}"
     );
 
     // Missing observation is injected, not an actual OS termination failure.

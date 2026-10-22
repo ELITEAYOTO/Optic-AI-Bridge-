@@ -54,12 +54,18 @@ def main():
                 elif line.startswith("OPTIC317_NATIVE_COMPLETE "):
                     result["native"] = json.loads(line.removeprefix("OPTIC317_NATIVE_COMPLETE "))
             assert process.returncode == 0, "native fixture failed; raw log withheld"
-            assert len(result["cases"]) == 10
-            assert result["native"]["cases"] == 10
+            assert len(result["cases"]) == 11
+            assert result["native"]["cases"] == 11
             stdin = next(case for case in result["cases"] if case["case"] == "stdin-backpressure-stop")
             assert all(stdin[key] for key in ("tree_empty", "pipes_eof", "writer_unblocked", "writer_joined"))
             native = next(case for case in result["cases"] if case["case"] == "native-assignment-error")
             assert all(native[key] for key in ("tree_empty", "never_resumed", "pipes_eof", "native_error"))
+            retained = next(case for case in result["cases"] if case["case"] == "retained-capacity-until-proof")
+            assert all(retained[key] for key in (
+                "pre_spawn_reservation", "caller_reference_dropped", "stop_out_of_band_thread",
+                "uncertain_capacity_retained", "tree_empty", "pipes_eof",
+                "capacity_reclaimed_after_proof"))
+            result["research_retained_capacity_proven"] = True
             result["native_assignment_error_cleanup_proven"] = True
             result["stdin_blocked_writer_stop_proven"] = True
             result["complete"] = True
