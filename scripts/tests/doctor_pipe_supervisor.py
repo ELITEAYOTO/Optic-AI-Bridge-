@@ -105,7 +105,7 @@ def main():
     parser.add_argument("--output",required=True)
     args=parser.parse_args()
     assert os.name=="nt","native Windows proof required"
-    result=dict(sha=os.environ.get("GITHUB_SHA"),run=os.environ.get("GITHUB_RUN_ID"),
+    result=dict(sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ.get("GITHUB_SHA"),checkout_sha=os.environ.get("GITHUB_SHA"),run=os.environ.get("GITHUB_RUN_ID"),
                 attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),complete=False,cases=[],
                 claim="doctor error-path pipe lifetime; not natural issue319 root cause")
     output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True)

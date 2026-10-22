@@ -6,7 +6,7 @@ from pathlib import Path
 import urllib.request
 import zipfile
 
-sha=os.environ["GITHUB_SHA"]
+sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"]
 repo=os.environ["GITHUB_REPOSITORY"]
 result_files=list(Path("evidence").rglob("doctor-pipes.json"))
 results=[json.loads(p.read_text()) for p in result_files]
@@ -26,7 +26,7 @@ sources=[
     "scripts/Test-OpticAIBridge.ps1","scripts/tests/DoctorPipeWorker.ps1",
     "scripts/tests/doctor_pipe_supervisor.py","scripts/tests/doctor_pipe_fixture.py",
     "docs/research/WINDOWS_DOCTOR_PIPE_LIFETIME_2026-10-22.md"]
-provenance=dict(sha=sha,run=os.environ["GITHUB_RUN_ID"],attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+provenance=dict(sha=sha,checkout_sha=os.environ["GITHUB_SHA"],run=os.environ["GITHUB_RUN_ID"],attempt=os.environ["GITHUB_RUN_ATTEMPT"],
                 native_doctor_proof_complete=complete,independent_ci_at_archive_creation=ci,
                 natural_issue319_cause_proven=False,results=results,
                 sources_sha256={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in sources})
