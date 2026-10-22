@@ -54,8 +54,8 @@ def main():
                 elif line.startswith("OPTIC317_NATIVE_COMPLETE "):
                     result["native"] = json.loads(line.removeprefix("OPTIC317_NATIVE_COMPLETE "))
             assert process.returncode == 0, "native fixture failed; raw log withheld"
-            assert len(result["cases"]) == 12
-            assert result["native"]["cases"] == 12
+            assert len(result["cases"]) == 13
+            assert result["native"]["cases"] == 13
             stdin = next(case for case in result["cases"] if case["case"] == "stdin-backpressure-stop")
             assert all(stdin[key] for key in ("tree_empty", "pipes_eof", "writer_unblocked", "writer_joined"))
             native = next(case for case in result["cases"] if case["case"] == "native-assignment-error")
@@ -71,6 +71,12 @@ def main():
                 "wrong_owner_stop_denied", "wrong_owner_reap_denied", "out_of_band_stop",
                 "uncertain_capacity_retained", "native_eof_gated_reap",
                 "capacity_reused_after_proof", "all_slots_reclaimed"))
+            abandoned = next(case for case in result["cases"] if case["case"] == "abandoned-reply-stop-before-drain")
+            assert all(abandoned[key] for key in (
+                "caller_reply_dropped", "admission_closed", "drain_blocked_before_stop",
+                "owner_retained_under_missing_proof", "stop_independent_of_request",
+                "native_eof_gated_reap", "admission_drained_after_stop"))
+            result["research_stop_before_drain_order_proven"] = True
             result["research_concurrent_owner_domains_proven"] = True
             result["research_retained_capacity_proven"] = True
             result["native_assignment_error_cleanup_proven"] = True

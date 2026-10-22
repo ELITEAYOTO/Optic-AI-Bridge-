@@ -7,7 +7,7 @@ use std::{
     os::windows::{io::AsRawHandle, process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
-    sync::{Arc, Barrier, Mutex},
+    sync::{Arc, Barrier, Condvar, Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -268,6 +268,55 @@ impl ConcurrentOwnerFixture {
         }
         self.slots.remove(&ticket);
         true
+    }
+}
+
+// Research-only ordering model. In production the admission authority comes
+// from SessionRegistry; a failed caller reply must not own the operation.
+#[derive(Default)]
+struct AdmissionGateState {
+    closed: bool,
+    active: usize,
+}
+
+#[derive(Default)]
+struct AdmissionGateFixture {
+    state: Mutex<AdmissionGateState>,
+    empty: Condvar,
+}
+
+struct AdmissionGuardFixture(Arc<AdmissionGateFixture>);
+
+impl AdmissionGateFixture {
+    fn admit(self: &Arc<Self>) -> Option<AdmissionGuardFixture> {
+        let mut state = self.state.lock().unwrap();
+        if state.closed {
+            return None;
+        }
+        state.active += 1;
+        Some(AdmissionGuardFixture(Arc::clone(self)))
+    }
+
+    fn close(&self) {
+        self.state.lock().unwrap().closed = true;
+    }
+
+    fn drained(&self, timeout: Duration) -> bool {
+        let state = self.state.lock().unwrap();
+        let (state, _) = self
+            .empty
+            .wait_timeout_while(state, timeout, |state| state.active != 0)
+            .unwrap();
+        state.active == 0
+    }
+}
+
+impl Drop for AdmissionGuardFixture {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap();
+        assert!(state.active != 0, "admission underflow");
+        state.active -= 1;
+        self.0.empty.notify_all();
     }
 }
 
@@ -742,6 +791,90 @@ fn native_windows_owner_matrix() {
     cases += 1;
     println!(
         "OPTIC317_CASE {{\"case\":\"concurrent-owner-domains\",\"parallel_reservations\":true,\"capacity_bound\":true,\"distinct_owner_domains\":true,\"wrong_owner_stop_denied\":true,\"wrong_owner_reap_denied\":true,\"out_of_band_stop\":true,\"uncertain_capacity_retained\":true,\"native_eof_gated_reap\":true,\"capacity_reused_after_proof\":true,\"all_slots_reclaimed\":true}}"
+    );
+
+    // Requester abandons the reply receiver while the admitted worker is
+    // blocked on a native process. A service-held owner is stopped AFTER
+    // admission close but BEFORE waiting for the admitted worker to drain.
+    // This is an ordering model, not SessionRegistry production integration.
+    let root = base.join("abandoned-reply-revoke-order");
+    std::fs::create_dir(&root).unwrap();
+    let service = Arc::new(Mutex::new(ConcurrentOwnerFixture::new()));
+    let ticket = service
+        .lock()
+        .unwrap()
+        .reserve(FixtureAuthority::Session)
+        .expect("session capacity");
+    let mut owner = ProbeOwner::create(&root, "idle").unwrap();
+    owner.assign().unwrap();
+    owner.resume().unwrap();
+    wait_marker(&root, "started");
+    service
+        .lock()
+        .unwrap()
+        .attach(ticket, FixtureAuthority::Session, owner);
+    let gate = Arc::new(AdmissionGateFixture::default());
+    let permit = gate.admit().expect("admitted request");
+    let (reply_tx, reply_rx) = mpsc::channel::<()>();
+    let worker_service = Arc::clone(&service);
+    let worker = thread::spawn(move || {
+        // The permit belongs to the server worker, not its reply receiver.
+        let _permit = permit;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if !worker_service.lock().unwrap().slots.contains_key(&ticket) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "admitted worker remained blocked");
+            thread::sleep(POLL);
+        }
+        let _ = reply_tx.send(());
+    });
+    drop(reply_rx);
+    gate.close();
+    assert!(gate.admit().is_none(), "admission reopened after close");
+    assert!(
+        !gate.drained(Duration::from_millis(25)),
+        "incorrectly drained before owner stop"
+    );
+    assert!(service.lock().unwrap().slots.contains_key(&ticket));
+    let stop_service = Arc::clone(&service);
+    assert!(
+        thread::spawn(move || stop_service
+            .lock()
+            .unwrap()
+            .stop(FixtureAuthority::Session, ticket))
+        .join()
+        .unwrap()
+    );
+    assert!(
+        !service
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::Session, ticket, true)
+            .unwrap(),
+        "injected missing native proof must retain the owner"
+    );
+    assert!(!gate.drained(Duration::from_millis(25)));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if service
+            .lock()
+            .unwrap()
+            .try_reap(FixtureAuthority::Session, ticket, false)
+            .unwrap()
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "native owner never released");
+        thread::sleep(POLL);
+    }
+    assert!(gate.drained(Duration::from_secs(1)));
+    worker.join().unwrap();
+    assert!(service.lock().unwrap().slots.is_empty());
+    cases += 1;
+    println!(
+        "OPTIC317_CASE {{\"case\":\"abandoned-reply-stop-before-drain\",\"caller_reply_dropped\":true,\"admission_closed\":true,\"drain_blocked_before_stop\":true,\"owner_retained_under_missing_proof\":true,\"stop_independent_of_request\":true,\"native_eof_gated_reap\":true,\"admission_drained_after_stop\":true}}"
     );
 
     // Missing observation is injected, not an actual OS termination failure.
