@@ -9,6 +9,12 @@ and GitHub-hosted CI only; no operator-PC tests or runtime changes. See the
 [handoff](docs/engineering/GITHUB_HANDOFF.md). This does not remove native Windows
 acceptance gates or imply they can be established on Linux.
 
+## Current Windows V1 stabilization sequencing — handoff 22 October 2026
+
+Owner directive: V1 is a future **release decision following stabilization of existing Rust/MCP code**, not an automatic result of green CI. [Current handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) is the continuity point; [issue #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) holds the evidence-based V1 freeze/no-go matrix. The highest-priority release blocker is #317: a Windows service-owned Git command process tree, robust stdin/stdout/stderr cleanup, owner-retained uncertainty and session seal/reap must be proven on the *production* runner. The research branch has 13 supervised native cases, real SessionRegistry/Job tests and a **non-wired prototype ledger**, none merged to main. **Next:** review/prove independent native observation and stop (avoid callbacks under a global lock), then staged Windows owned process and session integration before any GitRead migration. No wholesale research merge.
+
+After #317, resolve or fail-closed exclude unproven V1-reachable parts of #176/#182, #319 and #185; certify supported Windows 10/11/PowerShell combinations with operator-approved real-device tests, and prove reproducible release/rollback/CI. Out-of-scope remote H-01–H-05/#177 and Electron remain deferred with enforced exclusions. No V1 tag or feature unfreeze without operator approval.
+
 ## Windows V1 first — operator decision, 22 October 2026
 
 Target Windows10/11; verify actual supported versions rather than inferring them

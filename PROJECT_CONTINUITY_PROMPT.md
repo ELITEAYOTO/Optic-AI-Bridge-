@@ -1,5 +1,11 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Active copy-ready successor prompt — 22 October 2026
+
+**Use [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md) as the current complete prompt**, and [HANDOFF_WINDOWS_V1_2026-10-22.md](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) as the technical evidence. Snapshot before the handoff PR: main `82ad1234`, 0 open PRs, research #317 `33c95e00` with [CI #39748924515](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39748924515) green; **unwired owner ledger and research fixtures, no production #317 fix, no V1 freeze**. Verify GitHub again at the beginning of the new chat; the very PR installing these documents can advance main.
+
+The sections below are dated predecessor prompts and are retained for history, **not** authoritative current instructions.
+
 ## Current Windows V1 continuation — verified after #321 (2026-10-22)
 
 At last check `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9`, **0 PRs open**, #320 and #321 squash-merged. [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496), [Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed, attempt 1, on that exact SHA. Requery `main`, PRs, issues, CI and quotas at start: older heads are checkpoints, not integration targets.

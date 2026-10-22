@@ -1,5 +1,10 @@
 # GitHub-only project handoff
 
+## Canonical next-chat checkpoint — Windows V1 / issue #317, 22 Oct 2026
+
+**Begin with [HANDOFF_WINDOWS_V1_2026-10-22.md](HANDOFF_WINDOWS_V1_2026-10-22.md)**, then the [standalone takeover prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md). The historical sections below are **not** current refs. At the verification preceding this docs-only PR, main=`82ad1234f184591e0f2c80c86296a65a883ecc20`, no open PRs, main unprotected; research `bootstrap/issue-317-windows-rust-owner`=`33c95e00aa384774ccac6ccbab24b8f54fa5ab11`; [CI #39748924515](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39748924515) green on that exact research SHA. No production #317 correction: the 13 native Job fixtures, real SessionRegistry/Job tests and private unwired registry do **not** justify merging the whole research branch, changing ADR-0035 from PROPOSED or claiming V1 readiness. First review the registry's global mutex around native observation and how it might block out-of-band stop. #317, #176, #182, #319, #185 and V1 gate #323 still require decisions/proofs. Preserve GitHub-only, Windows hosted CI, no operator PC, release, security weakening or Electron. A documentation PR/merge may have advanced main after the listed snapshot.
+
+
 ## Current handoff — Windows V1, after PRs #320/#321 (2026-10-22)
 
 `main=65aa5db0dbaad24894f2cf4b050d5ac0bd61eac9` and zero PRs open were verified. Both #320 (exact-main-CI prerelease provenance gate) and #321 (Windows PowerShell 5.1 no-BOM MCP stdin) are squash-integrated. Independent same-source runs [CI #39722724572](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724572), [pwsh #39722724496](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724496) and [Desktop5.1 #39722724477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39722724477) passed attempt 1. Read [release gate](RELEASE_SOURCE_GATE.md), [PowerShell proof](WINDOWS_POWERSHELL_ACCEPTANCE.md) and [current status](../../STATUS.md). No release and no Windows10/11 device certification.
