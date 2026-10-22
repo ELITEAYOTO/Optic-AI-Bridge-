@@ -512,3 +512,58 @@ fn admission_identity_and_interrupted_native_start_are_fail_closed() {
             .expect("foreign owner untouched")
     );
 }
+
+#[test]
+fn research_registry_drop_recycles_capacity_despite_uncertain_cleanup() {
+    // NEGATIVE CHARACTERIZATION OF THIS TEST MODEL, NOT A PRODUCTION BUG REPRO:
+    // the model owns RAII permits in a Vec. Ordinary Drop does not inspect
+    // RetainedUncertain and therefore unconditionally releases admission and
+    // transport capacity. No native subprocess exists in this test.
+    let sessions = SessionRegistry::new();
+    let session = grant();
+    sessions.register(session.clone()).expect("register session");
+    let authority = Authority::Session(session.handle.clone());
+    let now = MonotonicTime::from_millis(1);
+    let transport_guard = one_transport_slot();
+    let mut owners = ContractRegistry::new(1);
+    let id = owners
+        .reserve(
+            authority.clone(),
+            Some(
+                sessions
+                    .begin_admission(&session.handle, now)
+                    .expect("admit"),
+            ),
+            Some(transport_guard.begin_execution(now).expect("transport")),
+        )
+        .expect("reserve");
+    owners
+        .begin_native_creation(id, &authority)
+        .expect("creation attempted");
+    owners
+        .request_stop(id, &authority)
+        .expect("request stop during creation");
+    owners
+        .retain_uncertain(id, &authority)
+        .expect("injected uncertain cleanup");
+    assert_eq!(transport_guard.active_requests(), 1);
+    assert_eq!(owners.slots_held(), 1);
+    assert!(!owners.may_seal(&session.handle));
+    assert!(owners.release(id, &authority).is_err());
+
+    // Deliberately exercise the path outside the model's release methods.
+    // A future production owner MUST NOT reuse capacity on this path while
+    // native termination, E/S completion or mutation outcome is uncertain.
+    drop(owners);
+    assert_eq!(
+        transport_guard.active_requests(),
+        0,
+        "model Drop bypasses retained-uncertain capacity"
+    );
+    assert!(
+        sessions
+            .revoke(&session.handle)
+            .expect("model admission disappeared after registry drop"),
+        "model Drop allows session drain without native cleanup evidence"
+    );
+}
