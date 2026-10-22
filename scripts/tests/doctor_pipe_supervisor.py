@@ -114,7 +114,7 @@ def main():
             fixtures=[("eof-live",True),("timeout-descendant",True)]
             fixtures += [(m,False) for m in ["normal","eof-live","eof-descendant",
                         "timeout-descendant","partial-utf8","oversized","capture-live",
-                        "eof-init-failure","timeout-init-failure"]]
+                        "eof-init-failure","timeout-init-failure","timeout-phase-flood"]]
             for i,(mode,baseline) in enumerate(fixtures):
                 root=Path(temporary)/str(i);root.mkdir()
                 result["cases"].append(run_case(args.pwsh,Path(args.baseline if baseline else args.candidate).resolve(),

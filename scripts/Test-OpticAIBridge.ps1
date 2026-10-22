@@ -482,10 +482,16 @@ finally {
                 $startupLines = $capturedStderr -split "\r?\n"
                 $seenPhases = New-Object 'System.Collections.Generic.HashSet[string]'
                 $seenProcessIdentityTiming = $false
+                $seenIdentityProgress = [Collections.Generic.HashSet[string]]::new()
                 foreach ($startupLine in $startupLines) {
                     if ($startupLine -cmatch '^OPTIC_STARTUP phase=(entry|arguments-parsed|process-manager-created|executable-profile-checked|git-services-ready|session-provisioned|read-authorities-provisioned|process-leases-provisioned|server-created|transport-created|mcp-service-started) elapsed_ms=([0-9]{1,12})$') {
                         if ($seenPhases.Add($Matches[1])) {
                             Write-Host "OPTIC_DOCTOR_CHILD_TIMING phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
+                        }
+                    }
+                    elseif ($startupLine -cmatch '^OPTIC_IDENTITY_PROGRESS phase=(capture-entered|canonical-ready|pin-ready|hash-started|read-entered|first-read-returned|read-16m|read-64m|read-256m|eof-observed|hash-complete) elapsed_ms=([0-9]{1,12})$') {
+                        if ($seenIdentityProgress.Add($Matches[1])) {
+                            Write-Host "OPTIC_DOCTOR_IDENTITY_PROGRESS phase=$($Matches[1]) elapsed_ms=$($Matches[2])"
                         }
                     }
                     elseif (-not $seenProcessIdentityTiming -and $startupLine -cmatch '^OPTIC_PROCESS_IDENTITY_TIMING path_ms=([0-9]{1,12}) pin_ms=([0-9]{1,12}) hash_ms=([0-9]{1,12}) total_ms=([0-9]{1,12})$') {

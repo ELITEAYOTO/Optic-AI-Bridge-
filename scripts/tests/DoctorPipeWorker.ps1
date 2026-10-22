@@ -19,6 +19,10 @@ if($Mode -in @('eof-init-failure','timeout-init-failure')) {
     # Deterministic failure only; no host policy/security change.
     function Add-Type { throw 'injected diagnostic initialization failure' }
 }
+$script:capturedHostMessages = [Collections.Generic.List[string]]::new()
+if($Mode -eq 'timeout-phase-flood'){
+    function Write-Host { param($Object) $script:capturedHostMessages.Add([string]$Object) }
+}
 # Warm compilation before timings and before any fixture can run.
 if(Get-Command Read-OpticBoundedStderr -ErrorAction SilentlyContinue) {
     try { Read-OpticBoundedStderr -Process ([pscustomobject]@{StandardError=$null}) | Out-Null } catch {}
@@ -36,6 +40,7 @@ $psi.ArgumentList.Add('-I');$psi.ArgumentList.Add($Fixture)
 $fixtureMode = switch ($Mode) {
     'eof-init-failure' { 'eof-live' }
     'timeout-init-failure' { 'timeout-descendant' }
+    'timeout-phase-flood' { 'phase-flood-parent' }
     default { $Mode }
 }
 $psi.ArgumentList.Add($fixtureMode);$psi.ArgumentList.Add($ready)
@@ -75,12 +80,17 @@ try {
         if($Mode -eq 'eof-live' -and $protocolError -notmatch 'OPTIC_STARTUP phase=entry elapsed_ms=0'){throw 'Actual stderr evidence was discarded'}
         if($Mode -eq 'oversized' -and $protocolError -notmatch '\.\.\.\[truncated\]'){throw 'Oversized stderr was not captured and capped'}
         if($Mode -eq 'partial-utf8' -and $protocolError -notmatch [char]0xFFFD){throw 'Partial UTF-8 was not bounded-decoded'}
-        if($Mode -in @('timeout-descendant','timeout-init-failure')){
+        if($Mode -in @('timeout-descendant','timeout-init-failure','timeout-phase-flood')){
             if($protocolError -notmatch 'Timed out after 1000ms'){throw 'Primary timeout lost'}
         } elseif($protocolError -notmatch 'closed before MCP response'){throw 'Primary EOF lost'}
     }
+    if($Mode -eq 'timeout-phase-flood'){
+        if($script:capturedHostMessages.Count -ne 24){throw 'Safe phase queue cardinality changed'}
+        if(-not ($script:capturedHostMessages -contains 'OPTIC_DOCTOR_TIMEOUT_PHASE phase=transport-created elapsed_ms=42')){throw 'Late phase outside preview lost'}
+        if(($script:capturedHostMessages -join '') -match 'unknown-private-label'){throw 'Unknown label was published'}
+    }
     if($elapsed -gt 3500){throw 'Bounded worker exceeded conservative guard'}
-    [ordered]@{mode=$Mode;elapsed_ms=$elapsed;normal=($Mode -eq 'normal');primary_error_preserved=($null -ne $protocolError);diagnostic_chars=if($protocolError){$protocolError.Length}else{0};capture_handle_delta=if($Mode -eq 'capture-live'){$afterHandles-$beforeHandles}else{$null}} |
+    [ordered]@{mode=$Mode;elapsed_ms=$elapsed;normal=($Mode -eq 'normal');primary_error_preserved=($null -ne $protocolError);diagnostic_chars=if($protocolError){$protocolError.Length}else{0};safe_phase_count=$script:capturedHostMessages.Count;capture_handle_delta=if($Mode -eq 'capture-live'){$afterHandles-$beforeHandles}else{$null}} |
         ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $Root 'result.json') -Encoding utf8
 } finally {
     if(-not $p.HasExited){try{$p.Kill()}catch{};try{$p.WaitForExit(1000)|Out-Null}catch{}}

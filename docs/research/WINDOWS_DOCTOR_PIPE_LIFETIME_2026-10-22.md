@@ -119,3 +119,30 @@ Windows10/11 operational acceptance. Existing packaging copies this self-contain
 .ps1, so no helper file/binary or mandatory core runtime dependency is added.
 Normal independent CI39713678739 remains a separate result on6518b0; inspect
 final exact-source checks rather than treating preceding-head success as final.
+
+## Targeted in-flight startup visibility
+
+The candidate also selects ONLY IdentityProgressReader, its first-capture atomic
+gate, and its three bounded synthetic regressions from research source49b64e.
+No timed-read histograms, buffer/cache experiments, #317 fixtures, CI loops or
+other branch content is imported. Default full identity/pinned handle/512MiB cap/
+64KiB underlying hash requests remain unchanged. Under OPTIC_STARTUP_TIMING=1,
+only the FIRST capture emits at most11 fixed labels: capture/canonical/pin/hash
+entry, first read enter/return,16/64/256MiB crossings, EOF and hash complete.
+No worker, path, hash, argv or contents are emitted; stderr is observational only.
+Source-level read visibility can separate no return from an active initial read
+from later progress, not distinguish all OS causes. Diagnostics themselves use
+synchronous bounded stderr writes and cannot attest security state.
+
+Regressions preserve exact source consumption and digest, prove read-entered
+arrives while a synthetic held Read remains pending with independent release and
+join, and prove fixed checkpoint cardinality. Existing Ubuntu CI verifies shared
+code; no Linux confinement experiment is added. One natural Windows CI startup
+per changed candidate supplies phase evidence; no repeated warm-cache benchmark.
+This instrumentation and error-path fix do not by themselves resolve319.
+
+The real pipe fixture additionally writes5000 noise bytes before known phases,
+an unknown synthetic label and30 valid prefix events followed by a late transport
+marker. The worker requires exactly the LAST24 approved labels, late transport
+retained despite the4096-char preview, and rejection of the unknown label.
+No StringReader-only assumption or arbitrary raw child output is published.
