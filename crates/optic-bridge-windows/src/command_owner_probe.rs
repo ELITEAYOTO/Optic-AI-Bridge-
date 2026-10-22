@@ -75,8 +75,7 @@ impl ProbeOwner {
         // SAFETY: the Job handle is owned here. Windows validates the opaque
         // process handle; the test deliberately passes a null handle and
         // requires native rejection before any root thread may resume.
-        unsafe { AssignProcessToJobObject(self.job.raw(), process) }
-            .map_err(io::Error::other)?;
+        unsafe { AssignProcessToJobObject(self.job.raw(), process) }.map_err(io::Error::other)?;
         self.assigned = true;
         Ok(())
     }
