@@ -18,6 +18,7 @@ use std::{
     },
     path::Path,
     process::{Command, Stdio},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -92,6 +93,7 @@ impl Drop for SuspendedChild {
 fn launch_suspended_with_job(
     job_handle: HANDLE,
     missing_binary: bool,
+    marker_fixture: bool,
 ) -> io::Result<SuspendedChild> {
     let mut attributes = NativeAttributes::new(1)?;
     let handles = [job_handle];
@@ -132,8 +134,13 @@ fn launch_suspended_with_job(
     let mut executable_wide: Vec<u16> = executable.as_os_str().encode_wide().collect();
     executable_wide.push(0);
     // Explicit harmless target if unexpectedly resumed; no arbitrary tests.
+    let fixture = if marker_fixture {
+        "job::atomic_job_list_probe::native_resume_marker_fixture"
+    } else {
+        "optic317_never_execute_synthetic_child"
+    };
     let command_line = format!(
-        "\"{}\" --exact optic317_never_execute_synthetic_child",
+        "\"{}\" --exact {fixture} --ignored --nocapture",
         executable.display()
     );
     let mut command_wide: Vec<u16> = OsStr::new(&command_line).encode_wide().collect();
@@ -490,6 +497,112 @@ fn native_retainer_grandchild_fixture() {
     panic!("retainer was not stopped by native Job");
 }
 
+#[test]
+#[ignore = "synthetic child only launched by pre-armed outer Windows Job fixture"]
+fn native_resume_marker_fixture() {
+    let marker = std::env::var_os("OPTIC317_RESUME_MARKER")
+        .expect("supervisor provided fixed synthetic marker");
+    fs::write(marker, "resumed-after-commit").expect("write synthetic execution marker");
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TestLaunchState {
+    Open,
+    Committed,
+    Closed,
+}
+
+fn resume_exact_native_child(child: &SuspendedChild) -> io::Result<()> {
+    // SAFETY: owned exact primary thread created suspended under the
+    // preconfigured inner Job before any possible execution.
+    let previous = unsafe { ResumeThread(HANDLE(child._thread.as_raw_handle())) };
+    if previous == u32::MAX {
+        return Err(io::Error::last_os_error());
+    }
+    assert_eq!(previous, 1, "child must have one suspension count");
+    Ok(())
+}
+
+/// Test-only model of the launch/close gate: NOT connected to SessionRegistry.
+/// Negative mode intentionally reproduces a stale pre-resume check.
+/// Both positive modes share one mutex across commit and close operations.
+fn run_resume_close_order(job: &OwnedJob, mode: &str, marker: &Path) -> io::Result<()> {
+    assert!(!marker.exists(), "pre-existing synthetic execution marker");
+    let gate = Arc::new(Mutex::new(TestLaunchState::Open));
+    let child = launch_suspended_with_job(job.raw(), false, true)?;
+    assert_eq!(job.active_processes()?, 1, "suspended child owned before gate");
+    match mode {
+        "resume-race" => {
+            // Intentional negative control: the old final check reads Open
+            // then a different thread completes close BEFORE the unchecked
+            // ResumeThread. It can therefore execute *after* close.
+            let observed_open = *gate.lock().expect("state lock") == TestLaunchState::Open;
+            assert!(observed_open);
+            let closer_gate = Arc::clone(&gate);
+            thread::spawn(move || {
+                *closer_gate.lock().expect("close lock") = TestLaunchState::Closed;
+            })
+            .join()
+            .expect("independent close thread");
+            assert_eq!(*gate.lock().expect("closed state"), TestLaunchState::Closed);
+            resume_exact_native_child(&child)?;
+            wait_for_gate(marker)?;
+            assert!(marker.exists(), "negative control must prove execution after close");
+        }
+        "resume-close-wins" => {
+            let closer_gate = Arc::clone(&gate);
+            thread::spawn(move || {
+                *closer_gate.lock().expect("close lock") = TestLaunchState::Closed;
+            })
+            .join()
+            .expect("independent close thread");
+            let state = gate.lock().expect("shared launch/close gate");
+            assert_eq!(*state, TestLaunchState::Closed);
+            // No ResumeThread call is allowed once close won. Keep the
+            // suspended Job child owned until explicit termination.
+            assert!(!marker.exists());
+        }
+        "resume-launch-wins" => {
+            {
+                let mut state = gate.lock().expect("shared launch/close gate");
+                assert_eq!(*state, TestLaunchState::Open);
+                resume_exact_native_child(&child)?;
+                *state = TestLaunchState::Committed;
+            }
+            // This path does NOT promise zero instructions after future
+            // close. It proves only the launch commit occurred beforehand.
+            wait_for_gate(marker)?;
+            let closer_gate = Arc::clone(&gate);
+            let previous = thread::spawn(move || {
+                let mut state = closer_gate.lock().expect("close lock");
+                let previous = *state;
+                *state = TestLaunchState::Closed;
+                previous
+            })
+            .join()
+            .expect("independent close thread");
+            assert_eq!(previous, TestLaunchState::Committed);
+            assert_eq!(*gate.lock().expect("closed state"), TestLaunchState::Closed);
+        }
+        _ => unreachable!("fixed supervisor mode"),
+    }
+    // Every ordering has a bounded, owned Job cleanup; an unresumed child
+    // is never abandoned, and no arbitrary OS PID is signalled.
+    job.terminate(87)?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while job.active_processes()? != 0 {
+        assert!(Instant::now() < deadline, "native Job remained active");
+        thread::sleep(Duration::from_millis(5));
+    }
+    if mode == "resume-close-wins" {
+        assert!(!marker.exists(), "closed-first child must not run");
+    } else {
+        assert!(marker.exists(), "resumed fixture execution must be visible");
+    }
+    drop(child);
+    Ok(())
+}
+
 fn wait_for_gate(path: &Path) -> io::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(7);
     while !path.exists() {
@@ -514,6 +627,9 @@ fn native_atomic_job_list_host_fixture() {
             | "stdio"
             | "retained-stdio"
             | "stdio-bad-exe"
+            | "resume-race"
+            | "resume-close-wins"
+            | "resume-launch-wins"
     ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
@@ -526,7 +642,7 @@ fn native_atomic_job_list_host_fixture() {
         .expect("actual CPU/memory/process limits and KILL_ON_JOB_CLOSE");
     let _owned_child = match mode.as_str() {
         "atomic" => {
-            let child = launch_suspended_with_job(job.raw(), false).expect("atomic creation");
+            let child = launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
             assert_eq!(job.active_processes().expect("native accounting"), 1);
             Some(child)
         }
@@ -547,7 +663,7 @@ fn native_atomic_job_list_host_fixture() {
                 )
             }
             .expect("make spare pipe writer inheritable");
-            let child = launch_suspended_with_job(job.raw(), false).expect("atomic creation");
+            let child = launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
             assert_eq!(
                 job.active_processes().expect("suspended child stays alive"),
                 1
@@ -586,6 +702,14 @@ fn native_atomic_job_list_host_fixture() {
             assert_eq!(job.active_processes().expect("retainer Job empty"), 0);
             None
         }
+        "resume-race" | "resume-close-wins" | "resume-launch-wins" => {
+            let marker = std::env::var_os("OPTIC317_RESUME_MARKER")
+                .expect("synthetic supervisor-scoped marker");
+            run_resume_close_order(&job, mode.as_str(), Path::new(&marker))
+                .expect("shared-gate ordering or negative control");
+            assert_eq!(job.active_processes().expect("fence test Job terminal"), 0);
+            None
+        }
         "stdio-bad-exe" => {
             assert!(run_selective_stdio(&job, false, true).is_err());
             let mut before = 0u32;
@@ -608,20 +732,20 @@ fn native_atomic_job_list_host_fixture() {
         }
         "invalid" => {
             let invalid = HANDLE(0x7fff_ffffusize as *mut c_void);
-            assert!(launch_suspended_with_job(invalid, false).is_err());
+            assert!(launch_suspended_with_job(invalid, false, false).is_err());
             assert_eq!(job.active_processes().expect("invalid Job has no child"), 0);
             None
         }
         "missing" => {
             // Repeated no-spawn failures must release attributes/temporary
             // handles. Compare after a first warm-up error, not cold startup.
-            assert!(launch_suspended_with_job(job.raw(), true).is_err());
+            assert!(launch_suspended_with_job(job.raw(), true, false).is_err());
             let mut before = 0u32;
             // SAFETY: pseudo-handle for this process and writable count.
             unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut before) }
                 .expect("native handle count before negative matrix");
             for _ in 0..16 {
-                assert!(launch_suspended_with_job(job.raw(), true).is_err());
+                assert!(launch_suspended_with_job(job.raw(), true, false).is_err());
                 assert_eq!(
                     job.active_processes()
                         .expect("failed creation has no child"),
@@ -640,6 +764,9 @@ fn native_atomic_job_list_host_fixture() {
 
     let signal = match mode.as_str() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
+        "resume-race" => "mode=resume-race;close_before_resume=1;marker_after_close=1;job_empty=1",
+        "resume-close-wins" => "mode=resume-close-wins;no_resume=1;marker_absent=1;job_empty=1",
+        "resume-launch-wins" => "mode=resume-launch-wins;resume_before_close=1;marker=1;job_empty=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
         "stdio-bad-exe" => {
