@@ -368,3 +368,92 @@ fn admission_revocation_watch_does_not_replace_monotonic_expiry_check() {
         closer.join().unwrap();
     });
 }
+
+#[test]
+fn admitted_stop_watch_keeps_deadline_and_original_generation_after_renewal_and_reuse() {
+    let registry = SessionRegistry::new();
+    let a = grant(); // Captured expiry = 100.
+    registry.register(a.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let first_permit = registry.begin_admission(&a.handle, now).unwrap();
+    let original = first_permit.stop_watch();
+    let historical = original.clone();
+    assert!(!original.is_stop_required_at(MonotonicTime::from_millis(99)));
+    assert!(original.is_stop_required_at(MonotonicTime::from_millis(100)));
+
+    registry
+        .renew_active(&a.handle, now, MonotonicTime::from_millis(200))
+        .unwrap();
+    let renewed_permit = registry
+        .begin_admission(&a.handle, MonotonicTime::from_millis(101))
+        .unwrap();
+    let renewed = renewed_permit.stop_watch();
+    assert!(
+        original.is_stop_required_at(MonotonicTime::from_millis(101)),
+        "renewal cannot extend an already-admitted operation"
+    );
+    assert!(!renewed.is_stop_required_at(MonotonicTime::from_millis(101)));
+    assert!(renewed.is_stop_required_at(MonotonicTime::from_millis(200)));
+    drop(first_permit);
+    drop(renewed_permit);
+    assert!(registry.revoke(&a.handle).unwrap());
+    assert!(original.is_stop_required_at(now));
+    assert!(renewed.is_stop_required_at(now));
+
+    assert!(registry.remove_quiescent_inactive(&a.handle, now).unwrap());
+    registry.register(a.clone()).unwrap(); // deliberately reused opaque handle
+    let replacement_permit = registry.begin_admission(&a.handle, now).unwrap();
+    let replacement = replacement_permit.stop_watch();
+    assert!(!replacement.is_stop_required_at(now));
+    assert!(historical.is_stop_required_at(now));
+    assert!(renewed.is_stop_required_at(now));
+    drop(replacement_permit);
+    assert!(registry.revoke(&a.handle).unwrap());
+    assert!(replacement.is_stop_required_at(now));
+}
+
+#[test]
+fn real_worker_held_admission_observes_stop_before_registry_revoke_drains() {
+    let registry = SessionRegistry::new();
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (drained_tx, drained_rx) = mpsc::sync_channel(1);
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+
+    thread::scope(|scope| {
+        let worker = scope.spawn(|| {
+            let permit = registry.begin_admission(&a.handle, now).unwrap();
+            let watch = permit.stop_watch();
+            ready_tx.send(()).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while !watch.is_stop_required_at(now) {
+                assert!(
+                    Instant::now() < deadline,
+                    "original-generation stop signal did not reach admitted worker"
+                );
+                thread::yield_now();
+            }
+            // This worker retains its genuine admission until it sees stop.
+            drop(permit);
+            drained_tx.send(()).unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let closer = scope.spawn(|| closed_tx.send(registry.revoke(&a.handle)).unwrap());
+        drained_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker releases admission on the actual revoke signal");
+        assert!(
+            closed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("synchronous registry revoke is unblocked")
+                .expect("revoke result")
+        );
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        worker.join().unwrap();
+        closer.join().unwrap();
+    });
+}
