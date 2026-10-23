@@ -8,7 +8,7 @@
 
 A `SessionAdmissionStopWatch` does not keep the synchronous `SessionRegistry::revoke` admission count alive. Conversely, an `OwnedSessionAdmissionPermit` alone does not identify an already-registered native process owner. The previous short commit proof used a **borrowed** session permit, so it did not demonstrate the lifetime of a worker independently owning both resources.
 
-This test creates a native `LimitedJobObject` reservation through the real `ProcessManager::reserve_native_private`, which registers it in the genuine JobStore **before** any permission to use it is claimed. The same worker thread takes ownership of that reservation and a real counted `OwnedSessionAdmissionPermit`; no child is spawned.
+This test creates a genuine **JobStore record and capacity reservation**, and a `LimitedJobObject` **limits configuration** via the real `ProcessManager::reserve_native_private`, before any permission to use it is claimed. Crucially, `LimitedJobObject::new()` **does not create a kernel Job Object**. In the existing production wrapper, the real `OwnedJob::create()` occurs later in `wrap_child` (after suspended spawn), which leaves the previously reproduced host-crash gap. The same worker thread owns the reservation and a real counted `OwnedSessionAdmissionPermit`; no child or kernel Job is spawned/created here.
 
 ## Invariants checked at the shared close/commit lock
 
@@ -26,12 +26,12 @@ A false stop flag is not a positive authorization. Task lease, policy epoch, pin
 2. **Close first, then commit:** direct registry close wins, so a registered but uncommitted owner cannot commit; the native reservation stays accounted for until explicit release. Close cannot finish before the worker's genuine permit drains.
 3. **Wrong owner and immutable deadline:** cross-session reservation is refused; original admission expiration remains binding even after a later renewal. A newly admitted generation of work may claim the previously unused owner after fresh checks. These tests do not certify Git policy/lease validity.
 
-Failure to observe native termination, stdout/stderr EOF, writer completion or tree-empty state is not a signal to drop either real production owner or quotas. The experimental drop of a never-launched empty Job is not evidence for cleanup after actual execution. A future service must handle uncertain shutdown and creator-host death independently.
+Failure to observe native termination, stdout/stderr EOF, writer completion or tree-empty state is not a signal to drop either real production owner or quotas. The experimental drop of a never-launched empty Job is not evidence for cleanup after actual execution. A future service must create and retain the actual kernel Job Object *before* starting a child (or use verified create-time Job membership), and handle uncertain shutdown and creator-host death independently.
 
 ## Hard boundaries
 
 - All extra Rust fields/methods are compiled only under `#[cfg(test)]` on Windows. Ubuntu uses the unchanged production implementation plus existing core tests.
-- This research does **not** prove that `NativeProcessReservation` can safely be retained after a process starts. It demonstrates only the typed pre-creation reservation/commit/lifetime arrangement.
+- This research does **not** prove a kernel Job exists before a child starts, or that `NativeProcessReservation` can safely be retained after a process starts. It demonstrates only the typed pre-creation **JobStore** reservation/commit/lifetime arrangement. A `LimitedJobObject` config is not a native Job handle.
 - `SessionLifecycleManager::revoke` still waits for counted permits before `ProcessManager::cancel_session`; a permanently unobservable native job can deadlock graceful shutdown if the service waits for it while retaining admission. A future out-of-band stop phase, nonblocking shutdown ownership and crash/power-loss guardian remain necessary.
 - Host-memory sampling within global JobStore mutex remains a separate concern; avoid reversing this and the session mutex during future wiring.
 - Distinct forced-handle-reuse lifecycle cleanup ABA research `5edc4792` and security issues #176/#182 remain unresolved.
@@ -40,4 +40,4 @@ Failure to observe native termination, stdout/stderr EOF, writer completion or t
 
 ## Evidence required
 
-Run exact-head rustfmt, strict Clippy, full runtime library tests, Windows explicit owned-native schedule with real JobStore and Ubuntu compatibility. Preserve the **first failing** job logs and all subsequent commit SHAs. Separate normal production promotion requires a comprehensive, executable service owner and independent Windows crash/uncertainty acceptance; a green synthetic fixture alone is NOT grounds for merging this test-only API into main.
+Run exact-head rustfmt, strict Clippy, full runtime library tests, Windows explicit owned-native schedule with real **JobStore (no kernel Job/child)** and Ubuntu compatibility. Preserve the **first failing** job logs and all subsequent commit SHAs. Separate normal production promotion requires a comprehensive, executable service owner and independent Windows crash/uncertainty acceptance; a green synthetic fixture alone is NOT grounds for merging this test-only API into main.
