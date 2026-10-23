@@ -540,7 +540,9 @@ mod native_owner_commit_research {
         let close_handle = a.handle.clone();
         let (closed_tx, closed_rx) = mpsc::sync_channel(1);
         let closer = thread::spawn(move || {
-            closed_tx.send(close_registry.revoke(&close_handle)).unwrap();
+            closed_tx
+                .send(close_registry.revoke(&close_handle))
+                .unwrap();
         });
         observe_closed(&registry, &a.handle);
         assert!(
