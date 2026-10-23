@@ -463,6 +463,10 @@ impl Drop for SessionAdmissionPermit<'_> {
 }
 
 #[cfg(test)]
+#[path = "registry_launch_gate_tests.rs"]
+mod research_launch_gate_tests;
+
+#[cfg(test)]
 mod tests {
     use std::{
         collections::BTreeSet,
