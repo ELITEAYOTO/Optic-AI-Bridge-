@@ -588,6 +588,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "windows",
 ]
 
 [[package]]
