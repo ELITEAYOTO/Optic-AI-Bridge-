@@ -1306,4 +1306,80 @@ mod tests {
         );
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
     }
+
+    // RESEARCH NEGATIVE CONTROL ONLY. This records current behavior and MUST
+    // NOT be presented as a generation-safe runtime fix. The interleaving is
+    // forced at a private boundary instead of relying on scheduler luck.
+    #[test]
+    fn research_reused_session_handle_between_close_and_cleanup_reaches_replacement_approval() {
+        let root = workspace("research-revoke-generation-aba");
+        let limits = HardLimits::default();
+        let sessions = Arc::new(SessionRegistry::from_hard_limits(limits).expect("sessions"));
+        let task_leases = Arc::new(TaskLeaseRegistry::from_hard_limits(limits).expect("leases"));
+        let processes =
+            Arc::new(ProcessManager::new(&root, limits, Vec::new()).expect("processes"));
+        let approvals = Arc::new(ApprovalBroker::from_hard_limits(limits).expect("approvals"));
+        let lifecycle = SessionLifecycleManager::new_with_approval_broker(
+            Arc::clone(&sessions),
+            task_leases,
+            processes,
+            Arc::clone(&approvals),
+        );
+        let now = MonotonicTime::from_millis(1);
+        let old = lifecycle.provision(spec(100), now).expect("original grant");
+        let foreign = lifecycle.provision(spec(100), now).expect("foreign grant");
+        let old_permit = sessions.begin_admission(&old.handle, now).expect("admit");
+        let old_watch = old_permit.revocation_watch();
+        drop(old_permit);
+
+        // Stage one of actual SessionLifecycleManager::revoke: the normal
+        // registry revoke fully completed and closed ORIGINAL generation.
+        let changed = sessions.revoke(&old.handle).expect("close original");
+        assert!(changed && old_watch.is_revoked());
+        // Source-permitted interleaving, between registry close and lifecycle
+        // cleanup: inactive original with zero admissions may be removed and
+        // re-registered using the SAME opaque handle. This is a controlled
+        // phase schedule, not proof that this race occurred on a user machine.
+        assert!(sessions
+            .remove_quiescent_inactive(&old.handle, now)
+            .expect("remove original"));
+        sessions.register(old.clone()).expect("reuse opaque handle");
+        let fresh_permit = sessions.begin_admission(&old.handle, now).expect("new admission");
+        assert!(!fresh_permit.revocation_watch().is_revoked());
+        drop(fresh_permit);
+
+        let replacement_action = approval_envelope(old.handle.clone());
+        let replacement_approval = approvals
+            .issue(approval_spec(&replacement_action, 100), now)
+            .expect("replacement approval");
+        let foreign_action = approval_envelope(foreign.handle.clone());
+        let foreign_approval = approvals
+            .issue(approval_spec(&foreign_action, 100), now)
+            .expect("foreign approval");
+
+        // Stage two is the EXACT normal post-registry cleanup function.
+        // It is keyed only by SessionHandle, not by SessionRecord generation.
+        let report = lifecycle
+            .finish_revocation_for_handle(&old.handle, changed)
+            .expect("existing cleanup");
+        assert_eq!(report.revoked_approvals, 1);
+        assert!(
+            sessions.get_active(&old.handle, now).is_ok(),
+            "new generation stays open"
+        );
+        assert_eq!(
+            approvals
+                .consume_exact(&replacement_approval.id, &replacement_action, now)
+                .expect_err("negative control: replacement approval was erased"),
+            ApprovalBrokerError::UnknownApproval
+        );
+        approvals
+            .consume_exact(&foreign_approval.id, &foreign_action, now)
+            .expect("unrelated session unaffected");
+        assert!(
+            old_watch.is_revoked(),
+            "watch #331 remains tied to original generation"
+        );
+        fs::remove_dir_all(root).expect("remove synthetic workspace");
+    }
 }
