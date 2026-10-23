@@ -285,6 +285,22 @@ impl<'a> Root<'a> {
         Ok(())
     }
     fn start(&mut self, root: &Path, mode: &str, paused_native: impl FnOnce()) -> io::Result<()> {
+        let result = self.start_inner(root, mode, paused_native);
+        if let Err(error) = &result {
+            self.stop.store(true, Ordering::Release);
+            if error.kind() != io::ErrorKind::Interrupted {
+                self.last_error = error.raw_os_error();
+                self.slot.as_mut().unwrap().failed = true;
+            }
+        }
+        result
+    }
+    fn start_inner(
+        &mut self,
+        root: &Path,
+        mode: &str,
+        paused_native: impl FnOnce(),
+    ) -> io::Result<()> {
         self.check_start()?;
         let native = &mut self.slot.as_mut().unwrap().native;
         native.create(root, mode, mode == "create-error")?;
@@ -338,7 +354,14 @@ impl<'a> Root<'a> {
         if k.native.overflow {
             self.stop.store(true, Ordering::Release);
         }
-        if !k.native.terminal()? || !k.watch.try_finish() {
+        if !k.native.terminal()? {
+            if k.watch.errors.load(Ordering::Acquire) > 0 {
+                k.failed = true;
+                k.record.state.lock().unwrap().status = ProcessStatus::TerminationUncertain;
+            }
+            return Ok(false);
+        }
+        if !k.watch.try_finish() {
             return Ok(false);
         }
         // All fallible observations BEFORE publication, as proved in c1a9c32.
@@ -385,92 +408,8 @@ impl Drop for Root<'_> {
     }
 }
 
-fn exercise(path: &Path, mode: &str) -> serde_json::Value {
-    let registry = Arc::new(SessionRegistry::new());
-    let manager = Arc::new(ProcessManager::new(path, HardLimits::default(), Vec::new()).unwrap());
-    let lifecycle = SessionLifecycleManager::new(
-        Arc::clone(&registry),
-        Arc::new(TaskLeaseRegistry::new()),
-        Arc::clone(&manager),
-    );
-    let clock = StdClock::new();
-    let grant = lifecycle
-        .provision(
-            SessionGrantSpec {
-                principal: PrincipalId::new("native-research").unwrap(),
-                project: ProjectId::new("synthetic").unwrap(),
-                capabilities: BTreeSet::from([Capability::GitRead]),
-                expires_at: MonotonicTime::from_millis(10_000),
-                policy_epoch: 1,
-            },
-            clock.now(),
-        )
-        .unwrap();
-    let (mut root, client) = Root::new(&registry, &manager, &grant.handle, &clock);
-    let mut client = Some(client);
-    let latch = mode != "legacy-no-latch";
-    root.prepare(|| (), latch).unwrap();
-    root.commit().unwrap();
-    let result = root.start(path, mode, || ());
-    if matches!(mode, "create-error" | "resume-error") {
-        assert!(result.is_err());
-        root.slot.as_mut().unwrap().failed = true;
-        root.request_shutdown();
-    } else {
-        result.unwrap();
-        wait(|| path.join("executed").exists());
-    }
-    let (tx, rx) = mpsc::sync_channel(1);
-    let mut legacy_rescue = false;
-    thread::scope(|scope| {
-        let session = &grant.handle;
-        let lifecycle_ref = &lifecycle;
-        let closer = scope.spawn(move || tx.send(lifecycle_ref.revoke(session)).unwrap());
-        wait(|| {
-            matches!(
-                registry.get_active(&grant.handle, clock.now()),
-                Err(SessionRegistryError::Revoked)
-            )
-        });
-        if mode == "legacy-no-latch" {
-            assert!(
-                !root
-                    .slot
-                    .as_ref()
-                    .unwrap()
-                    .record
-                    .stop_requested
-                    .load(Ordering::Acquire)
-            );
-            fs::write(path.join("live-ready"), b"no authority stop binding").unwrap();
-            wait(|| path.join("live-confirmed").exists());
-            assert_eq!(manager.cancel_session(&grant.handle).unwrap(), 1);
-            legacy_rescue = true;
-        }
-        assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
-        wait(|| root.observe().unwrap());
-        let report = rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
-        assert!(report.session_changed);
-        closer.join().unwrap();
-    });
-    let k = root.slot.as_ref().unwrap();
-    assert!(k.terminal && k.admission.is_none());
-    let id = k.id.clone();
-    let associated = k.native.association_observed;
-    let result = manager.result(&grant.handle, &id).unwrap();
-    let out = k.record.output.lock().unwrap();
-    let bytes = out.stdout.len() + out.stderr.len();
-    assert!(out.stdout_closed && out.stderr_closed && bytes <= native::OUTPUT);
-    drop(out);
-    assert_eq!(manager.active_session_job_count(&grant.handle).unwrap(), 0);
-    assert!(lifecycle.seal_quiescent(&grant.handle).is_ok());
-    drop(root);
-    drop(client.take());
-    serde_json::json!({"mode":mode,"production_wired":false,"real_registry":true,"real_admission":true,
-        "real_win32":true,"native_created":associated,"atomic_job_association":associated,
-        "native_terminal_and_both_eof":true,"stop_worker_joined":true,"active_ownership_released_after_proof":true,
-        "legacy_manual_cancel_rescue":legacy_rescue,"status":format!("{:?}",result.status),"combined_output_bytes":bytes})
-}
+#[path = "authority_native_owner_tests/scenarios.rs"]
+mod scenarios;
 
 #[test]
 #[ignore = "requires pre-armed independent outer Job; fixed self-test processes only"]
@@ -479,7 +418,7 @@ fn authority_native_owner_host() {
     wait(|| gate.exists());
     let path = gate.parent().unwrap();
     let mode = env::var("OPTIC317_OWNER_MODE").unwrap();
-    let proof = exercise(path, &mode);
+    let proof = scenarios::exercise(path, &mode);
     fs::write(path.join("ready"), proof.to_string()).unwrap();
     thread::sleep(Duration::from_secs(10));
     panic!("outer supervisor did not recover fixed host");

@@ -8,7 +8,10 @@ import subprocess
 import tempfile
 import time
 
-MODES = ['auto-stop', 'legacy-no-latch', 'create-error', 'resume-error']
+MODES = ['auto-stop', 'legacy-no-latch', 'create-error', 'resume-error',
+         'closed-before-admission', 'late-register-after-scan', 'close-after-registration',
+         'close-before-resume', 'before-commit-error', 'uncommitted-start', 'client-drop',
+         'direct-revoke', 'observation-uncertain', 'stop-error']
 
 def outer_api():
     path = Path(__file__).parents[1] / 'tests' / 'doctor_pipe_supervisor.py'
@@ -50,14 +53,30 @@ def run_case(api, executable, mode, root):
                 time.sleep(.002)
             state = json.loads((root/'ready').read_text(encoding='utf-8'))
             assert state['mode'] == mode and state['production_wired'] is False
-            for field in ['real_registry', 'real_admission', 'real_win32', 'native_terminal_and_both_eof',
-                          'stop_worker_joined', 'active_ownership_released_after_proof']:
+            fields = ['real_registry', 'real_admission', 'active_ownership_released_after_proof']
+            if mode == 'closed-before-admission':
+                assert state['completion_kind'] == 'no-admission-no-native'
+                assert state['admission_created'] is False and state['real_win32'] is False
+                assert state['native_terminal_and_both_eof'] is False and state['stop_worker_joined'] is False
+            else:
+                fields += ['real_win32', 'native_terminal_and_both_eof', 'stop_worker_joined']
+            for field in fields:
                 assert state[field] is True, field
             assert state['combined_output_bytes'] <= 16*1024
-            assert state['atomic_job_association'] == state['native_created'] == (mode != 'create-error')
+            no_child = mode in ('create-error', 'closed-before-admission', 'late-register-after-scan',
+                               'close-after-registration', 'before-commit-error', 'uncommitted-start')
+            assert state['atomic_job_association'] == state['native_created'] == (not no_child)
             assert state['legacy_manual_cancel_rescue'] == (mode == 'legacy-no-latch')
-            if mode in ('create-error', 'resume-error'):
+            if mode in ('create-error', 'resume-error', 'before-commit-error', 'uncommitted-start', 'observation-uncertain', 'stop-error'):
                 assert state['status'] == 'Failed'
+            if mode == 'late-register-after-scan':
+                assert state['early_scan_count'] == 0 and state['late_registration_inherited_stop']
+                assert state['independent_native_completed']
+            if mode == 'close-before-resume':
+                assert state['resume_denied'] and state['close_published_during_native_pause']
+            if mode in ('late-register-after-scan', 'close-after-registration', 'close-before-resume',
+                        'before-commit-error', 'uncommitted-start'):
+                assert not (root/'executed').exists()
             api.wait_for(lambda: job.active() == 1, 2, 'only fixed host after internal proof')
             proof['outer_before_host_exit'] = job.active()
             host.kill()  # exact known synthetic handle; no machine PID lookup

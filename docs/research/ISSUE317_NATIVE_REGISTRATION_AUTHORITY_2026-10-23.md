@@ -69,3 +69,33 @@ child path and try_update, with no lint suppression. A real host-memory snapshot
 is captured outside both locks; the same pure headroom formula checks current
 JobStore reservations under its lock. No fake provider, lower reserve or native
 system-info call in the authority/JobStore critical section is used.
+
+
+## Second native checkpoint: actual boundary schedules
+
+Fourteen local cases pass: the first four controls plus closure before admission,
+late registration after an EMPTY early scan, closure after registration but before
+engagement, closure between atomic suspended creation and resume, native failure
+before commitment, uncommitted-start denial, client Drop with authority still
+open, direct registry revoke, repeated observation error and termination rejection.
+A second session completes an actual fixed native process during A preparation
+or suspended-phase pauses. No authority or JobStore lock spans these native calls.
+
+The late-registration case obtains a genuine admission, pauses after empty native
+preparation, observes real lifecycle close and a zero-result cancellation scan,
+then registers already-stopping and fails commitment. Root polls no-spawn proof
+before releasing admission. A short committed launch still does not promise that
+all instructions precede close; the paused deterministic case only proves denial
+at its final check and automatic stop of its already-owned suspended child.
+
+Repeated query rejection retains an uncertain JobRecord, admission and ticket
+while the outer supervisor already sees host-only. Capacity rejects preparation
+before invoking its closure; shutdown requests do not release this keeper. Four
+observation errors recover to Failed only after actual proof. A real invalid-handle
+termination rejection keeps the VALID Job and child alive until fault recovery;
+no manual cancellation rescue is used outside the negative no-latch control.
+
+Root start errors are now latched internally, rather than relying on the test
+caller to remember failure. New scenarios are isolated in a private fixture
+module; no production execution path is migrated. Worktree-labelled local JSON
+is preserved as such; exact-head CI remains a separate checkpoint.
