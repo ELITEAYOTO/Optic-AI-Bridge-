@@ -61,6 +61,11 @@ impl SessionRegistry {
         let record = sessions
             .get_mut(handle)
             .ok_or(SessionRegistryError::UnknownSession)?;
+        // A close captured for a retired record must not bypass a replacement's
+        // different launch gate. This receipt targets the captured generation.
+        if !Arc::ptr_eq(&gate, &record.research_commit_gate) {
+            return Err(SessionRegistryError::UnknownSession);
+        }
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
@@ -270,6 +275,13 @@ impl SessionRegistry {
         let Some(record) = sessions.get_mut(handle) else {
             return Ok(false);
         };
+        #[cfg(test)]
+        if !test_gate
+            .as_ref()
+            .is_some_and(|gate| Arc::ptr_eq(gate, &record.research_commit_gate))
+        {
+            return Err(SessionRegistryError::UnknownSession);
+        }
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);

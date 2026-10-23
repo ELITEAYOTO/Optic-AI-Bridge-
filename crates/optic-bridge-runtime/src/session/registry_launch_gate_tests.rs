@@ -203,3 +203,68 @@ fn panicked_commit_poison_never_blocks_direct_revoke() {
         Err(SessionRegistryError::StateUnavailable | SessionRegistryError::Revoked)
     ));
 }
+
+fn stale_close_must_not_mutate_replacement(prompt: bool) {
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant("replacement");
+    let now = MonotonicTime::from_millis(1);
+    registry.register(a.clone()).unwrap();
+    registry.research_close_admission(&a.handle).unwrap();
+    let old_gate = registry.research_gate(&a.handle).unwrap().unwrap();
+    let old_lock = old_gate.lock().unwrap();
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let close_registry = Arc::clone(&registry);
+        let close_handle = a.handle.clone();
+        let closer = scope.spawn(move || {
+            let result = if prompt {
+                close_registry
+                    .research_close_admission(&close_handle)
+                    .map(|v| v.0)
+            } else {
+                close_registry.revoke(&close_handle)
+            };
+            closed_tx.send(result).unwrap();
+        });
+        // Exact ownership handshake: record + this test + blocked close lookup.
+        // No sleeps or test hook changing the production lookup algorithm.
+        let until = Instant::now() + Duration::from_secs(2);
+        while Arc::strong_count(&old_gate) != 3 {
+            assert!(Instant::now() < until, "closer captured old gate");
+            thread::yield_now();
+        }
+        assert!(registry.remove_quiescent_inactive(&a.handle, now).unwrap());
+        registry.register(a.clone()).unwrap();
+        let launch_registry = Arc::clone(&registry);
+        let launch_handle = a.handle.clone();
+        let launch = scope.spawn(move || {
+            launch_registry.research_commit_launch(&launch_handle, now, || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            })
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(old_lock);
+        let result = closed_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // Release before assertions so this negative control is always joined.
+        release_tx.send(()).unwrap();
+        launch.join().unwrap().unwrap();
+        closer.join().unwrap();
+        assert!(
+            matches!(result, Err(SessionRegistryError::UnknownSession)),
+            "a stale close must not publish through the replacement's different gate: {result:?}"
+        );
+    });
+}
+
+#[test]
+fn direct_revoke_rejects_stale_gate_after_record_replacement() {
+    stale_close_must_not_mutate_replacement(false);
+}
+
+#[test]
+fn prompt_close_rejects_stale_gate_after_record_replacement() {
+    stale_close_must_not_mutate_replacement(true);
+}
