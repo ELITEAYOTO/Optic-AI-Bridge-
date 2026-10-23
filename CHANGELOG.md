@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — generation-bound admitted revocation watch (#317, 2026-10-23)
+
+- Capture a read-only, session-record-bound `SessionRevocationWatch` with each genuine admission permit, enabling downstream owners to observe explicit revocation without trusting reusable opaque session handles. Verify direct close, independent sessions, historic handle reuse and deadline independence. This **does not** change synchronous revoke, launch authorization, native process lifecycle, Pending shutdown or V1 #323 status. See [contract](docs/engineering/ISSUE317_ADMISSION_REVOCATION_WATCH_2026-10-23.md).
+
+
 ## Unreleased — owner-scoped uncertain Job cancellation (#317, 2026-10-23)
 
 - Ask retained `TerminationUncertain` Job owners to stop when `cancel_session` has not already signalled them; keep quotas/ownership until independent native termination proof. Add scoped, idempotent synthetic regression. This does **not** fix synchronous revoke-before-cancel liveness, durable shutdown, GitRead authorization or the V1 NO-GO gate. See [scope/limits](docs/engineering/ISSUE317_UNCERTAIN_JOB_CANCEL_2026-10-23.md).
