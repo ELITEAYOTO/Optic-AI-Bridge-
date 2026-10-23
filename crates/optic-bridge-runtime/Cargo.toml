@@ -23,4 +23,4 @@ optic-bridge-windows = { path = "../optic-bridge-windows" }
 nix.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-windows.workspace = true
+optic-bridge-windows = { path = "../optic-bridge-windows", features = ["issue317-owned-kernel-fixture"] }
