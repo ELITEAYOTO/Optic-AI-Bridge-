@@ -53,6 +53,7 @@ def run_case(helper, exe, mode, root):
                 "no-inherit": "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
                 "invalid": "mode=invalid;inner_active=0;no_spawn=1",
                 "missing": "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
+                "stdio": "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
             }
             expected_state = expected_states[mode]
             if state != expected_state:
@@ -69,6 +70,7 @@ def run_case(helper, exe, mode, root):
                 "spare_inheritable_writer_not_leaked": mode == "no-inherit",
                 "invalid_job_failed_closed": mode == "invalid",
                 "missing_executable_handle_count_stable": mode == "missing",
+                "selected_stdout_stderr_and_spare_denial": mode == "stdio",
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
             }
     finally:
@@ -107,7 +109,7 @@ def main():
     helper = load_supervisor()
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-rust-atomic-") as temp:
-            for mode in ("atomic", "no-inherit", "invalid", "missing"):
+            for mode in ("atomic", "no-inherit", "invalid", "missing", "stdio"):
                 root = Path(temp) / mode
                 root.mkdir()
                 result["cases"].append(run_case(helper, exe, mode, root))
