@@ -725,13 +725,17 @@ impl ProcessManager {
         let mut changed = 0;
         for record in store.jobs.values() {
             if &record.owner == session {
-                let running = record
+                let status = record
                     .state
                     .lock()
                     .map_err(|_| ProcessError::StateUnavailable)?
-                    .status
-                    == ProcessStatus::Running;
-                if running && !record.stop_requested.swap(true, Ordering::AcqRel) {
+                    .status;
+                // An uncertain Job may still own live processes. Request stop
+                // again when it has not yet been signalled; do not treat this
+                // as termination proof or release any of its reservations.
+                if status_holds_process_ownership(status)
+                    && !record.stop_requested.swap(true, Ordering::AcqRel)
+                {
                     changed += 1;
                 }
             }
