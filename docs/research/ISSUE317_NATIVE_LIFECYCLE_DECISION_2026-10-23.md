@@ -113,3 +113,29 @@ attribute/Job handle, cancellation before spawn and around resume,
 nested Job interoperability and host crash under independent supervision.
 Only then review a production migration design; no implicit fallback to
 spawn-then-assign and no GitRead wiring in this experiment.
+
+
+## 7. Rust platform-crate native continuation (23 October 2026)
+
+**Source under test:** `2ca8996208bd1c701efd67d035fcfc3abce4c44b`, [Windows Rust CI #39895108162](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39895108162), completed **success on first attempt for this exact source**, with `cargo +1.99.0 fmt --all -- --check`, native `optic-bridge-windows` test binary compilation, `cargo +1.99.0 clippy --locked -p optic-bridge-windows --all-targets -- -D warnings`, and independent supervised native execution. No Rust source was merged to main.
+
+New **test-only Windows platform crate**:
+- [`atomic_job_list_probe.rs`](../../crates/optic-bridge-windows/src/atomic_job_list_probe.rs), included only behind `#[cfg(test)]` by `job.rs` (itself Windows-specific); no public runtime API or changed production launch path.
+- Uses real existing `OwnedJob::create` with KILL_ON_JOB_CLOSE, finite active-process/memory and CPU hard caps **before** child creation. It sets up `STARTUPINFOEXW`, an initialized/dropped aligned attribute list, `PROC_THREAD_ATTRIBUTE_JOB_LIST`, non-inherited handles, `CREATE_SUSPENDED` and `EXTENDED_STARTUPINFO_PRESENT` for `CreateProcessW`. It owns the resulting native process/thread handles until host exit and has an exact-child fallback termination on normal Rust scope exit. Its executable is its own synthetic test binary, never untrusted Git or MCP input.
+- [`issue317_rust_job_native.py`](../../scripts/research/issue317_rust_job_native.py) allocates an independent outer Job **before releasing** the Rust-host gate; it kills only the known test-host process and confirms zero active outer Job members, even when an assertion throws.
+- [`issue317-rust-atomic-native.yml`](../../.github/workflows/issue317-rust-atomic-native.yml) executes on hosted Windows with evidence and strict lint.
+
+**Native observed cases (synthetic only):**
+- Atomic create under already-configured inner Job: outer Job before host death **2**, after exact-host death **0**; native test observed inner active-process count **1**.
+- Intentionally invalid Job handle: `CreateProcessW` rejects creation, inner count **0**; outer Job before host death **1**, after host death **0**, no fallback spawn.
+- Both cases supervised and cleaned. These results are from the actual Rust implementation, not merely the previous Python/ctypes API experiment.
+
+**First failed runs retained as evidence:**
+- [#39894678310](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39894678310): Rust 1.99 minimal toolchain lacked rustfmt. Corrected installation rather than skipping formatting.
+- [#39894761787](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39894761787): exact rustfmt diffs from the new module; formatting updated.
+- [#39894989421](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39894989421): Clippy with `-D warnings` exposed unnecessary pointer-cast parentheses; corrected without lint suppression.
+- Final exact-source [#39895108162](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39895108162) passes all of the above on source `2ca89962`. Prior successful Rust native compile/run on [#39894844345](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39894844345) at `149fb22d` remains a separate older source checkpoint.
+
+**Unproven and NOT authorized for production:** a native Windows10/11 physical-device acceptance matrix; process creation racing with unexpected host termination *during the kernel call*; exact identity and pinning of an external Git executable; explicit stdio and handle-inheritance matrix, native error/error-state retention, post-revoke output refusal, stop-vs-resume linearization, async revocation/drain ownership contract and bounded/persistent shutdown. Existing production `PreparedReadCommand` still uses spawn/suspend/assign. These tests cannot close #317, #323 or accept ADR-0035.
+
+**Next recommended narrow effort:** design an RAII test-only API to combine a configured Job, inherited stdio handle list and direct Win32 creation under one owner with exact failure rollback; *also* decide session close/admission semantics and owner shutdown policy before any integration into GitRead. Reproduce bad-handle and inherited-output cases with an independent external supervisor. Avoid a production fallback that silently uses the known unsafe spawn-then-assign gap. Keep #182 provenance separately pending operator approval.
