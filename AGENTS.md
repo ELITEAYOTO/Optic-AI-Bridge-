@@ -1,5 +1,8 @@
 # Repository entry point for coding agents
 
+**Newest continuation (2026-10-23):** [Windows V1 engineering handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md) and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md). See #317 crash-before-assign/admission/shutdown gates and #182 provenance. No production fix/release implied.
+
+
 **Newest continuation (2026-10-22):** [Windows V1 technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) and [copy-ready next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md). Historical dated sections remain checkpoints; inspect live SHA and CI first.
 
 

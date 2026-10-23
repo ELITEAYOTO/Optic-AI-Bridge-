@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 23 October 2026 Windows V1 successor documentation
+
+- Add [updated canonical engineering handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md) and [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md). Refresh entry pointers while preserving dated historic snapshots.
+- Record experimental [`1c7dac9`](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/commit/1c7dac973c8f41f27b303811041b54031f7272ae) evidence ([CI #39888522519](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39888522519), [native #39888522200](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39888522200)) and important **unresolved** native gaps: submit-only admission, potentially blocking root Drop, suspended child surviving synthetic host exit **before Job assignment**. Production `main` unchanged at audit, no GitRead migration, ADR-0035 proposed, PR #327 old red #185 retained. Research #182 patch exposure remains uncorrected.
+- **Documentation only:** no Rust/runtime/permissions/CI/timeout/installer/process behavior, V1 tag, release or GitHub protection change.
+
+
 ## Unreleased — documentation of Windows V1 continuation (2026-10-22)
 
 - Updated the canonical handoff/roadmap/status pointers for the forthcoming chat and created a comprehensive [Windows V1 engineering takeover](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) with a [standalone successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md). This is **documentation only**; no runtime behavior, feature, permission, packaging, timeout, protection, tag or release change.
