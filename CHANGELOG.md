@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Tokio dependency safety patch (2026-10-23)
+
+- Resolve [RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386) by updating the single locked `tokio` package from 1.53.2 to the advisory-fixed 1.53.3 with Cargo's exact checksum and dependency graph. No dependency policy is ignored or weakened and no public API or runtime code is changed; Windows/Ubuntu CI and `cargo deny` must pass on the exact updated lockfile.
+
+
 ## Unreleased — owner-scoped uncertain Job cancellation (#317, 2026-10-23)
 
 - Ask retained `TerminationUncertain` Job owners to stop when `cancel_session` has not already signalled them; keep quotas/ownership until independent native termination proof. Add scoped, idempotent synthetic regression. This does **not** fix synchronous revoke-before-cancel liveness, durable shutdown, GitRead authorization or the V1 NO-GO gate. See [scope/limits](docs/engineering/ISSUE317_UNCERTAIN_JOB_CANCEL_2026-10-23.md).
