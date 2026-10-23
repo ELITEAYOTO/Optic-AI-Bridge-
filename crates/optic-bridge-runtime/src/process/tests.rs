@@ -1358,3 +1358,209 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     drop(manager);
     fs::remove_dir_all(root).expect("remove workspace");
 }
+
+
+ 
+// #317 research only: the real registry is test-instrumented with an
+// authority-owned session gate shared by direct revoke and synthetic
+// JobStore owner commitment. These cases prove ordering, NOT Win32 safety.
+fn research_owner_grant() -> optic_bridge_core::SessionGrant {
+    optic_bridge_core::SessionGrant {
+        handle: SessionHandle::generate().expect("fixed synthetic handle"),
+        principal: optic_bridge_core::PrincipalId::new("owner-fence").expect("principal"),
+        project: optic_bridge_core::ProjectId::new("research").expect("project"),
+        capabilities: std::collections::BTreeSet::new(),
+        expires_at: optic_bridge_core::MonotonicTime::from_millis(10_000),
+        policy_epoch: 1,
+    }
+}
+
+fn research_owner_wait_closed(
+    registry: &crate::SessionRegistry,
+    handle: &SessionHandle,
+) {
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    while !matches!(
+        registry.get_active(handle, optic_bridge_core::MonotonicTime::from_millis(1)),
+        Err(crate::SessionRegistryError::Revoked)
+    ) {
+        assert!(std::time::Instant::now() < until, "close publication deadline");
+        thread::yield_now();
+    }
+}
+
+#[test]
+fn research_owner_fence_close_wins_and_late_admitted_producer_cannot_register() {
+    let root = workspace("owner-fence-close");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap();
+    let registry = crate::SessionRegistry::new();
+    let a = research_owner_grant();
+    registry.register(a.clone()).unwrap();
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let permit = registry.begin_admission(&a.handle, now).unwrap();
+    let job = JobId::generate().unwrap();
+    let candidate = synthetic_record(a.handle.clone(), 0, ProcessStatus::Running, 1, 1);
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| {
+            done_tx.send(registry.revoke(&a.handle)).unwrap();
+        });
+        research_owner_wait_closed(&registry, &a.handle);
+        // An admission granted before closure is not a license to register
+        // a *new* owner after the authority's close linearization point.
+        assert_eq!(
+            registry.research_commit_owner(&a.handle, now, || {
+                manager.jobs.lock().unwrap().jobs.insert(job, candidate);
+            }),
+            Err(crate::SessionRegistryError::Revoked)
+        );
+        assert_eq!(manager.cancel_session(&a.handle).unwrap(), 0);
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        drop(permit);
+        assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        closer.join().unwrap();
+    });
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn research_owner_fence_launch_wins_and_stop_reaches_registered_owner_before_drain() {
+    let root = workspace("owner-fence-launch");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap();
+    let registry = crate::SessionRegistry::new();
+    let a = research_owner_grant();
+    let b = research_owner_grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let permit = registry.begin_admission(&a.handle, now).unwrap();
+    let job = JobId::generate().unwrap();
+    let record = synthetic_record(a.handle.clone(), 0, ProcessStatus::TerminationUncertain, 1, 1);
+    registry
+        .research_commit_owner(&a.handle, now, || {
+            manager
+                .jobs
+                .lock()
+                .unwrap()
+                .jobs
+                .insert(job.clone(), Arc::clone(&record));
+        })
+        .unwrap();
+
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| {
+            done_tx.send(registry.revoke(&a.handle)).unwrap();
+        });
+        research_owner_wait_closed(&registry, &a.handle);
+        assert_eq!(manager.cancel_session(&a.handle).unwrap(), 1);
+        assert!(record.stop_requested.load(Ordering::Acquire));
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+        assert_eq!(manager.cancel_session(&a.handle).unwrap(), 0);
+        assert!(registry.begin_admission(&b.handle, now).is_ok());
+        assert!(matches!(done_rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)));
+        drop(permit);
+        assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        closer.join().unwrap();
+    });
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+    assert!(manager.jobs.lock().unwrap().jobs.contains_key(&job));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn research_owner_fence_racing_direct_revoke_waits_for_owner_commit_but_not_session_b() {
+    let root = workspace("owner-fence-racing");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap();
+    let registry = crate::SessionRegistry::new();
+    let a = research_owner_grant();
+    let b = research_owner_grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let permit = registry.begin_admission(&a.handle, now).unwrap();
+    let job = JobId::generate().unwrap();
+    let record = synthetic_record(a.handle.clone(), 0, ProcessStatus::Running, 1, 1);
+    let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+    let (close_tx, close_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let launch = scope.spawn(|| {
+            registry.research_commit_owner(&a.handle, now, || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                manager
+                    .jobs
+                    .lock()
+                    .unwrap()
+                    .jobs
+                    .insert(job.clone(), Arc::clone(&record));
+            })
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let closer = scope.spawn(|| close_tx.send(registry.revoke(&a.handle)).unwrap());
+
+        // A's commit holds a per-session gate, not the whole registry:
+        // B still admits and commits while A is in the fixed test closure.
+        assert!(registry.begin_admission(&b.handle, now).is_ok());
+        registry.research_commit_owner(&b.handle, now, || ()).unwrap();
+        release_tx.send(()).unwrap();
+        launch.join().unwrap().unwrap();
+        research_owner_wait_closed(&registry, &a.handle);
+        // Now the already-committed owner is necessarily in JobStore;
+        // a pre-drain stop reaches it without ambiguity.
+        assert_eq!(manager.cancel_session(&a.handle).unwrap(), 1);
+        assert!(record.stop_requested.load(Ordering::Acquire));
+        assert!(matches!(
+            close_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        drop(permit);
+        assert!(close_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        closer.join().unwrap();
+    });
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn research_owner_fence_expiry_and_poison_fail_closed_without_preventing_revoke() {
+    let registry = crate::SessionRegistry::new();
+    let a = research_owner_grant();
+    registry.register(a.clone()).unwrap();
+    let entered = std::sync::atomic::AtomicUsize::new(0);
+    assert!(matches!(
+        registry.research_commit_owner(
+            &a.handle,
+            optic_bridge_core::MonotonicTime::from_millis(10_000),
+            || entered.fetch_add(1, Ordering::SeqCst)
+        ),
+        Err(crate::SessionRegistryError::Expired)
+    ));
+    assert_eq!(entered.load(Ordering::SeqCst), 0);
+    let observed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = registry.research_commit_owner(
+            &a.handle,
+            optic_bridge_core::MonotonicTime::from_millis(1),
+            || panic!("synthetic panic while committing owner"),
+        );
+    }));
+    assert!(observed.is_err());
+    assert!(matches!(
+        registry.research_commit_owner(
+            &a.handle,
+            optic_bridge_core::MonotonicTime::from_millis(1),
+            || panic!("no new effect after poisoned gate")
+        ),
+        Err(crate::SessionRegistryError::StateUnavailable)
+    ));
+    assert!(registry.revoke(&a.handle).expect("fail-closed revoke after poison"));
+    assert!(matches!(
+        registry.get_active(&a.handle, optic_bridge_core::MonotonicTime::from_millis(1)),
+        Err(crate::SessionRegistryError::Revoked)
+    ));
+}
