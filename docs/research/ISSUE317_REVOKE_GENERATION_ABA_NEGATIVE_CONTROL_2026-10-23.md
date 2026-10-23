@@ -24,7 +24,7 @@ The new test `research_reused_session_handle_between_close_and_cleanup_reaches_r
 1. Provision synthetic original A and unrelated B using the real registries.
 2. Obtain and drop an original admission and keep a read-only old-generation watch.
 3. Perform real `SessionRegistry::revoke(A)`; confirm old watch is permanently true.
-4. Remove A through the actual quiescent-inactive registry operation; re-register the **same** A handle as a fresh record and obtain its fresh watch; confirm fresh watch is false.
+4. Run a **competing real `SessionLifecycleManager::try_reap(A)`** while the original revoker is at its controlled post-registry boundary. The reaper performs its own registered close, authority cleanup and quiescent removal. Confirm it removed the original session; re-register the **same** A handle as a fresh record and obtain its fresh watch; confirm fresh watch is false.
 5. Issue a new real approval to replacement A and one to B.
 6. Continue with the actual original post-close cleanup code, still keyed by A's opaque handle.
 7. Expected **negative result**: cleanup removes replacement A's approval while the replacement session remains active; B is unaffected. The test **passes if this weakness is observed**, not because it is fixed.
