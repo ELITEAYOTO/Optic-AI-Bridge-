@@ -106,6 +106,11 @@ impl SessionRegistry {
             let record = sessions
                 .get(handle)
                 .ok_or(SessionRegistryError::UnknownSession)?;
+            // A stale gate from a removed/re-registered record may never
+            // authorize a new record with the same opaque handle (ABA).
+            if !Arc::ptr_eq(&gate, &record.research_commit_gate) {
+                return Err(SessionRegistryError::UnknownSession);
+            }
             if record.revoked {
                 return Err(SessionRegistryError::Revoked);
             }
