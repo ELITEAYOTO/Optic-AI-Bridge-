@@ -15,7 +15,7 @@ jobs:
       - name: Validate exact research source
         shell: pwsh
         run: |
-          rustup toolchain install 1.99.0 --profile minimal
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
           if ($LASTEXITCODE -ne 0) { throw 'toolchain bootstrap failed' }
           cargo +1.99.0 fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { throw 'Rustfmt failed; retain first red' }
