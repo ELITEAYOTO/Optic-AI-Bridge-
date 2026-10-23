@@ -130,14 +130,12 @@ fn real_owned_native_worker_retains_admission_and_jobstore_during_direct_revoke(
         drop(owned);
     });
     committed_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-    assert_eq!(
-        manager.find_recorded_private_action(&a.handle, &action).unwrap(),
-        Some(
-            manager
-                .find_recorded_private_action(&a.handle, &action)
-                .unwrap()
-                .expect("still registered")
-        )
+    assert!(
+        manager
+            .find_recorded_private_action(&a.handle, &action)
+            .unwrap()
+            .is_some(),
+        "JobStore owner remains registered while the worker is active"
     );
 
     let reg_for_close = Arc::clone(&registry);
