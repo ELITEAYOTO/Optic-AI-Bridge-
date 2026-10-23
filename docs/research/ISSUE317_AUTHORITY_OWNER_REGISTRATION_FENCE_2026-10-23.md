@@ -44,3 +44,15 @@ The tests are implemented in `crates/optic-bridge-runtime/src/process/tests.rs` 
 Choose a **single authority-owned close/registration linearization API** where native ownership/reservation is established before any irreversible OS effect, then close becomes visible before issuing a stop request **without blocking on admissions**. After stop is requested, the caller may wait for admission drainage or return an explicit pending receipt, but must retain a responsible native root until Job/streams/worker completion is proved. Public `SessionRevokeReport` and seal/reap semantics must be reviewed independently; avoid a simplistic timeout, detached thread or dropping pending native resources.
 
 The hosted Windows/Linux workflow is a *targeted proof only*, not the V1 acceptance suite. Exact-SHA run IDs should be recorded only after the final code+docs head successfully completes.
+
+
+## Stronger liveness regression — genuine worker-held permit
+
+A fifth test, `research_owner_fence_early_stop_unblocks_genuine_worker_admission_before_drain`, strengthens the short synthetic ordering controls:
+
+- The **worker thread itself** obtains a real `SessionAdmissionPermit`, registers an owned synthetic `TerminationUncertain` Job under the test-only authority gate, and waits for the Job's actual `stop_requested` atomic before dropping its permit.
+- A different thread calls the **real synchronous** `SessionRegistry::revoke`. Once actual `get_active` reports Revoked, the test confirms revoke has not returned.
+- A third supervising test context invokes `ProcessManager::cancel_session` *before the drain*. The worker sees stop and drops its permit; only then can the real revoke return. The uncertain Job retains quota and is **not** declared terminated merely because its session permit drained.
+- Both the worker's stop wait and the revoke result have bounded test deadlines. No native child is spawned and this **does not implement a production lifecycle stop-before-drain trigger**.
+
+The test proves the intended ordering can resolve the **synthetic** circular wait if someone reliably performs early cancellation *after registrations have become visible*. It is not a proof of actual Win32 worker liveness, bounded shutdown, or a complete session-owner/authority contract. Do not merge this test instrumentation as a security production patch.
