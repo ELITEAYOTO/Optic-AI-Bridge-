@@ -458,7 +458,6 @@ fn real_worker_held_admission_observes_stop_before_registry_revoke_drains() {
     });
 }
 
-
 #[test]
 fn owned_admission_retains_registry_and_immutable_session_deadline() {
     let registry = Arc::new(SessionRegistry::new());
