@@ -457,3 +457,148 @@ fn real_worker_held_admission_observes_stop_before_registry_revoke_drains() {
         closer.join().unwrap();
     });
 }
+
+
+#[cfg(windows)]
+mod native_owner_commit_research {
+    use super::*;
+    use crate::{ProcessManager, ProcessStartSpec};
+    use optic_bridge_core::{
+        ActionId, HardLimits, NetworkAccess, ProcessExecutionClass, ResourceBudget, WorkloadClass,
+    };
+    use std::{env, fs, path::PathBuf};
+
+    fn reserve(
+        session: &SessionHandle,
+    ) -> (PathBuf, ProcessManager, crate::process::NativeProcessReservation) {
+        let root = env::temp_dir().join(format!(
+            "optic-317-registered-owner-{}",
+            SessionHandle::generate().unwrap().to_token()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap();
+        let executable = env::current_exe()
+            .unwrap()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let spec = ProcessStartSpec {
+            session: session.clone(),
+            class: ProcessExecutionClass::FixedTool,
+            workload_class: WorkloadClass::Standard,
+            network: NetworkAccess::Denied,
+            executable,
+            args: Vec::new(),
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: ResourceBudget {
+                timeout_ms: 1_000,
+                output_bytes: 4_096,
+                memory_bytes: 64 * 1024 * 1024,
+                process_count: 1,
+            },
+        };
+        let action = ActionId::generate().unwrap();
+        let owner = manager.reserve_native_private(&spec, &action).unwrap();
+        assert_eq!(
+            manager.find_recorded_private_action(session, &action).unwrap(),
+            Some(owner.id()),
+            "real JobStore reservation exists BEFORE commitment"
+        );
+        (root, manager, owner)
+    }
+
+    #[test]
+    fn real_registered_owner_commit_before_direct_revoke_observes_stop_without_deadlock() {
+        let registry = SessionRegistry::new();
+        let a = grant();
+        registry.register(a.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let permit = registry.begin_admission(&a.handle, now).unwrap();
+        let (root, manager, owner) = reserve(&a.handle);
+        let receipt = permit
+            .research_commit_reserved_native_owner(&owner, now)
+            .expect("prepared real owner should commit while session remains live");
+        assert!(!receipt.is_stop_required_at(now));
+        assert!(matches!(
+            permit.research_commit_reserved_native_owner(&owner, now),
+            Err(ResearchOwnerCommitError::OwnerUnavailable)
+        ));
+
+        let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+        thread::scope(|scope| {
+            let closer = scope.spawn(|| closed_tx.send(registry.revoke(&a.handle)).unwrap());
+            observe_closed(&registry, &a.handle);
+            assert!(
+                receipt.is_stop_required_at(now),
+                "direct revoke publishes stop even while admitted owner is retained"
+            );
+            assert!(
+                matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                "real admission is still counted; revoke must not pretend native quiescence"
+            );
+            drop(receipt);
+            drop(permit);
+            assert!(
+                closed_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("registry drain after stopped owner")
+                    .expect("revoke result")
+            );
+            closer.join().unwrap();
+        });
+        drop(owner);
+        drop(manager);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn direct_revoke_wins_owner_commit_and_expiry_or_wrong_session_fail_closed() {
+        let registry = SessionRegistry::new();
+        let a = grant();
+        let b = grant();
+        registry.register(a.clone()).unwrap();
+        registry.register(b.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let permit_a = registry.begin_admission(&a.handle, now).unwrap();
+        let (root_a, manager_a, owner_a) = reserve(&a.handle);
+        let (root_b, manager_b, owner_b) = reserve(&b.handle);
+        assert!(matches!(
+            permit_a.research_commit_reserved_native_owner(&owner_b, now),
+            Err(ResearchOwnerCommitError::OwnerSessionMismatch)
+        ));
+        registry
+            .renew_active(&a.handle, now, MonotonicTime::from_millis(200))
+            .unwrap();
+        assert!(matches!(
+            permit_a.research_commit_reserved_native_owner(
+                &owner_a,
+                MonotonicTime::from_millis(100)
+            ),
+            Err(ResearchOwnerCommitError::Registry(SessionRegistryError::Expired))
+        ));
+
+        let (tx, rx) = mpsc::sync_channel(1);
+        thread::scope(|scope| {
+            let closer = scope.spawn(|| tx.send(registry.revoke(&a.handle)).unwrap());
+            observe_closed(&registry, &a.handle);
+            assert!(matches!(
+                permit_a.research_commit_reserved_native_owner(&owner_a, now),
+                Err(ResearchOwnerCommitError::Registry(SessionRegistryError::Revoked))
+            ));
+            drop(permit_a);
+            assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+            closer.join().unwrap();
+        });
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        drop(owner_a);
+        drop(owner_b);
+        drop(manager_a);
+        drop(manager_b);
+        fs::remove_dir_all(root_a).unwrap();
+        fs::remove_dir_all(root_b).unwrap();
+    }
+}
