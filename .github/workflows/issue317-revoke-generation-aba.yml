@@ -1,0 +1,40 @@
+name: Issue 317 revoke generation ABA research
+
+on:
+  push:
+    branches:
+      - research/317-revoke-generation-aba-2026-10-23
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-issue317-aba-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  negative-control:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Strict runtime Clippy
+        run: cargo clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Original lifecycle library regressions
+        run: cargo test --locked -p optic-bridge-runtime --lib
+      - name: Record deterministic negative-control outcome
+        shell: bash
+        run: |
+          echo "OPTIC317_REVOKE_ABA source_sha=${GITHUB_SHA} synthetic_only=true production_fix=false"
+          cargo test --locked -p optic-bridge-runtime --lib research_reused_session_handle_between_close_and_cleanup_reaches_replacement_approval -- --exact --nocapture --test-threads=1
