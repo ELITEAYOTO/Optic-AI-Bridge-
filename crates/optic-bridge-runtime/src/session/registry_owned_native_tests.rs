@@ -262,3 +262,7 @@ fn owned_native_commit_rejects_cross_session_owner_and_original_deadline_after_r
     fs::remove_dir_all(root_a).unwrap();
     fs::remove_dir_all(root_b).unwrap();
 }
+
+// Real kernel Job integration remains confined to the Windows research tests.
+#[path = "registry_owned_native_kernel_tests.rs"]
+mod kernel_integration;
