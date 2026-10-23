@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — immutable admission stop condition (2026-10-23)
+
+- Add the read-only `SessionAdmissionStopWatch` captured from genuine session admission: original-generation explicit revoke **or** original absolute monotonic expiry requires stop, including across session renewal and deliberate opaque-handle reuse. A genuine worker-held permit test verifies that real revoke publishes the stop before its synchronous admission drain completes. The witness grants no execution right and proves no native process termination. No Git runner/JobStore, lifecycle revoke, lease, policy, resource limit, timeout, V1 readiness or release behavior changes. [Detailed scope](docs/engineering/ISSUE317_ADMISSION_STOP_WATCH_2026-10-23.md).
+
 ## Unreleased — generation-bound admitted revocation watch (#317, 2026-10-23)
 
 - Capture a read-only, session-record-bound `SessionRevocationWatch` with each genuine admission permit, enabling downstream owners to observe explicit revocation without trusting reusable opaque session handles. Verify direct close, independent sessions, historic handle reuse and deadline independence. This **does not** change synchronous revoke, launch authorization, native process lifecycle, Pending shutdown or V1 #323 status. See [contract](docs/engineering/ISSUE317_ADMISSION_REVOCATION_WATCH_2026-10-23.md).
