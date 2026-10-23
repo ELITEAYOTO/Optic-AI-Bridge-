@@ -1406,12 +1406,12 @@ fn research_owner_fence_close_wins_and_late_admitted_producer_cannot_register() 
         research_owner_wait_closed(&registry, &a.handle);
         // An admission granted before closure is not a license to register
         // a *new* owner after the authority's close linearization point.
-        assert_eq!(
+        assert!(matches!(
             registry.research_commit_owner(&a.handle, now, || {
                 manager.jobs.lock().unwrap().jobs.insert(job, candidate);
             }),
             Err(crate::SessionRegistryError::Revoked)
-        );
+        ));
         assert_eq!(manager.cancel_session(&a.handle).unwrap(), 0);
         assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
         assert!(matches!(
