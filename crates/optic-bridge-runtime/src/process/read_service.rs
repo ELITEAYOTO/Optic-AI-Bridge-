@@ -81,6 +81,11 @@ impl ReadServiceRoot {
         if workers.len() >= self.processes.limits.max_active_process_jobs as usize {
             return Err(ProcessError::TooManyActiveJobs.into());
         }
+        // No fallible map allocation may remain after the native owner has
+        // moved into a running worker. Reserve its root index before effects.
+        workers
+            .try_reserve(1)
+            .map_err(|_| ServiceError::Unavailable)?;
         let resources = read
             .resources
             .validate_nonzero()
@@ -127,6 +132,9 @@ impl ReadServiceRoot {
                 .jobs
                 .lock()
                 .map_err(|_| ProcessError::StateUnavailable)?;
+            if store.jobs.contains_key(&id) || workers.contains_key(&id) {
+                return Err(ServiceError::Unavailable);
+            }
             self.processes.prepare_store_for_start_with_workload(
                 &mut store,
                 &read.session,

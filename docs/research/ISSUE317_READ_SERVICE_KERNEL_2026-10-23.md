@@ -49,6 +49,10 @@ by this candidate before an actual migration.
 Per-root retained worker handles are additionally bounded by max_active_process_jobs,
 including finished workers not yet joined. Finished handles are joined on submit
 or shutdown; unbounded completed thread history cannot accumulate.
+The worker-index map reserves capacity before any native effect, avoiding an
+allocation during transfer of a running worker's JoinHandle. Generated IDs are
+checked against both registries before insertion; no existing owner is replaced.
+These are source-level transfer guards, not claims of a reproduced OOM/collision.
 This does not claim exact host RSS equals child resource budgets; controller
 thread overhead is bounded by that worker count.
 
@@ -123,6 +127,10 @@ must be recorded separately; they do not replace PR327's original red CI.
 
 A separate unit test invokes THIS kernel's submit with an ordinary synthetic
 accounting record and refuses CPU/memory/output overcommit before native prepare.
+Only that negative test fixes its host-memory observation; no real native
+positive test bypasses host-memory headroom. Its executable is intentionally
+absent, so even an admission regression cannot launch a child without a
+supervisor. No production memory protection is changed.
 The Windows native phase test separately covers stop after actual assignment
 and before resume. It does not eliminate the last-check/ResumeThread race.
 

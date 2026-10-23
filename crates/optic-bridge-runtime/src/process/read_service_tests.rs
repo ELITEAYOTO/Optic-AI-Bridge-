@@ -60,6 +60,19 @@ fn wait_for(mut check: impl FnMut() -> bool) {
 
 #[test]
 fn shared_budget_rejects_other_domain_overcommit_before_native_prepare() {
+    // Only this negative accounting test uses a fixed host observation. It
+    // must not depend on unrelated desktop RAM pressure, and an admission
+    // regression must still be unable to execute any child.
+    #[derive(Debug)]
+    struct AvailableHost;
+    impl HostMemoryProvider for AvailableHost {
+        fn snapshot(&self) -> std::io::Result<HostMemorySnapshot> {
+            Ok(HostMemorySnapshot {
+                total_physical_bytes: 32 * 1024 * 1024 * 1024,
+                available_physical_bytes: 16 * 1024 * 1024 * 1024,
+            })
+        }
+    }
     for case in ["cpu", "memory", "output"] {
         let root = env::temp_dir().join(format!(
             "optic317-budget-{}",
@@ -84,7 +97,9 @@ fn shared_budget_rejects_other_domain_overcommit_before_native_prepare() {
             max_active_process_cpu_percent_per_session: 25,
             ..HardLimits::default()
         };
-        let manager = Arc::new(ProcessManager::new(&root, limits, Vec::new()).unwrap());
+        let mut manager = ProcessManager::new(&root, limits, Vec::new()).unwrap();
+        manager.host_memory_provider = Arc::new(AvailableHost);
+        let manager = Arc::new(manager);
         let sessions = Arc::new(SessionRegistry::new());
         let ordinary = grant("ordinary");
         let git = grant("git");
@@ -104,11 +119,13 @@ fn shared_budget_rejects_other_domain_overcommit_before_native_prepare() {
             .jobs
             .insert(JobId::generate().unwrap(), record);
         let service = ReadServiceRoot::new(Arc::clone(&manager), sessions);
-        let result = service.submit(read(
+        let mut token = read(
             &git,
             &root.join("must-not-start"),
             Arc::new(TestFaults::default()),
-        ));
+        );
+        token.command = NativeCommand::new(root.join("absent-synthetic-executable.exe"));
+        let result = service.submit(token);
         assert!(matches!(
             (case, result),
             (
