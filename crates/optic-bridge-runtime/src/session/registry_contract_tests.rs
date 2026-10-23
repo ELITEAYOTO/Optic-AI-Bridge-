@@ -42,8 +42,12 @@ fn actual_registry_revocation_drains_all_permits_without_blocking_other_sessions
     registry.register(a.clone()).expect("register A");
     registry.register(b.clone()).expect("register B");
     let now = MonotonicTime::from_millis(1);
-    let admission_one = registry.begin_admission(&a.handle, now).expect("A admission 1");
-    let admission_two = registry.begin_admission(&a.handle, now).expect("A admission 2");
+    let admission_one = registry
+        .begin_admission(&a.handle, now)
+        .expect("A admission 1");
+    let admission_two = registry
+        .begin_admission(&a.handle, now)
+        .expect("A admission 2");
     #[cfg(windows)]
     let (stop_a, _) = registry.watch_active(&a.handle, now).expect("watch A");
     let revoking_a = Arc::clone(&registry);
@@ -67,11 +71,16 @@ fn actual_registry_revocation_drains_all_permits_without_blocking_other_sessions
         registry.remove_quiescent_inactive(&a.handle, now),
         Err(SessionRegistryError::AdmissionsInFlight)
     ));
-    assert!(matches!(a_done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        a_done_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
 
     // A's unbounded admission drain must NOT hold the global registry lock.
     assert!(registry.get_active(&b.handle, now).is_ok());
-    let admission_b = registry.begin_admission(&b.handle, now).expect("B remains admissible");
+    let admission_b = registry
+        .begin_admission(&b.handle, now)
+        .expect("B remains admissible");
     drop(admission_b);
     let revoking_b = Arc::clone(&registry);
     let b_handle = b.handle.clone();
@@ -105,7 +114,11 @@ fn actual_registry_revocation_drains_all_permits_without_blocking_other_sessions
             .expect("A revoke state")
     );
     a_thread.join().expect("A thread");
-    assert!(!registry.revoke(&a.handle).expect("idempotent second revoke"));
+    assert!(
+        !registry
+            .revoke(&a.handle)
+            .expect("idempotent second revoke")
+    );
     assert!(
         registry
             .remove_quiescent_inactive(&a.handle, now)
@@ -130,7 +143,9 @@ fn real_registry_renewal_refuses_closed_session_while_admissions_still_drain() {
     registry.register(b.clone()).expect("register B");
     let now = MonotonicTime::from_millis(1);
     let final_expiry = MonotonicTime::from_millis(10_001);
-    let admission = registry.begin_admission(&a.handle, now).expect("A admission");
+    let admission = registry
+        .begin_admission(&a.handle, now)
+        .expect("A admission");
 
     let revoking_a = Arc::clone(&registry);
     let a_handle = a.handle.clone();
@@ -147,7 +162,10 @@ fn real_registry_renewal_refuses_closed_session_while_admissions_still_drain() {
         registry.renew_active(&a.handle, now, final_expiry),
         Err(SessionRenewalError::Revoked)
     ));
-    assert!(matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        closed_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     // A's publication cannot poison an unrelated live session.
     assert_eq!(
         registry
