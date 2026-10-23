@@ -1359,8 +1359,6 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     fs::remove_dir_all(root).expect("remove workspace");
 }
 
-
- 
 // #317 research only: the real registry is test-instrumented with an
 // authority-owned session gate shared by direct revoke and synthetic
 // JobStore owner commitment. These cases prove ordering, NOT Win32 safety.
@@ -1375,16 +1373,16 @@ fn research_owner_grant() -> optic_bridge_core::SessionGrant {
     }
 }
 
-fn research_owner_wait_closed(
-    registry: &crate::SessionRegistry,
-    handle: &SessionHandle,
-) {
+fn research_owner_wait_closed(registry: &crate::SessionRegistry, handle: &SessionHandle) {
     let until = std::time::Instant::now() + Duration::from_secs(2);
     while !matches!(
         registry.get_active(handle, optic_bridge_core::MonotonicTime::from_millis(1)),
         Err(crate::SessionRegistryError::Revoked)
     ) {
-        assert!(std::time::Instant::now() < until, "close publication deadline");
+        assert!(
+            std::time::Instant::now() < until,
+            "close publication deadline"
+        );
         thread::yield_now();
     }
 }
@@ -1421,7 +1419,12 @@ fn research_owner_fence_close_wins_and_late_admitted_producer_cannot_register() 
             Err(std::sync::mpsc::TryRecvError::Empty)
         ));
         drop(permit);
-        assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
         closer.join().unwrap();
     });
     fs::remove_dir_all(root).unwrap();
@@ -1439,7 +1442,13 @@ fn research_owner_fence_launch_wins_and_stop_reaches_registered_owner_before_dra
     let now = optic_bridge_core::MonotonicTime::from_millis(1);
     let permit = registry.begin_admission(&a.handle, now).unwrap();
     let job = JobId::generate().unwrap();
-    let record = synthetic_record(a.handle.clone(), 0, ProcessStatus::TerminationUncertain, 1, 1);
+    let record = synthetic_record(
+        a.handle.clone(),
+        0,
+        ProcessStatus::TerminationUncertain,
+        1,
+        1,
+    );
     registry
         .research_commit_owner(&a.handle, now, || {
             manager
@@ -1462,9 +1471,17 @@ fn research_owner_fence_launch_wins_and_stop_reaches_registered_owner_before_dra
         assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
         assert_eq!(manager.cancel_session(&a.handle).unwrap(), 0);
         assert!(registry.begin_admission(&b.handle, now).is_ok());
-        assert!(matches!(done_rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)));
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
         drop(permit);
-        assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
         closer.join().unwrap();
     });
     assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
@@ -1507,7 +1524,9 @@ fn research_owner_fence_racing_direct_revoke_waits_for_owner_commit_but_not_sess
         // A's commit holds a per-session gate, not the whole registry:
         // B still admits and commits while A is in the fixed test closure.
         assert!(registry.begin_admission(&b.handle, now).is_ok());
-        registry.research_commit_owner(&b.handle, now, || ()).unwrap();
+        registry
+            .research_commit_owner(&b.handle, now, || ())
+            .unwrap();
         release_tx.send(()).unwrap();
         launch.join().unwrap().unwrap();
         research_owner_wait_closed(&registry, &a.handle);
@@ -1520,7 +1539,12 @@ fn research_owner_fence_racing_direct_revoke_waits_for_owner_commit_but_not_sess
             Err(std::sync::mpsc::TryRecvError::Empty)
         ));
         drop(permit);
-        assert!(close_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        assert!(
+            close_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
         closer.join().unwrap();
     });
     assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
@@ -1558,7 +1582,11 @@ fn research_owner_fence_expiry_and_poison_fail_closed_without_preventing_revoke(
         ),
         Err(crate::SessionRegistryError::StateUnavailable)
     ));
-    assert!(registry.revoke(&a.handle).expect("fail-closed revoke after poison"));
+    assert!(
+        registry
+            .revoke(&a.handle)
+            .expect("fail-closed revoke after poison")
+    );
     assert!(matches!(
         registry.get_active(&a.handle, optic_bridge_core::MonotonicTime::from_millis(1)),
         Err(crate::SessionRegistryError::Revoked)
