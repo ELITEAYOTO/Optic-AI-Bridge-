@@ -1,0 +1,42 @@
+name: Issue 317 native owner commitment research
+
+on:
+  push:
+    branches:
+      - research/317-native-owner-generation-commit-2026-10-23
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue317-owner-commit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commit-research:
+    name: Owner commit / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+      - name: Clippy (runtime, strict)
+        run: cargo clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Runtime library regressions
+        run: cargo test --locked -p optic-bridge-runtime --lib
+      - name: Explicit real-reservation synthetic schedule
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_TEST_ONLY_OWNER_COMMIT sha=${GITHUB_SHA} native_spawn=false production_fix=false"
+          cargo test --locked -p optic-bridge-runtime --lib native_owner_commit_research -- --nocapture --test-threads=1
