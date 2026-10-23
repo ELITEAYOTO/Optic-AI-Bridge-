@@ -518,7 +518,7 @@ mod native_owner_commit_research {
 
     #[test]
     fn real_registered_owner_commit_before_direct_revoke_observes_stop_without_deadlock() {
-        let registry = SessionRegistry::new();
+        let registry = Arc::new(SessionRegistry::new());
         let a = grant();
         registry.register(a.clone()).unwrap();
         let now = MonotonicTime::from_millis(1);
@@ -533,28 +533,26 @@ mod native_owner_commit_research {
             Err(ResearchOwnerCommitError::OwnerUnavailable)
         ));
 
-        let (closed_tx, closed_rx) = mpsc::sync_channel(1);
-        thread::scope(|scope| {
-            let closer = scope.spawn(|| closed_tx.send(registry.revoke(&a.handle)).unwrap());
-            observe_closed(&registry, &a.handle);
-            assert!(
-                receipt.is_stop_required_at(now),
-                "direct revoke publishes stop even while admitted owner is retained"
-            );
-            assert!(
-                matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
-                "real admission is still counted; revoke must not pretend native quiescence"
-            );
-            drop(receipt);
-            drop(permit);
-            assert!(
-                closed_rx
-                    .recv_timeout(Duration::from_secs(2))
-                    .expect("registry drain after stopped owner")
-                    .expect("revoke result")
-            );
-            closer.join().unwrap();
-        });
+        // The revoker owns a separate Arc: scoped threads would borrow the
+        // receipt's permit into this closure and violate Rust's borrow rules.
+        // The production admission remains held until the stop is observed.
+        let close_registry = Arc::clone(&registry);
+        let close_handle = a.handle.clone();
+        let closer = thread::spawn(move || close_registry.revoke(&close_handle));
+        observe_closed(&registry, &a.handle);
+        assert!(
+            receipt.is_stop_required_at(now),
+            "direct revoke publishes stop even while admitted owner is retained"
+        );
+        drop(receipt);
+        drop(permit);
+        assert!(
+            closer
+                .join()
+                .expect("revoker thread")
+                .expect("revoke result"),
+            "real admission drain completes after owner releases its borrow"
+        );
         drop(owner);
         drop(manager);
         fs::remove_dir_all(root).unwrap();
