@@ -51,9 +51,9 @@ impl SessionRegistry {
         let gate = self
             .research_gate(handle)?
             .ok_or(SessionRegistryError::UnknownSession)?;
-        let _launch_guard = gate
-            .lock()
-            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        // Closing must be possible even if a launcher previously panicked
+        // inside its test-only commit closure and poisoned this Mutex.
+        let _launch_guard = gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut sessions = self
             .sessions
             .lock()
@@ -257,13 +257,12 @@ impl SessionRegistry {
         #[cfg(test)]
         let test_gate = self.research_gate(handle)?;
         #[cfg(test)]
+        // Fail CLOSED, not OPEN, after an effect panics: recovering the
+        // poisoned gate is required to publish revocation. Launch commits
+        // themselves continue to reject a poisoned gate.
         let test_guard = test_gate
             .as_ref()
-            .map(|gate| {
-                gate.lock()
-                    .map_err(|_| SessionRegistryError::StateUnavailable)
-            })
-            .transpose()?;
+            .map(|gate| gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
         let mut sessions = self
             .sessions
             .lock()
