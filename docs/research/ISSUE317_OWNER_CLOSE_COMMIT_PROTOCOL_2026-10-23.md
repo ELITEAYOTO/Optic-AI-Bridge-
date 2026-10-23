@@ -72,3 +72,16 @@ The state model is *per owner and session generation*; it does not imply a new p
 The smallest safe next **runtime** candidate is an authority-owned, generation-bound, *short* owner-commit gate with a sealed internal issuer and actual previously registered owner. Its direct and lifecycle revoke paths must share the close serialization and notify the independent watcher before waiting on permits. Add deterministic interleaving tests **before** considering a public two-phase API. Independently audit current `SessionLifecycleManager` consumers and `SessionRevokeReport` before changing their semantics.
 
 Production code, `ADR-0035` acceptance, #182 policy, PR #327, remote access, release settings and V1 #323 remain unchanged by this document.
+
+
+## 8. Source-level lock and caller audit before implementation
+
+The existing implementation adds two *independent* liveness constraints which a service integration must not conceal:
+
+- `ProcessManager::cancel_session` (main `process.rs`, near line 720) first acquires the **global JobStore mutex**, then reads each matching record's `state` mutex before publishing `stop_requested`. It signals already-owned `Running` **and** `TerminationUncertain` records (PR #330), but is neither lock-free nor a substitute for an owner-specific watch. If a record is registered late or JobStore is contended, a one-time scan cannot be the sole stop delivery path.
+- `ProcessManager::prepare_store_for_start_with_workload` (near line 1004) calls `ensure_host_memory_headroom` while its caller holds JobStore. On Windows, the default provider uses `query_host_memory_snapshot`; this is native host observation inside a global lock. The experimental sample-scope adapter is not in production. A new owner must **not** assume cancellation is independently prompt while this call runs. Moving the observation outside requires an atomic reservation policy and freshness contract, not a fabricated snapshot or a relaxed limit.
+- `ProcessManager::start` (near lines 589–595) schedules the isolated launcher stdin write/shutdown in a Tokio task and currently ignores both I/O errors. This is separately tracked in #185 as a diagnostic blind spot; it is **not** evidence that those writes caused the intermittent Node/AppContainer timeout. This #317 proposal does not modify it.
+
+Before implementing the pending receipt or shortening a lock, construct an explicit lock-order graph for `SessionRegistry.sessions`, a future owner commit gate, `ProcessManager.jobs`, per-record state/output locks, task/approval stores and any native handle lock. For every path, prove that closing authority and the per-owner stop latch remain observable when a native call or observation is deliberately stalled. No IPC, OS observation or callback of uncontrolled duration may be introduced inside the commit critical section.
+
+**API consumer inventory to obtain:** all direct `SessionRegistry::revoke` callers; all `SessionLifecycleManager::revoke` callers including `seal_quiescent`, `try_reap` and approval cleanup expectations; all `SessionAdmissionPermit` holders; all paths that can insert, terminate or remove JobStore entries. A public-return-semantic change is **not** part of the next slice.
