@@ -1260,3 +1260,86 @@ async fn record_pressure_never_evicts_another_sessions_terminal_job() {
     let _ = await_terminal(&manager, &session_a, &a2).await;
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+
+#[test]
+fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessions() {
+    // Fixed in-memory synthetic records: no external program or PID is used.
+    // An uncertain owner retains its Job record and quota even if a stop is
+    // requested. stop_requested is not a termination acknowledgement.
+    let root = workspace("uncertain-session-cancel");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("process manager");
+    let owner = SessionHandle::generate().expect("owner session");
+    let other = SessionHandle::generate().expect("other session");
+    let running = synthetic_record(owner.clone(), 0, ProcessStatus::Running, 1, 1);
+    let uncertain = synthetic_record(owner.clone(), 1, ProcessStatus::TerminationUncertain, 1, 1);
+    let already_signalled =
+        synthetic_record(owner.clone(), 2, ProcessStatus::TerminationUncertain, 1, 1);
+    let exited = synthetic_record(owner.clone(), 3, ProcessStatus::Exited, 1, 1);
+    let failed = synthetic_record(owner.clone(), 4, ProcessStatus::Failed, 1, 1);
+    let unrelated = synthetic_record(other.clone(), 5, ProcessStatus::Running, 1, 1);
+    already_signalled.stop_requested.store(true, Ordering::Release);
+
+    let ids = (0..6)
+        .map(|_| JobId::generate().expect("synthetic job id"))
+        .collect::<Vec<_>>();
+    {
+        let mut store = manager.jobs.lock().expect("job store");
+        for (id, record) in ids.iter().zip([
+            &running,
+            &uncertain,
+            &already_signalled,
+            &exited,
+            &failed,
+            &unrelated,
+        ]) {
+            store.jobs.insert(id.clone(), Arc::clone(record));
+        }
+    }
+    assert_eq!(
+        manager.active_session_job_count(&owner).expect("owner count"),
+        3
+    );
+    assert_eq!(
+        manager.cancel_session(&owner).expect("first cancellation"),
+        2,
+        "both Running and un-signalled TerminationUncertain need stop requests"
+    );
+    for record in [&running, &uncertain, &already_signalled] {
+        assert!(record.stop_requested.load(Ordering::Acquire));
+    }
+    for record in [&exited, &failed, &unrelated] {
+        assert!(!record.stop_requested.load(Ordering::Acquire));
+    }
+    assert_eq!(
+        manager.cancel_session(&owner).expect("idempotent cancellation"),
+        0
+    );
+    assert_eq!(
+        manager.active_session_job_count(&owner).expect("retained capacity"),
+        3,
+        "requesting stop never proves a Job has terminated"
+    );
+    assert_eq!(
+        manager
+            .remove_terminal_session_records(&owner)
+            .expect("remove only proven terminal jobs"),
+        2
+    );
+    {
+        let store = manager.jobs.lock().expect("retained store");
+        for id in &ids[..3] {
+            assert!(store.jobs.contains_key(id), "active/uncertain Job must remain owned");
+        }
+        assert!(store.jobs.contains_key(&ids[5]), "unrelated owner unaffected");
+    }
+    assert_eq!(
+        manager.cancel_session(&other).expect("other owner cancellation"),
+        1
+    );
+    assert!(unrelated.stop_requested.load(Ordering::Acquire));
+    assert_eq!(manager.cancel_session(&other).unwrap(), 0);
+    drop(manager);
+    fs::remove_dir_all(root).expect("remove workspace");
+}
