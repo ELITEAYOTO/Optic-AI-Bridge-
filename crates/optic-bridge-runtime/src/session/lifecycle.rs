@@ -1340,11 +1340,11 @@ mod tests {
         // cleanup: inactive original with zero admissions may be removed and
         // re-registered using the SAME opaque handle. This is a controlled
         // phase schedule, not proof that this race occurred on a user machine.
-        assert!(
-            sessions
-                .remove_quiescent_inactive(&old.handle, now)
-                .expect("remove original")
-        );
+        let reap = lifecycle
+            .try_reap(&old.handle, now)
+            .expect("competing lifecycle reaper completes old generation");
+        assert!(reap.session_removed);
+        assert_eq!(reap.active_jobs, 0);
         sessions.register(old.clone()).expect("reuse opaque handle");
         let fresh_permit = sessions
             .begin_admission(&old.handle, now)
