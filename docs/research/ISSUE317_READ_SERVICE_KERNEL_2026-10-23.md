@@ -42,6 +42,9 @@ unminted authorized token, not silently forced to Standard.
 CPU hard cap equals reservation; memory/output/process limits go to the native Job.
 Count, CPU, memory and output are checked globally and per session. Shared store
 mutex serializes ordinary and service admission: no two independent quota pools.
+This unifies the candidate with managed/private jobs only. The historical Git
+runner is still outside this integration; not all Bridge Git work is accounted
+by this candidate before an actual migration.
 
 Per-root retained worker handles are additionally bounded by max_active_process_jobs,
 including finished workers not yet joined. Finished handles are joined on submit
@@ -132,6 +135,16 @@ and before resume. It does not eliminate the last-check/ResumeThread race.
   Session validation now precedes capacity lookup. No native launch occurred;
   the failing run's outer Job was recovered. This is a new candidate contract
   ordering issue, not a claim of a pre-existing main vulnerability.
+- Pre-start regression reproduced Failed for both requested stop and expired
+  deadline, before any child executed. Keep the first red JSON. The fix retains
+  the launch error kind and snapshots actual owner cancellation signals BEFORE
+  cleanup requests. Interrupted-by-owner starts preserve Stopped/TimedOut;
+  real missing-executable errors remain Failed. Native limits are unchanged.
+- The test harness created a relative Windows cache under its inherited checkout
+  cwd during empty-environment fixture launch. Opaque cache files are quarantined
+  locally and excluded from publications. Children now have explicit synthetic
+  cwd; TemporaryDirectory lives under the evidence destination. A post-fix run
+  found no relative cache recreated in the checkout. No OS configuration change.
 
 ## Remaining gates before a real GitRead migration
 

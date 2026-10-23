@@ -10,6 +10,7 @@ def main():
  mode.add_argument('--suspended-revoke',action='store_true')
  mode.add_argument('--kernel',action='store_true')
  mode.add_argument('--matrix',action='store_true')
+ mode.add_argument('--prestart',action='store_true')
  a=p.parse_args()
  assert os.name=='nt'
  source=Path(__file__).parents[1]/'tests'/'doctor_pipe_supervisor.py'
@@ -18,7 +19,7 @@ def main():
  result={'complete':False,'source_sha':os.environ.get('OPTIC_SOURCE_SHA',os.environ.get('GITHUB_SHA')),
          'production_wired':False,'claim':'private read-service kernel or suspended phase; not production GitRead integration'}
  dest=Path(a.output);dest.parent.mkdir(parents=True,exist_ok=True)
- temporary=tempfile.TemporaryDirectory(prefix='optic317-service-')
+ temporary=tempfile.TemporaryDirectory(prefix='optic317-service-',dir=dest.parent.resolve())
  root=Path(temporary.name);gate=root/'go';job=outer.Job();child=None
  start=time.monotonic()
  try:
@@ -28,7 +29,8 @@ def main():
   log=root/'log'
   with log.open('wb') as out:
    child=subprocess.Popen([a.test_exe,'--exact',
-     ('process::read_service::tests::service_kernel_outcome_and_pipe_matrix' if a.matrix else
+     ('process::read_service::tests::service_kernel_prestart_stop_and_deadline_classification' if a.prestart else
+      'process::read_service::tests::service_kernel_outcome_and_pipe_matrix' if a.matrix else
       'job::prepared_read_command::tests::revocation_between_assignment_and_resume' if a.suspended_revoke else
       'process::read_service::tests::service_kernel_retains_owners_through_request_loss_and_shutdown'),
      '--ignored','--nocapture'],env=env,stdout=out,stderr=out)
@@ -55,6 +57,7 @@ def main():
   result['proof_markers']=[l for l in text.splitlines() if l.startswith('OPTIC317_SERVICE ')]
   result['cases']=[json.loads(l.removeprefix('OPTIC317_SERVICE_CASE ')) for l in text.splitlines() if l.startswith('OPTIC317_SERVICE_CASE ')]
   if a.matrix:assert len(result['cases'])==8
+  if a.prestart:assert len(result['cases'])==2
   if child.returncode or len(result['proof_markers'])!=1:
    raise RuntimeError('service proof failed')
   result['complete']=True

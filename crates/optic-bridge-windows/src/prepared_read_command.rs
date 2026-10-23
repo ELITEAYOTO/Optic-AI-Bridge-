@@ -385,6 +385,7 @@ mod tests {
         )
         .unwrap();
         let mut command = Command::new(env::current_exe().unwrap());
+        command.current_dir(gate.parent().expect("synthetic fixture directory"));
         command.arg("--list");
         let result = owner.start_with_operations(
             &mut command,

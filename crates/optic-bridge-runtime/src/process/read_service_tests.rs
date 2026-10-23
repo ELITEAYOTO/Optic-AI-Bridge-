@@ -34,6 +34,7 @@ fn read(grant: &SessionGrant, marker: &Path, faults: Arc<TestFaults>) -> Authori
         .env_clear()
         .env("OPTIC317_REGISTRY_CHILD", "1")
         .env("OPTIC317_REGISTRY_STARTED", marker);
+    command.current_dir(marker.parent().expect("synthetic fixture directory"));
     for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
         if let Some(value) = env::var_os(key) {
             command.env(key, value);
@@ -155,6 +156,7 @@ fn service_kernel_outcome_and_pipe_matrix() {
         let started = Instant::now();
         let mut token = read(&a, &root.join("unused"), Arc::new(TestFaults::default()));
         token.command = NativeCommand::new(env::var_os("OPTIC317_PYTHON").expect("known Python"));
+        token.command.current_dir(&root);
         token
             .command
             .arg(env::var_os("OPTIC317_FIXTURE").expect("synthetic fixture"))
@@ -197,6 +199,64 @@ fn service_kernel_outcome_and_pipe_matrix() {
     wait_for(|| service.try_shutdown().unwrap() == 0);
     println!(
         "OPTIC317_SERVICE kernel_matrix=true cases=8 result_mapping=true combined_output_bounded=true workers_joined=true production_git_wired=false"
+    );
+}
+
+#[test]
+#[ignore = "requires independent owning Job before gate"]
+fn service_kernel_prestart_stop_and_deadline_classification() {
+    let gate = PathBuf::from(env::var_os("OPTIC317_SERVICE_GATE").expect("outer Job"));
+    wait_for(|| gate.exists());
+    let root = gate.parent().unwrap().join("prestart");
+    fs::create_dir(&root).unwrap();
+    let manager = Arc::new(ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap());
+    let sessions = Arc::new(SessionRegistry::new());
+    let mut observations = Vec::new();
+    for (mode, expected) in [
+        ("prestart-stop", ProcessStatus::Stopped),
+        ("prestart-deadline", ProcessStatus::TimedOut),
+    ] {
+        let a = grant(mode);
+        sessions.register(a.clone()).unwrap();
+        let service = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
+        let faults = Arc::new(TestFaults::default());
+        faults.hold_start.store(true, Ordering::Release);
+        let mut token = read(&a, &root.join(mode), Arc::clone(&faults));
+        if mode == "prestart-deadline" {
+            token.resources.timeout_ms = 100;
+        }
+        let id = service.submit(token).unwrap();
+        let submitted = Instant::now();
+        if mode == "prestart-stop" {
+            assert!(service.try_shutdown().unwrap() >= 1);
+        } else {
+            // Bound the test; intentionally let the EXISTING native budget
+            // expire before releasing the synthetic scheduling gate.
+            while submitted.elapsed() < Duration::from_millis(150) {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        faults.hold_start.store(false, Ordering::Release);
+        wait_for(|| manager.active_session_job_count(&a.handle).unwrap() == 0);
+        let result = manager.result(&a.handle, &id).unwrap();
+        assert!(
+            !root.join(mode).exists(),
+            "cancelled/expired root must not execute"
+        );
+        observations.push((result.status, expected));
+        println!(
+            "OPTIC317_SERVICE_CASE {{\"case\":\"{mode}\",\"actual\":\"{:?}\",\"expected\":\"{expected:?}\",\"native_started\":false}}",
+            result.status
+        );
+        wait_for(|| service.try_shutdown().unwrap() == 0);
+    }
+    assert!(
+        observations
+            .iter()
+            .all(|(actual, expected)| actual == expected)
+    );
+    println!(
+        "OPTIC317_SERVICE prestart_cases=2 cancellation_and_deadline_distinct=true no_native_execution=true workers_joined=true production_git_wired=false"
     );
 }
 

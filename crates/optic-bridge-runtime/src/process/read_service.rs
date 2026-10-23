@@ -29,6 +29,7 @@ pub(crate) struct AuthorizedRead {
 #[derive(Default)]
 #[cfg(test)]
 struct TestFaults {
+    hold_start: AtomicBool,
     observation_error: AtomicBool,
     panic_once: AtomicBool,
     panics_caught: AtomicU64,
@@ -139,15 +140,16 @@ impl ReadServiceRoot {
             }
             store.jobs.insert(id.clone(), Arc::clone(&record));
         }
+        let cancellation = [
+            Arc::clone(&record.stop_requested),
+            revoked,
+            Arc::clone(&self.stopping),
+        ];
         let native = PreparedReadCommand::prepare(
             native_limits,
             output_limit,
             resources.timeout_ms as u32,
-            vec![
-                Arc::clone(&record.stop_requested),
-                revoked,
-                Arc::clone(&self.stopping),
-            ],
+            cancellation.to_vec(),
         );
         let native = match native {
             Ok(native) => native,
@@ -167,7 +169,9 @@ impl ReadServiceRoot {
                     record,
                     command: Some(read.command),
                     outcome: None,
-                    launch_failed: false,
+                    launch_error: None,
+                    launch_cancelled: false,
+                    cancellation,
                     #[cfg(test)]
                     faults: read.faults,
                 };
@@ -257,7 +261,9 @@ struct Driver {
     record: Arc<JobRecord>,
     command: Option<NativeCommand>,
     outcome: Option<ReadCommandOutcome>,
-    launch_failed: bool,
+    launch_error: Option<std::io::ErrorKind>,
+    launch_cancelled: bool,
+    cancellation: [Arc<AtomicBool>; 3],
     #[cfg(test)]
     faults: Arc<TestFaults>,
 }
@@ -274,11 +280,22 @@ impl Driver {
     }
 
     fn step(&mut self) -> Result<bool, std::io::Error> {
-        if let Some(mut command) = self.command.take() {
-            self.launch_failed = self.native.start(&mut command).is_err();
-            if self.launch_failed {
-                self.record.stop_requested.store(true, Ordering::Release);
-            }
+        #[cfg(test)]
+        if self.command.is_some() && self.faults.hold_start.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        if let Some(mut command) = self.command.take()
+            && let Err(error) = self.native.start(&mut command)
+        {
+            self.launch_error = Some(error.kind());
+            // Snapshot the REAL owner signals before requesting cleanup;
+            // our cleanup flag must not turn an actual launch I/O error
+            // into an apparent user cancellation.
+            self.launch_cancelled = self
+                .cancellation
+                .iter()
+                .any(|flag| flag.load(Ordering::Acquire));
+            self.record.stop_requested.store(true, Ordering::Release);
         }
         #[cfg(test)]
         {
@@ -319,18 +336,21 @@ impl Driver {
             .output_overflow
             .store(outcome.output_limit_exceeded, Ordering::Release);
         state.exit_code = outcome.status.and_then(|status| status.code());
-        state.status =
-            if self.launch_failed || self.record.output_read_failed.load(Ordering::Acquire) {
-                ProcessStatus::Failed
-            } else if outcome.deadline_expired {
-                ProcessStatus::TimedOut
-            } else if outcome.output_limit_exceeded {
-                ProcessStatus::OutputLimitExceeded
-            } else if outcome.cancelled {
-                ProcessStatus::Stopped
-            } else {
-                ProcessStatus::Exited
-            };
+        let owner_interrupted_start = self.launch_error == Some(std::io::ErrorKind::Interrupted)
+            && (self.launch_cancelled || outcome.deadline_expired);
+        state.status = if (self.launch_error.is_some() && !owner_interrupted_start)
+            || self.record.output_read_failed.load(Ordering::Acquire)
+        {
+            ProcessStatus::Failed
+        } else if outcome.deadline_expired {
+            ProcessStatus::TimedOut
+        } else if outcome.output_limit_exceeded {
+            ProcessStatus::OutputLimitExceeded
+        } else if outcome.cancelled {
+            ProcessStatus::Stopped
+        } else {
+            ProcessStatus::Exited
+        };
         Ok(true)
     }
 }
