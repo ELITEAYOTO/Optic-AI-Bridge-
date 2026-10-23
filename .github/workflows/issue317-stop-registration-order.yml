@@ -1,0 +1,33 @@
+name: Research stop-before-drain registration ordering
+on:
+  push:
+    branches: ['research/317-stop-registration-order-2026-10-23']
+permissions:
+  contents: read
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Pin Rustfmt and Clippy toolchain
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+      - name: Strict full workspace Rustfmt
+        shell: bash
+        run: cargo +1.99.0 fmt --all -- --check
+      - name: Strict runtime Clippy all targets/features
+        shell: bash
+        run: cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Run real-registry stop versus registration ordering controls
+        shell: bash
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib stop_registration_contract_ -- --nocapture --test-threads=1
+      - name: Exact source and research-only checkpoint
+        shell: bash
+        run: echo "OPTIC317_STOP_REGISTRATION sha=${GITHUB_SHA} attempt=${GITHUB_RUN_ATTEMPT} os=${RUNNER_OS} synthetic_only=true production_wired=false"
