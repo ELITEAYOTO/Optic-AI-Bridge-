@@ -66,6 +66,7 @@ def run_case(api, executable, mode, root):
             no_child = mode in ('create-error', 'closed-before-admission', 'late-register-after-scan',
                                'close-after-registration', 'before-commit-error', 'uncommitted-start', 'controller-expired')
             assert state['atomic_job_association'] == state['native_created'] == (not no_child)
+            assert state['native_create_attempted'] == (not no_child or mode == 'create-error')
             assert state['legacy_manual_cancel_rescue'] == (mode == 'legacy-no-latch')
             if mode in ('create-error', 'resume-error', 'before-commit-error', 'uncommitted-start', 'observation-uncertain', 'stop-error'):
                 assert state['status'] == 'Failed'
@@ -74,6 +75,8 @@ def run_case(api, executable, mode, root):
                 assert state['independent_native_completed']
             if mode == 'close-before-resume':
                 assert state['resume_denied'] and state['close_published_during_native_pause']
+            if mode == 'controller-expired':
+                assert state['status'] == 'TimedOut' and state['controller_expiry_latched_before_start']
             if mode in ('late-register-after-scan', 'close-after-registration', 'close-before-resume',
                         'before-commit-error', 'uncommitted-start'):
                 assert not (root/'executed').exists()

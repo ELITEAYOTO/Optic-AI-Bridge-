@@ -242,7 +242,9 @@ impl<'a> Root<'a> {
                     // TRUSTED local callback only. No native work, memory sample, JobStore
                     // lock or foreign callback in this short authority critical section.
                     let now = self.clock.now();
-                    if now >= keeper.deadline {
+                    if now >= keeper.deadline
+                        || keeper.watch.deadline_expired.load(Ordering::Acquire)
+                    {
                         return Err(SessionRegistryError::Expired);
                     }
                     if self.closing
@@ -275,6 +277,7 @@ impl<'a> Root<'a> {
             || keeper.authority.load(Ordering::Acquire)
             || keeper.record.stop_requested.load(Ordering::Acquire)
             || self.clock.now() >= ticket.deadline
+            || keeper.watch.deadline_expired.load(Ordering::Acquire)
         {
             self.stop.store(true, Ordering::Release);
             return Err(io::Error::new(

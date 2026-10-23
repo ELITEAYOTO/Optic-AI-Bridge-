@@ -99,3 +99,19 @@ Root start errors are now latched internally, rather than relying on the test
 caller to remember failure. New scenarios are isolated in a private fixture
 module; no production execution path is migrated. Worktree-labelled local JSON
 is preserved as such; exact-head CI remains a separate checkpoint.
+
+
+## Controller-expiry regression
+
+A frozen monotonic producer-clock fixture combined with the REAL independent
+controller deadline reproduced a missing stop guard: after the controller had
+spent its budget, Root still reached Native::create. The regression checks the
+fixture creation-attempt bit, not merely whether Windows happened to reject or
+kill the child. The first local red and external empty-tree proof are retained;
+its sources are preserved in7d5c1e2. This is a deliberately separated-clock
+scenario, not a natural Windows clock failure or a production incident.
+
+Commit and start now also inspect the controller's irreversible deadline_expired
+flag. The first corrected case denies before any Native::create attempt and
+finishes TimedOut only after no-spawn/EOF/controller proof. The clock or timeout
+was not extended to obtain green. Current normal app builds still omit Root.

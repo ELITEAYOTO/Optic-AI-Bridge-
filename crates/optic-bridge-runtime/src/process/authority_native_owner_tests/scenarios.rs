@@ -88,7 +88,7 @@ pub(super) fn finish(
         (code != 0).then_some(code as i32)
     });
     let mut proof = serde_json::json!({"mode":mode,"production_wired":false,"real_registry":true,"real_admission":true,
-        "completion_kind":"native-or-no-spawn-proof","real_win32":true,"native_created":associated,"atomic_job_association":associated,
+        "completion_kind":"native-or-no-spawn-proof","real_win32":true,"native_created":associated,"atomic_job_association":associated,"native_create_attempted":k.native.creation_attempted(),
         "native_terminal_and_both_eof":true,"stop_worker_joined":true,"active_ownership_released_after_proof":true,
         "legacy_manual_cancel_rescue":legacy_rescue,"status":format!("{:?}",result.status),"combined_output_bytes":bytes,
         "native_error_code":error,"observation_errors":root.errors.load(Ordering::Acquire),"stop_errors":k.watch.errors.load(Ordering::Acquire)});
@@ -133,7 +133,7 @@ pub(super) fn exercise(path: &Path, mode: &str) -> serde_json::Value {
         assert!(root.slot.is_none() && root.request_shutdown());
         assert_eq!(manager.active_session_job_count(&grant.handle).unwrap(), 0);
         return serde_json::json!({"mode":mode,"completion_kind":"no-admission-no-native","production_wired":false,
-            "real_registry":true,"real_admission":true,"admission_created":false,"real_win32":false,"native_created":false,
+            "real_registry":true,"real_admission":true,"admission_created":false,"real_win32":false,"native_created":false,"native_create_attempted":false,
             "atomic_job_association":false,"native_terminal_and_both_eof":false,"stop_worker_joined":false,
             "active_ownership_released_after_proof":true,"legacy_manual_cancel_rescue":false,"status":"Denied","combined_output_bytes":0});
     }
