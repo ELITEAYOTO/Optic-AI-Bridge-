@@ -2,42 +2,45 @@
 //! #317 RESEARCH ONLY: actual SessionRegistry + Win32 ResumeThread ordering.
 //! Requires an independently armed outer Windows Job, managed by a CI-only
 //! supervisor. This is NOT a production process launch/close implementation.
+use optic_bridge_core::{
+    Capability, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
+};
+use optic_bridge_runtime::{SessionRegistry, SessionRegistryError};
 use std::{
     collections::BTreeSet,
     ffi::{OsStr, c_void},
     fs, io,
     mem::size_of,
-    os::windows::{ffi::OsStrExt, io::{AsRawHandle, FromRawHandle, OwnedHandle}},
+    os::windows::{
+        ffi::OsStrExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    },
     path::Path,
     sync::{Arc, Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
-use optic_bridge_core::{
-    Capability, MonotonicTime, PrincipalId, ProjectId, SessionGrant, SessionHandle,
-};
-use optic_bridge_runtime::{SessionRegistry, SessionRegistryError};
 use windows::{
-    core::{PCWSTR, PWSTR},
     Win32::{
         Foundation::{CloseHandle, HANDLE},
         System::{
             JobObjects::{
-                CreateJobObjectW, JobObjectBasicAccountingInformation,
-                JobObjectExtendedLimitInformation, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-                JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                CreateJobObjectW, JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,
+                JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
-                CreateProcessW, CREATE_SUSPENDED, DeleteProcThreadAttributeList,
+                CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
                 EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
-                LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
-                PROC_THREAD_ATTRIBUTE_JOB_LIST, ResumeThread, STARTUPINFOEXW, STARTUPINFOW,
-                TerminateProcess, UpdateProcThreadAttribute,
+                LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+                ResumeThread, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
+                UpdateProcThreadAttribute,
             },
         },
     },
+    core::{PCWSTR, PWSTR},
 };
 
 fn until(mut predicate: impl FnMut() -> bool, context: &str) {
@@ -68,7 +71,8 @@ impl Job {
         limits.JobMemoryLimit = 512 * 1024 * 1024;
         unsafe {
             SetInformationJobObject(
-                job.0, JobObjectExtendedLimitInformation,
+                job.0,
+                JobObjectExtendedLimitInformation,
                 (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast::<c_void>(),
                 size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             )
@@ -80,9 +84,11 @@ impl Job {
         let mut state = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
         unsafe {
             QueryInformationJobObject(
-                Some(self.0), JobObjectBasicAccountingInformation,
+                Some(self.0),
+                JobObjectBasicAccountingInformation,
                 (&mut state as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast::<c_void>(),
-                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32, None,
+                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                None,
             )
         }
         .map_err(io::Error::other)?;
@@ -131,9 +137,13 @@ impl Child {
         let handles = [job.0];
         unsafe {
             UpdateProcThreadAttribute(
-                attrs.raw(), 0, PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+                attrs.raw(),
+                0,
+                PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
                 Some(handles.as_ptr().cast::<c_void>()),
-                size_of::<HANDLE>(), None, None,
+                size_of::<HANDLE>(),
+                None,
+                None,
             )
         }
         .map_err(io::Error::other)?;
@@ -154,11 +164,16 @@ impl Child {
         // attribute memory. Job membership is established during creation.
         unsafe {
             CreateProcessW(
-                PCWSTR(path.as_ptr()), Some(PWSTR(args.as_mut_ptr())),
-                None, None, false,
+                PCWSTR(path.as_ptr()),
+                Some(PWSTR(args.as_mut_ptr())),
+                None,
+                None,
+                false,
                 CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-                None, PCWSTR::null(),
-                &si.StartupInfo as *const STARTUPINFOW, &mut pi,
+                None,
+                PCWSTR::null(),
+                &si.StartupInfo as *const STARTUPINFOW,
+                &mut pi,
             )
         }
         .map_err(io::Error::other)?;
@@ -211,7 +226,10 @@ fn synthetic_native_resume_child() {
 #[ignore = "requires pre-armed external Job; never run outside supervised CI"]
 fn registry_native_resume_race_host() {
     let mode = std::env::var("OPTIC317_REGISTRY_MODE").expect("fixed mode");
-    assert!(matches!(mode.as_str(), "direct-revoke-race" | "close-wins" | "launch-wins"));
+    assert!(matches!(
+        mode.as_str(),
+        "direct-revoke-race" | "close-wins" | "launch-wins"
+    ));
     let outer_gate = std::env::var_os("OPTIC317_REGISTRY_GATE").expect("outer gate");
     let ready = std::env::var_os("OPTIC317_REGISTRY_READY").expect("outer ready");
     let marker = std::env::var_os("OPTIC317_REGISTRY_MARKER").expect("execution marker");
@@ -228,7 +246,9 @@ fn registry_native_resume_race_host() {
     let now = MonotonicTime::from_millis(1);
     // This permit covers native launch/stop proof only, not unbounded
     // service observation. The current registry revoke remains synchronous.
-    let permit = registry.begin_admission(&session, now).expect("real admission");
+    let permit = registry
+        .begin_admission(&session, now)
+        .expect("real admission");
     let job = Job::create().expect("pre-configure limited Job before process");
     let child = Child::create_suspended(&job).expect("atomically Job-owned child");
     assert_eq!(job.count().expect("suspended child membership"), 1);
@@ -242,9 +262,14 @@ fn registry_native_resume_race_host() {
         let cloned = Arc::clone(&registry);
         let handle = session.clone();
         let closer = thread::spawn(move || {
-            done_tx.send(cloned.revoke(&handle)).expect("revoke outcome");
+            done_tx
+                .send(cloned.revoke(&handle))
+                .expect("revoke outcome");
         });
-        until(|| revoked(&registry, &session, now), "real registry revoked");
+        until(
+            || revoked(&registry, &session, now),
+            "real registry revoked",
+        );
         assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         // Intentionally unsafe old pattern: resumes AFTER actual revocation
         // has already been published, proving a real authority gap.
@@ -252,9 +277,17 @@ fn registry_native_resume_race_host() {
         until(|| marker.exists(), "executed after real revoke");
         assert!(marker.exists());
         job.terminate().expect("owned Job stop");
-        until(|| job.count().expect("native accounting") == 0, "native stop");
+        until(
+            || job.count().expect("native accounting") == 0,
+            "native stop",
+        );
         drop(permit);
-        assert!(done_rx.recv_timeout(Duration::from_secs(2)).expect("revoke result").expect("first revoke"));
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke result")
+                .expect("first revoke")
+        );
         closer.join().expect("closer join");
     } else if mode == "close-wins" {
         let cloned = Arc::clone(&registry);
@@ -263,20 +296,30 @@ fn registry_native_resume_race_host() {
         let closer = thread::spawn(move || {
             // Same gate guards both actual close request and native commit.
             *closer_gate.lock().expect("shared close gate") = false;
-            done_tx.send(cloned.revoke(&handle)).expect("revoke outcome");
+            done_tx
+                .send(cloned.revoke(&handle))
+                .expect("revoke outcome");
         });
         until(|| revoked(&registry, &session, now), "real registry closed");
         {
             let open = shared_gate.lock().expect("shared launch gate");
             assert!(!*open, "a completed close cannot grant a new resume");
-            assert!(matches!(registry.begin_admission(&session, now), Err(SessionRegistryError::Revoked)));
+            assert!(matches!(
+                registry.begin_admission(&session, now),
+                Err(SessionRegistryError::Revoked)
+            ));
         }
         assert!(!marker.exists(), "suspended child did not execute");
         job.terminate().expect("reclaim suspended child");
         until(|| job.count().expect("native accounting") == 0, "Job empty");
         assert!(!marker.exists(), "close-first prevented execution");
         drop(permit);
-        assert!(done_rx.recv_timeout(Duration::from_secs(2)).expect("revoke result").expect("first revoke"));
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke result")
+                .expect("first revoke")
+        );
         closer.join().expect("closer join");
     } else {
         // Launch wins while holding a session-scoped TEST-ONLY shared gate;
@@ -293,21 +336,30 @@ fn registry_native_resume_race_host() {
         let closer_gate = Arc::clone(&shared_gate);
         let closer = thread::spawn(move || {
             *closer_gate.lock().expect("shared close gate") = false;
-            done_tx.send(cloned.revoke(&handle)).expect("revoke outcome");
+            done_tx
+                .send(cloned.revoke(&handle))
+                .expect("revoke outcome");
         });
         until(|| revoked(&registry, &session, now), "real registry closed");
         until(|| marker.exists(), "pre-authorized launch executed");
         job.terminate().expect("stop owned Job");
         until(|| job.count().expect("native accounting") == 0, "Job empty");
         drop(permit);
-        assert!(done_rx.recv_timeout(Duration::from_secs(2)).expect("revoke result").expect("first revoke"));
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke result")
+                .expect("first revoke")
+        );
         closer.join().expect("closer join");
     }
     assert!(revoked(&registry, &session, now));
     assert_eq!(job.count().expect("terminal Job proof"), 0);
     drop(child);
     let summary = match mode.as_str() {
-        "direct-revoke-race" => "mode=direct-revoke-race;real-close-before-resume=1;marker=1;job-empty=1",
+        "direct-revoke-race" => {
+            "mode=direct-revoke-race;real-close-before-resume=1;marker=1;job-empty=1"
+        }
         "close-wins" => "mode=close-wins;real-close=1;not-resumed=1;marker-absent=1;job-empty=1",
         "launch-wins" => "mode=launch-wins;native-resume-before-real-close=1;marker=1;job-empty=1",
         _ => unreachable!(),
