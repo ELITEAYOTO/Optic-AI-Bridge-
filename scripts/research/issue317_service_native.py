@@ -9,6 +9,7 @@ def main():
  mode=p.add_mutually_exclusive_group()
  mode.add_argument('--suspended-revoke',action='store_true')
  mode.add_argument('--kernel',action='store_true')
+ mode.add_argument('--matrix',action='store_true')
  a=p.parse_args()
  assert os.name=='nt'
  source=Path(__file__).parents[1]/'tests'/'doctor_pipe_supervisor.py'
@@ -22,10 +23,13 @@ def main():
  start=time.monotonic()
  try:
   env=os.environ.copy();env['OPTIC317_SERVICE_GATE']=str(gate)
+  env['OPTIC317_PYTHON']=__import__('sys').executable
+  env['OPTIC317_FIXTURE']=str(Path(__file__).with_name('issue317_baseline_fixture.py').resolve())
   log=root/'log'
   with log.open('wb') as out:
    child=subprocess.Popen([a.test_exe,'--exact',
-     ('job::prepared_read_command::tests::revocation_between_assignment_and_resume' if a.suspended_revoke else
+     ('process::read_service::tests::service_kernel_outcome_and_pipe_matrix' if a.matrix else
+      'job::prepared_read_command::tests::revocation_between_assignment_and_resume' if a.suspended_revoke else
       'process::read_service::tests::service_kernel_retains_owners_through_request_loss_and_shutdown'),
      '--ignored','--nocapture'],env=env,stdout=out,stderr=out)
    job.assign(child);gate.write_text('owned',encoding='ascii')
@@ -49,6 +53,8 @@ def main():
   result['exit_code']=child.returncode
   text=log.read_text(errors='replace')
   result['proof_markers']=[l for l in text.splitlines() if l.startswith('OPTIC317_SERVICE ')]
+  result['cases']=[json.loads(l.removeprefix('OPTIC317_SERVICE_CASE ')) for l in text.splitlines() if l.startswith('OPTIC317_SERVICE_CASE ')]
+  if a.matrix:assert len(result['cases'])==8
   if child.returncode or len(result['proof_markers'])!=1:
    raise RuntimeError('service proof failed')
   result['complete']=True

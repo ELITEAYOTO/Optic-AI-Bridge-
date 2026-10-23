@@ -130,6 +130,76 @@ fn shared_budget_rejects_other_domain_overcommit_before_native_prepare() {
     }
 }
 
+#[test]
+#[ignore = "requires independent owning Job before gate"]
+fn service_kernel_outcome_and_pipe_matrix() {
+    let gate = PathBuf::from(env::var_os("OPTIC317_SERVICE_GATE").expect("outer Job"));
+    wait_for(|| gate.exists());
+    let root = gate.parent().unwrap().join("kernel-matrix");
+    fs::create_dir(&root).unwrap();
+    let manager = Arc::new(ProcessManager::new(&root, HardLimits::default(), Vec::new()).unwrap());
+    let sessions = Arc::new(SessionRegistry::new());
+    let a = grant("matrix");
+    sessions.register(a.clone()).unwrap();
+    let service = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
+    for (mode, expected, code) in [
+        ("normal", ProcessStatus::Exited, Some(0)),
+        ("nonzero", ProcessStatus::Exited, Some(7)),
+        ("output", ProcessStatus::OutputLimitExceeded, None),
+        ("both-output", ProcessStatus::OutputLimitExceeded, None),
+        ("stdout", ProcessStatus::Exited, Some(0)),
+        ("stderr", ProcessStatus::Exited, Some(0)),
+        ("timeout", ProcessStatus::TimedOut, None),
+        ("null-stdin", ProcessStatus::Exited, Some(0)),
+    ] {
+        let started = Instant::now();
+        let mut token = read(&a, &root.join("unused"), Arc::new(TestFaults::default()));
+        token.command = NativeCommand::new(env::var_os("OPTIC317_PYTHON").expect("known Python"));
+        token
+            .command
+            .arg(env::var_os("OPTIC317_FIXTURE").expect("synthetic fixture"))
+            .arg(mode)
+            .env_clear();
+        for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
+            if let Some(value) = env::var_os(key) {
+                token.command.env(key, value);
+            }
+        }
+        token.resources.process_count = 2; // parent and bounded synthetic descendant
+        if mode == "timeout" {
+            token.resources.timeout_ms = 200;
+        }
+        let id = service.submit(token).unwrap();
+        wait_for(|| manager.active_session_job_count(&a.handle).unwrap() == 0);
+        let result = manager.result(&a.handle, &id).unwrap();
+        assert_eq!(result.status, expected, "case {mode}");
+        if let Some(code) = code {
+            assert_eq!(result.exit_code, Some(code), "case {mode}");
+        }
+        let stdout = manager
+            .read(&a.handle, &id, ProcessStream::Stdout, 0, 4096)
+            .unwrap();
+        let stderr = manager
+            .read(&a.handle, &id, ProcessStream::Stderr, 0, 4096)
+            .unwrap();
+        assert!(stdout.eof && stderr.eof);
+        assert!(stdout.bytes.len() + stderr.bytes.len() <= 4096);
+        assert_eq!(
+            result.output_truncated,
+            matches!(mode, "output" | "both-output")
+        );
+        println!(
+            "OPTIC317_SERVICE_CASE {{\"case\":\"{mode}\",\"elapsed_ms\":{},\"record_terminal\":true,\"combined_output_bytes\":{},\"eof\":true}}",
+            started.elapsed().as_millis(),
+            stdout.bytes.len() + stderr.bytes.len()
+        );
+    }
+    wait_for(|| service.try_shutdown().unwrap() == 0);
+    println!(
+        "OPTIC317_SERVICE kernel_matrix=true cases=8 result_mapping=true combined_output_bounded=true workers_joined=true production_git_wired=false"
+    );
+}
+
 // Release synthetic errors before the root's joined Drop on assertion unwind.
 struct Recover(Arc<TestFaults>);
 impl Drop for Recover {
@@ -322,6 +392,39 @@ fn service_kernel_retains_owners_through_request_loss_and_shutdown() {
         manager.result(&c.handle, &direct_id).unwrap().status,
         ProcessStatus::Stopped
     );
+    // Real lifecycle revoke must stop its service owner BEFORE waiting for
+    // an independently held caller admission to drain.
+    let d = grant("predrain");
+    sessions.register(d.clone()).unwrap();
+    let predrain = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
+    let predrain_marker = root.join("predrain-started");
+    let predrain_id = predrain
+        .submit(read(&d, &predrain_marker, Arc::new(TestFaults::default())))
+        .unwrap();
+    wait_for(|| predrain_marker.exists());
+    let caller_admission = sessions.begin_admission(&d.handle, now).unwrap();
+    let (flag, _) = sessions.watch_active(&d.handle, now).unwrap();
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let revoked = scope.spawn(|| {
+            let result = lifecycle.revoke(&d.handle);
+            done_tx.send(()).unwrap();
+            result
+        });
+        wait_for(|| flag.load(Ordering::Acquire));
+        wait_for(|| manager.active_session_job_count(&d.handle).unwrap() == 0);
+        assert_eq!(
+            manager.result(&d.handle, &predrain_id).unwrap().status,
+            ProcessStatus::Stopped
+        );
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        drop(caller_admission);
+        revoked.join().unwrap().unwrap();
+    });
+    wait_for(|| predrain.try_shutdown().unwrap() == 0);
     let failed_root = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
     let mut missing = read(
         &c,
@@ -337,6 +440,6 @@ fn service_kernel_retains_owners_through_request_loss_and_shutdown() {
     );
     wait_for(|| failed_root.try_shutdown().unwrap() == 0);
     println!(
-        "OPTIC317_SERVICE kernel=true caller_reply_dropped=true worker_panic_caught=1 shared_accounting=true uncertainty_retained=true seal_reap_gated=true shutdown_pending_retains_root=true shutdown_while_bookkeeping_locked=true clean_root_drop_joined=true failed_spawn_recovered=true workers_joined=true production_git_wired=false"
+        "OPTIC317_SERVICE kernel=true caller_reply_dropped=true worker_panic_caught=1 shared_accounting=true uncertainty_retained=true seal_reap_gated=true stop_before_admission_drain=true shutdown_pending_retains_root=true shutdown_while_bookkeeping_locked=true clean_root_drop_joined=true failed_spawn_recovered=true workers_joined=true production_git_wired=false"
     );
 }

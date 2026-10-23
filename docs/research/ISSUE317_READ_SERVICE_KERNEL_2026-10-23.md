@@ -97,6 +97,8 @@ The actual kernel, not the earlier scoped mock, demonstrates:
   accounting changes host+child (2) to host (1) BEFORE that mutex is released;
 - a separate direct root Drop, without prior error/shutdown, stops and joins a
   real active child;
+- real lifecycle revoke stops another child while a caller admission remains
+  held; revoke has not returned until that permit is released (pre-drain proof);
 - missing executable recovers with Failed/no active reservation.
 
 These are synthetic service tests, NOT actual MCP transport cancellation.
@@ -104,6 +106,17 @@ Observation failures are injected before native polling, not real Win32 I/O
 failures. The caught panic is at a controlled step boundary, not exhaustive
 panic/poison/OOM/crash recovery. Prior PR327 native bad-handle tests remain valid
 but do not magically extend this proof.
+
+Eight service-level result cases additionally verify normal/code7 exits,
+stdout and combined-output ceilings, retained stdout/stderr descendants,
+timeout and null stdin. These test THIS kernel's mapping into ProcessResult,
+existing output buffers/EOF and common reservations, rather than merely
+repeating the earlier native-owner primitive matrix.
+
+First kernel commit c51c331ecab9060d9172e1989ab0fb9a3f4ab4ed passed normal
+CI39881749896 and native39881749958 on attempt1. That source does not include
+the later service result matrix/pre-drain tests. Exact final-source validations
+must be recorded separately; they do not replace PR327's original red CI.
 
 A separate unit test invokes THIS kernel's submit with an ordinary synthetic
 accounting record and refuses CPU/memory/output overcommit before native prepare.

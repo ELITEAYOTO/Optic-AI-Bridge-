@@ -31,6 +31,9 @@ jobs:
       - name: Stop precisely between native assign and resume
         shell: pwsh
         run: python scripts/research/issue317_service_native.py --suspended-revoke --test-exe "$env:OPTIC_SERVICE_WINDOWS" --output evidence/suspended-revoke.json
+      - name: Service results, retained descendants and combined output
+        shell: pwsh
+        run: python scripts/research/issue317_service_native.py --matrix --test-exe "$env:OPTIC_SERVICE_RUNTIME" --output evidence/service-matrix.json
       - name: Preserve evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
