@@ -172,3 +172,34 @@ fn rejected_commit_does_not_execute_on_expiry_or_unknown_handle() {
     ));
     assert_eq!(executed.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn panicked_commit_poison_never_blocks_direct_revoke() {
+    let registry = SessionRegistry::new();
+    let a = grant("panic-close");
+    registry.register(a.clone()).expect("register");
+    let now = MonotonicTime::from_millis(1);
+    let observed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = registry.research_commit_launch(&a.handle, now, || {
+            panic!("synthetic research panic under owned gate");
+        });
+    }));
+    assert!(observed.is_err(), "synthetic commit deliberately panicked");
+
+    // A poisoned launch gate must deny further launch commits, but it
+    // must not prevent the *real direct* revoke path from closing the
+    // actual grant and publishing its cancellation signal.
+    assert!(matches!(
+        registry.research_commit_launch(&a.handle, now, || panic!("must not execute")),
+        Err(SessionRegistryError::StateUnavailable)
+    ));
+    assert!(registry.revoke(&a.handle).expect("revoke after panic"));
+    assert!(matches!(
+        registry.get_active(&a.handle, now),
+        Err(SessionRegistryError::Revoked)
+    ));
+    assert!(matches!(
+        registry.research_commit_launch(&a.handle, now, || panic!("must not execute")),
+        Err(SessionRegistryError::StateUnavailable | SessionRegistryError::Revoked)
+    ));
+}
