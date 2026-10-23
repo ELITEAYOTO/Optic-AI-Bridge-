@@ -130,7 +130,7 @@ fn launch_suspended_with_job(job_handle: HANDLE) -> io::Result<SuspendedChild> {
             CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
             None,
             PCWSTR::null(),
-            (&startup.StartupInfo as *const STARTUPINFOW),
+            &startup.StartupInfo as *const STARTUPINFOW,
             &mut process_info,
         )
     }
