@@ -159,13 +159,24 @@ def host_worker(mode, root):
         # Deliberately leave process unassigned for the negative control.
         count = job.active()
         assert count == 0
+    elif mode == "invalid":
+        # A stale/invalid Job cannot silently fall back to an unowned spawn.
+        try:
+            create_suspended(0x7FFFFFFF, atomic=True)
+        except OSError:
+            pass
+        else:
+            raise AssertionError("invalid Job accepted")
+        count = job.active()
+        assert count == 0
     else:
         raise ValueError("unrecognized research fixture")
 
     (root / "ready").write_text(json.dumps({
         "inner_job_active": count,
         "mode": mode,
-        "suspended": True,
+        "suspended": mode != "invalid",
+        "rejected": mode == "invalid",
     }), encoding="ascii")
     # The independent outer supervisor kills this host via its exact handle.
     while True:
@@ -189,15 +200,21 @@ def run_case(helper, mode, root):
                             9, "host process started and created suspended child")
             assert host.poll() is None, "host exited before evidence gate"
             state = json.loads((root / "ready").read_text(encoding="ascii"))
-            assert state == {"inner_job_active": 1 if mode == "atomic" else 0,
-                             "mode": mode, "suspended": True}
-            helper.wait_for(lambda: job.active() == 2, 3, "outer host plus child")
+            assert state == {
+                "inner_job_active": 1 if mode == "atomic" else 0,
+                "mode": mode,
+                "suspended": mode != "invalid",
+                "rejected": mode == "invalid",
+            }
+            before_target = 1 if mode == "invalid" else 2
+            helper.wait_for(lambda: job.active() == before_target, 3,
+                            "outer host/child counts before host exit")
             before = job.active()
 
             # Kills ONLY the synthetic host created by this test.
             host.kill()
             host.wait(timeout=3)
-            target = 0 if mode == "atomic" else 1
+            target = 1 if mode == "legacy" else 0
             helper.wait_for(lambda: job.active() == target, 3,
                             "accounting after synthetic host death")
             after = job.active()
@@ -224,7 +241,7 @@ def run_case(helper, mode, root):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--host", choices=["atomic", "legacy"])
+    p.add_argument("--host", choices=["atomic", "legacy", "invalid"])
     p.add_argument("--root")
     p.add_argument("--output")
     a = p.parse_args()
@@ -252,15 +269,18 @@ def main():
     }
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-job-attribute-") as temp:
-            for name in ("legacy", "atomic"):
+            for name in ("legacy", "atomic", "invalid"):
                 root = Path(temp) / name
                 root.mkdir()
                 proof["cases"].append(run_case(helper, name, root))
-        legacy, atomic = proof["cases"]
+        legacy, atomic, invalid = proof["cases"]
         assert legacy["outer_before_host_death"] == 2
         assert legacy["outer_after_host_death"] == 1
         assert atomic["outer_before_host_death"] == 2
         assert atomic["outer_after_host_death"] == 0
+        assert invalid["outer_before_host_death"] == 1
+        assert invalid["outer_after_host_death"] == 0
+        proof["invalid_job_failed_closed"] = True
         proof["outer_job_cleaned_after_every_case"] = True
         proof["complete"] = True
     except BaseException as exc:
