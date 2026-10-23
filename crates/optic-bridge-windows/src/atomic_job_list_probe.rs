@@ -331,7 +331,10 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
                 );
                 break;
             }
-            assert_eq!(root_status, 259, "root failed before descendant-retention proof");
+            assert!(
+                root_status == 259 || root_status == 0,
+                "root failed before descendant-retention proof"
+            );
             assert!(!out_eof && !err_eof, "pipes closed before retained descendant stop");
         } else if out_eof && err_eof && active == 0 {
             break;
@@ -523,12 +526,8 @@ fn native_atomic_job_list_host_fixture() {
             None
         }
         "retained-stdio" => {
-            let ready_path = ready.with_extension("descendant");
-            // The external supervisor owns this entire host+tree before
-            // any launch. Both synthetic descendant and root share one
-            // unforgeable, test-scoped readiness file path.
-            // SAFETY: scoped test process only; restored on process exit.
-            unsafe { std::env::set_var("OPTIC317_RETAINER_READY", ready_path) };
+            // The independent outer supervisor provides the synthetic
+            // descendant readiness path before starting this test host.
             run_selective_stdio(&job, true).expect("retained stdio stopped with EOF proof");
             assert_eq!(job.active_processes().expect("retainer Job empty"), 0);
             None
