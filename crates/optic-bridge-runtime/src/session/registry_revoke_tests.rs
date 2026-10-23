@@ -279,3 +279,92 @@ fn replacement_generation_at_predicate_check_keeps_legacy_handle_lookup() {
         assert!(registry.get_active(&old.handle, now).is_ok());
     }
 }
+
+#[test]
+fn admission_revocation_watch_is_read_only_and_remains_bound_to_original_record() {
+    let registry = SessionRegistry::new();
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let original_permit = registry.begin_admission(&a.handle, now).unwrap();
+    let watcher = original_permit.revocation_watch();
+    let old_watcher = watcher.clone();
+    let b_permit = registry.begin_admission(&b.handle, now).unwrap();
+    let unrelated_watcher = b_permit.revocation_watch();
+    assert!(!watcher.is_revoked());
+    assert!(!unrelated_watcher.is_revoked());
+
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| {
+            closed_tx.send(registry.revoke(&a.handle)).unwrap();
+        });
+        observe_closed(&registry, &a.handle);
+        assert!(watcher.is_revoked(), "real direct revoke publishes stop");
+        assert!(old_watcher.is_revoked());
+        assert!(
+            !unrelated_watcher.is_revoked(),
+            "closing A never publishes B's stop"
+        );
+        assert!(matches!(
+            closed_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        drop(original_permit);
+        assert!(
+            closed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
+        closer.join().unwrap();
+    });
+
+    assert!(registry.remove_quiescent_inactive(&a.handle, now).unwrap());
+    // Reusing a handle is a valid historical compatibility path once all
+    // genuine permits have drained. The old watch must NEVER follow it.
+    registry.register(a.clone()).unwrap();
+    let new_permit = registry.begin_admission(&a.handle, now).unwrap();
+    let replacement_watcher = new_permit.revocation_watch();
+    assert!(old_watcher.is_revoked());
+    assert!(
+        !replacement_watcher.is_revoked(),
+        "the new session record has a distinct revocation identity"
+    );
+    drop(new_permit);
+    assert!(registry.revoke(&a.handle).unwrap());
+    assert!(replacement_watcher.is_revoked());
+    assert!(old_watcher.is_revoked());
+    drop(b_permit);
+}
+
+#[test]
+fn admission_revocation_watch_does_not_replace_monotonic_expiry_check() {
+    let registry = SessionRegistry::new();
+    let a = grant(); // expires at 100 ms.
+    registry.register(a.clone()).unwrap();
+    let admitted = registry
+        .begin_admission(&a.handle, MonotonicTime::from_millis(1))
+        .unwrap();
+    let watch = admitted.revocation_watch();
+    assert!(!watch.is_revoked());
+    assert!(matches!(
+        registry.get_active(&a.handle, MonotonicTime::from_millis(100)),
+        Err(SessionRegistryError::Expired)
+    ));
+    assert!(
+        !watch.is_revoked(),
+        "expiry alone does not flip the explicit-revocation latch"
+    );
+    let (tx, rx) = mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| tx.send(registry.revoke(&a.handle)).unwrap());
+        observe_closed(&registry, &a.handle);
+        assert!(watch.is_revoked());
+        drop(admitted);
+        assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        closer.join().unwrap();
+    });
+}

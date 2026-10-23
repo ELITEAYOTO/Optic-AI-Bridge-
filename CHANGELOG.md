@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — generation-bound admitted revocation watch (#317, 2026-10-23)
+
+- Capture a read-only, session-record-bound `SessionRevocationWatch` with each genuine admission permit, enabling downstream owners to observe explicit revocation without trusting reusable opaque session handles. Verify direct close, independent sessions, historic handle reuse and deadline independence. This **does not** change synchronous revoke, launch authorization, native process lifecycle, Pending shutdown or V1 #323 status. See [contract](docs/engineering/ISSUE317_ADMISSION_REVOCATION_WATCH_2026-10-23.md).
+
+
 ## Unreleased — Tokio dependency safety patch (2026-10-23)
 
 - Resolve [RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386) by updating the single locked `tokio` package from 1.53.2 to the advisory-fixed 1.53.3 with Cargo's exact checksum and dependency graph. No dependency policy is ignored or weakened and no public API or runtime code is changed; Windows/Ubuntu CI and `cargo deny` must pass on the exact updated lockfile.

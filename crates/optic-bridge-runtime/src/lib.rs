@@ -168,7 +168,9 @@ pub use session_lifecycle::{
     QuiescentSessionSeal, SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager,
     SessionReapReport, SessionRenewalReport, SessionRevokeReport,
 };
-pub use session_registry::{SessionAdmissionPermit, SessionRegistry, SessionRegistryError};
+pub use session_registry::{
+    SessionAdmissionPermit, SessionRegistry, SessionRegistryError, SessionRevocationWatch,
+};
 pub use session_reusable_approval::{SessionReusableApprovalError, SessionReusableApprovalService};
 pub use session_worktree::{
     SessionWorktree, SessionWorktreeError, SessionWorktreeManager, SessionWorktreeRecoveryReport,
