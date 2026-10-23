@@ -240,7 +240,6 @@ fn precreated_kernel_job_stops_suspended_child_without_resume() {
     fs::remove_dir_all(root).expect("clean isolated fixture");
 }
 
-
 #[test]
 #[ignore = "only an independent outer Job supervisor may kill this fixed host"]
 fn synthetic_creator_host_for_supervisor() {
