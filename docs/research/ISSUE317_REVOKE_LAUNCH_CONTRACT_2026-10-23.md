@@ -56,3 +56,40 @@ Whether a per-session gate may encompass `ResumeThread` requires a bounded-nativ
 ## 5. Decision required before production patch
 
 Prefer investigating **two-stage close + independent quiescence** while retaining current API behavior for synchronous effects until consumers are audited. The precise public API, pending response/report, durable owner and shutdown policy remain **unapproved**, not silently selected by this note. A completed revoke/seal must not imply an unproven native cleanup. Prepare a separate focused design/implementation PR only after consensus on that contract, native launch linearization and failure-path proof.
+
+
+## 6. Nonblocking close / pending-admission proof and bypass audit (23 October 2026)
+
+**Checkpoint:** [hosted Windows + Ubuntu CI #39903229287](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39903229287) completed **success on the exact source `389d5de4545df9ff54de20c1c06f0c37f9507bbc`** (attempt 1 for this SHA), with whole-workspace Rustfmt, locked runtime Clippy `-D warnings` and **4 actual-registry tests per OS**. Earlier [red #39903173756](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39903173756) failed Rustfmt on the prior SHA; kept and corrected without suppressions.
+
+Two additional **`#[cfg(test)]`** cases extend the same source-level real-registry test module, **not the production API**:
+
+1. `prototype_two_stage_close_is_immediate_but_never_reports_early_quiescence`: a *test-only helper* acquires the real `SessionRegistry.sessions` mutex, marks the real session revoked and publishes its existing stop atomic, then returns **without waiting** on the condvar. With two outstanding genuine `SessionAdmissionPermit` values, it reports **(new close, 2 pending)**; new admission is rejected, real removal returns `AdmissionsInFlight`, repeated close returns **(already closed, 2 pending)**, and an unrelated B session can continue. Dropping one permit yields **1 pending**, dropping both yields **0 pending**; only then can production `revoke` return idempotently and `remove_quiescent_inactive` reclaim the record. On Windows the existing real native stop signal is also asserted.
+2. `external_wrapper_gate_cannot_intercept_direct_registry_revoke`: while an unrelated private launch-side mutex remains locked and a real admission permit is held, an independent thread invokes the **public actual** `SessionRegistry::revoke`. The real record becomes revoked and denies new admission **despite the wrapper mutex**. Revoke remains pending until the genuine permit is released. Thus an external wrapper lock cannot supply a non-bypassable security commit/close point.
+
+The helper is private to the Rust **test module**; it directly mutates the actual registry record only during tests, and is neither an accepted runtime method nor an alternative to a security review. Its reported count is **admission drainage only**: it is **not** a signal that a Windows Job is gone, that stdout/stderr reached EOF, that native observation is complete, or that a worktree/lease/approval can safely be removed. The previous [real registry + suspended Win32 child test #39902524900](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39902524900) independently demonstrated the actual revoke-before-`ResumeThread` gap with a synthetic child under external Job supervision; this Linux/Windows source-level matrix does not replicate that native test.
+
+### Concrete authority call-site and lock-order audit
+
+Paths verified on `main=da34eae7d0efda39d9fb3c6786ec843546926fe9` (focused inventory, **not** an exhaustive transitive call graph):
+
+| Caller or boundary | Current sequence | Future-contract risk |
+| --- | --- | --- |
+| `SessionRegistry::revoke` in `session/registry.rs` | Marks `revoked`, publishes stop, then **waits** under condvar until admission count is zero | A worker-lifetime permit linked to permanent native observation uncertainty can block the public revoke forever |
+| `SessionLifecycleManager::revoke` in `session/lifecycle.rs` | Invokes synchronous registry revoke **first**; only afterward revokes both approval brokers, task leases and requests process cancellation | Simply holding a worker permit until owned Job completion would postpone the very cancellation expected to finish it: possible dependency cycle |
+| `SessionLifecycleManager::seal_quiescent` and `try_reap` | Both invoke `revoke` before checking active jobs; reap cleans process history, leases, worktrees, then session | A deadlocked revoke blocks seal/reap; conversely checking only registry pending count cannot certify native quiescence |
+| `SameRepositoryCoordinator::revoke` and rollback | Delegates to lifecycle; provisioning rollback follows with `try_reap` | API report semantics must distinguish prompt authorization close from eventual resource completion |
+| `SameRepositoryMergeOrchestrator` in `same_repo_merge.rs` | Obtains two `seal_quiescent` results before publication | A future pending result must never be represented as a valid seal; merge/publish must keep requiring verified quiescence |
+| Selected `optic-bridge-mcp` tests in `server.rs` / `git_tools.rs` | Invoke `sessions.revoke` directly while checking cancellation | A launcher-only gate cannot intercept every direct registry close path |
+
+**Proposed lock order, subject to further proof:** acquire a session-scoped **authority-owned** commit/close gate, then briefly inspect/update session authority and epoch under the registry mutex. **Never** wait for admissions to drain or perform unbounded native observation while holding either. A close should publish stop and reject subsequent commits at a single point; only after releasing the short lock should an independent owner request Job termination and perform bounded progress checks. A native resume commitment that wins the gate can precede close; close must not promise that zero instructions execute afterward. The gate must be enforced for *all* real close pathways, not just convenience wrappers. Explicit lock inversion and Windows native-call-bound evidence are still missing.
+
+**Recommended option to evaluate, not approved API:**
+- Stage A: `close_admission` publishes permanent cancellation and returns a *pending* close token/status promptly; no new launch can commit afterward.
+- Stage B: independent owner requests out-of-band termination, retains native handles and quotas under `PendingNativeProof`, and reports exact Job/stream/worker evidence.
+- Stage C: `try_quiescence`/bounded await can create a seal only if admission, all subprocess descendants, both streams, approvals/leases and relevant worktree ownership are actually terminal. Reap remains impossible on uncertainty.
+- Compatibility: assess every `SessionRevokeReport` consumer before changing its meaning, define expiry semantics, direct APIs and error results, and obtain an architecture/security decision before patching production.
+
+**Do not do:** transfer all admission permits to unbounded workers under the current synchronous `revoke`; mark a native observation error as successful termination; return a “quiescent” seal when only admission count is zero; add a private mutex only at one launcher; merge the experimental Job stacks wholesale.
+
+The findings narrow the next design decision but **do not close** #317, authorize ADR-0035, repair production `PreparedReadCommand` / `HardenedCommandRunner`, address Git provenance #182, or lift V1 #323 NO-GO. No PC test, actual Git operation, production ABI modification, feature addition, or merge occurred.
