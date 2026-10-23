@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — owner-scoped uncertain Job cancellation (#317, 2026-10-23)
+
+- Ask retained `TerminationUncertain` Job owners to stop when `cancel_session` has not already signalled them; keep quotas/ownership until independent native termination proof. Add scoped, idempotent synthetic regression. This does **not** fix synchronous revoke-before-cancel liveness, durable shutdown, GitRead authorization or the V1 NO-GO gate. See [scope/limits](docs/engineering/ISSUE317_UNCERTAIN_JOB_CANCEL_2026-10-23.md).
+
+
 ## Unreleased — internal revoke phase extraction (2026-10-23)
 
 - Prepare a private extraction of session close/signal publication and synchronous
