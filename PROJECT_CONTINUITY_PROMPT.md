@@ -1,5 +1,10 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Active successor prompt — 23 October 2026
+
+Read and copy [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md), grounded in the [23 October engineering handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md). This supersedes **only the earlier prompts for current sequencing**; history below is intentionally kept. Source snapshot before doc PR: main `3fe3de0c`, #327 open with original red #185, new `codex/317-service-retention` head `1c7dac9` CI native/general green but **not wired**; three no-go boundaries are admission lifetime, indefinite Drop and crash-before-Job-assignment. Verify GitHub live; the docs PR may have advanced main.
+
+
 ## Active copy-ready successor prompt — 22 October 2026
 
 **Use [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-22.md) as the current complete prompt**, and [HANDOFF_WINDOWS_V1_2026-10-22.md](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-22.md) as the technical evidence. Snapshot before the handoff PR: main `82ad1234`, 0 open PRs, research #317 `33c95e00` with [CI #39748924515](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39748924515) green; **unwired owner ledger and research fixtures, no production #317 fix, no V1 freeze**. Verify GitHub again at the beginning of the new chat; the very PR installing these documents can advance main.
