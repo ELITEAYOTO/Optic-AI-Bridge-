@@ -16,10 +16,10 @@ mod directory;
 mod executable;
 #[cfg(windows)]
 mod file;
-#[cfg(windows)]
-mod job;
 #[cfg(all(windows, feature = "issue317-owned-kernel-fixture"))]
 mod issue317_owned_kernel_fixture;
+#[cfg(windows)]
+mod job;
 #[cfg(windows)]
 mod memory;
 #[cfg(windows)]
