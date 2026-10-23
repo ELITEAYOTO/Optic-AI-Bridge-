@@ -1065,6 +1065,8 @@ pub(crate) struct NativeProcessReservation {
     pub(crate) limits: LimitedJobObject,
     may_have_run: bool,
     finished: bool,
+    #[cfg(test)]
+    owner_commit_claimed: AtomicBool,
 }
 
 #[cfg(windows)]
@@ -1149,6 +1151,8 @@ impl ProcessManager {
             limits,
             may_have_run: false,
             finished: false,
+            #[cfg(test)]
+            owner_commit_claimed: AtomicBool::new(false),
         })
     }
 }
@@ -1158,6 +1162,27 @@ impl NativeProcessReservation {
     pub(crate) fn id(&self) -> JobId {
         self.id.clone()
     }
+
+    /// Test-only: reads already registered record identity, without external
+    /// authority or a second look-up by opaque owner ID.
+    #[cfg(test)]
+    pub(crate) fn research_owner_session(&self) -> &SessionHandle {
+        &self.record.owner
+    }
+
+    /// Research-only one-use marker, called exclusively while the genuine
+    /// SessionRegistry close/commit lock is held. No OS, JobStore or I/O call.
+    #[cfg(test)]
+    pub(crate) fn research_try_claim_once(&self) -> bool {
+        !self.may_have_run
+            && !self.finished
+            && !self.stop_requested()
+            && self
+                .owner_commit_claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+    }
+
     pub(crate) fn mark_native_created(&mut self) {
         self.may_have_run = true;
     }
