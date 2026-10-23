@@ -172,12 +172,15 @@ def host_worker(mode, root):
     else:
         raise ValueError("unrecognized research fixture")
 
-    (root / "ready").write_text(json.dumps({
+    # A separate process must never read a partly written readiness record.
+    ready_temp = root / "ready.tmp"
+    ready_temp.write_text(json.dumps({
         "inner_job_active": count,
         "mode": mode,
         "suspended": mode != "invalid",
         "rejected": mode == "invalid",
     }), encoding="ascii")
+    os.replace(ready_temp, root / "ready")
     # The independent outer supervisor kills this host via its exact handle.
     while True:
         time.sleep(0.05)
