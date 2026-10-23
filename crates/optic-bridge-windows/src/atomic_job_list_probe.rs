@@ -530,7 +530,11 @@ fn run_resume_close_order(job: &OwnedJob, mode: &str, marker: &Path) -> io::Resu
     assert!(!marker.exists(), "pre-existing synthetic execution marker");
     let gate = Arc::new(Mutex::new(TestLaunchState::Open));
     let child = launch_suspended_with_job(job.raw(), false, true)?;
-    assert_eq!(job.active_processes()?, 1, "suspended child owned before gate");
+    assert_eq!(
+        job.active_processes()?,
+        1,
+        "suspended child owned before gate"
+    );
     match mode {
         "resume-race" => {
             // Intentional negative control: the old final check reads Open
@@ -547,7 +551,10 @@ fn run_resume_close_order(job: &OwnedJob, mode: &str, marker: &Path) -> io::Resu
             assert_eq!(*gate.lock().expect("closed state"), TestLaunchState::Closed);
             resume_exact_native_child(&child)?;
             wait_for_gate(marker)?;
-            assert!(marker.exists(), "negative control must prove execution after close");
+            assert!(
+                marker.exists(),
+                "negative control must prove execution after close"
+            );
         }
         "resume-close-wins" => {
             let closer_gate = Arc::clone(&gate);
@@ -642,7 +649,8 @@ fn native_atomic_job_list_host_fixture() {
         .expect("actual CPU/memory/process limits and KILL_ON_JOB_CLOSE");
     let _owned_child = match mode.as_str() {
         "atomic" => {
-            let child = launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
+            let child =
+                launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
             assert_eq!(job.active_processes().expect("native accounting"), 1);
             Some(child)
         }
@@ -663,7 +671,8 @@ fn native_atomic_job_list_host_fixture() {
                 )
             }
             .expect("make spare pipe writer inheritable");
-            let child = launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
+            let child =
+                launch_suspended_with_job(job.raw(), false, false).expect("atomic creation");
             assert_eq!(
                 job.active_processes().expect("suspended child stays alive"),
                 1
@@ -766,7 +775,9 @@ fn native_atomic_job_list_host_fixture() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "resume-race" => "mode=resume-race;close_before_resume=1;marker_after_close=1;job_empty=1",
         "resume-close-wins" => "mode=resume-close-wins;no_resume=1;marker_absent=1;job_empty=1",
-        "resume-launch-wins" => "mode=resume-launch-wins;resume_before_close=1;marker=1;job_empty=1",
+        "resume-launch-wins" => {
+            "mode=resume-launch-wins;resume_before_close=1;marker=1;job_empty=1"
+        }
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
         "stdio-bad-exe" => {
