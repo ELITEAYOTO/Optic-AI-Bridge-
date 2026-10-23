@@ -1599,3 +1599,103 @@ fn research_owner_fence_expiry_and_poison_fail_closed_without_preventing_revoke(
         Err(crate::SessionRegistryError::Revoked)
     ));
 }
+
+
+#[test]
+fn research_owner_fence_early_stop_unblocks_genuine_worker_admission_before_drain() {
+    // The *worker thread* owns a genuine admission permit and does not
+    // release it until the retained Job record receives an actual stop
+    // request. Without a pre-drain cancellation step this reproduces
+    // the original worker-permit/stop-request dependency.
+    let root = workspace("owner-fence-worker-drain");
+    let manager = Arc::new(
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("manager"),
+    );
+    let registry = Arc::new(crate::SessionRegistry::new());
+    let grant = research_owner_grant();
+    registry.register(grant.clone()).expect("register");
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let job = JobId::generate().expect("synthetic owned job");
+    let record = synthetic_record(
+        grant.handle.clone(),
+        0,
+        ProcessStatus::TerminationUncertain,
+        1,
+        1,
+    );
+    let (registered_tx, registered_rx) = std::sync::mpsc::sync_channel(1);
+    let (revoke_tx, revoke_rx) = std::sync::mpsc::sync_channel(1);
+
+    thread::scope(|scope| {
+        let worker_manager = Arc::clone(&manager);
+        let worker_registry = Arc::clone(&registry);
+        let worker_handle = grant.handle.clone();
+        let worker_record = Arc::clone(&record);
+        let worker_job = job.clone();
+        let worker = scope.spawn(move || {
+            let admission = worker_registry
+                .begin_admission(&worker_handle, now)
+                .expect("genuine worker admission");
+            worker_registry
+                .research_commit_owner(&worker_handle, now, || {
+                    worker_manager
+                        .jobs
+                        .lock()
+                        .expect("owner registration")
+                        .jobs
+                        .insert(worker_job, Arc::clone(&worker_record));
+                })
+                .expect("commit owner before native effects");
+            registered_tx.send(()).expect("worker owner registered");
+
+            let until = std::time::Instant::now() + Duration::from_secs(2);
+            while !worker_record.stop_requested.load(Ordering::Acquire) {
+                assert!(
+                    std::time::Instant::now() < until,
+                    "worker never received session stop request"
+                );
+                thread::yield_now();
+            }
+            drop(admission);
+        });
+
+        registered_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("owner registered before close");
+        let closer_registry = Arc::clone(&registry);
+        let closer_handle = grant.handle.clone();
+        let closer = scope.spawn(move || {
+            revoke_tx
+                .send(closer_registry.revoke(&closer_handle))
+                .expect("revoke result");
+        });
+        research_owner_wait_closed(&registry, &grant.handle);
+        assert!(matches!(
+            revoke_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            manager
+                .cancel_session(&grant.handle)
+                .expect("stop admitted owner before drainage"),
+            1
+        );
+        worker.join().expect("worker drops permit after stop");
+        assert!(
+            revoke_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoker finishes when worker permits drain")
+                .expect("real revoke successful")
+        );
+        closer.join().expect("revoke thread");
+    });
+    assert!(record.stop_requested.load(Ordering::Acquire));
+    assert_eq!(
+        manager
+            .active_session_job_count(&grant.handle)
+            .expect("still retains uncertain owner"),
+        1,
+        "stop and permit drainage cannot count as native Job termination"
+    );
+    fs::remove_dir_all(root).expect("cleanup synthetic workspace");
+}
