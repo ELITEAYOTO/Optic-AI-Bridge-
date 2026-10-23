@@ -37,7 +37,8 @@ jobs:
           cargo +1.99.0 test --locked -p optic-bridge-runtime --lib session_registry:: -- --nocapture --test-threads=1
       - name: Exact research checkpoint
         shell: bash
-        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib process::pending_owner_root:: -- --nocapture --test-threads=1
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib process::pending_owner_root:: -- --nocapture --test-threads=1
       - name: Exact research source metadata
         shell: bash
         run: echo "OPTIC317_AUTHORITY_GATE sha=${GITHUB_SHA} run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT} os=${RUNNER_OS} test_only=true production_wired=false"

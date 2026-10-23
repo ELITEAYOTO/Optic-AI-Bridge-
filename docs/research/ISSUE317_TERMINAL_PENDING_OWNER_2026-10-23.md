@@ -95,3 +95,9 @@ successful stop request, drained admission or closed client is not quiescence.
 Each PR waits for the previous review/integration, exact-SHA Windows/Ubuntu
 validation, and availability of the repository's single active PR slot. PR327
 and its historical #185 red remain untouched. V1 #323 remains NO-GO.
+
+First hosted checkpoint4bb5d63: contract workflow39921606093 failed before
+creating jobs. The new plain YAML scalar contained a Rust module filter ending
+in colon+space. Its correction uses a literal block on a new commit; the initial
+red is retained. Other workflows on4bb5d63 must be allowed to finish rather than
+cancelled or presented as validation of the corrected workflow SHA.
