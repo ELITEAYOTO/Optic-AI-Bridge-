@@ -139,14 +139,14 @@ fn real_registry_renewal_refuses_closed_session_while_admissions_still_drain() {
         let _ = closed_tx.send(revoking_a.revoke(&a_handle));
     });
     await_revoked(&registry, &a.handle, now);
-    assert_eq!(
+    assert!(matches!(
         registry.validate_renewal(&a.handle, now, final_expiry),
         Err(SessionRenewalError::Revoked)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         registry.renew_active(&a.handle, now, final_expiry),
         Err(SessionRenewalError::Revoked)
-    );
+    ));
     assert!(matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
     // A's publication cannot poison an unrelated live session.
     assert_eq!(
