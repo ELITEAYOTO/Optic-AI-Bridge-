@@ -7,8 +7,7 @@ use std::{
     collections::BTreeMap,
     env,
     ffi::OsStr,
-    fs,
-    io,
+    fs, io,
     mem::size_of,
     os::windows::{
         ffi::OsStrExt,
@@ -255,7 +254,9 @@ fn owned_registered_kernel_tree_stops_before_admission_drains() {
             assert!(Instant::now() < limit, "owner stop not published");
             thread::yield_now();
         }
-        observed_tx.send(job.active().expect("still recorded kernel child")).unwrap();
+        observed_tx
+            .send(job.active().expect("still recorded kernel child"))
+            .unwrap();
         release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
         // Keep reservation AND counted admission until POSITIVE native proof.
         job.terminate().expect("stop exact owned Job");
