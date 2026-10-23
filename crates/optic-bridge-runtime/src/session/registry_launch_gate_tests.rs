@@ -46,21 +46,28 @@ fn close_wins_and_no_effect_runs_after_real_record_is_revoked() {
     let now = MonotonicTime::from_millis(1);
     let count = AtomicUsize::new(0);
     assert_eq!(
-        registry.research_close_admission(&a.handle).expect("prompt close"),
+        registry
+            .research_close_admission(&a.handle)
+            .expect("prompt close"),
         (true, 0)
     );
     assert!(matches!(
-        registry.research_commit_launch(&a.handle, now, || {
-            count.fetch_add(1, Ordering::SeqCst)
-        }),
+        registry
+            .research_commit_launch(&a.handle, now, || { count.fetch_add(1, Ordering::SeqCst) }),
         Err(SessionRegistryError::Revoked)
     ));
     assert_eq!(count.load(Ordering::SeqCst), 0);
     assert_eq!(
-        registry.research_close_admission(&a.handle).expect("idempotent close"),
+        registry
+            .research_close_admission(&a.handle)
+            .expect("idempotent close"),
         (false, 0)
     );
-    assert!(!registry.revoke(&a.handle).expect("idempotent direct revoke"));
+    assert!(
+        !registry
+            .revoke(&a.handle)
+            .expect("idempotent direct revoke")
+    );
 }
 
 #[test]
@@ -114,14 +121,23 @@ fn direct_public_revoke_uses_authority_gate_not_private_launcher_wrapper() {
         .expect("B may commit independently");
     assert_eq!(unrelated_commits.load(Ordering::SeqCst), 1);
     assert!(registry.get_active(&a.handle, now).is_ok());
-    assert!(matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        closed_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
 
     continue_tx.send(()).expect("release finite launch closure");
-    launch.join().expect("launch thread").expect("A launch committed");
+    launch
+        .join()
+        .expect("launch thread")
+        .expect("A launch committed");
     wait_closed(&registry, &a.handle, now);
     // The closer must have dropped the gate after publishing close, while
     // still waiting for the genuine admission permit to drain.
-    assert!(matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        closed_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     assert!(matches!(
         registry.research_commit_launch(&a.handle, now, || panic!("forbidden effect")),
         Err(SessionRegistryError::Revoked)
@@ -144,20 +160,14 @@ fn rejected_commit_does_not_execute_on_expiry_or_unknown_handle() {
     registry.register(a.clone()).expect("register");
     let executed = AtomicUsize::new(0);
     assert!(matches!(
-        registry.research_commit_launch(
-            &a.handle,
-            MonotonicTime::from_millis(10_000),
-            || executed.fetch_add(1, Ordering::SeqCst)
-        ),
+        registry.research_commit_launch(&a.handle, MonotonicTime::from_millis(10_000), || executed
+            .fetch_add(1, Ordering::SeqCst)),
         Err(SessionRegistryError::Expired)
     ));
     let missing = SessionHandle::generate().expect("another handle");
     assert!(matches!(
-        registry.research_commit_launch(
-            &missing,
-            MonotonicTime::from_millis(1),
-            || executed.fetch_add(1, Ordering::SeqCst)
-        ),
+        registry.research_commit_launch(&missing, MonotonicTime::from_millis(1), || executed
+            .fetch_add(1, Ordering::SeqCst)),
         Err(SessionRegistryError::UnknownSession)
     ));
     assert_eq!(executed.load(Ordering::SeqCst), 0);
