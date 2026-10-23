@@ -15,7 +15,7 @@ jobs:
       - name: Validate exact research source
         shell: pwsh
         run: |
-          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
           if ($LASTEXITCODE -ne 0) { throw 'toolchain bootstrap failed' }
           cargo +1.99.0 fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { throw 'Rustfmt failed; retain first red' }
@@ -29,6 +29,11 @@ jobs:
           $items = @(Get-Content rust-probe.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.kind -contains 'lib' -and $_.executable })
           if ($items.Count -ne 1) { throw 'ambiguous native test binary' }
           "OPTIC317_NATIVE_RUST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Lint Windows platform crate including test-only native probe
+        shell: pwsh
+        run: |
+          cargo +1.99.0 clippy --locked -p optic-bridge-windows --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'Clippy failed; preserve exact-source diagnosis' }
       - name: Supervise atomic Win32 create and invalid Job failure
         shell: pwsh
         run: |
