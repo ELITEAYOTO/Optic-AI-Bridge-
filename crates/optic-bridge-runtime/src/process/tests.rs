@@ -82,7 +82,7 @@ fn budget(timeout_ms: u64, output_bytes: u64) -> ResourceBudget {
     }
 }
 
-fn synthetic_record(
+pub(super) fn synthetic_record(
     owner: SessionHandle,
     sequence: u64,
     status: ProcessStatus,

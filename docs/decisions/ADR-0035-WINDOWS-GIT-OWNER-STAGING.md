@@ -84,3 +84,13 @@ before start, and proves native stop during blocked ledger observation. Null
 stdin is explicit. Shared production reservations, lifecycle seal/reap and
 service shutdown are still missing. This evidence does not accept this ADR or
 permit GitRead migration. Do not merge the whole research branch to main.
+
+## Private service-root candidate — 23 October 2026
+
+[The unwired kernel](../research/ISSUE317_READ_SERVICE_KERNEL_2026-10-23.md)
+keeps native owners in service workers, uses actual shared ProcessManager
+reservations, and lets existing lifecycle seal/reap see uncertain jobs. Stop
+signals precede nonblocking bookkeeping observation; pending shutdown retains
+the root. A joined Drop may wait indefinitely on persistent uncertainty. The
+authorization token has no production constructor. This is not an accepted
+shutdown contract or a GitRead migration; the ADR remains PROPOSED.

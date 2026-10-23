@@ -1,0 +1,41 @@
+name: Windows Git service root evidence
+on:
+  push:
+    branches: ['codex/317-service-retention']
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build exact test sources
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          foreach ($crate in @('optic-bridge-runtime','optic-bridge-windows')) {
+            cargo +1.99.0 test --locked -p $crate --lib --no-run --message-format=json > "$crate.jsonl"
+            if ($LASTEXITCODE -ne 0) { throw 'native build failed' }
+            $items = @(Get-Content "$crate.jsonl" | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.kind -contains 'lib' -and $_.executable })
+            if ($items.Count -ne 1) { throw 'ambiguous test binary' }
+            if ($crate -eq 'optic-bridge-runtime') { "OPTIC_SERVICE_RUNTIME=$($items[0].executable)" >> $env:GITHUB_ENV }
+            else { "OPTIC_SERVICE_WINDOWS=$($items[0].executable)" >> $env:GITHUB_ENV }
+          }
+      - name: Service root and real lifecycle accounting
+        shell: pwsh
+        run: python scripts/research/issue317_service_native.py --kernel --test-exe "$env:OPTIC_SERVICE_RUNTIME" --output evidence/service-kernel.json
+      - name: Stop precisely between native assign and resume
+        shell: pwsh
+        run: python scripts/research/issue317_service_native.py --suspended-revoke --test-exe "$env:OPTIC_SERVICE_WINDOWS" --output evidence/suspended-revoke.json
+      - name: Preserve evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic317-scoped-service
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7

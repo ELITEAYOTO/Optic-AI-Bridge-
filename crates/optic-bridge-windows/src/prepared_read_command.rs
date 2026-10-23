@@ -365,6 +365,55 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires independent owning Job before the gate"]
+    fn revocation_between_assignment_and_resume() {
+        let gate = std::path::PathBuf::from(
+            env::var_os("OPTIC317_SERVICE_GATE").expect("outer supervisor"),
+        );
+        let until = Instant::now() + Duration::from_secs(5);
+        while !gate.exists() {
+            assert!(Instant::now() < until);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let revoked = Arc::new(AtomicBool::new(false));
+        let resumed = AtomicBool::new(false);
+        let mut owner = PreparedReadCommand::prepare(
+            LimitedJobObject::new(1, 256 * 1024 * 1024, 25).unwrap(),
+            4096,
+            2000,
+            vec![Arc::clone(&revoked)],
+        )
+        .unwrap();
+        let mut command = Command::new(env::current_exe().unwrap());
+        command.arg("--list");
+        let result = owner.start_with_operations(
+            &mut command,
+            |job, process| {
+                // SAFETY: actual retained Job and suspended root. Trigger the
+                // owner's stop signal precisely after successful assignment.
+                unsafe { AssignProcessToJobObject(job, process) }.map_err(Error::other)?;
+                revoked.store(true, Ordering::Release);
+                Ok(())
+            },
+            |process| {
+                resumed.store(true, Ordering::Release);
+                resume_process_threads(process)
+            },
+        );
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::Interrupted);
+        assert!(owner.assigned && owner.child.is_some());
+        assert!(!resumed.load(Ordering::Acquire));
+        assert!(owner.take_outcome().is_err());
+        let outcome = confirm(&mut owner);
+        assert!(outcome.cancelled && !outcome.is_success());
+        assert!(outcome.status.is_some());
+        assert!(outcome.stdout.is_empty() && outcome.stderr.is_empty());
+        println!(
+            "OPTIC317_SERVICE suspended_revoke=true resume_called=false root_and_job_and_eof_proven=true production_wired=false"
+        );
+    }
+
+    #[test]
     #[ignore = "requires independent native Job supervisor"]
     fn native_partial_failure_matrix() {
         let gate = std::path::PathBuf::from(

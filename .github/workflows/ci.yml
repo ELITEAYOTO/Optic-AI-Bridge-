@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "bootstrap/**"]
+    branches: [main, "bootstrap/**", "codex/317-service-retention"]
   pull_request:
 
 permissions:

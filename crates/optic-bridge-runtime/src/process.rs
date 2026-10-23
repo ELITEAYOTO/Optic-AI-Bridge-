@@ -1,5 +1,7 @@
 mod output;
 #[cfg(windows)]
+mod read_service;
+#[cfg(windows)]
 use output::append_output;
 use output::{OutputState, drain_output, mark_stream_closed};
 
