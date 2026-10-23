@@ -586,5 +586,9 @@ fn owned_admission_rejects_expired_revoked_and_unknown_sessions() {
         registry.begin_owned_admission(&a.handle, MonotonicTime::from_millis(1)),
         Err(SessionRegistryError::Revoked)
     ));
-    assert!(registry.remove_quiescent_inactive(&a.handle, MonotonicTime::from_millis(1)).unwrap());
+    assert!(
+        registry
+            .remove_quiescent_inactive(&a.handle, MonotonicTime::from_millis(1))
+            .unwrap()
+    );
 }
