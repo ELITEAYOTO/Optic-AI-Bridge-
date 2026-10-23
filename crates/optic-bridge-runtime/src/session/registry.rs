@@ -364,6 +364,10 @@ impl Drop for SessionAdmissionPermit<'_> {
 }
 
 #[cfg(test)]
+#[path = "registry_contract_tests.rs"]
+mod authority_contract_tests;
+
+#[cfg(test)]
 mod tests {
     use std::{
         collections::BTreeSet,
