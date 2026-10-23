@@ -1,9 +1,10 @@
 # #317 — internal revoke phase extraction
 
-Narrow integration candidate on fix/317-revoke-internal-phases-2026-10-23, based on production main
-da34eae7d0efda39d9fb3c6786ec843546926fe9. This is not a production fix for #317,
-not a two-phase public API and not an integration of any native owner prototype.
-Main, PR327, security policy and the Git runner remain unchanged.
+Proposed through PR #329 from fix/317-revoke-internal-phases-2026-10-23,
+based on main at da34eae7d0efda39d9fb3c6786ec843546926fe9. This is not a
+production fix for #317, not a two-phase public API and not an integration of
+any native owner prototype. The PR changes no Git runner, security policy or
+PR #327 behavior. If accepted it advances main only by this compatible refactor.
 
 ## Internal change
 
@@ -61,7 +62,7 @@ All16 registry tests, including existing renewal/admission regressions, are run.
 The initial test compilation failed because SessionGrant lacks PartialEq; the
 test assertions were corrected to inspect error variants. This is a harness
 compile failure, not a demonstrated product failure. Local evidence retains it.
-Original Codex checkpoint `0be9e7e2ef3761f4f7f5ec91eb2ac87728a89606` passed [hosted Windows/Ubuntu CI #39927465202](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39927465202) on that exact source. The new focused PR must pass its **own** exact-head Windows/Ubuntu CI; evidence from the Codex branch is not a substitute for the integration candidate's checks. The candidate is unmerged and does not constitute a #317 production fix.
+Original Codex checkpoint `0be9e7e2ef3761f4f7f5ec91eb2ac87728a89606` passed [hosted Windows/Ubuntu CI #39927465202](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39927465202) on that exact source. The new focused PR must pass its **own** exact-head Windows/Ubuntu CI; evidence from the Codex branch is not a substitute for the integration candidate's checks. The refactor is not a #317 production fix even if merged. A green CI must be followed by appropriate review, and any merge requires independent exact-main CI before it can be considered integrated evidence.
 
 ## Non-goals / review boundaries
 
