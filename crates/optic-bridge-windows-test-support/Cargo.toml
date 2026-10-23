@@ -1,0 +1,12 @@
+[package]
+name = "optic-bridge-windows-test-support"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Research-only native fixtures; dev-dependency, never a production runner"
+
+[target.'cfg(windows)'.dependencies]
+optic-bridge-windows = { path = "../optic-bridge-windows" }
+windows.workspace = true

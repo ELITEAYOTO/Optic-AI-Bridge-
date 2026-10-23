@@ -1,0 +1,61 @@
+name: Windows native registration and persistent authority stop
+on:
+  push:
+    branches: ['codex/317-native-registration-authority']
+permissions:
+  contents: read
+jobs:
+  native-registration:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Pinned toolchain and strict format
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'format failed' }
+          python -m py_compile scripts/research/issue317_native_registration.py
+          if ($LASTEXITCODE -ne 0) { throw 'supervisor syntax failed' }
+      - name: Compile exact-source fixed native host
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib --no-run --message-format=json > native-build.jsonl
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content native-build.jsonl | ForEach-Object {
+              $j=$_|ConvertFrom-Json
+              if ($j.reason -eq 'compiler-message' -and $j.message.level -eq 'error') { Write-Host $j.message.rendered }
+            }
+            throw 'native compilation failed'
+          }
+          $items=@(Get-Content native-build.jsonl | ForEach-Object { $_|ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_runtime' -and $_.executable })
+          if ($items.Count -ne 1) { throw 'ambiguous host' }
+          "OPTIC317_REGISTRATION_HOST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Strict workspace Clippy
+        shell: pwsh
+        run: |
+          cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'Clippy failed' }
+      - name: Fixture absent from normal production dependency closure
+        shell: pwsh
+        run: |
+          cargo +1.99.0 tree --locked -p optic-bridge-app -e normal --prefix none > normal-dependencies.txt
+          if ($LASTEXITCODE -ne 0) { throw 'tree failed' }
+          if (Select-String -Quiet -Path normal-dependencies.txt -Pattern '^optic-bridge-windows-test-support ') { throw 'fixture became production dependency' }
+      - name: Independently supervised fixed native scenarios
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_native_registration.py --test-exe "$env:OPTIC317_REGISTRATION_HOST" --output evidence/native-registration.json
+          if ($LASTEXITCODE -ne 0) { throw 'native proof failed; retain first red' }
+      - name: Preserve partial evidence on every outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-registration-authority
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7

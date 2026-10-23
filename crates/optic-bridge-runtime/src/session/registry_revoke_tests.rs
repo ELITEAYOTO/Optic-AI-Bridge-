@@ -33,6 +33,46 @@ fn observe_closed(registry: &SessionRegistry, handle: &SessionHandle) {
 }
 
 #[test]
+fn research_admitted_stop_latch_survives_close_and_late_capture() {
+    let registry = SessionRegistry::new();
+    let g = grant();
+    registry.register(g.clone()).unwrap();
+    let permit = registry
+        .begin_admission(&g.handle, MonotonicTime::from_millis(1))
+        .unwrap();
+    let before = registry.research_admitted_stop_signal(&permit).unwrap();
+    assert!(!before.load(Ordering::Acquire));
+    thread::scope(|scope| {
+        let worker = scope.spawn(|| registry.revoke(&g.handle));
+        observe_closed(&registry, &g.handle);
+        let late = registry.research_admitted_stop_signal(&permit).unwrap();
+        assert!(Arc::ptr_eq(&before, &late) && late.load(Ordering::Acquire));
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&g.handle, MonotonicTime::from_millis(1)),
+            Err(SessionRegistryError::AdmissionsInFlight)
+        ));
+        drop(permit);
+        assert!(worker.join().unwrap().unwrap());
+    });
+}
+
+#[test]
+fn research_admitted_stop_rejects_foreign_registry_even_same_handle() {
+    let one = SessionRegistry::new();
+    let two = SessionRegistry::new();
+    let g = grant();
+    one.register(g.clone()).unwrap();
+    two.register(g.clone()).unwrap();
+    let permit = one
+        .begin_admission(&g.handle, MonotonicTime::from_millis(1))
+        .unwrap();
+    assert_eq!(
+        two.research_admitted_stop_signal(&permit).unwrap_err(),
+        SessionRegistryError::StateUnavailable
+    );
+}
+
+#[test]
 fn simultaneous_admissions_two_revokers_and_other_session_notification() {
     let registry = SessionRegistry::new();
     let a = grant();

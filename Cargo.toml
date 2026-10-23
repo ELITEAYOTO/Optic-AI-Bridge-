@@ -5,6 +5,7 @@ members = [
     "crates/optic-bridge-policy",
     "crates/optic-bridge-runtime",
     "crates/optic-bridge-windows",
+    "crates/optic-bridge-windows-test-support",
     "crates/optic-bridge-mcp",
     "crates/optic-bridge-app",
 ]

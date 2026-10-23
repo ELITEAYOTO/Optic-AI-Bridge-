@@ -45,6 +45,34 @@ struct SessionRecord {
 }
 
 impl SessionRegistry {
+    /// Research cleanup envelope for a GENUINE in-flight admission. Unlike a
+    /// fresh authority check, closure does not erase its persistent stop intent.
+    #[cfg(test)]
+    pub(crate) fn research_admitted_stop_signal(
+        &self,
+        admission: &SessionAdmissionPermit<'_>,
+    ) -> Result<Arc<AtomicBool>, SessionRegistryError> {
+        if !std::ptr::eq(self, admission.registry) {
+            return Err(SessionRegistryError::StateUnavailable);
+        }
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&admission.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        // A genuine live permit prevents public remove/re-register. Do not
+        // reconstruct authority from an opaque handle or a client grant alone.
+        if record.active_admissions == 0
+            || record.grant.principal != admission.grant.principal
+            || record.grant.project != admission.grant.project
+            || record.grant.policy_epoch != admission.grant.policy_epoch
+        {
+            return Err(SessionRegistryError::StateUnavailable);
+        }
+        Ok(Arc::clone(&record.revocation_signal))
+    }
     /// Test-only gate lookup. No owner or native process is created here.
     #[cfg(test)]
     fn research_gate(

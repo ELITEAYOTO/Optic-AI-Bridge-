@@ -21,3 +21,6 @@ optic-bridge-windows = { path = "../optic-bridge-windows" }
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 nix.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+optic-bridge-windows-test-support = { path = "../optic-bridge-windows-test-support" }

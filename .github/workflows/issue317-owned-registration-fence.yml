@@ -1,7 +1,7 @@
 name: Research authority-owned registration fence
 on:
   push:
-    branches: ['research/317-owned-registration-fence-2026-10-23']
+    branches: ['research/317-owned-registration-fence-2026-10-23', 'codex/317-native-registration-authority']
 permissions:
   contents: read
 jobs:
@@ -32,5 +32,9 @@ jobs:
         shell: bash
         run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessions -- --nocapture --test-threads=1
       - name: Exact source checkpoint
+        shell: bash
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib research_admitted_stop_ -- --nocapture --test-threads=1
+      - name: Exact source metadata
         shell: bash
         run: echo "OPTIC317_OWNER_FENCE sha=${GITHUB_SHA} run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT} os=${RUNNER_OS} test_only=true production_wired=false"
