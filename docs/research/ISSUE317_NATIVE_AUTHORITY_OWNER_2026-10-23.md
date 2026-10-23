@@ -29,3 +29,8 @@ This is not a complete ABA model or a production fix. A future public authority
 must define immutable session generations and receipt scope explicitly rather
 than silently treating an obsolete close as success on a replacement record.
 Poison recovery remains allowed for closure only; new commitments still fail.
+
+First hosted attempt #39909308575 at 6076bf8 failed before creating any jobs.
+The added plain YAML run scalar ended its Rust module filter with `:: `,
+which YAML interprets as a mapping delimiter. The corrective commit uses a
+literal block; no test, lint or required check is removed and the red is kept.
