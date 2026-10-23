@@ -40,3 +40,22 @@ The native fixture constructs an inner Job with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CL
 ## Next review gate
 
 Only after exact-source hosted-Windows evidence: propose a **session-authority-owned** launch/close linearization API, inventory every direct `revoke` caller and approval/lease/process cleanup ordering, define pending native owner states and bounded `try_shutdown`, then verify actual gate/win32 interleavings and output publication across revocation. **No production migration or merge of research branches without an explicit separate review.**
+
+
+## Evidence checkpoint — exact Windows SHA 402cc390 (23 October 2026)
+
+**Completed successfully:** [hosted Windows native CI #39902263833](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39902263833), **first attempt on exact source `402cc390fde812cb3afb8a5526fc4357677b7f09`**, including whole-workspace Rustfmt, locked `optic-bridge-app` Windows test compilation, strict Clippy with `-D warnings`, and an independent external Job supervising all three fixed native cases. The test runner recorded `real_session_registry=true`, `real_native_resume=true`, `outer_job_cleaned=true`, `complete=true`, `production_wired=false`.
+
+Actual native outputs (all had external Job **1 → 0** after exact test-host death and inner Job **0** before host readiness):
+
+| Mode | Real registry and native evidence | Result |
+| --- | --- | --- |
+| `direct-revoke-race` | A permit remains outstanding. The real `SessionRegistry::revoke` marks the session Revoked before `ResumeThread`. The stale-check caller then resumes its owned child; the execution marker is present. | **Gap reproduced**, intentionally passing negative control |
+| `close-wins` | Test-scoped gate closes, actual registry is revoked, native child is not resumed, execution marker is absent, owner terminates the suspended Job before dropping permit. | **Close-first exclusion demonstrated** |
+| `launch-wins` | Test-scoped gate allows native resume before real close, marker present; real revoke then closes the session and remains pending until the Job empties and the permit is dropped. | **Commit-first ordering demonstrated**, not an instruction-level post-close guarantee |
+
+All three tests performed bounded checks, used a fixed self-test process and terminated native Job ownership under independent supervision. The negative test proves that a **real registry revocation** can precede a stale `ResumeThread` when no launch/close gate is shared. The positive cases demonstrate a **wrapper protocol** invoking real authority operations, not a change to the authority implementation itself.
+
+**Preserved first reds and targeted corrections:** [#39901591076](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39901591076) failed Rustfmt, [#39901717465](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39901717465) exposed a `Cargo.lock` entry needed for an existing Windows dev-dependency, and [#39902088233](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39902088233) confirmed a Win32 accounting-type import typo (the initial JSON compiler format masked diagnostics, so the workflow was improved to display errors). [#39902133826](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39902133826) preserved the later Rustfmt import-order red. Corrections were made on **new commits**, with all strict checks retained.
+
+**NO-GO remains:** No production `SessionRegistry` or `SessionLifecycleManager` contract is modified. The test-scoped per-session gate can be bypassed by existing direct callers of `revoke`; therefore a safe production fix requires an authority-owned or otherwise non-bypassable close/commit linearization point, with a verified finite native-call/lock-order policy and a separate durable pending-owner shutdown model. The real service still may release its permit at submit and its `Drop` may block on permanent observation failure. No real GitRead activation, real Windows 10/11 client acceptance or #323 V1 release is validated.
