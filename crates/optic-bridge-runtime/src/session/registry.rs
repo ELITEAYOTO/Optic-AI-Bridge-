@@ -387,6 +387,29 @@ impl SessionRevocationWatch {
     }
 }
 
+/// Read-only stop condition captured by a *genuine* session admission.
+///
+/// Explicit revocation is observed from the original session record. Expiry is
+/// evaluated against the session deadline captured at admission time, which a
+/// later renewal cannot extend for an already-admitted operation.
+///
+/// `false` does NOT authorize starting, resuming or publishing an effect:
+/// independent task leases, policy, operation deadlines and owner-registration
+/// checks are still mandatory. `true` requests that the caller stop; it is
+/// never a native process-termination or resource-release receipt.
+#[derive(Clone, Debug)]
+pub struct SessionAdmissionStopWatch {
+    revocation: SessionRevocationWatch,
+    captured_expires_at: MonotonicTime,
+}
+
+impl SessionAdmissionStopWatch {
+    #[must_use]
+    pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.revocation.is_revoked() || now >= self.captured_expires_at
+    }
+}
+
 pub struct SessionAdmissionPermit<'a> {
     registry: &'a SessionRegistry,
     handle: SessionHandle,
@@ -410,6 +433,20 @@ impl SessionAdmissionPermit<'_> {
     #[must_use]
     pub fn revocation_watch(&self) -> SessionRevocationWatch {
         self.revocation_watch.clone()
+    }
+
+    /// Capture the original admission generation's revoke signal and absolute
+    /// monotonic session expiry. Dropping the permit does not retarget this
+    /// observation to another session record using the same opaque handle.
+    ///
+    /// This is cancellation observation only, not a new launch permission or
+    /// a guarantee of successful cleanup.
+    #[must_use]
+    pub fn stop_watch(&self) -> SessionAdmissionStopWatch {
+        SessionAdmissionStopWatch {
+            revocation: self.revocation_watch(),
+            captured_expires_at: self.grant.expires_at,
+        }
     }
 }
 
