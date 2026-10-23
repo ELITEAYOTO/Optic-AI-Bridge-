@@ -34,7 +34,7 @@ jobs:
         run: |
           cargo +1.99.0 clippy --locked -p optic-bridge-windows --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { throw 'Clippy failed; preserve exact-source diagnosis' }
-      - name: Supervise atomic Win32 create and invalid Job failure
+      - name: Supervise atomic Win32 inheritance and failure matrix
         shell: pwsh
         run: |
           python scripts/research/issue317_rust_job_native.py --test-exe "$env:OPTIC317_NATIVE_RUST" --output evidence/rust-atomic-job-list.json
