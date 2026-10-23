@@ -184,7 +184,6 @@ fn real_registry_renewal_refuses_closed_session_while_admissions_still_drain() {
     closing.join().expect("revoke thread");
 }
 
-
 /// Test-only exploration, not a new runtime API. Mutate the SAME real
 /// registry record / stop signal as the current synchronous revoke, but
 /// return before waiting for admissions to drain. Production code does not
@@ -236,7 +235,9 @@ fn prototype_two_stage_close_is_immediate_but_never_reports_early_quiescence() {
         .begin_admission(&a.handle, now)
         .expect("second A admission");
     #[cfg(windows)]
-    let (signal, _) = registry.watch_active(&a.handle, now).expect("A stop signal");
+    let (signal, _) = registry
+        .watch_active(&a.handle, now)
+        .expect("A stop signal");
 
     // Closure is a short registry-mutex operation, not a wait for an
     // uncertain native owner to finish. '2' is pending, NOT terminal.
@@ -259,7 +260,10 @@ fn prototype_two_stage_close_is_immediate_but_never_reports_early_quiescence() {
         registry.remove_quiescent_inactive(&a.handle, now),
         Err(SessionRegistryError::AdmissionsInFlight)
     ));
-    assert_eq!(research_pending_admissions(&registry, &a.handle).unwrap(), 2);
+    assert_eq!(
+        research_pending_admissions(&registry, &a.handle).unwrap(),
+        2
+    );
 
     // A second close is idempotent, and unrelated sessions keep moving.
     assert_eq!(
@@ -268,14 +272,24 @@ fn prototype_two_stage_close_is_immediate_but_never_reports_early_quiescence() {
     );
     assert!(registry.begin_admission(&b.handle, now).is_ok());
     drop(permit_one);
-    assert_eq!(research_pending_admissions(&registry, &a.handle).unwrap(), 1);
+    assert_eq!(
+        research_pending_admissions(&registry, &a.handle).unwrap(),
+        1
+    );
     assert!(matches!(
         registry.remove_quiescent_inactive(&a.handle, now),
         Err(SessionRegistryError::AdmissionsInFlight)
     ));
     drop(permit_two);
-    assert_eq!(research_pending_admissions(&registry, &a.handle).unwrap(), 0);
-    assert!(!registry.revoke(&a.handle).expect("existing revoke idempotence"));
+    assert_eq!(
+        research_pending_admissions(&registry, &a.handle).unwrap(),
+        0
+    );
+    assert!(
+        !registry
+            .revoke(&a.handle)
+            .expect("existing revoke idempotence")
+    );
     assert!(
         registry
             .remove_quiescent_inactive(&a.handle, now)
@@ -301,8 +315,7 @@ fn external_wrapper_gate_cannot_intercept_direct_registry_revoke() {
     let handle = a.handle.clone();
     let (tx, rx) = mpsc::channel();
     let worker = thread::spawn(move || {
-        tx.send(closing.revoke(&handle))
-            .expect("report revoke");
+        tx.send(closing.revoke(&handle)).expect("report revoke");
     });
 
     // Despite the test gate being held by a launch, direct revoke
