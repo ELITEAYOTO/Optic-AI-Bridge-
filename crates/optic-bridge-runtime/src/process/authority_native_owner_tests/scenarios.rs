@@ -113,7 +113,7 @@ pub(super) fn finish(
 
 pub(super) fn exercise(path: &Path, mode: &str) -> serde_json::Value {
     let registry = Arc::new(SessionRegistry::new());
-    let manager = Arc::new(ProcessManager::new(path, HardLimits::default(), Vec::new()).unwrap());
+    let manager = super::memory_sample::manager(path, HardLimits::default());
     let lifecycle = SessionLifecycleManager::new(
         Arc::clone(&registry),
         Arc::new(TaskLeaseRegistry::new()),

@@ -1,5 +1,7 @@
 //! #317 research: actual session latch + short commit + owned atomic Win32 child.
 //! Every ignored host requires the independently pre-armed outer Job protocol.
+#[path = "authority_native_owner_tests/memory_sample.rs"]
+mod memory_sample;
 #[path = "authority_native_owner_tests/native_children.rs"]
 mod native_children;
 use super::*;
@@ -187,30 +189,15 @@ impl<'a> Root<'a> {
         }));
         late_phase(); // finite test rendezvous, still outside authority locks
         let keeper = self.slot.as_mut().unwrap();
-        // Capture actual host memory OUTSIDE BOTH authority and JobStore locks.
-        // Then apply the existing pure headroom formula to CURRENT reservations.
-        // No fake provider or weakened ceiling. Like the production sample, this
-        // is an admission observation, not a promise about future system memory.
-        let memory = self
-            .manager
-            .host_memory_provider
-            .snapshot()
-            .map_err(io::Error::other)?;
-        if memory.total_physical_bytes == 0
-            || memory.available_physical_bytes > memory.total_physical_bytes
-        {
-            return Err(io::Error::other("host memory unavailable"));
-        }
-        let mut store = self.manager.jobs.lock().unwrap();
-        let headroom =
-            effective_host_memory_headroom_bytes(&self.manager.limits, memory.total_physical_bytes);
-        let required = headroom
-            .checked_add(reserved_process_memory_bytes(&store).map_err(io::Error::other)?)
-            .and_then(|n| n.checked_add(native::MEMORY))
-            .ok_or_else(|| io::Error::other("headroom overflow"))?;
-        if memory.available_physical_bytes < required {
-            return Err(io::Error::other("host memory headroom exceeded"));
-        }
+        // Existing policy will call our scoped REAL-observation provider.
+        // Capture before acquiring JobStore; provider calls inside it are pure.
+        let _memory_sample = memory_sample::SampleScope::capture(self.manager)?;
+        let mut store = self.manager.jobs.try_lock().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "JobStore changed during memory observation",
+            )
+        })?;
         self.manager
             .prepare_store_for_start_with_workload(
                 &mut store,

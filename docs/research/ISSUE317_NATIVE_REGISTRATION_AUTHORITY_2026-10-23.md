@@ -115,3 +115,22 @@ Commit and start now also inspect the controller's irreversible deadline_expired
 flag. The first corrected case denies before any Native::create attempt and
 finishes TimedOut only after no-spawn/EOF/controller proof. The clock or timeout
 was not extended to obtain green. Current normal app builds still omit Root.
+
+
+## Correction of the first lock-audit claim
+
+The first checkpoints sampled memory outside JobStore, but a transitive call in
+prepare_store_for_start_with_workload ALSO invokes ensure_host_memory_headroom
+under that lock. Thus the earlier statement that the preliminary sample alone
+removed all native memory queries was INCOMPLETE. The green first/second native
+runs prove their observed outcomes, not that stronger source-level invariant.
+
+The research manager now has a scoped actual-observation adapter: capture uses
+the real WindowsHostMemoryProvider outside locks, then the unchanged quota policy
+reads that exact observation from a per-thread scope. No fabricated snapshot,
+reserve decrease, callback query under lock or production provider change. The
+scope rejects capture while JobStore is busy and expires on exit; provider calls
+without a scope fail closed. Root uses try_lock after capture, avoiding waiting
+on a queued old sample. The unit test verifies real scoped data, rejection under
+lock, and rejection after scope exit. Production sampling/freshness policy still
+requires review before any integration; no worst-case OS latency is claimed.
