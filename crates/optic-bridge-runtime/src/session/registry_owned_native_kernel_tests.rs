@@ -139,7 +139,7 @@ impl FixedSuspendedChild {
         let exe = env::current_exe()?.canonicalize()?;
         let mut app: Vec<u16> = exe.as_os_str().encode_wide().chain(Some(0)).collect();
         // The Rust libtest child never resumes: no code or tool may run.
-        let line = format!("\\\"{}\\\" --help", exe.display());
+        let line = format!(r#""{}" --help"#, exe.display());
         let mut command: Vec<u16> = OsStr::new(&line).encode_wide().chain(Some(0)).collect();
         let cwd: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
 
@@ -232,20 +232,26 @@ fn owned_registered_kernel_tree_stops_before_admission_drains() {
     let worker = thread::spawn(move || {
         // Prepare a REAL kernel Job and reserve all accounting before effect.
         let job = KernelJob::prepare().expect("precreate real kill-on-close Job");
+        let mut reservation = reservation;
         let receipt = owned
             .research_commit_registered_owner(&reservation, now)
             .expect("short generation-bound owner commitment");
+        let stop = owned.stop_watch();
         assert!(!receipt.is_stop_required_at(now));
+        assert!(!stop.is_stop_required_at(now));
+        // No native effect may start if a stop was ALREADY visible.
         let child = FixedSuspendedChild::create(&job, &worker_root)
             .expect("create fixed suspended child associated atomically with Job");
-        let mut reservation = reservation;
+        // Once creation has succeeded the one-shot commitment was consumed.
+        // The actual service must independently latch stop across this gap.
+        drop(receipt);
         reservation.mark_native_created();
         assert_eq!(job.active().unwrap(), 1);
         ready_tx.send(()).unwrap();
 
         // This read-only signal must work WITHOUT ProcessManager::cancel_session.
         let limit = Instant::now() + Duration::from_secs(3);
-        while !receipt.is_stop_required_at(now) {
+        while !stop.is_stop_required_at(now) {
             assert!(Instant::now() < limit, "owner stop not published");
             thread::yield_now();
         }
@@ -256,7 +262,6 @@ fn owned_registered_kernel_tree_stops_before_admission_drains() {
         child.await_exit().expect("root termination confirmed");
         job.await_empty().expect("whole native tree empty");
         reservation.finish(ProcessStatus::Stopped, None);
-        drop(receipt);
         drop(reservation);
         drop(child);
         drop(job);
