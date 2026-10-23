@@ -13,6 +13,10 @@ use thiserror::Error;
 #[path = "registry_revoke_tests.rs"]
 mod revoke_phase_tests;
 
+#[cfg(all(test, windows))]
+#[path = "registry_owned_native_tests.rs"]
+mod owned_native_research_tests;
+
 #[derive(Debug)]
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<SessionHandle, SessionRecord>>,
