@@ -20,6 +20,14 @@ Codex's separately validated research (`codex/317-native-registration-authority=
 - In another test, terminate the exact owned Job **without ever resuming**; prove child exit, empty Job and absence of the execution marker.
 - Rust RAII owns the handles. `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` is configured by the existing `OwnedJob::create` and provides a last-handle cleanup fallback for an assertion panic. A returned terminate call is not itself emptiness proof; the test explicitly queries.
 
+## Separate independently supervised *creator-host death* regression
+
+The research now also contains a **fixed ignored creator-host** which waits on a supervisor gate before attempting Win32 creation. The Windows-only external script `scripts/research/issue317_kernel_job_host_death.py` creates its **own outer kernel Job with kill-on-last-close** and assigns the **exact known synthetic creator-host** before permitting it to create anything. The host precreates/configures its own inner Job, creates one fixed suspended child already associated at `CreateProcessW`, verifies one member, and signals readiness.
+
+The supervisor verifies the outer Job contains exactly **two** processes (host plus suspended child), keeps the outer Job handle OPEN, and kills **only the exact creator-host handle**. It then requires the outer Job's active count to become zero **without closing or terminating the outer Job**; the inner Job's final-handle closure on creator death must terminate the suspended child. The child must never have written its execution marker. On failure, the supervisor explicitly terminates and drains its outer Job and preserves sanitized diagnostic evidence; it never finds or kills arbitrary PIDs. All rendezvous and waits are bounded. This provides *host-death* proof for that narrowly fixed Windows fixture, not power-loss or a full Git runner.
+
+Neither the child nor the issuer is a project tool, and no real Git command is executed. The test is research-only, subject to first-run actual hosted evidence; this paragraph is a test design, **not yet a claim of a successful CI run**.
+
 ## Not proved; remaining required experiments
 
 This is a same-host process creation and stop test. **It does not yet prove sudden creator-host death containment with an outer independent supervisor**, nor descendant EOF/pipes, controller failures, power loss, crash-observation errors, or an authenticated owner ticket. The separate Codex multi-mode supervised fixture proved a research shape but the production integration and exact main APIs still require independent review.
