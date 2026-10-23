@@ -250,7 +250,17 @@ impl SessionLifecycleManager {
         // admission critical section before touching leases or process jobs. New
         // admissions fail immediately once the revoked bit is set.
         let session_changed = self.sessions.revoke(session)?;
+        self.finish_revocation_for_handle(session, session_changed)
+    }
 
+    // RESEARCH DECOMPOSITION: the existing cleanup runs after the registry
+    // revoke returned. The exact handle-keyed cleanup is unchanged; exposing
+    // this private boundary makes its generation-reuse ordering testable.
+    fn finish_revocation_for_handle(
+        &self,
+        session: &SessionHandle,
+        session_changed: bool,
+    ) -> Result<SessionRevokeReport, SessionLifecycleError> {
         // Admission is closed and all already-admitted effects have drained before
         // authority cleanup begins. Attempt every owner-scoped cleanup operation before
         // propagating an error so one registry failure cannot leave other authority live.
