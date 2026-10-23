@@ -6,8 +6,7 @@ use std::{
     collections::BTreeMap,
     env,
     ffi::OsStr,
-    fs,
-    io,
+    fs, io,
     mem::size_of,
     os::windows::{
         ffi::OsStrExt,
@@ -24,8 +23,8 @@ use windows::{
             CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
             DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
             InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, ResumeThread,
-            STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute, WaitForSingleObject,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, ResumeThread, STARTUPINFOEXW,
+            STARTUPINFOW, UpdateProcThreadAttribute, WaitForSingleObject,
         },
     },
     core::{PCWSTR, PWSTR},
@@ -95,7 +94,10 @@ impl SuspendedFixture {
         for key in ["TEMP", "TMP"] {
             vars.insert(key.to_owned(), root.as_os_str().to_owned());
         }
-        vars.insert("OPTIC_317_CREATE_TIME_MARKER".to_owned(), marker.as_os_str().to_owned());
+        vars.insert(
+            "OPTIC_317_CREATE_TIME_MARKER".to_owned(),
+            marker.as_os_str().to_owned(),
+        );
         let mut environment = Vec::<u16>::new();
         for (key, value) in vars {
             environment.extend(OsStr::new(&key).encode_wide());
@@ -187,7 +189,10 @@ fn fixture_root(tag: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock")
         .as_nanos();
-    let root = env::temp_dir().join(format!("optic-317-joblist-{tag}-{}-{nonce}", std::process::id()));
+    let root = env::temp_dir().join(format!(
+        "optic-317-joblist-{tag}-{}-{nonce}",
+        std::process::id()
+    ));
     fs::create_dir_all(&root).expect("create isolated fixture");
     root
 }
@@ -221,10 +226,16 @@ fn precreated_kernel_job_stops_suspended_child_without_resume() {
     let fixture = SuspendedFixture::create(&marker, &root).expect("fixed CreateProcessW");
     assert_eq!(fixture.job.active_processes().unwrap(), 1);
     assert!(!marker.exists());
-    fixture.job.terminate(87).expect("terminate exact owned kernel Job");
+    fixture
+        .job
+        .terminate(87)
+        .expect("terminate exact owned kernel Job");
     fixture.await_exit().expect("wait for stopped child");
     fixture.await_empty().expect("prove kernel Job empty");
-    assert!(!marker.exists(), "terminated suspended child ran unexpectedly");
+    assert!(
+        !marker.exists(),
+        "terminated suspended child ran unexpectedly"
+    );
     drop(fixture);
     fs::remove_dir_all(root).expect("clean isolated fixture");
 }
