@@ -458,7 +458,6 @@ fn real_worker_held_admission_observes_stop_before_registry_revoke_drains() {
     });
 }
 
-
 #[cfg(windows)]
 mod native_owner_commit_research {
     use super::*;
@@ -470,7 +469,11 @@ mod native_owner_commit_research {
 
     fn reserve(
         session: &SessionHandle,
-    ) -> (PathBuf, ProcessManager, crate::process::NativeProcessReservation) {
+    ) -> (
+        PathBuf,
+        ProcessManager,
+        crate::process::NativeProcessReservation,
+    ) {
         let root = env::temp_dir().join(format!(
             "optic-317-registered-owner-{}",
             SessionHandle::generate().unwrap().to_token()
@@ -504,7 +507,9 @@ mod native_owner_commit_research {
         let action = ActionId::generate().unwrap();
         let owner = manager.reserve_native_private(&spec, &action).unwrap();
         assert_eq!(
-            manager.find_recorded_private_action(session, &action).unwrap(),
+            manager
+                .find_recorded_private_action(session, &action)
+                .unwrap(),
             Some(owner.id()),
             "real JobStore reservation exists BEFORE commitment"
         );
@@ -574,11 +579,11 @@ mod native_owner_commit_research {
             .renew_active(&a.handle, now, MonotonicTime::from_millis(200))
             .unwrap();
         assert!(matches!(
-            permit_a.research_commit_reserved_native_owner(
-                &owner_a,
-                MonotonicTime::from_millis(100)
-            ),
-            Err(ResearchOwnerCommitError::Registry(SessionRegistryError::Expired))
+            permit_a
+                .research_commit_reserved_native_owner(&owner_a, MonotonicTime::from_millis(100)),
+            Err(ResearchOwnerCommitError::Registry(
+                SessionRegistryError::Expired
+            ))
         ));
 
         let (tx, rx) = mpsc::sync_channel(1);
@@ -587,7 +592,9 @@ mod native_owner_commit_research {
             observe_closed(&registry, &a.handle);
             assert!(matches!(
                 permit_a.research_commit_reserved_native_owner(&owner_a, now),
-                Err(ResearchOwnerCommitError::Registry(SessionRegistryError::Revoked))
+                Err(ResearchOwnerCommitError::Registry(
+                    SessionRegistryError::Revoked
+                ))
             ));
             drop(permit_a);
             assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
