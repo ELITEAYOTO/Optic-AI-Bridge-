@@ -52,6 +52,7 @@ def run_case(helper, exe, mode, root):
             state = ready.read_text(encoding="ascii")
             expected_states = {
                 "retained-stdio": "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1",
+                "stdio-bad-exe": "mode=stdio-bad-exe;both-attributes=1;no-spawn=1;both-eof=1;handles-stable=1",
                 "atomic": "mode=atomic;inner_active=1;suspended=1",
                 "no-inherit": "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
                 "invalid": "mode=invalid;inner_active=0;no_spawn=1",
@@ -75,6 +76,7 @@ def run_case(helper, exe, mode, root):
                 "missing_executable_handle_count_stable": mode == "missing",
                 "selected_stdout_stderr_and_spare_denial": mode == "stdio",
                 "retained_descendant_stopped_and_both_pipes_eof": mode == "retained-stdio",
+                "dual_attribute_failed_spawn_clean": mode == "stdio-bad-exe",
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
             }
     finally:
@@ -114,7 +116,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-rust-atomic-") as temp:
             for mode in ("atomic", "no-inherit", "invalid", "missing", "stdio",
-                         "retained-stdio"):
+                         "retained-stdio", "stdio-bad-exe"):
                 root = Path(temp) / mode
                 root.mkdir()
                 result["cases"].append(run_case(helper, exe, mode, root))
