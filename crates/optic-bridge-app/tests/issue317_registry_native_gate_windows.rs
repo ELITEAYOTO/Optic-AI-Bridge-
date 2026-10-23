@@ -25,7 +25,7 @@ use windows::{
         Foundation::{CloseHandle, HANDLE},
         System::{
             JobObjects::{
-                CreateJobObjectW, JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,
+                CreateJobObjectW, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
                 JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
