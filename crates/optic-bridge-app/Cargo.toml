@@ -29,3 +29,6 @@ optic-bridge-windows = { path = "../optic-bridge-windows" }
 
 [dev-dependencies]
 rmcp = { workspace = true, features = ["client"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows.workspace = true
