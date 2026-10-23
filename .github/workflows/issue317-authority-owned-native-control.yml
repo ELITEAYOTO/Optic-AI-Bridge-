@@ -1,0 +1,59 @@
+name: Windows native production-path control for authority gate research
+on:
+  push:
+    branches: ['research/317-authority-owned-gate-2026-10-23']
+permissions:
+  contents: read
+jobs:
+  native-authority:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Pinned toolchain and exact-source formatting
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain' }
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'Rustfmt mismatch; keep original red' }
+          python -m py_compile scripts/research/issue317_real_registry_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python fixture syntax' }
+      - name: Compile isolated real-registry Windows native test binary
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-app --test issue317_registry_native_gate_windows --no-run --message-format=json > native-probe.jsonl
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content native-probe.jsonl | ForEach-Object {
+              try {
+                $item = $_ | ConvertFrom-Json
+                if ($item.reason -eq 'compiler-message' -and $item.message.level -eq 'error') {
+                  Write-Host $item.message.rendered
+                }
+              } catch { Write-Host 'Failed to parse one compiler record' }
+            }
+            throw 'native compile failed; original result retained'
+          }
+          $items = @(Get-Content native-probe.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'issue317_registry_native_gate_windows' -and $_.executable })
+          if ($items.Count -ne 1) { throw 'native test artifact ambiguous' }
+          "OPTIC317_APP_NATIVE_TEST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Strict Clippy for real registry native integration test
+        shell: pwsh
+        run: |
+          cargo +1.99.0 clippy --locked -p optic-bridge-app --test issue317_registry_native_gate_windows -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'Clippy red; do not suppress warnings' }
+      - name: Run three native Win32 tests inside independent outer Job
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_real_registry_native.py --test-exe "$env:OPTIC317_APP_NATIVE_TEST" --output evidence/real-registry-native.json
+          if ($LASTEXITCODE -ne 0) { throw 'registry native proof red' }
+      - name: Retain synthetic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic317-authority-owned-native-control
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
