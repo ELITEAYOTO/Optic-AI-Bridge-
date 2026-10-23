@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — counted, owned session admission (2026-10-23)
+
+- Add a non-cloneable `OwnedSessionAdmissionPermit` retained via `Arc<SessionRegistry>` for future service-owned workers, sharing the identical counted admission and original-generation stop/deadline semantics with the existing borrowed permit. Concurrency tests cover independent OS-thread lifetime, synchronous revoke stop-before-drain, mixed permits, expiry/renewal and deliberate handle reuse. **No native runner/Job owner migration, process termination proof, task-lease change, security policy or V1 release.** [Scope and proof obligations](docs/engineering/ISSUE317_OWNED_SESSION_ADMISSION_2026-10-23.md).
+
 ## Unreleased — immutable admission stop condition (2026-10-23)
 
 - Add the read-only `SessionAdmissionStopWatch` captured from genuine session admission: original-generation explicit revoke **or** original absolute monotonic expiry requires stop, including across session renewal and deliberate opaque-handle reuse. A genuine worker-held permit test verifies that real revoke publishes the stop before its synchronous admission drain completes. The witness grants no execution right and proves no native process termination. No Git runner/JobStore, lifecycle revoke, lease, policy, resource limit, timeout, V1 readiness or release behavior changes. [Detailed scope](docs/engineering/ISSUE317_ADMISSION_STOP_WATCH_2026-10-23.md).
