@@ -259,7 +259,10 @@ impl SessionRegistry {
         #[cfg(test)]
         let test_guard = test_gate
             .as_ref()
-            .map(|gate| gate.lock().map_err(|_| SessionRegistryError::StateUnavailable))
+            .map(|gate| {
+                gate.lock()
+                    .map_err(|_| SessionRegistryError::StateUnavailable)
+            })
             .transpose()?;
         let mut sessions = self
             .sessions
