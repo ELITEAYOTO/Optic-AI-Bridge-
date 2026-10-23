@@ -46,6 +46,10 @@ use windows::{
 
 const JOB_EMPTY_POLL: Duration = Duration::from_millis(10);
 
+#[cfg(test)]
+#[path = "atomic_job_list_probe.rs"]
+mod atomic_job_list_probe;
+
 /// Windows Job Object containment configured from an already-authorized process budget.
 ///
 /// The wrapper forces temporary suspended creation, creates/configures the Job Object,
