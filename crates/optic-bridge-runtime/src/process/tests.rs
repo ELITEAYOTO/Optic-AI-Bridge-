@@ -1506,16 +1506,23 @@ fn research_owner_fence_racing_direct_revoke_waits_for_owner_commit_but_not_sess
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
     let (close_tx, close_rx) = std::sync::mpsc::sync_channel(1);
     thread::scope(|scope| {
-        let launch = scope.spawn(|| {
-            registry.research_commit_owner(&a.handle, now, || {
+        let registry_for_launch = &registry;
+        let manager_for_launch = &manager;
+        let handle_for_launch = &a.handle;
+        let job_for_launch = job.clone();
+        let record_for_launch = Arc::clone(&record);
+        // Receiver is Send but not Sync, so move it into the scoped thread;
+        // keep shared authority/manager borrowed under thread::scope.
+        let launch = scope.spawn(move || {
+            registry_for_launch.research_commit_owner(handle_for_launch, now, || {
                 entered_tx.send(()).unwrap();
                 release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-                manager
+                manager_for_launch
                     .jobs
                     .lock()
                     .unwrap()
                     .jobs
-                    .insert(job.clone(), Arc::clone(&record));
+                    .insert(job_for_launch, record_for_launch);
             })
         });
         entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
