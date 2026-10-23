@@ -32,6 +32,7 @@ def run_case(helper, exe, mode, root):
         env["OPTIC317_RUST_MODE"] = mode
         env["OPTIC317_RUST_GATE"] = str(gate)
         env["OPTIC317_RUST_READY"] = str(ready)
+        env["OPTIC317_RETAINER_READY"] = str(root / "descendant")
         with (root / "host.log").open("wb") as logfile:
             host = subprocess.Popen(
                 [str(exe), "--exact",
@@ -43,12 +44,14 @@ def run_case(helper, exe, mode, root):
             gate.write_text("independent Job armed", encoding="ascii")
             helper.wait_for(
                 lambda: ready.exists() or host.poll() is not None,
-                9, "Rust host readiness",
+                13 if mode == "retained-stdio" else 9,
+                "Rust host readiness",
             )
             if host.poll() is not None:
                 raise RuntimeError("Rust host failed before ready")
             state = ready.read_text(encoding="ascii")
             expected_states = {
+                "retained-stdio": "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1",
                 "atomic": "mode=atomic;inner_active=1;suspended=1",
                 "no-inherit": "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
                 "invalid": "mode=invalid;inner_active=0;no_spawn=1",
@@ -71,6 +74,7 @@ def run_case(helper, exe, mode, root):
                 "invalid_job_failed_closed": mode == "invalid",
                 "missing_executable_handle_count_stable": mode == "missing",
                 "selected_stdout_stderr_and_spare_denial": mode == "stdio",
+                "retained_descendant_stopped_and_both_pipes_eof": mode == "retained-stdio",
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
             }
     finally:
@@ -109,7 +113,8 @@ def main():
     helper = load_supervisor()
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-rust-atomic-") as temp:
-            for mode in ("atomic", "no-inherit", "invalid", "missing", "stdio"):
+            for mode in ("atomic", "no-inherit", "invalid", "missing", "stdio",
+                         "retained-stdio"):
                 root = Path(temp) / mode
                 root.mkdir()
                 result["cases"].append(run_case(helper, exe, mode, root))
