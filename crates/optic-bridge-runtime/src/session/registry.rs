@@ -37,6 +37,26 @@ struct SessionRecord {
 }
 
 impl SessionRegistry {
+    // Research-only two-stage close: NO production API/semantic change.
+    // This closes admission, not native launch linearization or quiescence.
+    #[cfg(test)]
+    pub(crate) fn research_close_admission(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<(bool, u32), SessionRegistryError> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get_mut(handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        let changed = !record.revoked;
+        record.revoked = true;
+        record.revocation_signal.store(true, Ordering::Release);
+        Ok((changed, record.active_admissions))
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()

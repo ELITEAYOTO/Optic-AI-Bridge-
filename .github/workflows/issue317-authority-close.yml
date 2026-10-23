@@ -1,0 +1,26 @@
+name: Research session close stop and quiescence contract
+on:
+  push:
+    branches: ['codex/317-authority-close-study']
+permissions:
+  contents: read
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Pinned toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+      - name: Format
+        run: cargo +1.99.0 fmt --all -- --check
+      - name: Strict runtime lint
+        run: cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Real authority and process accounting research tests
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib process::close_contract_tests -- --nocapture

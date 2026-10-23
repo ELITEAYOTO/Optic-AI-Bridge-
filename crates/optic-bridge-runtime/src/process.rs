@@ -1612,4 +1612,6 @@ pub enum ProcessError {
 }
 
 #[cfg(test)]
+mod close_contract_tests;
+#[cfg(test)]
 mod tests;

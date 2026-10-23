@@ -43,7 +43,7 @@ def run_mode(helper, executable, mode, directory):
             host = subprocess.Popen(
                 [str(executable), "--exact", "registry_native_resume_race_host",
                  "--ignored", "--nocapture", "--test-threads=1"],
-                stdout=output, stderr=output, env=env
+                stdout=output, stderr=output, env=env, cwd=directory
             )
             outer.assign(host)
             (directory / "gate").write_text("outer-owned", encoding="ascii")
@@ -96,7 +96,7 @@ def main():
     exe = Path(args.test_exe).resolve()
     assert exe.is_file()
     proof = {
-        "source_sha": os.environ.get("GITHUB_SHA"),
+        "source_sha": os.environ.get("OPTIC_SOURCE_SHA", os.environ.get("GITHUB_SHA")),
         "run_id": os.environ.get("GITHUB_RUN_ID"),
         "attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
         "production_wired": False,
@@ -110,7 +110,7 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="optic317-real-registry-") as temp:
+        with tempfile.TemporaryDirectory(prefix="optic317-real-registry-", dir=output.parent.resolve()) as temp:
             for mode in EXPECTED:
                 root = Path(temp) / mode
                 root.mkdir()
