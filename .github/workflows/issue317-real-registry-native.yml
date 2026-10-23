@@ -25,7 +25,17 @@ jobs:
         shell: pwsh
         run: |
           cargo +1.99.0 test --locked -p optic-bridge-app --test issue317_registry_native_gate_windows --no-run --message-format=json > native-probe.jsonl
-          if ($LASTEXITCODE -ne 0) { throw 'native compile failed' }
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content native-probe.jsonl | ForEach-Object {
+              try {
+                $item = $_ | ConvertFrom-Json
+                if ($item.reason -eq 'compiler-message' -and $item.message.level -eq 'error') {
+                  Write-Host $item.message.rendered
+                }
+              } catch { Write-Host 'Failed to parse one compiler record' }
+            }
+            throw 'native compile failed; original result retained'
+          }
           $items = @(Get-Content native-probe.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'issue317_registry_native_gate_windows' -and $_.executable })
           if ($items.Count -ne 1) { throw 'native test artifact ambiguous' }
           "OPTIC317_APP_NATIVE_TEST=$($items[0].executable)" >> $env:GITHUB_ENV
