@@ -26,8 +26,8 @@ use windows::{
         Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation},
         System::Threading::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, GetProcessHandleCount,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
+            GetProcessHandleCount, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
             ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
             UpdateProcThreadAttribute,
@@ -335,7 +335,10 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
                 root_status == 259 || root_status == 0,
                 "root failed before descendant-retention proof"
             );
-            assert!(!out_eof && !err_eof, "pipes closed before retained descendant stop");
+            assert!(
+                !out_eof && !err_eof,
+                "pipes closed before retained descendant stop"
+            );
         } else if out_eof && err_eof && active == 0 {
             break;
         }
@@ -366,7 +369,10 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
             if out_eof && err_eof && job.active_processes()? == 0 {
                 break;
             }
-            assert!(Instant::now() < stop_deadline, "retainer stop/EOF remained uncertain");
+            assert!(
+                Instant::now() < stop_deadline,
+                "retainer stop/EOF remained uncertain"
+            );
             thread::sleep(Duration::from_millis(5));
         }
     } else {
@@ -568,7 +574,9 @@ fn native_atomic_job_list_host_fixture() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
-        "retained-stdio" => "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1",
+        "retained-stdio" => {
+            "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1"
+        }
         "invalid" => "mode=invalid;inner_active=0;no_spawn=1",
         "missing" => "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
         _ => unreachable!("validated fixed fixture mode"),
