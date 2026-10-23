@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -175,24 +175,38 @@ impl SessionRegistry {
         let Some(record) = sessions.get_mut(handle) else {
             return Ok(false);
         };
+        let changed = Self::publish_revocation(record);
+        // Keep the same guard across publication and the first predicate check.
+        // The drain returns it so it remains held until this method returns.
+        let _sessions = self.wait_for_admission_drain(handle, sessions)?;
+        Ok(changed)
+    }
+
+    fn publish_revocation(record: &mut SessionRecord) -> bool {
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
+        changed
+    }
 
+    fn wait_for_admission_drain<'a>(
+        &self,
+        handle: &SessionHandle,
+        mut sessions: MutexGuard<'a, HashMap<SessionHandle, SessionRecord>>,
+    ) -> Result<MutexGuard<'a, HashMap<SessionHandle, SessionRecord>>, SessionRegistryError> {
         loop {
             let active_admissions = sessions
                 .get(handle)
                 .ok_or(SessionRegistryError::UnknownSession)?
                 .active_admissions;
             if active_admissions == 0 {
-                break;
+                return Ok(sessions);
             }
             sessions = self
                 .admissions_drained
                 .wait(sessions)
                 .map_err(|_| SessionRegistryError::StateUnavailable)?;
         }
-        Ok(changed)
     }
 
     #[cfg(windows)]

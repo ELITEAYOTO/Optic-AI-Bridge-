@@ -182,3 +182,100 @@ fn poisoned_condvar_reacquisition_preserves_published_close_and_error() {
     });
     drop(permit); // Existing fail-closed poison handling; no native resources.
 }
+
+// Frozen predicate/wait loop from main da34eae, used only as a compatibility
+// oracle for controlled guarded states. This is not a new generation contract.
+fn legacy_drain<'a>(
+    registry: &SessionRegistry,
+    handle: &SessionHandle,
+    mut guard: std::sync::MutexGuard<'a, HashMap<SessionHandle, SessionRecord>>,
+) -> Result<std::sync::MutexGuard<'a, HashMap<SessionHandle, SessionRecord>>, SessionRegistryError>
+{
+    loop {
+        let count = guard
+            .get(handle)
+            .ok_or(SessionRegistryError::UnknownSession)?
+            .active_admissions;
+        if count == 0 {
+            return Ok(guard);
+        }
+        guard = registry
+            .admissions_drained
+            .wait(guard)
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+    }
+}
+
+#[test]
+fn missing_record_at_predicate_check_matches_legacy_unknown_session() {
+    let registry = SessionRegistry::new();
+    let g = grant();
+    for legacy in [true, false] {
+        let guard = registry.sessions.lock().unwrap();
+        let error = if legacy {
+            legacy_drain(&registry, &g.handle, guard)
+        } else {
+            registry.wait_for_admission_drain(&g.handle, guard)
+        }
+        .unwrap_err();
+        assert_eq!(error, SessionRegistryError::UnknownSession);
+    }
+}
+
+#[test]
+fn replacement_generation_at_predicate_check_keeps_legacy_handle_lookup() {
+    for legacy in [true, false] {
+        let registry = SessionRegistry::new();
+        let old = grant();
+        registry.register(old.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let old_signal = {
+            let mut guard = registry.sessions.lock().unwrap();
+            let record = guard.get_mut(&old.handle).unwrap();
+            assert!(SessionRegistry::publish_revocation(record));
+            Arc::clone(&record.revocation_signal)
+        };
+        assert!(
+            registry
+                .remove_quiescent_inactive(&old.handle, now)
+                .unwrap()
+        );
+        let mut replacement = grant();
+        replacement.handle = old.handle.clone();
+        registry.register(replacement).unwrap();
+        let permit = registry.begin_admission(&old.handle, now).unwrap();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        thread::scope(|scope| {
+            let registry_ref = &registry;
+            let handle = &old.handle;
+            let old_signal_ref = &old_signal;
+            let worker = scope.spawn(move || {
+                let guard = registry_ref.sessions.lock().unwrap();
+                assert!(!Arc::ptr_eq(
+                    &guard.get(handle).unwrap().revocation_signal,
+                    old_signal_ref
+                ));
+                ready_tx.send(()).unwrap();
+                // Model the state seen on mutex reacquisition after a permitted
+                // removal/re-registration. Do NOT claim this forces that whole
+                // public-revoke race; the entry schedule is controlled here.
+                let guard = if legacy {
+                    legacy_drain(registry_ref, handle, guard)
+                } else {
+                    registry_ref.wait_for_admission_drain(handle, guard)
+                }
+                .unwrap();
+                done_tx.send(!guard.get(handle).unwrap().revoked).unwrap();
+            });
+            ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(registry.get_active(&old.handle, now).is_ok());
+            assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+            drop(permit);
+            assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap());
+            worker.join().unwrap();
+        });
+        assert!(old_signal.load(Ordering::Acquire));
+        assert!(registry.get_active(&old.handle, now).is_ok());
+    }
+}
