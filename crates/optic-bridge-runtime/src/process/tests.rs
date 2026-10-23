@@ -1600,7 +1600,6 @@ fn research_owner_fence_expiry_and_poison_fail_closed_without_preventing_revoke(
     ));
 }
 
-
 #[test]
 fn research_owner_fence_early_stop_unblocks_genuine_worker_admission_before_drain() {
     // The *worker thread* owns a genuine admission permit and does not
@@ -1608,9 +1607,8 @@ fn research_owner_fence_early_stop_unblocks_genuine_worker_admission_before_drai
     // request. Without a pre-drain cancellation step this reproduces
     // the original worker-permit/stop-request dependency.
     let root = workspace("owner-fence-worker-drain");
-    let manager = Arc::new(
-        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("manager"),
-    );
+    let manager =
+        Arc::new(ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("manager"));
     let registry = Arc::new(crate::SessionRegistry::new());
     let grant = research_owner_grant();
     registry.register(grant.clone()).expect("register");
