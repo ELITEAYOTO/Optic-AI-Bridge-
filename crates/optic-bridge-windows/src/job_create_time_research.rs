@@ -239,3 +239,31 @@ fn precreated_kernel_job_stops_suspended_child_without_resume() {
     drop(fixture);
     fs::remove_dir_all(root).expect("clean isolated fixture");
 }
+
+
+#[test]
+#[ignore = "only an independent outer Job supervisor may kill this fixed host"]
+fn synthetic_creator_host_for_supervisor() {
+    let root = PathBuf::from(env::var_os("OPTIC_317_HOST_ROOT").expect("supervised root"));
+    let gate = root.join("outer-owned-gate");
+    let until = Instant::now() + Duration::from_secs(10);
+    while !gate.exists() {
+        assert!(Instant::now() < until, "outer ownership gate never arrived");
+        thread::sleep(Duration::from_millis(5));
+    }
+    let marker = root.join("must-never-run");
+    let fixture = SuspendedFixture::create(&marker, &root).expect("create-time Job association");
+    assert_eq!(fixture.job.active_processes().unwrap(), 1);
+    assert!(!marker.exists(), "suspended fixture must not run");
+    fs::write(root.join("inner-suspended-ready"), b"kernel-job-associated")
+        .expect("publish exact post-creation state");
+
+    // The supervisor terminates THIS exact host process while its child
+    // remains suspended. No destructor or best-effort cleanup can be relied on
+    // in this host. A finite expiry prevents an abandoned indefinite fixture.
+    let until = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < until {
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("independent supervisor failed to terminate the synthetic host");
+}
