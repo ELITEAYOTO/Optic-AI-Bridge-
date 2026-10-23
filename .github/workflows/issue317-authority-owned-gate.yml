@@ -1,7 +1,7 @@
 name: Research authority-owned launch close linearization
 on:
   push:
-    branches: ['research/317-authority-owned-gate-2026-10-23', 'codex/317-authority-native-owner']
+    branches: ['research/317-authority-owned-gate-2026-10-23', 'codex/317-authority-native-owner', 'codex/317-terminal-pending-owner']
 permissions:
   contents: read
 jobs:
@@ -36,5 +36,8 @@ jobs:
         run: |
           cargo +1.99.0 test --locked -p optic-bridge-runtime --lib session_registry:: -- --nocapture --test-threads=1
       - name: Exact research checkpoint
+        shell: bash
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib process::pending_owner_root:: -- --nocapture --test-threads=1
+      - name: Exact research source metadata
         shell: bash
         run: echo "OPTIC317_AUTHORITY_GATE sha=${GITHUB_SHA} run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT} os=${RUNNER_OS} test_only=true production_wired=false"

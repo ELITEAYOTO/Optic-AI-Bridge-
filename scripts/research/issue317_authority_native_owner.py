@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 
-MODES = ["terminal-code-error", "close-before-create", "close-before-resume", "launch-wins", "close-during-native",
+MODES = ["terminal-code-error", "pending-root-retention", "close-before-create", "close-before-resume", "launch-wins", "close-during-native",
          "create-error", "resume-error", "stop-error", "query-error", "observation-uncertain", "client-drop",
          "descendant-pipes", "output-limit", "panic-under-gate", "handle-recovery",
          "ticket-close-wins", "ticket-cancelled-before-create", "ticket-launch-wins",
@@ -76,6 +76,15 @@ def run_case(outer_api, executable, mode, root):
                 assert state["combined_output_bytes"] <= 16 * 1024
             if mode == "handle-recovery":
                 assert state["handle_count_stable_after_warmup"] is True
+            if mode == "terminal-code-error":
+                assert state["terminal_observation_error_retries"] == 3
+                assert state["terminal_no_partial_publication"] is True
+                assert state["status"] == "Failed" and state["native_error_code"] == 6
+            if mode == "pending-root-retention":
+                assert state["bounded_root_capacity"] == 1
+                assert state["repeated_observation_errors"] == 4
+                for key in ["preparation_rejected_before_effects", "same_keeper_retained_during_shutdown", "shutdown_complete_only_after_proof"]:
+                    assert state[key] is True, key
             if mode in ("close-before-create", "close-before-resume", "create-error", "resume-error",
                         "ticket-close-wins", "ticket-cancelled-before-create", "ticket-direct-close", "ticket-deadline", "ticket-client-drop"):
                 assert not (root / "executed").exists()

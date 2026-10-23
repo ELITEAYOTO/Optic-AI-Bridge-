@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "bootstrap/**", "codex/317-authority-native-owner"]
+    branches: [main, "bootstrap/**", "codex/317-authority-native-owner", "codex/317-terminal-pending-owner"]
   pull_request:
 
 permissions:

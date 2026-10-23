@@ -1616,4 +1616,6 @@ mod authority_native_owner_tests;
 #[cfg(test)]
 mod close_contract_tests;
 #[cfg(test)]
+mod pending_owner_root;
+#[cfg(test)]
 mod tests;

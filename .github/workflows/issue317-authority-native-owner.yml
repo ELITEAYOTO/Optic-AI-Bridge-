@@ -1,7 +1,7 @@
 name: Windows authority-owned gate and native owner research
 on:
   push:
-    branches: ['codex/317-authority-native-owner']
+    branches: ['codex/317-authority-native-owner', 'codex/317-terminal-pending-owner']
 permissions:
   contents: read
 jobs:
@@ -43,7 +43,7 @@ jobs:
           cargo +1.99.0 tree --locked -p optic-bridge-app -e normal --prefix none > normal-dependencies.txt
           if ($LASTEXITCODE -ne 0) { throw 'dependency inspection failed' }
           if (Select-String -Quiet -Path normal-dependencies.txt -Pattern '^optic-bridge-windows-test-support ') { throw 'test fixture became production dependency' }
-      - name: Twenty-two independently supervised native cases
+      - name: Twenty-four independently supervised native cases
         shell: pwsh
         run: |
           python scripts/research/issue317_authority_native_owner.py --test-exe "$env:OPTIC317_NATIVE_OWNER_HOST" --output evidence/authority-native-owner.json

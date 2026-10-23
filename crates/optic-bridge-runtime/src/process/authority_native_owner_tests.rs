@@ -194,7 +194,14 @@ impl<'a> Owner<'a> {
         if !self.watch.try_finish() {
             return Ok(false);
         }
+        // Complete every fallible observation BEFORE touching shared output or
+        // terminal state. Acquire both locks before either shared mutation.
+        if self.exit_code_error {
+            native::Native::rejected_exit_code_probe()?;
+        }
+        let exit_code = self.native.root_code()?.map(|v| v as i32);
         let mut output = self.record.output.lock().unwrap();
+        let mut state = self.record.state.lock().unwrap();
         output.stdout = std::mem::take(&mut self.native.stdout);
         output.stderr = std::mem::take(&mut self.native.stderr);
         output.stdout_closed = true;
@@ -202,7 +209,6 @@ impl<'a> Owner<'a> {
         self.record
             .output_overflow
             .store(self.native.overflow, Ordering::Release);
-        let mut state = self.record.state.lock().unwrap();
         state.status = if self.failed || self.watch.errors.load(Ordering::Acquire) > 0 {
             ProcessStatus::Failed
         } else if self.time_expired || self.watch.deadline_expired.load(Ordering::Acquire) {
@@ -212,10 +218,7 @@ impl<'a> Owner<'a> {
         } else {
             ProcessStatus::Stopped
         };
-        if self.exit_code_error {
-            native::Native::rejected_exit_code_probe()?;
-        }
-        state.exit_code = self.native.root_code()?.map(|v| v as i32);
+        state.exit_code = exit_code;
         drop(state);
         drop(output);
         self.terminal = true;
@@ -307,6 +310,150 @@ impl<'a> Owner<'a> {
 }
 
 struct ManualClock(AtomicU64);
+impl super::pending_owner_root::Keeper for Box<Owner<'_>> {
+    fn identity(&self) -> &JobId {
+        &self.id
+    }
+    fn request_stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+    fn observe(&mut self) -> io::Result<bool> {
+        match self.poll() {
+            Err(error) => {
+                self.failed = true;
+                self.last_native_error = error.raw_os_error();
+                self.record.state.lock().unwrap().status = ProcessStatus::TerminationUncertain;
+                Err(error)
+            }
+            result => result,
+        }
+    }
+}
+
+fn exercise_pending_root(root: &Path) -> serde_json::Value {
+    use super::pending_owner_root::{AdmissionError, PendingRoot};
+    let manager = Arc::new(ProcessManager::new(root, HardLimits::default(), Vec::new()).unwrap());
+    let registry = Arc::new(SessionRegistry::new());
+    let lifecycle = SessionLifecycleManager::new(
+        Arc::clone(&registry),
+        Arc::new(TaskLeaseRegistry::new()),
+        Arc::clone(&manager),
+    );
+    let clock = StdClock::new();
+    let grant = lifecycle
+        .provision(
+            SessionGrantSpec {
+                principal: PrincipalId::new("pending-root").unwrap(),
+                project: ProjectId::new("synthetic").unwrap(),
+                capabilities: BTreeSet::from([Capability::GitRead]),
+                expires_at: MonotonicTime::from_millis(10_000),
+                policy_epoch: 1,
+            },
+            clock.now(),
+        )
+        .unwrap();
+    let independent = lifecycle
+        .provision(
+            SessionGrantSpec {
+                principal: PrincipalId::new("independent").unwrap(),
+                project: ProjectId::new("synthetic-b").unwrap(),
+                capabilities: BTreeSet::from([Capability::GitRead]),
+                expires_at: MonotonicTime::from_millis(10_000),
+                policy_epoch: 1,
+            },
+            clock.now(),
+        )
+        .unwrap();
+    let mut keepers = PendingRoot::new(1);
+    let mut client = None;
+    let id = keepers
+        .prepare(|| {
+            let (owner, caller) =
+                Owner::prepare(&registry, &manager, &grant.handle, clock.now(), &clock)?;
+            client = Some(caller);
+            Ok(owner)
+        })
+        .unwrap();
+    assert_eq!(
+        keepers.prepare(|| panic!("full root must not prepare another keeper")),
+        Err(AdmissionError::Capacity)
+    );
+    assert_eq!(manager.active_session_job_count(&grant.handle).unwrap(), 1);
+    let owner = keepers.get_mut(&id).unwrap();
+    let owner_address = &**owner as *const Owner<'_>;
+    owner.mint_ticket(&registry, &clock).unwrap();
+    owner
+        .start_ticket(root, "pending-root-retention", &clock, || ())
+        .unwrap();
+    wait(|| root.join("executed").exists());
+    assert!(registry.get_active(&grant.handle, clock.now()).is_ok());
+    assert!(!owner.stopped.load(Ordering::Acquire));
+    assert!(!keepers.snapshot().closing && !keepers.snapshot().complete);
+    // Authority closure is distinct from application stop request and native proof.
+    assert_eq!(
+        registry.research_close_admission(&grant.handle).unwrap(),
+        (true, 1)
+    );
+    let owner = keepers.get_mut(&id).unwrap();
+    assert!(!owner.stopped.load(Ordering::Acquire));
+    owner.query_error = true;
+    let root_id = keepers.snapshot().root;
+    for n in 1..=4 {
+        let pending = keepers.request_shutdown();
+        assert_eq!(pending.root, root_id);
+        assert!(pending.closing && !pending.complete && pending.retained == 1);
+        let pending = keepers.observe_pass();
+        assert_eq!(pending.observation_errors, n);
+        let independent_admission = registry
+            .begin_admission(&independent.handle, clock.now())
+            .unwrap();
+        drop(independent_admission);
+        assert_eq!(pending.retained, 1);
+        let owner = keepers.get_mut(&id).unwrap();
+        assert_eq!(&**owner as *const Owner<'_>, owner_address);
+        assert!(owner.ticket.is_some() && !owner.terminal);
+        assert_eq!(
+            owner.record.state.lock().unwrap().status,
+            ProcessStatus::TerminationUncertain
+        );
+        let out = owner.record.output.lock().unwrap();
+        assert!(!out.stdout_closed && !out.stderr_closed);
+        assert!(out.stdout.is_empty() && out.stderr.is_empty());
+        assert_eq!(manager.active_session_job_count(&grant.handle).unwrap(), 1);
+    }
+    assert_eq!(
+        keepers.prepare(|| panic!("closing root must reject new preparation")),
+        Err(AdmissionError::Closing)
+    );
+    assert!(matches!(
+        registry.remove_quiescent_inactive(&grant.handle, clock.now()),
+        Err(SessionRegistryError::AdmissionsInFlight)
+    ));
+    fs::write(root.join("uncertain-ready"), b"root owns uncertain keeper").unwrap();
+    wait(|| root.join("uncertain-confirmed").exists());
+    let error_code = keepers.get_mut(&id).unwrap().last_native_error;
+    assert_eq!(error_code, Some(6));
+    keepers.get_mut(&id).unwrap().query_error = false;
+    wait(|| keepers.observe_pass().complete);
+    assert_eq!(keepers.snapshot().retained, 0);
+    assert_eq!(manager.active_session_job_count(&grant.handle).unwrap(), 0);
+    let result = manager.result(&grant.handle, &id).unwrap();
+    assert_eq!(result.status, ProcessStatus::Failed);
+    let record = manager.jobs.lock().unwrap().jobs.get(&id).unwrap().clone();
+    let out = record.output.lock().unwrap();
+    let bytes = out.stdout.len() + out.stderr.len();
+    assert!(out.stdout_closed && out.stderr_closed && bytes <= OUTPUT);
+    assert!(lifecycle.seal_quiescent(&grant.handle).is_ok());
+    drop(out);
+    drop(client);
+    serde_json::json!({"mode":"pending-root-retention","instrumented_registry":true,"real_win32":true,
+        "production_wired":false,"native_created":true,"atomic_job_association":true,
+        "native_terminal_and_both_eof":true,"stop_worker_joined":true,"shared_accounting_released_after_proof":true,
+        "other_session_active":true,"status":"Failed","combined_output_bytes":bytes,"native_error_code":error_code,
+        "bounded_root_capacity":1,"preparation_rejected_before_effects":true,"repeated_observation_errors":4,
+        "same_keeper_retained_during_shutdown":true,"shutdown_complete_only_after_proof":true})
+}
+
 impl Clock for ManualClock {
     fn now(&self) -> MonotonicTime {
         MonotonicTime::from_millis(self.0.load(Ordering::Acquire))
@@ -648,6 +795,7 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             owner.native.terminal().unwrap() && owner.watch.try_finish()
         });
         owner.exit_code_error = true;
+        assert!(!owner.native.stdout.is_empty() || !owner.native.stderr.is_empty());
         for _ in 0..3 {
             let error = owner.poll().unwrap_err();
             assert_eq!(error.raw_os_error(), Some(6));
@@ -661,7 +809,20 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             let state = owner.record.state.lock().unwrap();
             assert_eq!(state.status, ProcessStatus::Running);
             assert!(state.exit_code.is_none());
+            assert!(!owner.record.output_overflow.load(Ordering::Acquire));
             assert!(!owner.terminal && owner.admission.is_some());
+            drop(state);
+            drop(output);
+            assert_eq!(
+                manager.result(&a.handle, &owner.id).unwrap().status,
+                ProcessStatus::Running
+            );
+            for stream in [ProcessStream::Stdout, ProcessStream::Stderr] {
+                let visible = manager
+                    .read(&a.handle, &owner.id, stream, 0, OUTPUT as u64)
+                    .unwrap();
+                assert!(!visible.eof && visible.bytes.is_empty());
+            }
         }
         assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
         assert!(matches!(
@@ -876,6 +1037,8 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
         "close_during_native_observed":close_during_call_observed,"native_error_code":error_code,
         "combined_output_bytes":bytes,"status":format!("{:?}",result.status),
         "handles_before_owner":handles_before,"handles_after_owner":handles_after,
+        "terminal_observation_error_retries":if mode == "terminal-code-error" {3} else {0},
+        "terminal_no_partial_publication":mode == "terminal-code-error",
         "production_wired":false})
 }
 
@@ -886,7 +1049,9 @@ fn authority_native_owner_host() {
     wait(|| gate.exists());
     let root = gate.parent().unwrap();
     let mode = env::var("OPTIC317_OWNER_MODE").unwrap();
-    let proof = if mode == "handle-recovery" {
+    let proof = if mode == "pending-root-retention" {
+        exercise_pending_root(root)
+    } else if mode == "handle-recovery" {
         let warm = root.join("warm");
         let measured = root.join("measured");
         fs::create_dir(&warm).unwrap();
