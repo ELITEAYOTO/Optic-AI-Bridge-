@@ -1,0 +1,45 @@
+name: Issue 317 kernel Job create-time research
+
+on:
+  push:
+    branches:
+      - research/317-kernel-job-create-time-2026-10-24
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue317-create-time-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixed-kernel-job-proof:
+    name: Fixed kernel Job / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.99.0
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Strict Windows crate Clippy
+        run: cargo clippy --locked -p optic-bridge-windows --all-targets --all-features -- -D warnings
+      - name: Complete platform crate regressions
+        run: cargo test --locked -p optic-bridge-windows --lib
+      - name: Explicit fixed Win32 suspended child and no-resume stop
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_KERNEL_JOBLIST sha=${GITHUB_SHA} current-exe-only=true production-wired=false creator-crash-tested=false"
+          cargo test --locked -p optic-bridge-windows --lib create_time_research::precreated_kernel_job_ -- --nocapture --test-threads=1
