@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 
-MODES = ["close-before-create", "close-before-resume", "launch-wins", "close-during-native",
+MODES = ["terminal-code-error", "close-before-create", "close-before-resume", "launch-wins", "close-during-native",
          "create-error", "resume-error", "stop-error", "query-error", "observation-uncertain", "client-drop",
          "descendant-pipes", "output-limit", "panic-under-gate", "handle-recovery",
          "ticket-close-wins", "ticket-cancelled-before-create", "ticket-launch-wins",

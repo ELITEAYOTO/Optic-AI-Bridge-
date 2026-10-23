@@ -398,6 +398,11 @@ impl Native {
     pub fn root_code(&self) -> io::Result<Option<u32>> {
         self.child.as_ref().map(Child::code).transpose()
     }
+    pub fn rejected_exit_code_probe() -> io::Result<()> {
+        let mut code = 0;
+        // SAFETY: deliberately invalid handle; the actual child handle stays owned.
+        unsafe { GetExitCodeProcess(HANDLE::default(), &mut code) }.map_err(native_error)
+    }
     pub fn terminal(&self) -> io::Result<bool> {
         Ok(self.root_exited()? && self.job.active()? == 0 && self.out_eof && self.err_eof)
     }

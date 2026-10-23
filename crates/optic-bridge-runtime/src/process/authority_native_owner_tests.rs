@@ -44,6 +44,7 @@ struct Owner<'a> {
     stopped: Arc<AtomicBool>,
     observe_error: bool,
     query_error: bool,
+    exit_code_error: bool,
     last_native_error: Option<i32>,
     terminate_error: Arc<AtomicBool>,
     failed: bool,
@@ -151,6 +152,7 @@ impl<'a> Owner<'a> {
                 stopped,
                 observe_error: false,
                 query_error: false,
+                exit_code_error: false,
                 last_native_error: None,
                 terminate_error,
                 failed: false,
@@ -210,6 +212,9 @@ impl<'a> Owner<'a> {
         } else {
             ProcessStatus::Stopped
         };
+        if self.exit_code_error {
+            native::Native::rejected_exit_code_probe()?;
+        }
         state.exit_code = self.native.root_code()?.map(|v| v as i32);
         drop(state);
         drop(output);
@@ -358,6 +363,7 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     assert!(matches!(
         mode.as_str(),
         "close-before-create"
+            | "terminal-code-error"
             | "close-before-resume"
             | "launch-wins"
             | "close-during-native"
@@ -632,6 +638,38 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             owner.poll().unwrap();
             owner.native.overflow
         });
+    }
+    if mode == "terminal-code-error" {
+        registry.research_close_admission(&a.handle).unwrap();
+        owner.stopped.store(true, Ordering::Release);
+        owner.native.close_writers();
+        wait(|| {
+            owner.native.capture().unwrap();
+            owner.native.terminal().unwrap() && owner.watch.try_finish()
+        });
+        owner.exit_code_error = true;
+        for _ in 0..3 {
+            let error = owner.poll().unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(6));
+            error_code = error.raw_os_error();
+            let output = owner.record.output.lock().unwrap();
+            assert!(
+                !output.stdout_closed && !output.stderr_closed,
+                "failed exit-code observation must not publish EOF"
+            );
+            assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            let state = owner.record.state.lock().unwrap();
+            assert_eq!(state.status, ProcessStatus::Running);
+            assert!(state.exit_code.is_none());
+            assert!(!owner.terminal && owner.admission.is_some());
+        }
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(SessionRegistryError::AdmissionsInFlight)
+        ));
+        owner.failed = true;
+        owner.exit_code_error = false;
     }
     if mode == "descendant-pipes" {
         wait(|| {
