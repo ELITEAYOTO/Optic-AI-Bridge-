@@ -3,8 +3,8 @@
 use super::*;
 use crate::{ProcessManager, ProcessStartSpec};
 use optic_bridge_core::{
-    ActionId, Capability, HardLimits, NetworkAccess, PrincipalId, ProcessExecutionClass,
-    ProjectId, ResourceBudget, SessionGrant, SessionHandle, WorkloadClass,
+    ActionId, Capability, HardLimits, NetworkAccess, PrincipalId, ProcessExecutionClass, ProjectId,
+    ResourceBudget, SessionGrant, SessionHandle, WorkloadClass,
 };
 use std::{
     collections::BTreeSet,
@@ -118,7 +118,10 @@ fn real_owned_native_worker_retains_admission_and_jobstore_during_direct_revoke(
 
         let until = Instant::now() + Duration::from_secs(3);
         while !receipt.is_stop_required_at(now) {
-            assert!(Instant::now() < until, "original-generation stop not visible");
+            assert!(
+                Instant::now() < until,
+                "original-generation stop not visible"
+            );
             thread::yield_now();
         }
         stopped_tx.send(()).unwrap();
@@ -142,7 +145,9 @@ fn real_owned_native_worker_retains_admission_and_jobstore_during_direct_revoke(
     let handle_for_close = a.handle.clone();
     let (done_tx, done_rx) = mpsc::sync_channel(1);
     let closer = thread::spawn(move || {
-        done_tx.send(reg_for_close.revoke(&handle_for_close)).unwrap();
+        done_tx
+            .send(reg_for_close.revoke(&handle_for_close))
+            .unwrap();
     });
     stopped_rx
         .recv_timeout(Duration::from_secs(3))
@@ -191,7 +196,9 @@ fn direct_close_before_native_commit_refuses_claim_and_preserves_owner_until_exp
     observe_closed(&registry, &a.handle);
     assert!(matches!(
         owned.research_commit_registered_owner(&reservation, now),
-        Err(ResearchOwnedCommitError::Registry(SessionRegistryError::Revoked))
+        Err(ResearchOwnedCommitError::Registry(
+            SessionRegistryError::Revoked
+        ))
     ));
     assert!(owned.stop_watch().is_stop_required_at(now));
     assert!(
@@ -233,7 +240,9 @@ fn owned_native_commit_rejects_cross_session_owner_and_original_deadline_after_r
         .unwrap();
     assert!(matches!(
         owned.research_commit_registered_owner(&reservation_a, MonotonicTime::from_millis(100)),
-        Err(ResearchOwnedCommitError::Registry(SessionRegistryError::Expired))
+        Err(ResearchOwnedCommitError::Registry(
+            SessionRegistryError::Expired
+        ))
     ));
     let renewed = registry
         .begin_owned_admission(&a.handle, MonotonicTime::from_millis(101))
