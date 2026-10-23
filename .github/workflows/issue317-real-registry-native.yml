@@ -1,7 +1,7 @@
 name: Windows real session registry native resume research
 on:
   push:
-    branches: ['research/317-real-registry-native-gate-2026-10-23', 'codex/317-authority-close-study']
+    branches: ['research/317-real-registry-native-gate-2026-10-23', 'codex/317-authority-close-study', 'codex/317-authority-native-owner']
 permissions:
   contents: read
 jobs:

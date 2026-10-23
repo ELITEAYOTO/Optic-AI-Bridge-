@@ -102,3 +102,78 @@ kernel failure, unconditional bounded close while a native call holds the gate,
 or durable application-root shutdown. The gate held across real native work
 orders resume and close, but a stuck call could indefinitely delay A's close.
 Other-session authority and actual JobStore admission remain independent.
+
+## Third increment: short commit ticket, native calls outside the gate
+
+The long-gate native test proves ordering but also the liveness problem: actual
+direct revoke has captured A's gate yet cannot publish Closed until the native
+critical section returns. B remains usable, but that does not make A closure
+bounded. A finite pause demonstrates this dependency, NOT a hung kernel call.
+
+The alternative research_commit_ticket is cfg(test) only. Under the SAME
+authority-owned gate it validates the actual record/generation, registry origin
+and admission's principal/project/policy epoch, reads the injected trusted Clock
+fresh and commits immutable owner ID, stop signal and absolute deadline. No
+native call, executable hashing, pipe read or waiting for terminality occurs
+under that gate. The keeper and real shared reservation already exist.
+
+The non-Clone ticket contains the GENUINE SessionAdmissionPermit by value.
+Committed and Denied variants both retain it continuously; denial returns the
+original permit to the prepared keeper. There is no temporary zero admission
+count, allocation at shutdown, transferable bare success enum or unowned task.
+The keeper stores the ticket before calling Win32 and drops it only after full
+native/pipe/controller proof. Owner ID is checked before effects; the fixture
+also permits only a single native create attempt.
+
+Deadline is min(prepared absolute owner budget, current session expiry, captured
+admission expiry). Mint reads Clock AFTER gate wait and never restarts the
+budget. Native start reads the same Clock before create and again before resume;
+the independent stop controller receives the remaining absolute deadline after
+preparation. Four pure-registry tests cover close with retained ticket, denied
+commit returning admission, foreign-registry denial and fresh clock/budget after
+gate wait. The manual clock is used only for deterministic expiry injection.
+
+Six new native cases compare ticket close-wins, cancellation after commitment
+but before create, committed launch-wins, DIRECT revoke during a paused native
+phase, deadline reached after suspended creation and client Drop before create. In the decisive case,
+actual direct revoke publishes Closed while the launch is still paused AFTER
+atomic creation. The independent watcher kills the child and the outer Job
+confirms host-only while the keeper/admission/reservations are retained. Native
+resume is then denied; proof/drain follow after the phase releases. All nineteen
+modes passed locally before adding the client-Drop regression. That regression
+first failed: session state alone allowed creation after the requester signalled
+stop. The keeper now checks requester/record/deadline stop flags before native
+effects as well. The original red and externally confirmed cleanup are retained.
+
+Two additional host-exit cases deliberately retain the keeper, real admission,
+reservation and a blocked legacy revoke while observation remains uncertain.
+One also injects real invalid-handle termination failures, leaving the child live.
+The outer pre-armed Job supervisor terminates ONLY the synthetic host handle.
+The containing tree goes from two processes to zero in the stop-error case and
+from one to zero in the observation case. These are crash-containment proofs,
+NOT graceful quiescence, EOF/controller jointure or durable recovery. They do not
+exercise a genuine permanently hung kernel call or Windows system crash.
+The final matrix comprises twenty normal owner/proof cases and these two
+explicit host-exit containment cases; its source/result are recorded separately.
+
+**Different contract:** the short ticket linearizes ENGAGEMENT before native
+creation, not ResumeThread itself. Previously committed work can be in progress
+after close. Checks minimize cancelled work, but the final check/resume interval
+is NOT atomic; a committed operation could execute instructions after close.
+The long-gate comparison supplies stricter resume/close ordering at the cost of
+depending on a native return. Neither contract may be silently substituted for
+the other in a production API. No new engagement ticket can be minted after close.
+
+This is a SESSION ordering ticket, not a complete permission authorizer. A
+production version must own a trusted common Clock and verify task lease,
+typed action/policy, resource receipt, executable/cwd pins and protected output.
+The fixture injects Clock for tests and binds an existing keeper ID; it does not
+authorize a caller-supplied Git binary or establish sensitive Git provenance.
+
+The Ubuntu checkpoint39914043236 on2769fd6 remains RED: a test-only reference-count
+witness was unused on Linux. Its cfg is now Windows+test, without suppressing
+Clippy. Native Windows39914043475 on the same source passed all fourteen cases;
+do not call the combined checkpoint wholly green. The final source enables the
+normal full CI plus the independent app-native production-path negative control.
+The latter must still reproduce the old race because normal runtime builds do
+NOT include any research gate/ticket. Green research does not fix PR327 or #317.

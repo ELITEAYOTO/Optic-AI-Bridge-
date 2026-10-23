@@ -43,7 +43,7 @@ jobs:
           cargo +1.99.0 tree --locked -p optic-bridge-app -e normal --prefix none > normal-dependencies.txt
           if ($LASTEXITCODE -ne 0) { throw 'dependency inspection failed' }
           if (Select-String -Quiet -Path normal-dependencies.txt -Pattern '^optic-bridge-windows-test-support ') { throw 'test fixture became production dependency' }
-      - name: Fourteen independently supervised native cases
+      - name: Twenty-two independently supervised native cases
         shell: pwsh
         run: |
           python scripts/research/issue317_authority_native_owner.py --test-exe "$env:OPTIC317_NATIVE_OWNER_HOST" --output evidence/authority-native-owner.json

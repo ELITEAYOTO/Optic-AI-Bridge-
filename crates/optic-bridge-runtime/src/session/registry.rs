@@ -17,6 +17,12 @@ pub struct SessionRegistry {
     max_renewal_horizon_ms: u64,
 }
 
+#[cfg(test)]
+#[path = "registry_launch_ticket.rs"]
+mod research_launch_ticket;
+#[cfg(all(test, windows))]
+pub(crate) use research_launch_ticket::{ResearchCommitResult, ResearchLaunchTicket};
+
 impl Default for SessionRegistry {
     fn default() -> Self {
         Self {
@@ -90,7 +96,7 @@ impl SessionRegistry {
             .map(|record| Arc::clone(&record.research_commit_gate)))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(crate) fn research_gate_reference_count(
         &self,
         handle: &SessionHandle,

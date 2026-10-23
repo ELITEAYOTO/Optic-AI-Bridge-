@@ -415,22 +415,33 @@ pub struct StopWatch {
     worker: Option<JoinHandle<()>>,
     pub errors: Arc<AtomicU64>,
     pub first_error: Arc<AtomicU64>,
+    pub deadline_expired: Arc<AtomicBool>,
 }
 impl StopWatch {
-    pub fn new(job: Arc<Job>, flags: [Arc<AtomicBool>; 3], fail: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        job: Arc<Job>,
+        flags: [Arc<AtomicBool>; 3],
+        fail: Arc<AtomicBool>,
+        until: Instant,
+    ) -> Self {
         let (cancel, receiver) = mpsc::sync_channel(1);
         let errors = Arc::new(AtomicU64::new(0));
         let counted = Arc::clone(&errors);
         let first_error = Arc::new(AtomicU64::new(0));
         let first = Arc::clone(&first_error);
+        let deadline_expired = Arc::new(AtomicBool::new(false));
+        let expired = Arc::clone(&deadline_expired);
         let worker = thread::spawn(move || {
-            let until = Instant::now() + Duration::from_secs(4);
             loop {
                 match receiver.recv_timeout(Duration::from_millis(5)) {
                     Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
-                if (flags.iter().any(|f| f.load(Ordering::Acquire)) || Instant::now() >= until)
+                let timed_out = Instant::now() >= until;
+                if timed_out {
+                    expired.store(true, Ordering::Release);
+                }
+                if (flags.iter().any(|f| f.load(Ordering::Acquire)) || timed_out)
                     && let Err(error) = job.stop(fail.load(Ordering::Acquire))
                 {
                     let code = error.raw_os_error().unwrap_or(-1) as i64 as u64;
@@ -444,6 +455,7 @@ impl StopWatch {
             worker: Some(worker),
             errors,
             first_error,
+            deadline_expired,
         }
     }
     pub fn try_finish(&mut self) -> bool {

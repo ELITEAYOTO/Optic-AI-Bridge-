@@ -10,7 +10,10 @@ import time
 
 MODES = ["close-before-create", "close-before-resume", "launch-wins", "close-during-native",
          "create-error", "resume-error", "stop-error", "query-error", "observation-uncertain", "client-drop",
-         "descendant-pipes", "output-limit", "panic-under-gate", "handle-recovery"]
+         "descendant-pipes", "output-limit", "panic-under-gate", "handle-recovery",
+         "ticket-close-wins", "ticket-cancelled-before-create", "ticket-launch-wins",
+         "ticket-direct-close", "ticket-deadline", "ticket-client-drop",
+         "ticket-host-exit-stop-error", "ticket-host-exit-observation"]
 
 def helper():
     path = Path(__file__).parents[1] / "tests" / "doctor_pipe_supervisor.py"
@@ -37,33 +40,47 @@ def run_case(outer_api, executable, mode, root):
             (root / "gate").write_text("outer-owned", encoding="ascii")
             deadline = time.monotonic() + 12
             while not (root / "ready").exists():
+                if mode.startswith('ticket-host-exit-') and (root / "pending-ready").exists():
+                    proof["host_exit_with_pending_owner"] = True
+                    break
                 if trace.stat().st_size > 128 * 1024:
                     raise RuntimeError("synthetic trace limit")
                 if host.poll() is not None:
                     raise RuntimeError("native host failed before proof")
                 if time.monotonic() >= deadline:
                     raise TimeoutError("native owner external deadline")
-                for phase, expected in [("uncertain", 1), ("retained", 2)]:
+                for phase, expected in [("uncertain", 1), ("retained", 2), ("ticket", 1)]:
                     ready, confirmed = root / (phase + "-ready"), root / (phase + "-confirmed")
                     if ready.exists() and not confirmed.exists():
                         outer_api.wait_for(lambda: job.active() == expected, 2, phase + " witness")
                         proof["outer_active_during_" + phase] = job.active()
                         confirmed.write_text("external-accounting-confirmed", encoding="ascii")
                 time.sleep(.002)
-            state = json.loads((root / "ready").read_text(encoding="utf-8"))
+            pending_exit = proof.get("host_exit_with_pending_owner", False)
+            state = json.loads((root / ("pending-ready" if pending_exit else "ready")).read_text(encoding="utf-8"))
             assert state["mode"] == mode and state["production_wired"] is False
             assert state["atomic_job_association"] == state["native_created"]
-            assert state["native_created"] == (mode not in ("close-before-create", "create-error"))
-            for key in ["instrumented_registry", "real_win32",
-                        "native_terminal_and_both_eof", "stop_worker_joined",
-                        "shared_accounting_released_after_proof", "other_session_active"]:
+            assert state["native_created"] == (mode not in ("close-before-create", "create-error",
+                "ticket-close-wins", "ticket-cancelled-before-create", "ticket-client-drop"))
+            for key in ["instrumented_registry", "real_win32"]:
                 assert state[key] is True, key
-            assert state["combined_output_bytes"] <= 16 * 1024
+            if pending_exit:
+                assert state["pending_keeper_present"] and state["legacy_revoke_pending"]
+                assert state["active_admissions"] == 1 and state["active_jobs"] == 1
+                for key in ["native_terminal_and_both_eof", "stop_worker_joined", "shared_accounting_released_after_proof"]:
+                    assert state[key] is False
+            else:
+                for key in ["native_terminal_and_both_eof", "stop_worker_joined",
+                            "shared_accounting_released_after_proof", "other_session_active"]:
+                    assert state[key] is True, key
+                assert state["combined_output_bytes"] <= 16 * 1024
             if mode == "handle-recovery":
                 assert state["handle_count_stable_after_warmup"] is True
-            if mode in ("close-before-create", "close-before-resume", "create-error", "resume-error"):
+            if mode in ("close-before-create", "close-before-resume", "create-error", "resume-error",
+                        "ticket-close-wins", "ticket-cancelled-before-create", "ticket-direct-close", "ticket-deadline", "ticket-client-drop"):
                 assert not (root / "executed").exists()
-            outer_api.wait_for(lambda: job.active() == 1, 2, "host only after owned proof")
+            expected = 2 if mode == "ticket-host-exit-stop-error" else 1
+            outer_api.wait_for(lambda: job.active() == expected, 2, "owned accounting before host exit")
             proof["outer_before_host_exit"] = job.active()
             host.kill()  # exact synthetic handle; never a guessed PID
             host.wait(timeout=3)

@@ -3,9 +3,10 @@
 //! No production API; finite fault windows, not arbitrary kernel-failure proof.
 mod native_children;
 use super::*;
+use crate::session_registry::{ResearchCommitResult, ResearchLaunchTicket};
 use crate::{
-    SessionAdmissionPermit, SessionGrantSpec, SessionLifecycleManager, SessionRegistry,
-    SessionRegistryError, TaskLeaseRegistry,
+    Clock, SessionAdmissionPermit, SessionGrantSpec, SessionLifecycleManager, SessionRegistry,
+    SessionRegistryError, StdClock, TaskLeaseRegistry,
 };
 use optic_bridge_core::{Capability, MonotonicTime, PrincipalId, ProjectId};
 use optic_bridge_windows_test_support as native;
@@ -48,6 +49,9 @@ struct Owner<'a> {
     failed: bool,
     terminal: bool,
     admission: Option<SessionAdmissionPermit<'a>>,
+    ticket: Option<ResearchLaunchTicket<'a>>,
+    deadline: MonotonicTime,
+    time_expired: bool,
 }
 
 #[must_use = "Pending contains the actual native keeper; retain it until proof"]
@@ -64,6 +68,7 @@ impl<'a> Owner<'a> {
         manager: &ProcessManager,
         session: &SessionHandle,
         now: MonotonicTime,
+        clock: &dyn Clock,
     ) -> io::Result<(Box<Self>, Client)> {
         let resources = ResourceBudget {
             timeout_ms: 4_000,
@@ -81,6 +86,12 @@ impl<'a> Owner<'a> {
         let admission = registry
             .begin_admission(session, now)
             .map_err(io::Error::other)?;
+        let deadline = MonotonicTime::from_millis(
+            now.as_millis()
+                .checked_add(4_000)
+                .ok_or_else(|| io::Error::other("absolute deadline overflow"))?
+                .min(admission.grant().expires_at.as_millis()),
+        );
         let (revoked, _) = registry
             .watch_active(session, now)
             .map_err(io::Error::other)?;
@@ -125,6 +136,10 @@ impl<'a> Owner<'a> {
                 Arc::clone(&stopped),
             ],
             Arc::clone(&terminate_error),
+            StdInstant::now()
+                + Duration::from_millis(
+                    deadline.as_millis().saturating_sub(clock.now().as_millis()),
+                ),
         );
         let client = Client(Arc::clone(&stopped));
         Ok((
@@ -141,6 +156,9 @@ impl<'a> Owner<'a> {
                 failed: false,
                 terminal: false,
                 admission: Some(admission),
+                ticket: None,
+                deadline,
+                time_expired: false,
             }),
             client,
         ))
@@ -185,6 +203,8 @@ impl<'a> Owner<'a> {
         let mut state = self.record.state.lock().unwrap();
         state.status = if self.failed || self.watch.errors.load(Ordering::Acquire) > 0 {
             ProcessStatus::Failed
+        } else if self.time_expired || self.watch.deadline_expired.load(Ordering::Acquire) {
+            ProcessStatus::TimedOut
         } else if self.native.overflow {
             ProcessStatus::OutputLimitExceeded
         } else {
@@ -196,7 +216,62 @@ impl<'a> Owner<'a> {
         self.terminal = true;
         // Genuine owner-held admission drains only AFTER all proof + join.
         self.admission.take();
+        self.ticket.take();
         Ok(true)
+    }
+    fn mint_ticket(
+        &mut self,
+        registry: &SessionRegistry,
+        clock: &dyn Clock,
+    ) -> Result<(), SessionRegistryError> {
+        assert!(self.ticket.is_none());
+        let admission = self
+            .admission
+            .take()
+            .expect("keeper owns admission before commit");
+        match registry.research_commit_ticket(admission, &self.id, clock, self.deadline) {
+            ResearchCommitResult::Committed(ticket) => {
+                self.ticket = Some(ticket);
+                Ok(())
+            }
+            ResearchCommitResult::Denied { admission, reason } => {
+                self.admission = Some(admission);
+                Err(reason)
+            }
+        }
+    }
+    fn check_ticket(&mut self, clock: &dyn Clock) -> io::Result<()> {
+        let ticket = self
+            .ticket
+            .as_ref()
+            .expect("one committed ticket bound to this keeper");
+        let now = clock.now();
+        if self.stopped.load(Ordering::Acquire)
+            || self.record.stop_requested.load(Ordering::Acquire)
+            || self.watch.deadline_expired.load(Ordering::Acquire)
+            || !ticket.permits(&self.id, now)
+        {
+            self.time_expired |= now >= ticket.deadline();
+            self.stopped.store(true, Ordering::Release);
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "ticket closed or expired",
+            ));
+        }
+        Ok(())
+    }
+    fn start_ticket(
+        &mut self,
+        root: &Path,
+        mode: &str,
+        clock: &dyn Clock,
+        after_create: impl FnOnce(),
+    ) -> io::Result<()> {
+        self.check_ticket(clock)?;
+        self.native.create(root, mode, false)?;
+        after_create();
+        self.check_ticket(clock)?;
+        self.native.resume(false)
     }
     fn try_shutdown(&mut self) -> io::Result<bool> {
         self.stopped.store(true, Ordering::Release);
@@ -226,6 +301,58 @@ impl<'a> Owner<'a> {
     }
 }
 
+struct ManualClock(AtomicU64);
+impl Clock for ManualClock {
+    fn now(&self) -> MonotonicTime {
+        MonotonicTime::from_millis(self.0.load(Ordering::Acquire))
+    }
+}
+
+fn expect_owned_host_exit(
+    mut owner: Box<Owner<'_>>,
+    registry: &SessionRegistry,
+    manager: &ProcessManager,
+    session: &SessionHandle,
+    root: &Path,
+    mode: &str,
+) -> ! {
+    owner.observe_error = true;
+    if mode == "ticket-host-exit-stop-error" {
+        owner.terminate_error.store(true, Ordering::Release);
+    }
+    assert_eq!(
+        registry.research_close_admission(session).unwrap(),
+        (true, 1)
+    );
+    owner = match owner.begin_shutdown() {
+        OwnedShutdown::Pending { keeper, .. } => keeper,
+        OwnedShutdown::Complete => panic!("unavailable proof cannot authorize root destruction"),
+    };
+    if mode == "ticket-host-exit-stop-error" {
+        wait(|| owner.watch.errors.load(Ordering::Acquire) > 0);
+        assert_eq!(owner.native.job.active().unwrap(), 1);
+    }
+    assert_eq!(manager.active_session_job_count(session).unwrap(), 1);
+    assert!(owner.ticket.is_some());
+    thread::scope(|scope| {
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let _closer = scope.spawn(move || done_tx.send(registry.revoke(session)).unwrap());
+        wait(|| registry.research_gate_reference_count(session).unwrap() == 2);
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        let pending = serde_json::json!({"mode":mode,"instrumented_registry":true,
+            "production_wired":false,"real_win32":true,"native_created":true,
+            "atomic_job_association":true,"status":"TerminationUncertain",
+            "pending_keeper_present":true,"active_admissions":1,"active_jobs":1,
+            "legacy_revoke_pending":true,"native_terminal_and_both_eof":false,
+            "stop_worker_joined":false,"shared_accounting_released_after_proof":false});
+        fs::write(root.join("pending-ready"), pending.to_string()).unwrap();
+        // Keep owner/permit/native handles/JoinHandle LIVE until the outer
+        // supervisor terminates this exact synthetic host, without Rust Drop.
+        thread::sleep(Duration::from_secs(10));
+        panic!("external supervisor failed to terminate pending owner host");
+    })
+}
+
 fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     let mode = mode.to_owned();
     assert!(matches!(
@@ -243,6 +370,14 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             | "descendant-pipes"
             | "output-limit"
             | "panic-under-gate"
+            | "ticket-close-wins"
+            | "ticket-cancelled-before-create"
+            | "ticket-launch-wins"
+            | "ticket-direct-close"
+            | "ticket-deadline"
+            | "ticket-client-drop"
+            | "ticket-host-exit-stop-error"
+            | "ticket-host-exit-observation"
     ));
     let manager = Arc::new(ProcessManager::new(root, HardLimits::default(), Vec::new()).unwrap());
     let registry = Arc::new(SessionRegistry::new());
@@ -251,7 +386,13 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
         Arc::new(TaskLeaseRegistry::new()),
         Arc::clone(&manager),
     );
-    let now = MonotonicTime::from_millis(1);
+    let manual = Arc::new(ManualClock(AtomicU64::new(0)));
+    let clock: Arc<dyn Clock> = if mode == "ticket-deadline" {
+        manual.clone()
+    } else {
+        Arc::new(StdClock::new())
+    };
+    let now = clock.now();
     let provision = || {
         lifecycle
             .provision(
@@ -269,11 +410,103 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     let a = provision();
     let b = provision();
     let handles_before = native::Native::current_handle_count().unwrap();
-    let (mut owner, client) = Owner::prepare(&registry, &manager, &a.handle, now).unwrap();
+    let (mut owner, client) =
+        Owner::prepare(&registry, &manager, &a.handle, now, clock.as_ref()).unwrap();
     let mut client = Some(client);
     let mut close_during_call_observed = false;
     let mut error_code = None;
-    if mode == "close-before-create" {
+    if mode.starts_with("ticket-") {
+        if mode == "ticket-close-wins" {
+            registry.research_close_admission(&a.handle).unwrap();
+            assert_eq!(
+                owner.mint_ticket(&registry, clock.as_ref()).unwrap_err(),
+                SessionRegistryError::Revoked
+            );
+            assert!(owner.admission.is_some());
+        } else {
+            owner.mint_ticket(&registry, clock.as_ref()).unwrap();
+            if mode == "ticket-cancelled-before-create" || mode == "ticket-client-drop" {
+                if mode == "ticket-client-drop" {
+                    drop(client.take());
+                    assert!(registry.get_active(&a.handle, clock.now()).is_ok());
+                } else {
+                    registry.research_close_admission(&a.handle).unwrap();
+                }
+                assert_eq!(
+                    owner
+                        .start_ticket(root, &mode, clock.as_ref(), || ())
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::Interrupted
+                );
+                assert!(
+                    !owner.native.association_observed,
+                    "cancelled caller cannot start a fresh child"
+                );
+            } else if mode == "ticket-deadline" {
+                let deadline = owner.deadline;
+                let result = owner.start_ticket(root, &mode, clock.as_ref(), || {
+                    manual.0.store(deadline.as_millis(), Ordering::Release)
+                });
+                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+                assert!(owner.time_expired);
+            } else if mode == "ticket-direct-close" {
+                let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+                let (release_tx, release_rx) = mpsc::sync_channel(1);
+                let (done_tx, done_rx) = mpsc::sync_channel(1);
+                let native_clock = Arc::clone(&clock);
+                let native_mode = mode.clone();
+                owner = thread::scope(|scope| {
+                    let launch = scope.spawn(move || {
+                        let mut keeper = owner;
+                        let result =
+                            keeper.start_ticket(root, &native_mode, native_clock.as_ref(), || {
+                                entered_tx.send(()).unwrap();
+                                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                            });
+                        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+                        keeper
+                    });
+                    entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    let closer = scope.spawn(|| done_tx.send(registry.revoke(&a.handle)).unwrap());
+                    // POSITIVE contrast: actual direct revoke publishes CLOSED
+                    // while the native launch phase is STILL paused.
+                    wait(|| {
+                        matches!(
+                            registry.get_active(&a.handle, clock.now()),
+                            Err(SessionRegistryError::Revoked)
+                        )
+                    });
+                    registry
+                        .research_commit_launch(&b.handle, clock.now(), || ())
+                        .unwrap();
+                    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+                    assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+                    fs::write(
+                        root.join("ticket-ready"),
+                        b"closed during native pause, keeper retained",
+                    )
+                    .unwrap();
+                    wait(|| root.join("ticket-confirmed").exists());
+                    close_during_call_observed = true;
+                    release_tx.send(()).unwrap();
+                    let mut keeper = launch.join().unwrap();
+                    wait(|| keeper.try_shutdown().unwrap());
+                    done_rx
+                        .recv_timeout(Duration::from_secs(2))
+                        .unwrap()
+                        .unwrap();
+                    closer.join().unwrap();
+                    keeper
+                });
+            } else {
+                owner
+                    .start_ticket(root, &mode, clock.as_ref(), || ())
+                    .unwrap();
+                wait(|| root.join("executed").exists());
+            }
+        }
+    } else if mode == "close-before-create" {
         assert_eq!(
             registry.research_close_admission(&a.handle).unwrap(),
             (true, 1)
@@ -387,6 +620,12 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             result.unwrap();
             wait(|| root.join("executed").exists());
         }
+    }
+    if matches!(
+        mode.as_str(),
+        "ticket-host-exit-stop-error" | "ticket-host-exit-observation"
+    ) {
+        expect_owned_host_exit(owner, &registry, &manager, &a.handle, root, &mode);
     }
     if mode == "output-limit" {
         wait(|| {
@@ -542,7 +781,7 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
             closer.join().unwrap();
         });
     }
-    assert!(owner.terminal && owner.admission.is_none());
+    assert!(owner.terminal && owner.admission.is_none() && owner.ticket.is_none());
     assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
     let result = manager.result(&a.handle, &owner.id).unwrap();
     let output = owner.record.output.lock().unwrap();
@@ -550,7 +789,15 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     let bytes = output.stdout.len() + output.stderr.len();
     assert!(bytes <= OUTPUT);
     drop(output);
-    if matches!(mode.as_str(), "close-before-create" | "close-before-resume") {
+    if matches!(
+        mode.as_str(),
+        "close-before-create"
+            | "close-before-resume"
+            | "ticket-close-wins"
+            | "ticket-cancelled-before-create"
+            | "ticket-direct-close"
+            | "ticket-deadline"
+    ) {
         assert!(!root.join("executed").exists());
     }
     if matches!(
@@ -561,6 +808,9 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     }
     if mode == "output-limit" {
         assert_eq!(result.status, ProcessStatus::OutputLimitExceeded);
+    }
+    if mode == "ticket-deadline" {
+        assert_eq!(result.status, ProcessStatus::TimedOut);
     }
     assert!(lifecycle.seal_quiescent(&a.handle).is_ok());
     assert!(lifecycle.try_reap(&a.handle, now).unwrap().session_removed);
@@ -579,6 +829,9 @@ fn exercise(root: &Path, mode: &str) -> serde_json::Value {
     drop(client);
     let handles_after = native::Native::current_handle_count().unwrap();
     serde_json::json!({"mode":mode,"instrumented_registry":true,"real_win32":true,
+        "commit_contract":if mode.starts_with("ticket-") {"short-ticket"} else {"native-under-gate"},
+        "close_published_while_native_paused":mode == "ticket-direct-close",
+        "clock":if mode == "ticket-deadline" {"manual-monotonic"} else {"StdClock"},
         "native_created":associated,"atomic_job_association":associated,
         "native_terminal_and_both_eof":true,"stop_worker_joined":true,
         "shared_accounting_released_after_proof":true,"other_session_active":true,
