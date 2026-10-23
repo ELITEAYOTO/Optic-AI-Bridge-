@@ -280,7 +280,6 @@ fn replacement_generation_at_predicate_check_keeps_legacy_handle_lookup() {
     }
 }
 
-
 #[test]
 fn admission_revocation_watch_is_read_only_and_remains_bound_to_original_record() {
     let registry = SessionRegistry::new();
@@ -314,7 +313,12 @@ fn admission_revocation_watch_is_read_only_and_remains_bound_to_original_record(
             Err(mpsc::TryRecvError::Empty)
         ));
         drop(original_permit);
-        assert!(closed_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap());
+        assert!(
+            closed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
         closer.join().unwrap();
     });
 
