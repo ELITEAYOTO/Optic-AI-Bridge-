@@ -1,0 +1,44 @@
+name: Windows Rust Job-list atomic research
+on:
+  push:
+    branches: ['research/317-native-lifecycle-decision-2026-10-23']
+permissions:
+  contents: read
+jobs:
+  native-rust:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate exact research source
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain bootstrap failed' }
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'Rustfmt failed; retain first red' }
+          python -m py_compile scripts/research/issue317_rust_job_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax failed' }
+      - name: Compile Windows test fixture
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-windows --lib --no-run --message-format=json > rust-probe.jsonl
+          if ($LASTEXITCODE -ne 0) { throw 'Rust Windows native compile failed' }
+          $items = @(Get-Content rust-probe.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.kind -contains 'lib' -and $_.executable })
+          if ($items.Count -ne 1) { throw 'ambiguous native test binary' }
+          "OPTIC317_NATIVE_RUST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Supervise atomic Win32 create and invalid Job failure
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_rust_job_native.py --test-exe "$env:OPTIC317_NATIVE_RUST" --output evidence/rust-atomic-job-list.json
+          if ($LASTEXITCODE -ne 0) { throw 'Rust native supervision failed' }
+      - name: Upload limited synthetic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic317-rust-atomic-job-list
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
