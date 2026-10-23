@@ -48,13 +48,16 @@ def run_case(helper, exe, mode, root):
             if host.poll() is not None:
                 raise RuntimeError("Rust host failed before ready")
             state = ready.read_text(encoding="ascii")
-            expected_state = (
-                "mode=atomic;inner_active=1;suspended=1"
-                if mode == "atomic" else "mode=invalid;inner_active=0;no_spawn=1"
-            )
+            expected_states = {
+                "atomic": "mode=atomic;inner_active=1;suspended=1",
+                "no-inherit": "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
+                "invalid": "mode=invalid;inner_active=0;no_spawn=1",
+                "missing": "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
+            }
+            expected_state = expected_states[mode]
             if state != expected_state:
                 raise AssertionError("Rust native ready data did not match")
-            before = 2 if mode == "atomic" else 1
+            before = 2 if mode in ("atomic", "no-inherit") else 1
             helper.wait_for(lambda: job.active() == before, 3, "outer owned count")
             # Terminate ONLY the exact Rust host handle created by this test.
             host.kill()
@@ -62,8 +65,10 @@ def run_case(helper, exe, mode, root):
             helper.wait_for(lambda: job.active() == 0, 3, "host crash recovery")
             return {
                 "mode": mode, "outer_before": before, "outer_after": job.active(),
-                "rust_native_attribute_proven": mode == "atomic",
+                "rust_native_attribute_proven": mode in ("atomic", "no-inherit"),
+                "spare_inheritable_writer_not_leaked": mode == "no-inherit",
                 "invalid_job_failed_closed": mode == "invalid",
+                "missing_executable_handle_count_stable": mode == "missing",
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
             }
     finally:
@@ -102,7 +107,7 @@ def main():
     helper = load_supervisor()
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-rust-atomic-") as temp:
-            for mode in ("atomic", "invalid"):
+            for mode in ("atomic", "no-inherit", "invalid", "missing"):
                 root = Path(temp) / mode
                 root.mkdir()
                 result["cases"].append(run_case(helper, exe, mode, root))
