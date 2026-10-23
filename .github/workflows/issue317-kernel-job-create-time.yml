@@ -43,3 +43,28 @@ jobs:
         run: |
           echo "OPTIC317_KERNEL_JOBLIST sha=${GITHUB_SHA} current-exe-only=true production-wired=false creator-crash-tested=false"
           cargo test --locked -p optic-bridge-windows --lib create_time_research::precreated_kernel_job_ -- --nocapture --test-threads=1
+      - name: Locate fixed Windows library test host
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m py_compile scripts/research/issue317_kernel_job_host_death.py
+          if ($LASTEXITCODE -ne 0) { throw 'supervisor syntax' }
+          cargo test --locked -p optic-bridge-windows --lib --no-run --message-format=json > kernel-job-build.jsonl
+          if ($LASTEXITCODE -ne 0) { throw 'test host compilation' }
+          $items = @(Get-Content kernel-job-build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_windows' -and $_.executable })
+          if ($items.Count -ne 1) { throw "ambiguous fixed test host: $($items.Count)" }
+          "OPTIC317_FIXED_HOST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Independently supervised creator crash after create-time association
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_kernel_job_host_death.py --test-exe "$env:OPTIC317_FIXED_HOST" --output evidence/creator-death.json
+          if ($LASTEXITCODE -ne 0) { throw 'independent native crash proof failed' }
+      - name: Preserve supervised evidence, including initial failures
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue317-kernel-create-time
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
