@@ -539,6 +539,10 @@ impl Drop for ScopedHandle {
 }
 
 #[cfg(test)]
+#[path = "job_create_time_research.rs"]
+mod create_time_research;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
