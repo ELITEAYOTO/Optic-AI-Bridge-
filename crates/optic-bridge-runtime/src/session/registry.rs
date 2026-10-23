@@ -91,6 +91,17 @@ impl SessionRegistry {
     }
 
     #[cfg(test)]
+    pub(crate) fn research_gate_reference_count(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<usize, SessionRegistryError> {
+        // Scheduling witness only; subtract this temporary lookup's Arc.
+        Ok(self
+            .research_gate(handle)?
+            .map_or(0, |gate| Arc::strong_count(&gate) - 1))
+    }
+
+    #[cfg(test)]
     pub(crate) fn research_commit_launch<R>(
         &self,
         handle: &SessionHandle,

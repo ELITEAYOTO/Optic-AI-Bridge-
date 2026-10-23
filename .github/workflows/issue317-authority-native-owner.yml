@@ -1,0 +1,58 @@
+name: Windows authority-owned gate and native owner research
+on:
+  push:
+    branches: ['codex/317-authority-native-owner']
+permissions:
+  contents: read
+jobs:
+  native-owner:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Exact-source tooling and format
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { throw 'toolchain failed' }
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'format failed; preserve first red' }
+          python -m py_compile scripts/research/issue317_authority_native_owner.py
+          if ($LASTEXITCODE -ne 0) { throw 'supervisor syntax failed' }
+      - name: Compile instrumented real registry and native owner host
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib --no-run --message-format=json > owner-build.jsonl
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content owner-build.jsonl | ForEach-Object {
+              $item = $_ | ConvertFrom-Json
+              if ($item.reason -eq 'compiler-message' -and $item.message.level -eq 'error') { Write-Host $item.message.rendered }
+            }
+            throw 'compile failed'
+          }
+          $items = @(Get-Content owner-build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_runtime' -and $_.executable })
+          if ($items.Count -ne 1) { throw 'ambiguous native test host' }
+          "OPTIC317_NATIVE_OWNER_HOST=$($items[0].executable)" >> $env:GITHUB_ENV
+      - name: Strict workspace Clippy
+        run: cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Fixture remains absent from production dependency closure
+        shell: pwsh
+        run: |
+          cargo +1.99.0 tree --locked -p optic-bridge-app -e normal --prefix none > normal-dependencies.txt
+          if ($LASTEXITCODE -ne 0) { throw 'dependency inspection failed' }
+          if (Select-String -Quiet -Path normal-dependencies.txt -Pattern '^optic-bridge-windows-test-support ') { throw 'test fixture became production dependency' }
+      - name: Fourteen independently supervised native cases
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_authority_native_owner.py --test-exe "$env:OPTIC317_NATIVE_OWNER_HOST" --output evidence/authority-native-owner.json
+          if ($LASTEXITCODE -ne 0) { throw 'native proof failed; keep original result' }
+      - name: Preserve partial proof on every result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-native-owner
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7

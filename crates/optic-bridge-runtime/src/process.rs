@@ -1611,6 +1611,8 @@ pub enum ProcessError {
     Io(std::io::Error),
 }
 
+#[cfg(all(test, windows))]
+mod authority_native_owner_tests;
 #[cfg(test)]
 mod close_contract_tests;
 #[cfg(test)]

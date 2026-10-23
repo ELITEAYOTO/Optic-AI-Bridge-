@@ -584,6 +584,7 @@ dependencies = [
  "optic-bridge-core",
  "optic-bridge-policy",
  "optic-bridge-windows",
+ "optic-bridge-windows-test-support",
  "process-wrap",
  "serde",
  "serde_json",
@@ -599,6 +600,14 @@ dependencies = [
  "process-wrap",
  "thiserror",
  "tokio",
+ "windows",
+]
+
+[[package]]
+name = "optic-bridge-windows-test-support"
+version = "0.1.4"
+dependencies = [
+ "optic-bridge-windows",
  "windows",
 ]
 
