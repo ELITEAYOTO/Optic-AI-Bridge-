@@ -25,9 +25,9 @@ use windows::{
         System::Threading::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
             EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetProcessHandleCount,
-            InitializeProcThreadAttributeList,
-            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
-            STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute,
+            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, STARTUPINFOEXW, STARTUPINFOW,
+            TerminateProcess, UpdateProcThreadAttribute,
         },
     },
     core::{PCWSTR, PWSTR},
@@ -85,7 +85,10 @@ impl Drop for SuspendedChild {
     }
 }
 
-fn launch_suspended_with_job(job_handle: HANDLE, missing_binary: bool) -> io::Result<SuspendedChild> {
+fn launch_suspended_with_job(
+    job_handle: HANDLE,
+    missing_binary: bool,
+) -> io::Result<SuspendedChild> {
     let mut attributes = NativeAttributes::new()?;
     let handles = [job_handle];
     // SAFETY: the array holds a single HANDLE for the lifetime of the
@@ -109,10 +112,14 @@ fn launch_suspended_with_job(job_handle: HANDLE, missing_binary: bool) -> io::Re
         // Fixed synthetic nonexisting executable: error must occur within CreateProcessW,
         // AFTER Job attributes were prepared and BEFORE any child handle exists.
         let path = std::env::temp_dir().join(format!(
-            "optic317-provably-absent-{}-fixture.exe", std::process::id()
+            "optic317-provably-absent-{}-fixture.exe",
+            std::process::id()
         ));
         if path.exists() {
-            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "fixture collision"));
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "fixture collision",
+            ));
         }
         path
     } else {
@@ -174,7 +181,10 @@ fn wait_for_gate(path: &Path) -> io::Result<()> {
 #[ignore = "must be run under independently armed Windows Job supervisor"]
 fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
-    assert!(matches!(mode.as_str(), "atomic" | "invalid" | "no-inherit" | "missing"));
+    assert!(matches!(
+        mode.as_str(),
+        "atomic" | "invalid" | "no-inherit" | "missing"
+    ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
     let gate = Path::new(&gate);
@@ -207,7 +217,10 @@ fn native_atomic_job_list_host_fixture() {
             }
             .expect("make spare pipe writer inheritable");
             let child = launch_suspended_with_job(job.raw(), false).expect("atomic creation");
-            assert_eq!(job.active_processes().expect("suspended child stays alive"), 1);
+            assert_eq!(
+                job.active_processes().expect("suspended child stays alive"),
+                1
+            );
             pipe.close_parent_writer();
             let deadline = Instant::now() + Duration::from_secs(2);
             loop {
@@ -216,10 +229,16 @@ fn native_atomic_job_list_host_fixture() {
                 if chunk.eof {
                     break;
                 }
-                assert!(Instant::now() < deadline, "spare writer was inherited by child");
+                assert!(
+                    Instant::now() < deadline,
+                    "spare writer was inherited by child"
+                );
                 thread::sleep(Duration::from_millis(5));
             }
-            assert_eq!(job.active_processes().expect("child still alive after EOF"), 1);
+            assert_eq!(
+                job.active_processes().expect("child still alive after EOF"),
+                1
+            );
             Some(child)
         }
         "invalid" => {
@@ -238,7 +257,11 @@ fn native_atomic_job_list_host_fixture() {
                 .expect("native handle count before negative matrix");
             for _ in 0..16 {
                 assert!(launch_suspended_with_job(job.raw(), true).is_err());
-                assert_eq!(job.active_processes().expect("failed creation has no child"), 0);
+                assert_eq!(
+                    job.active_processes()
+                        .expect("failed creation has no child"),
+                    0
+                );
             }
             let mut after = 0u32;
             // SAFETY: same process and count destination as above.
