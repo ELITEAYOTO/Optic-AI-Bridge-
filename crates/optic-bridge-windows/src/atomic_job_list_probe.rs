@@ -172,7 +172,11 @@ fn launch_suspended_with_job(
 
 /// Permit only fixed stdio handles, never arbitrary inheritable parent handles.
 /// This research primitive never accepts model arguments or produces an exported API.
-fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()> {
+fn run_selective_stdio(
+    job: &OwnedJob,
+    retain_descendant: bool,
+    fail_spawn: bool,
+) -> io::Result<()> {
     let mut stdout = CapturedOutputPipe::new()?;
     let mut stderr = CapturedOutputPipe::new()?;
     let mut unrelated = CapturedOutputPipe::new()?;
@@ -220,7 +224,16 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
     }
     .map_err(io::Error::other)?;
 
-    let executable = std::env::current_exe()?;
+    let executable = if fail_spawn {
+        let missing = std::env::temp_dir().join(format!(
+            "optic317-stdio-absent-{}-fixture.exe",
+            std::process::id()
+        ));
+        assert!(!missing.exists(), "synthetic missing-executable path collides");
+        missing
+    } else {
+        std::env::current_exe()?
+    };
     let mut executable_wide: Vec<u16> = executable.as_os_str().encode_wide().collect();
     executable_wide.push(0);
     let child_fixture = if retain_descendant {
@@ -245,7 +258,7 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
     // SAFETY: fixed synthetic binary and writable UTF-16 command buffer.
     // Only the three explicit inheritable std handles are allowed to
     // cross the process boundary; Job membership occurs at creation.
-    unsafe {
+    let launch = unsafe {
         CreateProcessW(
             PCWSTR(executable_wide.as_ptr()),
             Some(PWSTR(command_line.as_mut_ptr())),
@@ -258,8 +271,34 @@ fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()
             &startup.StartupInfo as *const STARTUPINFOW,
             &mut info,
         )
+    };
+    if fail_spawn {
+        if launch.is_ok() {
+            // Even an unexpected successful launch must not leak the exact
+            // native process/thread handles, nor resume this test child.
+            let unexpected = SuspendedChild {
+                process: unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) },
+                _thread: unsafe { OwnedHandle::from_raw_handle(info.hThread.0) },
+            };
+            drop(unexpected);
+            panic!("missing synthetic executable unexpectedly launched");
+        }
+        let error = launch.expect_err("missing executable must reject native create");
+        assert_eq!(
+            error.code(),
+            windows::core::HRESULT::from_win32(2),
+            "expected ERROR_FILE_NOT_FOUND after two attribute lists"
+        );
+        stdout.close_parent_writer();
+        stderr.close_parent_writer();
+        unrelated.close_parent_writer();
+        assert!(stdout.try_read(64)?.eof);
+        assert!(stderr.try_read(64)?.eof);
+        assert!(unrelated.try_read(64)?.eof);
+        assert_eq!(job.active_processes()?, 0, "failed launch entered Job");
+        return Err(io::Error::other(error));
     }
-    .map_err(io::Error::other)?;
+    launch.map_err(io::Error::other)?;
     // SAFETY: CreateProcessW succeeded, so both handles are exclusively
     // returned and must be retained through all fallible native steps.
     let child = SuspendedChild {
@@ -465,7 +504,7 @@ fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
     assert!(matches!(
         mode.as_str(),
-        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio" | "retained-stdio"
+        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio" | "retained-stdio" | "stdio-bad-exe"
     ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
@@ -527,15 +566,32 @@ fn native_atomic_job_list_host_fixture() {
         "stdio" => {
             // Native positive stdio proof, using explicitly allowed inherited
             // stdout/stderr writers AND a rejected ambient inheritable writer.
-            run_selective_stdio(&job, false).expect("bounded explicit stdio native proof");
+            run_selective_stdio(&job, false, false).expect("bounded explicit stdio native proof");
             assert_eq!(job.active_processes().expect("stdio child terminal"), 0);
             None
         }
         "retained-stdio" => {
             // The independent outer supervisor provides the synthetic
             // descendant readiness path before starting this test host.
-            run_selective_stdio(&job, true).expect("retained stdio stopped with EOF proof");
+            run_selective_stdio(&job, true, false).expect("retained stdio stopped with EOF proof");
             assert_eq!(job.active_processes().expect("retainer Job empty"), 0);
+            None
+        }
+        "stdio-bad-exe" => {
+            assert!(run_selective_stdio(&job, false, true).is_err());
+            let mut before = 0u32;
+            // SAFETY: queried process is this host, destination remains valid.
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut before) }
+                .expect("handle count before repeated selected-stdio errors");
+            for _ in 0..16 {
+                assert!(run_selective_stdio(&job, false, true).is_err());
+                assert_eq!(job.active_processes().expect("no leaked Job child"), 0);
+            }
+            let mut after = 0u32;
+            // SAFETY: same live process and valid writable out parameter.
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut after) }
+                .expect("handle count after repeated selected-stdio errors");
+            assert_eq!(before, after, "repeated selected-stdio errors leaked handles");
             None
         }
         "invalid" => {
@@ -574,6 +630,7 @@ fn native_atomic_job_list_host_fixture() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
+        "stdio-bad-exe" => "mode=stdio-bad-exe;both-attributes=1;no-spawn=1;both-eof=1;handles-stable=1",
         "retained-stdio" => {
             "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1"
         }
