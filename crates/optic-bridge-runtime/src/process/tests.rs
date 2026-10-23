@@ -1359,8 +1359,6 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     fs::remove_dir_all(root).expect("remove workspace");
 }
 
-
- 
 // #317 RESEARCH negative control: early cancellation alone has no session
 // stop-intent fence in ProcessManager. A genuinely admitted producer can still
 // publish a new JobRecord after authority closes and after the first stop scan.
@@ -1396,8 +1394,8 @@ fn stop_registration_contract_wait_closed(
 #[test]
 fn stop_registration_contract_early_stop_scan_misses_late_job() {
     let root = workspace("early-stop-missed-reservation");
-    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-        .expect("real ProcessManager");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("real ProcessManager");
     let registry = crate::SessionRegistry::new();
     let a = stop_registration_contract_grant();
     let b = stop_registration_contract_grant();
@@ -1470,8 +1468,8 @@ fn stop_registration_contract_early_stop_scan_misses_late_job() {
 #[test]
 fn stop_registration_contract_registered_job_is_seen_during_close() {
     let root = workspace("stop-visible-reservation");
-    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
-        .expect("real ProcessManager");
+    let manager =
+        ProcessManager::new(&root, HardLimits::default(), Vec::new()).expect("real ProcessManager");
     let registry = crate::SessionRegistry::new();
     let a = stop_registration_contract_grant();
     registry.register(a.clone()).expect("register");
@@ -1495,7 +1493,10 @@ fn stop_registration_contract_registered_job_is_seen_during_close() {
                 .expect("report registry close");
         });
         stop_registration_contract_wait_closed(&registry, &a.handle);
-        assert_eq!(manager.cancel_session(&a.handle).expect("stop visible Job"), 1);
+        assert_eq!(
+            manager.cancel_session(&a.handle).expect("stop visible Job"),
+            1
+        );
         assert!(record.stop_requested.load(Ordering::Acquire));
         assert_eq!(manager.cancel_session(&a.handle).expect("repeat"), 0);
         assert_eq!(
