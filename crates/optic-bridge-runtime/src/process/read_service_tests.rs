@@ -282,6 +282,7 @@ struct Recover(Arc<TestFaults>);
 impl Drop for Recover {
     fn drop(&mut self) {
         self.0.observation_error.store(false, Ordering::Release);
+        self.0.hold_start.store(false, Ordering::Release);
     }
 }
 
@@ -469,39 +470,83 @@ fn service_kernel_retains_owners_through_request_loss_and_shutdown() {
         manager.result(&c.handle, &direct_id).unwrap().status,
         ProcessStatus::Stopped
     );
-    // Real lifecycle revoke must stop its service owner BEFORE waiting for
-    // an independently held caller admission to drain.
+    // Submit admission is NOT a lifetime permit. Freeze the actual worker
+    // before start, revoke with NO test-held admission, then let it proceed.
+    // This proves the pre-start cancellation path, not atomic check/resume.
     let d = grant("predrain");
     sessions.register(d.clone()).unwrap();
     let predrain = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
     let predrain_marker = root.join("predrain-started");
+    let delayed = Arc::new(TestFaults::default());
+    delayed.hold_start.store(true, Ordering::Release);
+    let _recover_delayed = Recover(Arc::clone(&delayed));
     let predrain_id = predrain
-        .submit(read(&d, &predrain_marker, Arc::new(TestFaults::default())))
+        .submit(read(&d, &predrain_marker, Arc::clone(&delayed)))
         .unwrap();
-    wait_for(|| predrain_marker.exists());
-    let caller_admission = sessions.begin_admission(&d.handle, now).unwrap();
     let (flag, _) = sessions.watch_active(&d.handle, now).unwrap();
-    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
-    thread::scope(|scope| {
-        let revoked = scope.spawn(|| {
-            let result = lifecycle.revoke(&d.handle);
-            done_tx.send(()).unwrap();
-            result
-        });
-        wait_for(|| flag.load(Ordering::Acquire));
-        wait_for(|| manager.active_session_job_count(&d.handle).unwrap() == 0);
-        assert_eq!(
-            manager.result(&d.handle, &predrain_id).unwrap().status,
-            ProcessStatus::Stopped
-        );
-        assert!(matches!(
-            done_rx.try_recv(),
-            Err(std::sync::mpsc::TryRecvError::Empty)
-        ));
-        drop(caller_admission);
-        revoked.join().unwrap().unwrap();
-    });
+    lifecycle.revoke(&d.handle).unwrap();
+    assert!(flag.load(Ordering::Acquire));
+    assert!(!predrain_marker.exists());
+    assert_eq!(manager.active_session_job_count(&d.handle).unwrap(), 1);
+    assert!(matches!(
+        lifecycle.seal_quiescent(&d.handle),
+        Err(SessionLifecycleError::SessionJobsStillActive { active_jobs: 1 })
+    ));
+    assert!(!lifecycle.try_reap(&d.handle, now).unwrap().session_removed);
+    assert!(matches!(
+        predrain.submit(read(&d, &predrain_marker, Arc::clone(&delayed))),
+        Err(ServiceError::Session(SessionRegistryError::Revoked))
+    ));
+    delayed.hold_start.store(false, Ordering::Release);
+    wait_for(|| manager.active_session_job_count(&d.handle).unwrap() == 0);
+    assert!(!predrain_marker.exists());
+    assert_eq!(
+        manager.result(&d.handle, &predrain_id).unwrap().status,
+        ProcessStatus::Stopped
+    );
     wait_for(|| predrain.try_shutdown().unwrap() == 0);
+    assert!(lifecycle.try_reap(&d.handle, now).unwrap().session_removed);
+
+    // Demonstrate the Drop liveness boundary without abandoning its owner:
+    // a named, joined test thread retains the root until observation recovers.
+    let closing = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
+    let closing_fault = Arc::new(TestFaults::default());
+    let closing_marker = root.join("closing-started");
+    let closing_id = closing
+        .submit(read(&c, &closing_marker, Arc::clone(&closing_fault)))
+        .unwrap();
+    wait_for(|| closing_marker.exists());
+    closing_fault
+        .observation_error
+        .store(true, Ordering::Release);
+    wait_for(|| {
+        manager.result(&c.handle, &closing_id).unwrap().status
+            == ProcessStatus::TerminationUncertain
+    });
+    assert!(closing.try_shutdown().unwrap() > 0);
+    let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+    let (dropped_tx, dropped_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        // On assertion unwind this guard clears the fault BEFORE scope joins.
+        let _recover_closing = Recover(Arc::clone(&closing_fault));
+        let dropping = scope.spawn(move || {
+            entered_tx.send(()).unwrap();
+            drop(closing);
+            dropped_tx.send(()).unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(
+            dropped_rx.recv_timeout(Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(manager.active_session_job_count(&c.handle).unwrap(), 1);
+        closing_fault
+            .observation_error
+            .store(false, Ordering::Release);
+        dropped_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        dropping.join().unwrap();
+    });
+    assert_eq!(manager.active_session_job_count(&c.handle).unwrap(), 0);
     let failed_root = ReadServiceRoot::new(Arc::clone(&manager), Arc::clone(&sessions));
     let mut missing = read(
         &c,
@@ -517,6 +562,6 @@ fn service_kernel_retains_owners_through_request_loss_and_shutdown() {
     );
     wait_for(|| failed_root.try_shutdown().unwrap() == 0);
     println!(
-        "OPTIC317_SERVICE kernel=true caller_reply_dropped=true worker_panic_caught=1 shared_accounting=true uncertainty_retained=true seal_reap_gated=true stop_before_admission_drain=true shutdown_pending_retains_root=true shutdown_while_bookkeeping_locked=true clean_root_drop_joined=true failed_spawn_recovered=true workers_joined=true production_git_wired=false"
+        "OPTIC317_SERVICE kernel=true caller_reply_dropped=true worker_panic_caught=1 shared_accounting=true uncertainty_retained=true seal_reap_gated=true revoke_without_test_permit=true delayed_start_cancelled=true shutdown_pending_retains_root=true shutdown_while_bookkeeping_locked=true drop_waits_for_observation=true clean_root_drop_joined=true failed_spawn_recovered=true workers_joined=true production_git_wired=false"
     );
 }

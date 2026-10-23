@@ -76,6 +76,9 @@ impl ReadServiceRoot {
         if self.stopping.load(Ordering::Acquire) {
             return Err(ServiceError::Stopping);
         }
+        // Reservation/submission fence ONLY: this permit is not transferred to
+        // the worker. Revoke may return with an owner still retained. This is
+        // an integration gate, not the synchronous GitRead admission contract.
         let _admission = self.sessions.begin_admission(&read.session, read.now)?;
         let (revoked, _) = self.sessions.watch_active(&read.session, read.now)?;
         if workers.len() >= self.processes.limits.max_active_process_jobs as usize {

@@ -1,6 +1,13 @@
 # ADR-0035 — Windows Git command ownership: staged integration
 
 Status: **PROPOSED; not accepted, not a production implementation**.
+
+Follow-up service audit (2026-10-23):
+[admission/shutdown decision and native proof scope](../research/ISSUE317_SERVICE_ADMISSION_SHUTDOWN_2026-10-23.md).
+The private service's submit-only permit is not full Git effect admission;
+pending ownership and joined Drop do not establish bounded application exit.
+The suspend-before-assignment host-crash window also remains unproved.
+These gates must be resolved before stage 5; this ADR remains PROPOSED.
 Date: 2026-10-22. Owner: runtime/process/session/Git.
 Baseline: main c94461446a49ee61dc527a74f4e198afc8e55b4d.
 

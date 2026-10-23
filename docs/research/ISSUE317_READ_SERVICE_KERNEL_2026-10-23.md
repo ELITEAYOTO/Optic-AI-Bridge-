@@ -104,8 +104,13 @@ The actual kernel, not the earlier scoped mock, demonstrates:
   accounting changes host+child (2) to host (1) BEFORE that mutex is released;
 - a separate direct root Drop, without prior error/shutdown, stops and joins a
   real active child;
-- real lifecycle revoke stops another child while a caller admission remains
-  held; revoke has not returned until that permit is released (pre-drain proof);
+- the initial c047 proof held an extra caller permit during revoke; this was
+  a registry pre-drain proof, not a service-owned admission proof. The audit
+  replaces it with delayed native start and real lifecycle revoke with NO
+  additional test-held permit: revoke returns with accounting retained, the
+  delayed start is cancelled, and seal/reap wait for terminal proof;
+- root Drop remains blocked during injected unavailable observation, then joins
+  after recovery; this is a liveness boundary, not bounded shutdown acceptance;
 - missing executable recovers with Failed/no active reservation.
 
 These are synthetic service tests, NOT actual MCP transport cancellation.
@@ -171,3 +176,9 @@ and before resume. It does not eliminate the last-check/ResumeThread race.
 7. Migrate ONE read-only path; general stdin and Git CAS remain separate gates.
 
 No #182 policy change, permission extension, timeout increase or new feature.
+
+## Follow-up audit
+
+See [admission, shutdown and authorizer decision](ISSUE317_SERVICE_ADMISSION_SHUTDOWN_2026-10-23.md).
+Submission-only admission must not silently replace synchronous Git admission.
+No production wiring is authorized by these experimental proofs.
