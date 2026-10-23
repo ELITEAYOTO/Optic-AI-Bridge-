@@ -17,6 +17,7 @@ use std::{
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
     path::Path,
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -25,7 +26,7 @@ use windows::{
         Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation},
         System::Threading::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetProcessHandleCount,
+            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, GetProcessHandleCount,
             InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
             ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
@@ -171,7 +172,7 @@ fn launch_suspended_with_job(
 
 /// Permit only fixed stdio handles, never arbitrary inheritable parent handles.
 /// This research primitive never accepts model arguments or produces an exported API.
-fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
+fn run_selective_stdio(job: &OwnedJob, retain_descendant: bool) -> io::Result<()> {
     let mut stdout = CapturedOutputPipe::new()?;
     let mut stderr = CapturedOutputPipe::new()?;
     let mut unrelated = CapturedOutputPipe::new()?;
@@ -222,8 +223,13 @@ fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
     let executable = std::env::current_exe()?;
     let mut executable_wide: Vec<u16> = executable.as_os_str().encode_wide().collect();
     executable_wide.push(0);
+    let child_fixture = if retain_descendant {
+        "native_retainer_root_fixture"
+    } else {
+        "native_stdio_child_fixture"
+    };
     let child_args = format!(
-        "\"{}\" --exact job::atomic_job_list_probe::native_stdio_child_fixture --ignored --nocapture",
+        "\"{}\" --exact job::atomic_job_list_probe::{child_fixture} --ignored --nocapture",
         executable.display()
     );
     let mut command_line: Vec<u16> = OsStr::new(&child_args).encode_wide().collect();
@@ -278,7 +284,7 @@ fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
 
-    let deadline = Instant::now() + Duration::from_secs(6);
+    let deadline = Instant::now() + Duration::from_secs(if retain_descendant { 8 } else { 6 });
     let mut out = Vec::new();
     let mut err = Vec::new();
     let mut out_eof = false;
@@ -299,8 +305,35 @@ fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
             out.len() + err.len() <= OUTPUT_LIMIT,
             "combined output exceeded cap"
         );
-        let terminated = job.active_processes()? == 0;
-        if out_eof && err_eof && terminated {
+        let active = job.active_processes()?;
+        if retain_descendant {
+            // The root must have exited *normally* while an owned
+            // descendant retains both pipes. Premature EOF or an empty
+            // Job would be an invalid positive retainer reproduction.
+            let mut root_status = 259u32; // STILL_ACTIVE
+            // SAFETY: the exact owned PROCESS_INFORMATION process handle
+            // remains alive; the exit-code buffer is writable.
+            unsafe { GetExitCodeProcess(HANDLE(child.process.as_raw_handle()), &mut root_status) }
+                .map_err(io::Error::other)?;
+            if root_status == 0 && active == 1 {
+                assert!(!out_eof && !err_eof, "descendant did not retain both pipes");
+                assert!(
+                    out.windows(b"OPTIC317_RETAINER_ROOT".len())
+                        .any(|x| x == b"OPTIC317_RETAINER_ROOT")
+                );
+                assert!(
+                    out.windows(b"OPTIC317_RETAINER_CHILD".len())
+                        .any(|x| x == b"OPTIC317_RETAINER_CHILD")
+                );
+                assert!(
+                    err.windows(b"OPTIC317_RETAINER_CHILD_ERR".len())
+                        .any(|x| x == b"OPTIC317_RETAINER_CHILD_ERR")
+                );
+                break;
+            }
+            assert_eq!(root_status, 259, "root failed before descendant-retention proof");
+            assert!(!out_eof && !err_eof, "pipes closed before retained descendant stop");
+        } else if out_eof && err_eof && active == 0 {
             break;
         }
         assert!(
@@ -309,14 +342,40 @@ fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
         );
         thread::sleep(Duration::from_millis(5));
     }
-    assert!(
-        out.windows(b"OPTIC317_STDOUT_FIXED".len())
-            .any(|x| x == b"OPTIC317_STDOUT_FIXED")
-    );
-    assert!(
-        err.windows(b"OPTIC317_STDERR_FIXED".len())
-            .any(|x| x == b"OPTIC317_STDERR_FIXED")
-    );
+    if retain_descendant {
+        // Out-of-band stop must be possible after root exit. It must
+        // terminate the owned descendant, not guess a PID or release
+        // the owner while pipe/Job proof is pending.
+        job.terminate(87)?;
+        let stop_deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if !out_eof {
+                let read = stdout.try_read(1024)?;
+                out_eof = read.eof;
+                out.extend_from_slice(&read.bytes);
+            }
+            if !err_eof {
+                let read = stderr.try_read(1024)?;
+                err_eof = read.eof;
+                err.extend_from_slice(&read.bytes);
+            }
+            assert!(out.len() + err.len() <= OUTPUT_LIMIT);
+            if out_eof && err_eof && job.active_processes()? == 0 {
+                break;
+            }
+            assert!(Instant::now() < stop_deadline, "retainer stop/EOF remained uncertain");
+            thread::sleep(Duration::from_millis(5));
+        }
+    } else {
+        assert!(
+            out.windows(b"OPTIC317_STDOUT_FIXED".len())
+                .any(|x| x == b"OPTIC317_STDOUT_FIXED")
+        );
+        assert!(
+            err.windows(b"OPTIC317_STDERR_FIXED".len())
+                .any(|x| x == b"OPTIC317_STDERR_FIXED")
+        );
+    }
     drop(child);
     Ok(())
 }
@@ -330,6 +389,54 @@ fn native_stdio_child_fixture() {
     io::stderr()
         .write_all(b"OPTIC317_STDERR_FIXED\n")
         .expect("fixed stderr marker");
+}
+
+#[test]
+#[ignore = "synthetic root only launched by pre-armed Windows Job research supervisor"]
+fn native_retainer_root_fixture() {
+    io::stdout()
+        .write_all(b"OPTIC317_RETAINER_ROOT\n")
+        .expect("root stdout marker");
+    // Only the test binary itself may become the fixed synthetic
+    // descendant. No operator input, shell, network or repository effect.
+    let exe = std::env::current_exe().expect("exact synthetic binary");
+    let descendant = Command::new(exe)
+        .args([
+            "--exact",
+            "job::atomic_job_list_probe::native_retainer_grandchild_fixture",
+            "--ignored",
+            "--nocapture",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("owned synthetic descendant");
+    drop(descendant);
+    let ready = std::env::var_os("OPTIC317_RETAINER_READY").expect("prearmed fixture gate");
+    wait_for_gate(Path::new(&ready)).expect("descendant announced readiness");
+}
+
+#[test]
+#[ignore = "synthetic retained descendant only spawned by fixed root test"]
+fn native_retainer_grandchild_fixture() {
+    io::stdout()
+        .write_all(b"OPTIC317_RETAINER_CHILD\n")
+        .expect("descendant stdout marker");
+    io::stderr()
+        .write_all(b"OPTIC317_RETAINER_CHILD_ERR\n")
+        .expect("descendant stderr marker");
+    let ready = std::env::var_os("OPTIC317_RETAINER_READY").expect("prearmed fixture gate");
+    let ready = Path::new(&ready);
+    let mut pending = ready.to_path_buf();
+    pending.set_extension("tmp");
+    fs::write(&pending, "descendant-live").expect("write finite descendant readiness");
+    fs::rename(&pending, ready).expect("atomically publish descendant readiness");
+    // Intentionally hold both inherited stdio writer handles until the
+    // owning Job explicitly terminates this child. The outer pre-armed
+    // supervisor provides the independent ultimate cleanup backstop.
+    thread::sleep(Duration::from_secs(12));
+    panic!("retainer was not stopped by native Job");
 }
 
 fn wait_for_gate(path: &Path) -> io::Result<()> {
@@ -349,7 +456,7 @@ fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
     assert!(matches!(
         mode.as_str(),
-        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio"
+        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio" | "retained-stdio"
     ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
@@ -357,7 +464,8 @@ fn native_atomic_job_list_host_fixture() {
     let ready = Path::new(&ready);
     wait_for_gate(gate).expect("supervisor must own host before native effects");
 
-    let job = OwnedJob::create(1, 512 * 1024 * 1024, 30)
+    let active_limit = if mode == "retained-stdio" { 2 } else { 1 };
+    let job = OwnedJob::create(active_limit, 512 * 1024 * 1024, 30)
         .expect("actual CPU/memory/process limits and KILL_ON_JOB_CLOSE");
     let _owned_child = match mode.as_str() {
         "atomic" => {
@@ -410,8 +518,19 @@ fn native_atomic_job_list_host_fixture() {
         "stdio" => {
             // Native positive stdio proof, using explicitly allowed inherited
             // stdout/stderr writers AND a rejected ambient inheritable writer.
-            run_selective_stdio(&job).expect("bounded explicit stdio native proof");
+            run_selective_stdio(&job, false).expect("bounded explicit stdio native proof");
             assert_eq!(job.active_processes().expect("stdio child terminal"), 0);
+            None
+        }
+        "retained-stdio" => {
+            let ready_path = ready.with_extension("descendant");
+            // The external supervisor owns this entire host+tree before
+            // any launch. Both synthetic descendant and root share one
+            // unforgeable, test-scoped readiness file path.
+            // SAFETY: scoped test process only; restored on process exit.
+            unsafe { std::env::set_var("OPTIC317_RETAINER_READY", ready_path) };
+            run_selective_stdio(&job, true).expect("retained stdio stopped with EOF proof");
+            assert_eq!(job.active_processes().expect("retainer Job empty"), 0);
             None
         }
         "invalid" => {
@@ -450,6 +569,7 @@ fn native_atomic_job_list_host_fixture() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
+        "retained-stdio" => "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1",
         "invalid" => "mode=invalid;inner_active=0;no_spawn=1",
         "missing" => "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
         _ => unreachable!("validated fixed fixture mode"),
