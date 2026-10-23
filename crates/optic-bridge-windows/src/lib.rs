@@ -18,6 +18,8 @@ mod executable;
 mod file;
 #[cfg(windows)]
 mod job;
+#[cfg(all(windows, feature = "issue317-owned-kernel-fixture"))]
+mod issue317_owned_kernel_fixture;
 #[cfg(windows)]
 mod memory;
 #[cfg(windows)]
@@ -52,3 +54,6 @@ pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
 #[cfg(windows)]
 pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};
+
+#[cfg(all(windows, feature = "issue317-owned-kernel-fixture"))]
+pub use issue317_owned_kernel_fixture::{ResearchKernelJob, ResearchSuspendedChild};
