@@ -34,6 +34,10 @@ struct SessionRecord {
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     active_admissions: u32,
+    // Research-only per-session commit/close lock. Production does not
+    // acquire this guard: the entire design remains unapproved.
+    #[cfg(test)]
+    research_commit_gate: Arc<Mutex<()>>,
 }
 
 impl SessionRegistry {
@@ -44,6 +48,12 @@ impl SessionRegistry {
         &self,
         handle: &SessionHandle,
     ) -> Result<(bool, u32), SessionRegistryError> {
+        let gate = self
+            .research_gate(handle)?
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        let _launch_guard = gate
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
         let mut sessions = self
             .sessions
             .lock()
@@ -55,6 +65,55 @@ impl SessionRegistry {
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
         Ok((changed, record.active_admissions))
+    }
+
+    // Research-only contract: any test launch commit and EVERY direct
+    // SessionRegistry::revoke or test prompt-close share one authority-owned
+    // gate. The global registry mutex is never held across the closure.
+    // No application/production API or native Windows effect is exported.
+    #[cfg(test)]
+    fn research_gate(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<Option<Arc<Mutex<()>>>, SessionRegistryError> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        Ok(sessions
+            .get(handle)
+            .map(|record| Arc::clone(&record.research_commit_gate)))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn research_commit_launch<R>(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+        effect: impl FnOnce() -> R,
+    ) -> Result<R, SessionRegistryError> {
+        let gate = self
+            .research_gate(handle)?
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        let _commit_guard = gate
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| SessionRegistryError::StateUnavailable)?;
+            let record = sessions
+                .get(handle)
+                .ok_or(SessionRegistryError::UnknownSession)?;
+            if record.revoked {
+                return Err(SessionRegistryError::Revoked);
+            }
+            if record.grant.is_expired_at(now) {
+                return Err(SessionRegistryError::Expired);
+            }
+        }
+        Ok(effect())
     }
 
     #[must_use]
@@ -92,6 +151,8 @@ impl SessionRegistry {
                 revoked: false,
                 revocation_signal: Arc::new(AtomicBool::new(false)),
                 active_admissions: 0,
+                #[cfg(test)]
+                research_commit_gate: Arc::new(Mutex::new(())),
             },
         );
         Ok(())
@@ -184,6 +245,17 @@ impl SessionRegistry {
     }
 
     pub fn revoke(&self, handle: &SessionHandle) -> Result<bool, SessionRegistryError> {
+        // Research builds only: direct registry revoke takes the SAME per-
+        // session commit gate as the test launcher. Gate acquisition occurs
+        // without holding the global sessions mutex; the gate is released
+        // once close is published, BEFORE waiting for permit drainage.
+        #[cfg(test)]
+        let test_gate = self.research_gate(handle)?;
+        #[cfg(test)]
+        let test_guard = test_gate
+            .as_ref()
+            .map(|gate| gate.lock().map_err(|_| SessionRegistryError::StateUnavailable))
+            .transpose()?;
         let mut sessions = self
             .sessions
             .lock()
@@ -194,6 +266,8 @@ impl SessionRegistry {
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
+        #[cfg(test)]
+        drop(test_guard);
 
         loop {
             let active_admissions = sessions
