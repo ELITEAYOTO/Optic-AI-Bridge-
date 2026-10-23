@@ -33,6 +33,7 @@ def run_case(helper, exe, mode, root):
         env["OPTIC317_RUST_GATE"] = str(gate)
         env["OPTIC317_RUST_READY"] = str(ready)
         env["OPTIC317_RETAINER_READY"] = str(root / "descendant")
+        env["OPTIC317_RESUME_MARKER"] = str(root / "resumed")
         with (root / "host.log").open("wb") as logfile:
             host = subprocess.Popen(
                 [str(exe), "--exact",
@@ -54,6 +55,9 @@ def run_case(helper, exe, mode, root):
                 "retained-stdio": "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1",
                 "stdio-bad-exe": "mode=stdio-bad-exe;both-attributes=1;no-spawn=1;both-eof=1;handles-stable=1",
                 "atomic": "mode=atomic;inner_active=1;suspended=1",
+                "resume-race": "mode=resume-race;close_before_resume=1;marker_after_close=1;job_empty=1",
+                "resume-close-wins": "mode=resume-close-wins;no_resume=1;marker_absent=1;job_empty=1",
+                "resume-launch-wins": "mode=resume-launch-wins;resume_before_close=1;marker=1;job_empty=1",
                 "no-inherit": "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
                 "invalid": "mode=invalid;inner_active=0;no_spawn=1",
                 "missing": "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
@@ -77,6 +81,9 @@ def run_case(helper, exe, mode, root):
                 "selected_stdout_stderr_and_spare_denial": mode == "stdio",
                 "retained_descendant_stopped_and_both_pipes_eof": mode == "retained-stdio",
                 "dual_attribute_failed_spawn_clean": mode == "stdio-bad-exe",
+                "stale_check_race_reproduced": mode == "resume-race",
+                "shared_gate_close_wins": mode == "resume-close-wins",
+                "shared_gate_launch_wins": mode == "resume-launch-wins",
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
             }
     finally:
@@ -116,7 +123,8 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="optic317-rust-atomic-") as temp:
             for mode in ("atomic", "no-inherit", "invalid", "missing", "stdio",
-                         "retained-stdio", "stdio-bad-exe"):
+                         "retained-stdio", "stdio-bad-exe",
+                         "resume-race", "resume-close-wins", "resume-launch-wins"):
                 root = Path(temp) / mode
                 root.mkdir()
                 result["cases"].append(run_case(helper, exe, mode, root))
