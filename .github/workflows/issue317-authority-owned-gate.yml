@@ -1,0 +1,36 @@
+name: Research authority-owned launch close linearization
+on:
+  push:
+    branches: ['research/317-authority-owned-gate-2026-10-23']
+permissions:
+  contents: read
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Pinned toolchain with format and lint
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+      - name: Strict whole-workspace formatting
+        shell: bash
+        run: cargo +1.99.0 fmt --all -- --check
+      - name: Runtime Clippy all targets and features
+        shell: bash
+        run: cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Run authority-owned direct revoke and commit ordering proofs
+        shell: bash
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib research_launch_gate_tests -- --nocapture --test-threads=1
+      - name: Retain prior Codex lifetime and shutdown contract regressions
+        shell: bash
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib process::close_contract_tests -- --nocapture --test-threads=1
+      - name: Exact research checkpoint
+        shell: bash
+        run: echo "OPTIC317_AUTHORITY_GATE sha=${GITHUB_SHA} run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT} os=${RUNNER_OS} test_only=true production_wired=false"
