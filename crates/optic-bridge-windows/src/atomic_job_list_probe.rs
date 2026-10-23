@@ -6,6 +6,7 @@
 //! See docs/research/ISSUE317_NATIVE_LIFECYCLE_DECISION_2026-10-23.md.
 
 use super::OwnedJob;
+use crate::CapturedOutputPipe;
 use std::{
     ffi::{OsStr, c_void},
     fs, io,
@@ -20,10 +21,11 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::HANDLE,
+        Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation},
         System::Threading::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
+            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetProcessHandleCount,
+            InitializeProcThreadAttributeList,
             LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
             STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute,
         },
@@ -83,7 +85,7 @@ impl Drop for SuspendedChild {
     }
 }
 
-fn launch_suspended_with_job(job_handle: HANDLE) -> io::Result<SuspendedChild> {
+fn launch_suspended_with_job(job_handle: HANDLE, missing_binary: bool) -> io::Result<SuspendedChild> {
     let mut attributes = NativeAttributes::new()?;
     let handles = [job_handle];
     // SAFETY: the array holds a single HANDLE for the lifetime of the
@@ -103,7 +105,19 @@ fn launch_suspended_with_job(job_handle: HANDLE) -> io::Result<SuspendedChild> {
 
     // Never take executable/argv from untrusted test input. This launches
     // this exact synthetic Rust test binary, suspended; no thread is resumed.
-    let executable = std::env::current_exe()?;
+    let executable = if missing_binary {
+        // Fixed synthetic nonexisting executable: error must occur within CreateProcessW,
+        // AFTER Job attributes were prepared and BEFORE any child handle exists.
+        let path = std::env::temp_dir().join(format!(
+            "optic317-provably-absent-{}-fixture.exe", std::process::id()
+        ));
+        if path.exists() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "fixture collision"));
+        }
+        path
+    } else {
+        std::env::current_exe()?
+    };
     let mut executable_wide: Vec<u16> = executable.as_os_str().encode_wide().collect();
     executable_wide.push(0);
     // Explicit harmless target if unexpectedly resumed; no arbitrary tests.
@@ -160,7 +174,7 @@ fn wait_for_gate(path: &Path) -> io::Result<()> {
 #[ignore = "must be run under independently armed Windows Job supervisor"]
 fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
-    assert!(matches!(mode.as_str(), "atomic" | "invalid"));
+    assert!(matches!(mode.as_str(), "atomic" | "invalid" | "no-inherit" | "missing"));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
     let gate = Path::new(&gate);
@@ -169,22 +183,79 @@ fn native_atomic_job_list_host_fixture() {
 
     let job = OwnedJob::create(1, 512 * 1024 * 1024, 30)
         .expect("actual CPU/memory/process limits and KILL_ON_JOB_CLOSE");
-    let _owned_child = if mode == "atomic" {
-        let child = launch_suspended_with_job(job.raw()).expect("atomic creation");
-        assert_eq!(job.active_processes().expect("native accounting"), 1);
-        Some(child)
-    } else {
-        // No fallback path: invalid Job must reject creation.
-        let invalid = HANDLE(0x7fff_ffffusize as *mut c_void);
-        assert!(launch_suspended_with_job(invalid).is_err());
-        assert_eq!(job.active_processes().expect("no child created"), 0);
-        None
+    let _owned_child = match mode.as_str() {
+        "atomic" => {
+            let child = launch_suspended_with_job(job.raw(), false).expect("atomic creation");
+            assert_eq!(job.active_processes().expect("native accounting"), 1);
+            Some(child)
+        }
+        "no-inherit" => {
+            // Deliberately make a spare pipe writer inheritable. Atomic
+            // CreateProcessW must NOT leak it to the suspended child because
+            // bInheritHandles=false. EOF while the child is still alive proves
+            // the handle did not extend this particular pipe's lifetime.
+            let mut pipe = CapturedOutputPipe::new().expect("private diagnostic pipe");
+            let writer = pipe.writer_handle().expect("writer");
+            // SAFETY: writer is valid/owned throughout this call; only its
+            // inheritance bit changes. The parent closes it below.
+            unsafe {
+                SetHandleInformation(
+                    HANDLE(writer.as_raw_handle()),
+                    HANDLE_FLAG_INHERIT.0,
+                    HANDLE_FLAG_INHERIT,
+                )
+            }
+            .expect("make spare pipe writer inheritable");
+            let child = launch_suspended_with_job(job.raw(), false).expect("atomic creation");
+            assert_eq!(job.active_processes().expect("suspended child stays alive"), 1);
+            pipe.close_parent_writer();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let chunk = pipe.try_read(128).expect("bounded EOF polling");
+                assert!(chunk.bytes.is_empty(), "synthetic pipe has no payload");
+                if chunk.eof {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "spare writer was inherited by child");
+                thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(job.active_processes().expect("child still alive after EOF"), 1);
+            Some(child)
+        }
+        "invalid" => {
+            let invalid = HANDLE(0x7fff_ffffusize as *mut c_void);
+            assert!(launch_suspended_with_job(invalid, false).is_err());
+            assert_eq!(job.active_processes().expect("invalid Job has no child"), 0);
+            None
+        }
+        "missing" => {
+            // Repeated no-spawn failures must release attributes/temporary
+            // handles. Compare after a first warm-up error, not cold startup.
+            assert!(launch_suspended_with_job(job.raw(), true).is_err());
+            let mut before = 0u32;
+            // SAFETY: pseudo-handle for this process and writable count.
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut before) }
+                .expect("native handle count before negative matrix");
+            for _ in 0..16 {
+                assert!(launch_suspended_with_job(job.raw(), true).is_err());
+                assert_eq!(job.active_processes().expect("failed creation has no child"), 0);
+            }
+            let mut after = 0u32;
+            // SAFETY: same process and count destination as above.
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut after) }
+                .expect("native handle count after negative matrix");
+            assert_eq!(before, after, "failed CreateProcessW leaked native handles");
+            None
+        }
+        _ => unreachable!("validated fixed fixture mode"),
     };
 
-    let signal = if mode == "atomic" {
-        "mode=atomic;inner_active=1;suspended=1"
-    } else {
-        "mode=invalid;inner_active=0;no_spawn=1"
+    let signal = match mode.as_str() {
+        "atomic" => "mode=atomic;inner_active=1;suspended=1",
+        "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
+        "invalid" => "mode=invalid;inner_active=0;no_spawn=1",
+        "missing" => "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
+        _ => unreachable!("validated fixed fixture mode"),
     };
     // Atomic rename prevents the supervisor observing a partially written
     // message, preserving the earlier red test's specific regression.
