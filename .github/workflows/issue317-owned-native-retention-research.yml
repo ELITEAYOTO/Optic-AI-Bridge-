@@ -1,0 +1,42 @@
+name: Issue 317 owned native retention research
+
+on:
+  push:
+    branches:
+      - research/317-owned-native-retention-2026-10-23
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-317-owned-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-retention:
+    name: Owner retention / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Strict runtime Clippy
+        run: cargo clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Full runtime library regressions
+        run: cargo test --locked -p optic-bridge-runtime --lib
+      - name: Explicit Windows owned-native proof
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_OWNED_NATIVE owner=real-jobstore worker=thread no-child=true production-fix=false sha=${GITHUB_SHA}"
+          cargo test --locked -p optic-bridge-runtime --lib owned_native_research_tests -- --nocapture --test-threads=1
