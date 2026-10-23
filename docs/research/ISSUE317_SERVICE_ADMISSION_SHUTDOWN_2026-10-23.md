@@ -94,11 +94,22 @@ OwnedJob uses KILL_ON_JOB_CLOSE without breakaway flags. Its watchdog duplicate
 is created non-inheritable. On host crash, last-handle close can kill assigned
 members, but does not establish result durability or observed EOF. Important
 additional gap: a suspended root created BEFORE Job assignment is not protected
-by that Job on abrupt host death. Child handle close alone is not process kill.
+by that Job on abrupt host death. Child handle close alone is not process kill
+([Rust Child contract](https://doc.rust-lang.org/std/process/struct.Child.html)).
 The current normal error path retains/kills that exact Child; crash bypasses it.
 Do not claim crash-safe ownership from suspend-then-assign alone. An atomic Job
 association at creation, or an independently owned launch supervisor, requires
 separate compatibility tests before asserting that stronger guarantee.
+
+Controlled Windows10 reproduction uses the actual start_with_operations path
+paused immediately before assignment. An independent outer Job owns host and
+suspended child BEFORE opening the gate. The supervisor terminates only its
+exact synthetic host handle. Accounting changes 2 to 1 before assignment; the
+child survives until outer cleanup. The post-assignment control changes 2 to 0,
+consistent with inner last-handle close. Both outer Jobs finish empty. This
+demonstrates the crash-window limitation of the candidate, not a crash of the
+user's Bridge or a general kernel-failure recovery guarantee. The test callback
+has a five-second fallback and cannot resume the fixture child.
 
 Native documentation: [Windows Job objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
 Jobs manage lifetime/resources; they are not a complete sandbox.
@@ -124,8 +135,11 @@ remain independently checked; #182 provenance policy is unchanged.
 Native start overwrites creation_flags with CREATE_SUSPENDED and replaces all
 stdio. Rust specifies that creation_flags sets the flags (Unicode environment
 is added). Thus an earlier caller-set BREAKAWAY flag is not deliberately merged
-by this implementation. This source/API conclusion is not a new native hostile-
-flags regression. Other Command configuration is not all reset: accepting a
+by this implementation. The native assignment/revoke regression now supplies
+u32::MAX caller flags (including breakaway and incompatible bits), then requires
+successful suspended spawn/assignment and cancellation without resume. This
+checks replacement rather than merging, not every possible Command setting.
+Other Command configuration is not all reset: accepting a
 general Command in a future authorizer would still be unjustified. Reconstruct
 one internally rather than trying to inspect opaque settings. The primitive
 calls ordinary spawn, not caller-supplied spawn_with_attributes.

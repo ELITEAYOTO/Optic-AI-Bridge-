@@ -37,6 +37,12 @@ jobs:
       - name: Cancellation and deadline before native creation
         shell: pwsh
         run: python scripts/research/issue317_service_native.py --prestart --test-exe "$env:OPTIC_SERVICE_RUNTIME" --output evidence/prestart.json
+      - name: Host exit before inner Job assignment under external ownership
+        shell: pwsh
+        run: python scripts/research/issue317_service_native.py --crash-before-assign --test-exe "$env:OPTIC_SERVICE_WINDOWS" --output evidence/before-assign-host-exit.json
+      - name: Host exit after inner Job assignment control
+        shell: pwsh
+        run: python scripts/research/issue317_service_native.py --crash-after-assign --test-exe "$env:OPTIC_SERVICE_WINDOWS" --output evidence/after-assign-host-exit.json
       - name: Preserve evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

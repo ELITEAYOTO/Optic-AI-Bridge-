@@ -366,6 +366,49 @@ mod tests {
 
     #[test]
     #[ignore = "requires independent owning Job before the gate"]
+    fn host_exit_before_assignment_fixture() {
+        let gate = std::path::PathBuf::from(
+            env::var_os("OPTIC317_SERVICE_GATE").expect("outer supervisor"),
+        );
+        let until = Instant::now() + Duration::from_secs(5);
+        while !gate.exists() {
+            assert!(Instant::now() < until);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let mut owner = prepared();
+        let mut command = Command::new(env::current_exe().unwrap());
+        command.current_dir(gate.parent().expect("synthetic fixture directory"));
+        command.arg("--list");
+        // Actual production start path, paused after Child ownership and before
+        // AssignProcessToJobObject. Outer Job already owns host AND suspended
+        // root. Only the external supervisor may terminate this exact host.
+        let result = owner.start_with_operations(
+            &mut command,
+            |job, process| {
+                if env::var_os("OPTIC317_ASSIGN_BEFORE_EXIT").is_some() {
+                    // SAFETY: real retained Job and suspended Child; supervised
+                    // post-assignment control for the pre-assignment experiment.
+                    unsafe { AssignProcessToJobObject(job, process) }.map_err(Error::other)?;
+                }
+                std::fs::write(gate.with_extension("host-exit-ready"), b"suspended")?;
+                let until = Instant::now() + Duration::from_secs(5);
+                while Instant::now() < until {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(Error::new(
+                    ErrorKind::TimedOut,
+                    "supervisor did not stop host",
+                ))
+            },
+            |_| panic!("fixture must never resume"),
+        );
+        // Supervisor failure is red; normal Drop still owns recovery here.
+        assert!(result.is_err());
+        panic!("host exit experiment was not performed");
+    }
+
+    #[test]
+    #[ignore = "requires independent owning Job before the gate"]
     fn revocation_between_assignment_and_resume() {
         let gate = std::path::PathBuf::from(
             env::var_os("OPTIC317_SERVICE_GATE").expect("outer supervisor"),
@@ -387,6 +430,9 @@ mod tests {
         let mut command = Command::new(env::current_exe().unwrap());
         command.current_dir(gate.parent().expect("synthetic fixture directory"));
         command.arg("--list");
+        // Deliberately incompatible caller flags, including BREAKAWAY. Native
+        // start must REPLACE them, not OR them into its suspended creation.
+        command.creation_flags(u32::MAX);
         let result = owner.start_with_operations(
             &mut command,
             |job, process| {
@@ -410,7 +456,7 @@ mod tests {
         assert!(outcome.status.is_some());
         assert!(outcome.stdout.is_empty() && outcome.stderr.is_empty());
         println!(
-            "OPTIC317_SERVICE suspended_revoke=true resume_called=false root_and_job_and_eof_proven=true production_wired=false"
+            "OPTIC317_SERVICE suspended_revoke=true caller_creation_flags_overwritten=true resume_called=false root_and_job_and_eof_proven=true production_wired=false"
         );
     }
 

@@ -11,6 +11,8 @@ def main():
  mode.add_argument('--kernel',action='store_true')
  mode.add_argument('--matrix',action='store_true')
  mode.add_argument('--prestart',action='store_true')
+ mode.add_argument('--crash-before-assign',action='store_true')
+ mode.add_argument('--crash-after-assign',action='store_true')
  a=p.parse_args()
  assert os.name=='nt'
  source=Path(__file__).parents[1]/'tests'/'doctor_pipe_supervisor.py'
@@ -24,12 +26,15 @@ def main():
  start=time.monotonic()
  try:
   env=os.environ.copy();env['OPTIC317_SERVICE_GATE']=str(gate)
+  env.pop('OPTIC317_ASSIGN_BEFORE_EXIT',None)
+  if a.crash_after_assign:env['OPTIC317_ASSIGN_BEFORE_EXIT']='1'
   env['OPTIC317_PYTHON']=__import__('sys').executable
   env['OPTIC317_FIXTURE']=str(Path(__file__).with_name('issue317_baseline_fixture.py').resolve())
   log=root/'log'
   with log.open('wb') as out:
    child=subprocess.Popen([a.test_exe,'--exact',
-     ('process::read_service::tests::service_kernel_prestart_stop_and_deadline_classification' if a.prestart else
+     ('job::prepared_read_command::tests::host_exit_before_assignment_fixture' if a.crash_before_assign or a.crash_after_assign else
+      'process::read_service::tests::service_kernel_prestart_stop_and_deadline_classification' if a.prestart else
       'process::read_service::tests::service_kernel_outcome_and_pipe_matrix' if a.matrix else
       'job::prepared_read_command::tests::revocation_between_assignment_and_resume' if a.suspended_revoke else
       'process::read_service::tests::service_kernel_retains_owners_through_request_loss_and_shutdown'),
@@ -37,6 +42,16 @@ def main():
    job.assign(child);gate.write_text('owned',encoding='ascii')
    end=time.monotonic()+15
    while child.poll() is None:
+    if (a.crash_before_assign or a.crash_after_assign) and gate.with_suffix('.host-exit-ready').exists():
+     result['active_before_host_exit']=job.active()
+     assert result['active_before_host_exit']==2
+     child.kill();child.wait(timeout=2)
+     expected=0 if a.crash_after_assign else 1
+     outer.wait_for(lambda:job.active()==expected,2,'host exit native accounting')
+     result['active_after_host_exit']=job.active()
+     result['host_exit_phase']='after-assignment' if a.crash_after_assign else 'before-assignment'
+     result['host_exit_observed']=True
+     break
     if not a.suspended_revoke and gate.with_suffix('.shutdown-lock-ready').exists() and not gate.with_suffix('.shutdown-lock-observed').exists():
      result['active_with_bookkeeping_lock']=job.active()
      assert result['active_with_bookkeeping_lock']==2
@@ -58,7 +73,9 @@ def main():
   result['cases']=[json.loads(l.removeprefix('OPTIC317_SERVICE_CASE ')) for l in text.splitlines() if l.startswith('OPTIC317_SERVICE_CASE ')]
   if a.matrix:assert len(result['cases'])==8
   if a.prestart:assert len(result['cases'])==2
-  if child.returncode or len(result['proof_markers'])!=1:
+  if a.crash_before_assign or a.crash_after_assign:
+   assert result.get('host_exit_observed') and child.returncode!=0
+  elif child.returncode or len(result['proof_markers'])!=1:
    raise RuntimeError('service proof failed')
   result['complete']=True
  except BaseException as error:
