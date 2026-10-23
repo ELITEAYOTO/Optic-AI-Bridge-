@@ -1,0 +1,43 @@
+name: Issue 317 owned kernel-tree research
+
+on:
+  push:
+    branches: ['research/317-owned-native-kernel-tree-2026-10-24']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue317-owned-tree-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Owned admission and native Job / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.99.0
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+      - name: Strict runtime Clippy
+        run: cargo clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Full library regressions
+        run: cargo test --locked -p optic-bridge-runtime --lib
+      - name: Exact owned/kernel/stop integration test
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_COMBINED_KERNEL_OWNER sha=${GITHUB_SHA} real-job=true child-resume=false gitread-wired=false"
+          cargo test --locked -p optic-bridge-runtime --lib owned_registered_kernel_tree_stops_before_admission_drains -- --nocapture --test-threads=1
