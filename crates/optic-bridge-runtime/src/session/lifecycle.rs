@@ -1340,11 +1340,15 @@ mod tests {
         // cleanup: inactive original with zero admissions may be removed and
         // re-registered using the SAME opaque handle. This is a controlled
         // phase schedule, not proof that this race occurred on a user machine.
-        assert!(sessions
-            .remove_quiescent_inactive(&old.handle, now)
-            .expect("remove original"));
+        assert!(
+            sessions
+                .remove_quiescent_inactive(&old.handle, now)
+                .expect("remove original")
+        );
         sessions.register(old.clone()).expect("reuse opaque handle");
-        let fresh_permit = sessions.begin_admission(&old.handle, now).expect("new admission");
+        let fresh_permit = sessions
+            .begin_admission(&old.handle, now)
+            .expect("new admission");
         assert!(!fresh_permit.revocation_watch().is_revoked());
         drop(fresh_permit);
 
