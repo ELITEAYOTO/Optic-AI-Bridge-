@@ -1,0 +1,32 @@
+name: Windows atomic Job-list launch research
+on:
+  push:
+    branches: ['research/317-native-lifecycle-decision-2026-10-23']
+permissions:
+  contents: read
+jobs:
+  job-list:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate Python fixture syntax
+        shell: pwsh
+        run: |
+          python -m py_compile scripts/research/issue317_job_list_atomic.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python fixture is invalid' }
+      - name: Independently supervise Windows CreateProcessW Job-list crash test
+        shell: pwsh
+        run: |
+          python scripts/research/issue317_job_list_atomic.py --output evidence/atomic-job-list.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native research failed; preserve first red' }
+      - name: Upload synthetic numeric evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: optic317-atomic-job-list-research
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
