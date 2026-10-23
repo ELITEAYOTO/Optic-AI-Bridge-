@@ -1067,6 +1067,7 @@ pub(crate) struct NativeProcessReservation {
     finished: bool,
     // RESEARCH ONLY: a one-use marker for the short session-authority
     // commitment. It does not grant OS launch permission or native quiescence.
+    #[cfg(test)]
     owner_commit_claimed: AtomicBool,
 }
 
@@ -1152,6 +1153,7 @@ impl ProcessManager {
             limits,
             may_have_run: false,
             finished: false,
+            #[cfg(test)]
             owner_commit_claimed: AtomicBool::new(false),
         })
     }
@@ -1164,6 +1166,7 @@ impl NativeProcessReservation {
     }
 
     /// Internal reservation identity only. No trust in caller-supplied JobIds.
+    #[cfg(test)]
     pub(crate) fn owner_session(&self) -> &SessionHandle {
         &self.record.owner
     }
@@ -1171,6 +1174,7 @@ impl NativeProcessReservation {
     /// One short atomic claim, performed only inside the registry close/commit
     /// serialization point. Never touches Win32, the JobStore or record locks.
     /// Stop arriving *after* the claim remains observable by the receipt.
+    #[cfg(test)]
     pub(crate) fn try_claim_owner_commit(&self) -> bool {
         !self.may_have_run
             && !self.finished
