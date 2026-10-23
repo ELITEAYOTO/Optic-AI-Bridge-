@@ -229,7 +229,10 @@ fn run_selective_stdio(
             "optic317-stdio-absent-{}-fixture.exe",
             std::process::id()
         ));
-        assert!(!missing.exists(), "synthetic missing-executable path collides");
+        assert!(
+            !missing.exists(),
+            "synthetic missing-executable path collides"
+        );
         missing
     } else {
         std::env::current_exe()?
@@ -504,7 +507,13 @@ fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
     assert!(matches!(
         mode.as_str(),
-        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio" | "retained-stdio" | "stdio-bad-exe"
+        "atomic"
+            | "invalid"
+            | "no-inherit"
+            | "missing"
+            | "stdio"
+            | "retained-stdio"
+            | "stdio-bad-exe"
     ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
@@ -591,7 +600,10 @@ fn native_atomic_job_list_host_fixture() {
             // SAFETY: same live process and valid writable out parameter.
             unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut after) }
                 .expect("handle count after repeated selected-stdio errors");
-            assert_eq!(before, after, "repeated selected-stdio errors leaked handles");
+            assert_eq!(
+                before, after,
+                "repeated selected-stdio errors leaked handles"
+            );
             None
         }
         "invalid" => {
@@ -630,7 +642,9 @@ fn native_atomic_job_list_host_fixture() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
         "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
-        "stdio-bad-exe" => "mode=stdio-bad-exe;both-attributes=1;no-spawn=1;both-eof=1;handles-stable=1",
+        "stdio-bad-exe" => {
+            "mode=stdio-bad-exe;both-attributes=1;no-spawn=1;both-eof=1;handles-stable=1"
+        }
         "retained-stdio" => {
             "mode=retained-stdio;root_exited=1;descendant_held_pipes=1;stop=1;both_eof=1;job_empty=1"
         }
