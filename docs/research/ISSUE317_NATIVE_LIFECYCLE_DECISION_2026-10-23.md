@@ -55,3 +55,61 @@ Use only synthetic child fixtures and an **independent pre-armed outer superviso
 **NO-GO for #317 production wiring:** admission semantics unapproved, no full exit/uncertain-owner policy, crash-before-assignment candidate unresolved, no proven stop/resume linearization, missing true `AuthorizedRead` and effective deadline. #176/#182 sensitive Git provenance, #185 AppContainer, #319 first MCP response, #323 V1 freeze remain independent.
 
 **Suggested next research increment:** Windows-only, test-only `PROC_THREAD_ATTRIBUTE_JOB_LIST` launch fixture in the platform crate, independently supervised and non-exported to production; compare old/new failure traces at exact SHA. Do **not** combine it with a `SessionRegistry` API change, GitRead migration, PR #327, #182 policy or Electron work. Submit a single reviewed code PR only after the candidate proof and clear chosen contract. Keep previous red CI attempts. This document changes no code or policy.
+
+
+## 6. Windows-hosted CreateProcessW proof (23 October 2026)
+
+**Scope:** synthetic Python/ctypes Win32 harness, not Rust production integration. Source:
+[\`issue317_job_list_atomic.py\`](../../scripts/research/issue317_job_list_atomic.py).
+The script runs on hosted Windows only, with a deliberately independent outer
+Job owning the test host *before* the host can create a suspended child.
+Only that synthetic host is killed; every test, including the negative
+control, closes and empties the external Job.
+
+**Initial baseline successful:** exact source \`14f08517dc5cd3c9b8ab342c4f2050eaefa39b43\`,
+[workflow #39893560796](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39893560796),
+first attempt completed/success:
+- Legacy suspended child created outside inner Job: external count **2 -> 1**
+  when host dies; the unassigned child survived and was then recovered by
+  the independent supervisor.
+- Attribute-based Job assignment with \`CreateProcessW\`,
+  \`STARTUPINFOEX\`, \`PROC_THREAD_ATTRIBUTE_JOB_LIST\` and
+  \`EXTENDED_STARTUPINFO_PRESENT\`: count **2 -> 0** on host death,
+  with the child previously observed inside its inner Job.
+- There are no stdin/stdout/stderr writer/readers in this fixed
+  fixture. The command is a synthetic suspended Python sleeper,
+  \`bInheritHandles=FALSE\`, not an authorized Git command.
+
+**Negative launch proof:** exact source \`7c6044bd5a1d4a453c6eb9d3e001a5600650b073\`,
+[workflow #39893750004](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39893750004),
+completed/success, first attempt. In addition to repeating the legacy
+2 -> 1 and atomic 2 -> 0 cases, an intentionally invalid Job handle
+caused the native launch path to reject creation with **1 -> 0**
+external members after host death (host only before it); no child was created
+and there was no fallback to unassigned spawn. All outer Jobs cleaned.
+
+**First red preserved:** [#39893688142](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39893688142)
+on \`07628ba9e\` failed \`JSONDecodeError\` because the test host wrote the
+readiness file directly and the supervisor observed it before JSON writing
+completed. Replaced the readiness file through \`os.replace\` after complete
+serialization (atomic publication), then validated the *new source* above.
+This failure was a test-harness synchronization defect; it is not evidence
+of native Win32 failure, and no security constraints were relaxed.
+
+**Conclusion:** the documented Windows 10+ attribute is a **promising
+confirmed native mechanism** for this isolated host-death gap, but the
+real Rust runner still uses spawn/suspend/assign and remains vulnerable.
+This test does NOT establish Windows 10/11 physical acceptance, Rust
+process/stdio handle ownership, duplicate handle inheritance, native
+error/pipe cleanup under faults, full Job hard limits, locked admission,
+stop-vs-resume linearization, or shutdown responsibility. No #317 gate
+is closed, no ADR was accepted, and no source was merged to \`main\`.
+
+**Next slice:** implement and test a **test-only Windows platform-crate**
+primitive using extended process startup attributes and pinned executable
+identity; pre-create and configure limits, explicit handle inheritance,
+owned PROCESS_INFORMATION handles and failure cleanup. Test invalid
+attribute/Job handle, cancellation before spawn and around resume,
+nested Job interoperability and host crash under independent supervision.
+Only then review a production migration design; no implicit fallback to
+spawn-then-assign and no GitRead wiring in this experiment.
