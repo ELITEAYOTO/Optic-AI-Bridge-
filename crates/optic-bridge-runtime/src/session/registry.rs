@@ -450,6 +450,81 @@ impl SessionAdmissionPermit<'_> {
     }
 }
 
+// This is deliberately a test-only experiment until the real GitRead owner
+// can retain this borrowed receipt for its complete native lifecycle. No
+// production caller or new launch capability is introduced by this branch.
+#[cfg(all(test, windows))]
+#[derive(Debug, Error)]
+pub(crate) enum ResearchOwnerCommitError {
+    #[error(transparent)]
+    Registry(#[from] SessionRegistryError),
+    #[error("reserved owner belongs to a different session")]
+    OwnerSessionMismatch,
+    #[error("admission belongs to a different session record generation")]
+    GenerationChanged,
+    #[error("native owner was stopped, used or already committed")]
+    OwnerUnavailable,
+}
+
+#[cfg(all(test, windows))]
+pub(crate) struct ResearchOwnerCommitReceipt<'borrow, 'registry> {
+    // Both real objects remain borrowed while this experimental receipt lives.
+    _admission: &'borrow SessionAdmissionPermit<'registry>,
+    _owner: &'borrow crate::process::NativeProcessReservation,
+    stop: SessionAdmissionStopWatch,
+}
+
+#[cfg(all(test, windows))]
+impl ResearchOwnerCommitReceipt<'_, '_> {
+    #[must_use]
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.stop.is_stop_required_at(now)
+    }
+}
+
+#[cfg(all(test, windows))]
+impl<'registry> SessionAdmissionPermit<'registry> {
+    /// Research close/commit linearization using a GENUINE JobStore reservation.
+    /// This checks only the session and single-owner state; policy epoch, lease,
+    /// task, pinned executable and release gates are NOT implied.
+    pub(crate) fn research_commit_reserved_native_owner<'borrow>(
+        &'borrow self,
+        owner: &'borrow crate::process::NativeProcessReservation,
+        now: MonotonicTime,
+    ) -> Result<ResearchOwnerCommitReceipt<'borrow, 'registry>, ResearchOwnerCommitError> {
+        if owner.owner_session() != &self.handle {
+            return Err(ResearchOwnerCommitError::OwnerSessionMismatch);
+        }
+        // Identical serialization point as every direct/lifecycle registry
+        // revoke. No Windows call, JobStore lock, callback, I/O or wait here.
+        let sessions = self
+            .registry
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&self.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        if !Arc::ptr_eq(&record.revocation_signal, &self.revocation_watch.signal) {
+            return Err(ResearchOwnerCommitError::GenerationChanged);
+        }
+        if record.revoked {
+            return Err(SessionRegistryError::Revoked.into());
+        }
+        if self.grant.is_expired_at(now) || record.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::Expired.into());
+        }
+        if !owner.try_claim_owner_commit() {
+            return Err(ResearchOwnerCommitError::OwnerUnavailable);
+        }
+        Ok(ResearchOwnerCommitReceipt {
+            _admission: self,
+            _owner: owner,
+            stop: self.stop_watch(),
+        })
+    }
+}
+
 impl Drop for SessionAdmissionPermit<'_> {
     fn drop(&mut self) {
         self.registry.finish_admission(&self.handle);
