@@ -1,6 +1,6 @@
 # Changelog
 
-## Unmerged PR candidate — internal revoke phases (2026-10-23)
+## Unreleased — internal revoke phase extraction (2026-10-23)
 
 - Prepare a private extraction of session close/signal publication and synchronous
   admission drainage, preserving the public revoke result, lock handoff and error
