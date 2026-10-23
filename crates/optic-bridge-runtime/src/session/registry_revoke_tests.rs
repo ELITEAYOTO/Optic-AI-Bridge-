@@ -457,3 +457,135 @@ fn real_worker_held_admission_observes_stop_before_registry_revoke_drains() {
         closer.join().unwrap();
     });
 }
+
+
+#[test]
+fn owned_admission_retains_registry_and_immutable_session_deadline() {
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    registry.register(a.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let original = owned.stop_watch();
+    assert!(!original.is_stop_required_at(MonotonicTime::from_millis(99)));
+    registry
+        .renew_active(&a.handle, now, MonotonicTime::from_millis(200))
+        .unwrap();
+    let later = registry
+        .begin_owned_admission(&a.handle, MonotonicTime::from_millis(101))
+        .unwrap();
+    assert!(
+        original.is_stop_required_at(MonotonicTime::from_millis(100)),
+        "renewal must never extend the original admission deadline"
+    );
+    assert!(
+        !later
+            .stop_watch()
+            .is_stop_required_at(MonotonicTime::from_millis(101))
+    );
+    drop(later);
+    let weak = Arc::downgrade(&registry);
+    drop(registry);
+    assert!(
+        weak.upgrade().is_some(),
+        "the owned permit keeps the registry available for its own Drop"
+    );
+    drop(owned);
+    assert!(
+        weak.upgrade().is_none(),
+        "owned admission releases the final Arc without leaking the registry"
+    );
+}
+
+#[test]
+fn owned_worker_stop_precedes_synchronous_revoke_drain_and_counts_with_borrowed_permit() {
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let borrowed = registry.begin_admission(&a.handle, now).unwrap();
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (observed_tx, observed_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        let stop = owned.stop_watch();
+        ready_tx.send(()).unwrap();
+        let limit = Instant::now() + Duration::from_secs(3);
+        while !stop.is_stop_required_at(now) {
+            assert!(
+                Instant::now() < limit,
+                "owner did not see original-generation stop while admission held"
+            );
+            thread::yield_now();
+        }
+        observed_tx.send(()).unwrap();
+        release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        drop(owned);
+    });
+    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+
+    let closing_registry = Arc::clone(&registry);
+    let a_handle = a.handle.clone();
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        closed_tx.send(closing_registry.revoke(&a_handle)).unwrap();
+    });
+    observed_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("owner observes stop before synchronous revoke returns");
+    assert!(
+        matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+        "revocation must wait for counted owned and borrowed admissions"
+    );
+    assert!(matches!(
+        registry.remove_quiescent_inactive(&a.handle, now),
+        Err(SessionRegistryError::AdmissionsInFlight)
+    ));
+    release_tx.send(()).unwrap();
+    worker.join().unwrap();
+    assert!(
+        matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+        "borrowed admission must independently block registry drain"
+    );
+    drop(borrowed);
+    assert!(
+        closed_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("revoke unblocks after both genuine admissions drain")
+            .expect("revoke result")
+    );
+    closer.join().unwrap();
+
+    assert!(registry.get_active(&b.handle, now).is_ok());
+    assert!(registry.remove_quiescent_inactive(&a.handle, now).unwrap());
+    registry.register(a.clone()).unwrap();
+    let replacement = registry.begin_owned_admission(&a.handle, now).unwrap();
+    assert!(!replacement.stop_watch().is_stop_required_at(now));
+    drop(replacement);
+    assert!(registry.revoke(&a.handle).unwrap());
+}
+
+#[test]
+fn owned_admission_rejects_expired_revoked_and_unknown_sessions() {
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let missing = grant();
+    registry.register(a.clone()).unwrap();
+    assert!(matches!(
+        registry.begin_owned_admission(&missing.handle, MonotonicTime::from_millis(1)),
+        Err(SessionRegistryError::UnknownSession)
+    ));
+    assert!(matches!(
+        registry.begin_owned_admission(&a.handle, MonotonicTime::from_millis(100)),
+        Err(SessionRegistryError::Expired)
+    ));
+    assert!(registry.revoke(&a.handle).unwrap());
+    assert!(matches!(
+        registry.begin_owned_admission(&a.handle, MonotonicTime::from_millis(1)),
+        Err(SessionRegistryError::Revoked)
+    ));
+    assert!(registry.remove_quiescent_inactive(&a.handle, MonotonicTime::from_millis(1)).unwrap());
+}
