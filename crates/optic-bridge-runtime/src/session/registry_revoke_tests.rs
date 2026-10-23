@@ -538,21 +538,28 @@ mod native_owner_commit_research {
         // The production admission remains held until the stop is observed.
         let close_registry = Arc::clone(&registry);
         let close_handle = a.handle.clone();
-        let closer = thread::spawn(move || close_registry.revoke(&close_handle));
+        let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+        let closer = thread::spawn(move || {
+            closed_tx.send(close_registry.revoke(&close_handle)).unwrap();
+        });
         observe_closed(&registry, &a.handle);
         assert!(
             receipt.is_stop_required_at(now),
             "direct revoke publishes stop even while admitted owner is retained"
         );
+        assert!(
+            matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "revocation must still wait for the admitted owner"
+        );
         drop(receipt);
         drop(permit);
         assert!(
-            closer
-                .join()
-                .expect("revoker thread")
-                .expect("revoke result"),
-            "real admission drain completes after owner releases its borrow"
+            closed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("drain after owner releases admission")
+                .expect("revoke result")
         );
+        closer.join().unwrap();
         drop(owner);
         drop(manager);
         fs::remove_dir_all(root).unwrap();
