@@ -139,3 +139,64 @@ New **test-only Windows platform crate**:
 **Unproven and NOT authorized for production:** a native Windows10/11 physical-device acceptance matrix; process creation racing with unexpected host termination *during the kernel call*; exact identity and pinning of an external Git executable; explicit stdio and handle-inheritance matrix, native error/error-state retention, post-revoke output refusal, stop-vs-resume linearization, async revocation/drain ownership contract and bounded/persistent shutdown. Existing production `PreparedReadCommand` still uses spawn/suspend/assign. These tests cannot close #317, #323 or accept ADR-0035.
 
 **Next recommended narrow effort:** design an RAII test-only API to combine a configured Job, inherited stdio handle list and direct Win32 creation under one owner with exact failure rollback; *also* decide session close/admission semantics and owner shutdown policy before any integration into GitRead. Reproduce bad-handle and inherited-output cases with an independent external supervisor. Avoid a production fallback that silently uses the known unsafe spawn-then-assign gap. Keep #182 provenance separately pending operator approval.
+
+## 8. Narrow Rust handle-inheritance and no-spawn cleanup matrix (23 October 2026)
+
+**New exact-source proof:** [Windows Rust workflow #39895889270](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39895889270)
+completed **success on attempt 1 for SHA `b6158e0a61f2c5b76a2d058ac48b9578ca92feb3`**, verifying
+Rustfmt, `cargo test --locked -p optic-bridge-windows --lib --no-run`,
+`cargo clippy --locked -p optic-bridge-windows --all-targets -- -D warnings`
+and independently supervised native execution. No code on `main` was changed.
+The 4-case supervised JSON evidence is preserved as the artifact of that run.
+The Python/ctypes research workflow remains distinct.
+
+Native supervised cases (independent outer Job pre-arms the exact test-host
+before releasing any process-creation gate; all processes are synthetic):
+- **`atomic`**: preconfigured Windows Job is assigned during CreateProcessW;
+  outer Job accounting **2 → 0** after terminating only the exact host.
+- **`no-inherit`**: inside the test host, create a private
+  `CapturedOutputPipe`, deliberately mark its spare writer handle
+  `HANDLE_FLAG_INHERIT`, then create an inner-Job-owned child with
+  `bInheritHandles=false`. Close the only parent writer and poll for
+  **EOF while the child remains suspended/alive** (inner count 1);
+  outer Job **2 → 0** after synthetic host death. This proves absence
+  of inherited ownership of *that spare pipe writer* for this configuration.
+  It does **not** prove redirecting stdout/stderr or selected stdio handle
+  inheritance with `STARTF_USESTDHANDLES` and a handle allowlist.
+- **`invalid`**: an invalid Job handle leads to rejected launch,
+  no child, outer Job **1 → 0**.
+- **`missing`**: one warm-up and **16** further failed CreateProcessW
+  attempts targeting a synthetic, provably nonexistent executable.
+  `GetProcessHandleCount(GetCurrentProcess())` is **exactly unchanged**
+  across the 16 calls, the configured inner Job remains empty, and the
+  outer Job shows **1 → 0**. This proves no persistent handle-count
+  increase in this bounded failure test, not exhaustive native resource
+  lifetime or crash-during-system-call behavior.
+
+The distinct source candidates [#39895764236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39895764236)
+and [#39895785869](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39895785869)
+failed **Rustfmt during source validation before compilation**, and remain
+visible rather than being rerun on a different source. The exact formatted
+candidate above passed all checks first attempt.
+
+**Security interpretation:** `PROC_THREAD_ATTRIBUTE_JOB_LIST` now has
+reproducible test-only Rust proof of host-exit containment, rejection of
+invalid Job and missing executable launch, finite failed-launch handle
+count, and a *negative* ambient pipe-inheritance assertion. These are
+not an authorized standard-stream launch API, not validation of
+`PROC_THREAD_ATTRIBUTE_HANDLE_LIST` selective stdout/stderr handles,
+not a strict revoke-versus-resume linearization, and not a substitute
+for durable session/owner shutdown. `PreparedReadCommand` in production
+still has the suspend/assign crash gap. Windows10/11 real-device,
+stdin-backpressure, inherited grandchild output, native fail-injection,
+end-to-end GitRead/lease/pin provenance and actual V1 acceptance remain
+NO-GO; ADR-0035 remains PROPOSED.
+
+**Next isolated proof:** deliberately allowlist only selected
+stdout/stderr inheritable write handles using `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`
+alongside the Job-list attribute, with a fixed resumed synthetic child,
+combined output ceiling, both EOFs, explicit handle cleanup and a
+supervisor proving no inherited unrelated handle. Only after that
+should the team consider a production `PreparedReadCommand` migration
+proposal, independently of the unresolved session admission, Drop and
+stop/resume contracts.
