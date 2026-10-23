@@ -27,9 +27,9 @@ use windows::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
             EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetProcessHandleCount,
             InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-            PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-            STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+            ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
+            UpdateProcThreadAttribute,
         },
     },
     core::{PCWSTR, PWSTR},
@@ -45,7 +45,8 @@ impl NativeAttributes {
         let mut bytes = 0usize;
         // First call intentionally returns ERROR_INSUFFICIENT_BUFFER, with
         // the exact byte count needed for one process creation attribute.
-        let _ = unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
+        let _ =
+            unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
         if bytes == 0 {
             return Err(io::Error::other("attribute size unavailable"));
         }
@@ -294,16 +295,28 @@ fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
             err_eof = read.eof;
             err.extend_from_slice(&read.bytes);
         }
-        assert!(out.len() + err.len() <= OUTPUT_LIMIT, "combined output exceeded cap");
+        assert!(
+            out.len() + err.len() <= OUTPUT_LIMIT,
+            "combined output exceeded cap"
+        );
         let terminated = job.active_processes()? == 0;
         if out_eof && err_eof && terminated {
             break;
         }
-        assert!(Instant::now() < deadline, "stdio/Job terminal proof timed out");
+        assert!(
+            Instant::now() < deadline,
+            "stdio/Job terminal proof timed out"
+        );
         thread::sleep(Duration::from_millis(5));
     }
-    assert!(out.windows(b"OPTIC317_STDOUT_FIXED".len()).any(|x| x == b"OPTIC317_STDOUT_FIXED"));
-    assert!(err.windows(b"OPTIC317_STDERR_FIXED".len()).any(|x| x == b"OPTIC317_STDERR_FIXED"));
+    assert!(
+        out.windows(b"OPTIC317_STDOUT_FIXED".len())
+            .any(|x| x == b"OPTIC317_STDOUT_FIXED")
+    );
+    assert!(
+        err.windows(b"OPTIC317_STDERR_FIXED".len())
+            .any(|x| x == b"OPTIC317_STDERR_FIXED")
+    );
     drop(child);
     Ok(())
 }
