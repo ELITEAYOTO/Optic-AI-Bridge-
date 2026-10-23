@@ -10,23 +10,25 @@ use std::{
     ffi::{OsStr, c_void},
     fs, io,
     mem::size_of,
-    os::windows::{ffi::OsStrExt, io::{AsRawHandle, FromRawHandle, OwnedHandle}},
+    os::windows::{
+        ffi::OsStrExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    },
     path::Path,
     thread,
     time::{Duration, Instant},
 };
 use windows::{
-    core::{PCWSTR, PWSTR},
     Win32::{
         Foundation::HANDLE,
         System::Threading::{
-            CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-            STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute,
-            CREATE_SUSPENDED, TerminateProcess,
+            CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
+            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
+            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+            STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute,
         },
     },
+    core::{PCWSTR, PWSTR},
 };
 
 struct NativeAttributes {
@@ -88,11 +90,16 @@ fn launch_suspended_with_job(job_handle: HANDLE) -> io::Result<SuspendedChild> {
     // attribute list and CreateProcessW call. Its pointer/size match Win32.
     unsafe {
         UpdateProcThreadAttribute(
-            attributes.list(), 0, PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
-            Some(handles.as_ptr().cast::<c_void>()), size_of::<HANDLE>(),
-            None, None,
+            attributes.list(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(handles.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
         )
-    }.map_err(io::Error::other)?;
+    }
+    .map_err(io::Error::other)?;
 
     // Never take executable/argv from untrusted test input. This launches
     // this exact synthetic Rust test binary, suspended; no thread is resumed.
@@ -117,18 +124,25 @@ fn launch_suspended_with_job(job_handle: HANDLE) -> io::Result<SuspendedChild> {
         CreateProcessW(
             PCWSTR(executable_wide.as_ptr()),
             Some(PWSTR(command_wide.as_mut_ptr())),
-            None, None, false,
+            None,
+            None,
+            false,
             CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-            None, PCWSTR::null(),
+            None,
+            PCWSTR::null(),
             (&startup.StartupInfo as *const STARTUPINFOW),
             &mut process_info,
         )
-    }.map_err(io::Error::other)?;
+    }
+    .map_err(io::Error::other)?;
     // SAFETY: on successful CreateProcessW both handles are owned by us.
     // The exact native child remains suspended and can be killed in Drop.
     let process = unsafe { OwnedHandle::from_raw_handle(process_info.hProcess.0) };
     let thread = unsafe { OwnedHandle::from_raw_handle(process_info.hThread.0) };
-    Ok(SuspendedChild { process, _thread: thread })
+    Ok(SuspendedChild {
+        process,
+        _thread: thread,
+    })
 }
 
 fn wait_for_gate(path: &Path) -> io::Result<()> {
