@@ -9,6 +9,33 @@ and GitHub-hosted CI only; no operator-PC tests or runtime changes. See the
 [handoff](docs/engineering/GITHUB_HANDOFF.md). This does not remove native Windows
 acceptance gates or imply they can be established on Linux.
 
+## Current integration priorities — 23 October 2026 after PR 334
+
+Production `main` now includes the **read-only, generation-bound admitted stop
+condition** (PR 334) in addition to PR 331's explicit revocation watcher.
+The new witness observes the original admission expiry despite renewal; it is
+**not** native process ownership, a launch permit or a completion receipt.
+Use the [latest measured status](STATUS.md) instead of dated SHAs below.
+
+The immediate next bounded increments are: (1) specify and test one immutable
+session-generation-bound registered-owner commit under a shared close
+linearization, with actual task/lease policy gates kept independent; (2) ensure
+stop request reaches already admitted workers **before** any synchronous permit
+drain, including late registration and uncertain Win32 observation; (3) prove
+Windows process tree membership **at creation** and full stdout/stderr/stdin,
+host crash, deadline and quota retention under an independent native
+supervisor; (4) only then migrate one sealed read-only Git path with safe
+publication/provenance. Keep legacy session/approval/lifecycle report contracts
+until their callers are reviewed. Preserve the real concurrent reaper/ABA
+negative control as a separate generation-isolation acceptance case, while
+distinguishing forced handle reuse from supported provisioning.
+
+The V1 decision remains **NO-GO** under issues 317/323. Also preserve
+sensitive-content/provenance review (176/182), native Windows intermittency
+(185/319), real Windows 10/11 operator-authorized testing, release rollback
+and offline installer/PowerShell checks. Hosted green tests alone do not
+satisfy this matrix. No GitHub ruleset or user-PC changes in this checkpoint.
+
 ## Current Windows V1 delivery order — 23 October 2026
 
 [Read current handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md) and [V1 gate #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323). **Stabilization, not new features:** #317 remains the foremost Windows reliability blocker, but the new `ReadServiceRoot` research at `1c7dac9` has progressed past inert owner fixtures with real shared JobStore, native cleanup and seal/reap tests (CI #39888522519 + native #39888522200). Do **not** claim production repair: last-known `main=3fe3de0c` still runs HardenedCommandRunner, and PR #327 remains open with a real #185 red run. The new **host-crash-before-Job-assignment** reproduction leaves a suspended child until independent outer supervisor cleans it; revocation admission only protects submit; Drop may wait forever on persistent native observation errors.
