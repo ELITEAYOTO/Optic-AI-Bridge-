@@ -200,3 +200,21 @@ supervisor proving no inherited unrelated handle. Only after that
 should the team consider a production `PreparedReadCommand` migration
 proposal, independently of the unresolved session admission, Drop and
 stop/resume contracts.
+
+## 9. Positive Rust selective stdout/stderr inheritance (23 October 2026)
+
+**Exact-source proof:** [Windows Rust workflow #39897059425](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39897059425) completed **success, attempt 1** for `ad39741ed666c6cb3977eb399766cf91257362f0`. Hosted Windows compilation, Rustfmt and strict Clippy `-D warnings`, followed by independent outer-Job supervision, all succeeded. Source stays under `#[cfg(test)]` in `optic-bridge-windows`; production `PreparedReadCommand` is not changed.
+
+Test-only `run_selective_stdio` now uses two simultaneous `STARTUPINFOEXW` attributes: `PROC_THREAD_ATTRIBUTE_JOB_LIST` for association at process creation, and `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` listing only the three required inheritable **stdin NUL, stdout pipe writer, stderr pipe writer**. `CreateProcessW` receives `bInheritHandles=true`, `STARTF_USESTDHANDLES`, `CREATE_SUSPENDED` and `EXTENDED_STARTUPINFO_PRESENT`. A fourth writer, deliberately marked inheritable, is **not** allowlisted. The synthetic fixed Rust child is resumed only after native Job membership is observed and the unrelated pipe has reached EOF **while that child is still suspended**, demonstrating denial of the extra handle.
+
+After native resume, the fixed child emits distinct `OPTIC317_STDOUT_FIXED` and `OPTIC317_STDERR_FIXED` markers. The owner polls both `CapturedOutputPipe` readers in 1-KiB chunks, imposes a **combined 16-KiB test assertion**, requires **both EOFs and an empty inner Job** before accepting, and retains the exact child PROCESS_INFORMATION handles until the end. This is a bounded test fixture, not a generic production capture service.
+
+The 5 supervised cases are now `atomic`, `no-inherit`, `invalid`, `missing` and `stdio`. The new `stdio` case reported outer Job **1 → 0** after killing only the synthetic test host (inner Job already empty after normal child completion); all five independently recovered an empty outer Job. Earlier scenarios preserve their proofs. The [native logs](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39897059425) record `selected_stdout_stderr_and_spare_denial=true`, `complete=true`.
+
+First candidate [#39896947005](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39896947005) and second candidate [#39896967200](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39896967200) remain **red, Rustfmt before compilation**; format adjustments were applied on a new SHA rather than weakening the gate.
+
+**Limits:** no general-purpose arbitrary-process command API, binary/cwd/environment pins, secret or credential policy, delegated permissions, stdin backpressure, process-output descendant retaining writers, output-limit enforcement in a running production service, Windows 10/11 client-device certification, atomic stop-versus-resume handshake, host death *during* CreateProcessW, bounded shutdown or shared session admission/revocation proof. A test assertion on 16 Kio is not an OS-level output quota. #317 and V1 #323 remain NO-GO; ADR-0035 stays PROPOSED; no production migration or merge is authorized.
+
+References: [Microsoft UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) (HANDLE_LIST needs inheritable handles and `bInheritHandles=true`); [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw) (STARTUPINFOEX extended attributes and valid std handles); [Windows handle inheritance](https://learn.microsoft.com/en-us/windows/win32/procthread/inheritance).
+
+**Next narrow risk work:** synthetic retained stdout/stderr grandchild ownership/EOF, early native failure while carrying both attribute lists, and interleavings between session admission/stop and thread resume. Decisions about asynchronous revocation and shutdown responsibility remain a separate architecture gate. Do not wire this test-only function to production GitRead.
