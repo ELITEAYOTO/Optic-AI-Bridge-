@@ -11,7 +11,7 @@ import time
 MODES = ['auto-stop', 'legacy-no-latch', 'create-error', 'resume-error',
          'closed-before-admission', 'late-register-after-scan', 'close-after-registration',
          'close-before-resume', 'before-commit-error', 'uncommitted-start', 'client-drop',
-         'direct-revoke', 'observation-uncertain', 'stop-error']
+         'direct-revoke', 'observation-uncertain', 'stop-error', 'controller-expired']
 
 def outer_api():
     path = Path(__file__).parents[1] / 'tests' / 'doctor_pipe_supervisor.py'
@@ -64,7 +64,7 @@ def run_case(api, executable, mode, root):
                 assert state[field] is True, field
             assert state['combined_output_bytes'] <= 16*1024
             no_child = mode in ('create-error', 'closed-before-admission', 'late-register-after-scan',
-                               'close-after-registration', 'before-commit-error', 'uncommitted-start')
+                               'close-after-registration', 'before-commit-error', 'uncommitted-start', 'controller-expired')
             assert state['atomic_job_association'] == state['native_created'] == (not no_child)
             assert state['legacy_manual_cancel_rescue'] == (mode == 'legacy-no-latch')
             if mode in ('create-error', 'resume-error', 'before-commit-error', 'uncommitted-start', 'observation-uncertain', 'stop-error'):

@@ -59,7 +59,7 @@ fn independent_native(
     assert!(registry.get_active(session, clock.now()).is_ok());
     assert_eq!(manager.active_session_job_count(session).unwrap(), 0);
 }
-fn finish(
+pub(super) fn finish(
     mut root: Root<'_>,
     lifecycle: &SessionLifecycleManager,
     path: &Path,

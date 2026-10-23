@@ -408,6 +408,8 @@ impl Drop for Root<'_> {
     }
 }
 
+#[path = "authority_native_owner_tests/lifecycle_cases.rs"]
+mod lifecycle_cases;
 #[path = "authority_native_owner_tests/scenarios.rs"]
 mod scenarios;
 
@@ -418,7 +420,11 @@ fn authority_native_owner_host() {
     wait(|| gate.exists());
     let path = gate.parent().unwrap();
     let mode = env::var("OPTIC317_OWNER_MODE").unwrap();
-    let proof = scenarios::exercise(path, &mode);
+    let proof = if mode == "controller-expired" {
+        lifecycle_cases::exercise(path, &mode)
+    } else {
+        scenarios::exercise(path, &mode)
+    };
     fs::write(path.join("ready"), proof.to_string()).unwrap();
     thread::sleep(Duration::from_secs(10));
     panic!("outer supervisor did not recover fixed host");
