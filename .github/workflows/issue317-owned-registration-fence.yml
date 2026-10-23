@@ -25,7 +25,7 @@ jobs:
       - name: Strict runtime Clippy
         shell: bash
         run: cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
-      - name: Four authority/owner ordering regressions
+      - name: Five authority/owner ordering and true worker-admission regressions
         shell: bash
         run: cargo +1.99.0 test --locked -p optic-bridge-runtime --lib research_owner_fence_ -- --nocapture --test-threads=1
       - name: Prior production-path lost-stop control
