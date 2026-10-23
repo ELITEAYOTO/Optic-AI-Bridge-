@@ -1358,3 +1358,164 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     drop(manager);
     fs::remove_dir_all(root).expect("remove workspace");
 }
+
+
+ 
+// #317 RESEARCH negative control: early cancellation alone has no session
+// stop-intent fence in ProcessManager. A genuinely admitted producer can still
+// publish a new JobRecord after authority closes and after the first stop scan.
+// No OS child is created; the record models the bounded reservation boundary.
+fn stop_registration_contract_grant() -> optic_bridge_core::SessionGrant {
+    optic_bridge_core::SessionGrant {
+        handle: SessionHandle::generate().expect("synthetic session"),
+        principal: optic_bridge_core::PrincipalId::new("stop-order").expect("principal"),
+        project: optic_bridge_core::ProjectId::new("synthetic").expect("project"),
+        capabilities: std::collections::BTreeSet::new(),
+        expires_at: optic_bridge_core::MonotonicTime::from_millis(10_000),
+        policy_epoch: 1,
+    }
+}
+
+fn stop_registration_contract_wait_closed(
+    registry: &crate::SessionRegistry,
+    handle: &SessionHandle,
+) {
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    while !matches!(
+        registry.get_active(handle, optic_bridge_core::MonotonicTime::from_millis(1)),
+        Err(crate::SessionRegistryError::Revoked)
+    ) {
+        assert!(
+            std::time::Instant::now() < until,
+            "session must publish Revoked before bounded test deadline"
+        );
+        thread::yield_now();
+    }
+}
+
+#[test]
+fn stop_registration_contract_early_stop_scan_misses_late_job() {
+    let root = workspace("early-stop-missed-reservation");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
+        .expect("real ProcessManager");
+    let registry = crate::SessionRegistry::new();
+    let a = stop_registration_contract_grant();
+    let b = stop_registration_contract_grant();
+    registry.register(a.clone()).expect("register A");
+    registry.register(b.clone()).expect("register B");
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let admission = registry
+        .begin_admission(&a.handle, now)
+        .expect("real A admission before close");
+    let late = synthetic_record(a.handle.clone(), 0, ProcessStatus::Running, 1, 1);
+    let job_id = JobId::generate().expect("fixed synthetic Job id");
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| {
+            done_tx
+                .send(registry.revoke(&a.handle))
+                .expect("deliver real registry revoke");
+        });
+        stop_registration_contract_wait_closed(&registry, &a.handle);
+        assert!(matches!(
+            registry.begin_admission(&a.handle, now),
+            Err(crate::SessionRegistryError::Revoked)
+        ));
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        // Proposed early one-shot stop cannot signal a yet-unregistered Job.
+        assert_eq!(manager.cancel_session(&a.handle).expect("early stop"), 0);
+        {
+            let mut store = manager.jobs.lock().expect("real bounded JobStore");
+            store.jobs.insert(job_id.clone(), Arc::clone(&late));
+        }
+        assert_eq!(
+            manager
+                .active_session_job_count(&a.handle)
+                .expect("late Job still holds capacity"),
+            1
+        );
+        assert!(
+            !late.stop_requested.load(Ordering::Acquire),
+            "negative control: the early scan alone misses the late registration"
+        );
+        assert!(registry.begin_admission(&b.handle, now).is_ok());
+        // Out-of-band second scan can recover THIS fixture, but is not a
+        // durable solution if admitted worker is waiting for the FIRST stop.
+        assert_eq!(manager.cancel_session(&a.handle).expect("recovery scan"), 1);
+        assert!(late.stop_requested.load(Ordering::Acquire));
+        assert_eq!(manager.cancel_session(&a.handle).expect("idempotence"), 0);
+        assert_eq!(
+            manager
+                .active_session_job_count(&a.handle)
+                .expect("stop is not quiescence"),
+            1
+        );
+        drop(admission);
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("bounded revoke completion")
+                .expect("revoke succeeded")
+        );
+        closer.join().expect("closer joined");
+    });
+    assert!(registry.get_active(&b.handle, now).is_ok());
+    fs::remove_dir_all(root).expect("cleanup fixed synthetic workspace");
+}
+
+#[test]
+fn stop_registration_contract_registered_job_is_seen_during_close() {
+    let root = workspace("stop-visible-reservation");
+    let manager = ProcessManager::new(&root, HardLimits::default(), Vec::new())
+        .expect("real ProcessManager");
+    let registry = crate::SessionRegistry::new();
+    let a = stop_registration_contract_grant();
+    registry.register(a.clone()).expect("register");
+    let now = optic_bridge_core::MonotonicTime::from_millis(1);
+    let admission = registry
+        .begin_admission(&a.handle, now)
+        .expect("real admission");
+    let record = synthetic_record(a.handle.clone(), 0, ProcessStatus::Running, 1, 1);
+    let job = JobId::generate().expect("synthetic Job id");
+    manager
+        .jobs
+        .lock()
+        .expect("store")
+        .jobs
+        .insert(job.clone(), Arc::clone(&record));
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+    thread::scope(|scope| {
+        let closer = scope.spawn(|| {
+            done_tx
+                .send(registry.revoke(&a.handle))
+                .expect("report registry close");
+        });
+        stop_registration_contract_wait_closed(&registry, &a.handle);
+        assert_eq!(manager.cancel_session(&a.handle).expect("stop visible Job"), 1);
+        assert!(record.stop_requested.load(Ordering::Acquire));
+        assert_eq!(manager.cancel_session(&a.handle).expect("repeat"), 0);
+        assert_eq!(
+            manager
+                .active_session_job_count(&a.handle)
+                .expect("record retained"),
+            1
+        );
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        drop(admission);
+        assert!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("revoke completion")
+                .expect("revoke succeeded")
+        );
+        closer.join().expect("closer joined");
+    });
+    fs::remove_dir_all(root).expect("cleanup fixture");
+}
