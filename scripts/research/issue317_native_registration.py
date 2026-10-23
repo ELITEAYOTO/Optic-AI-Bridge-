@@ -11,7 +11,8 @@ import time
 MODES = ['auto-stop', 'legacy-no-latch', 'create-error', 'resume-error',
          'closed-before-admission', 'late-register-after-scan', 'close-after-registration',
          'close-before-resume', 'before-commit-error', 'uncommitted-start', 'client-drop',
-         'direct-revoke', 'observation-uncertain', 'stop-error', 'controller-expired']
+         'direct-revoke', 'observation-uncertain', 'stop-error', 'controller-expired', 'controller-expired-before-commit',
+         'renewal-no-budget-reset', 'expiry-running', 'root-drop-recoverable', 'root-drop-persistent', 'descendant-pipes', 'output-limit']
 
 def outer_api():
     path = Path(__file__).parents[1] / 'tests' / 'doctor_pipe_supervisor.py'
@@ -38,19 +39,37 @@ def run_case(api, executable, mode, root):
             proof['outer_ownership_verified_before_gate'] = True
             (root/'gate').write_text('outer-owned', encoding='ascii')
             until = time.monotonic()+12
-            while not (root/'ready').exists():
+            while not (root/'ready').exists() and not (root/'pending-ready').exists():
                 if host.poll() is not None:
                     raise RuntimeError('fixed host failed before final proof')
                 if trace.stat().st_size > 128*1024:
                     raise RuntimeError('fixed trace cap')
                 if time.monotonic() >= until:
                     raise TimeoutError('independent native registration deadline')
-                for phase, expected in [('live', 2), ('uncertain', 1), ('suspended', 1)]:
+                for phase, expected in [('live', 2), ('uncertain', 1), ('suspended', 1), ('drop', 1), ('retained', 2)]:
                     if (root/(phase+'-ready')).exists() and not (root/(phase+'-confirmed')).exists():
                         api.wait_for(lambda: job.active() == expected, 2, phase+' outer witness')
                         proof['outer_active_during_'+phase] = job.active()
                         (root/(phase+'-confirmed')).write_text('verified', encoding='ascii')
                 time.sleep(.002)
+            if (root/'pending-ready').exists():
+                assert mode == 'root-drop-persistent'
+                state = json.loads((root/'pending-ready').read_text(encoding='utf-8'))
+                assert state['completion_kind'] == 'host-exit-pending'
+                assert not state['root_drop_completed'] and not state['active_ownership_released_after_proof']
+                assert not state['native_terminal_and_both_eof'] and not state['stop_worker_joined']
+                assert state['observation_errors'] >= 4 and state['stop_errors'] >= 4
+                assert state['retained_active_jobs'] == 1 and state['independent_admission_completed']
+                api.wait_for(lambda: job.active() == 2, 2, 'live keeper plus host before exact host exit')
+                proof['outer_before_host_exit'] = job.active()
+                host.kill()
+                host.wait(timeout=3)
+                # Outer handle remains open: inner Job last-handle closure is
+                # responsible for the child disappearing after host termination.
+                api.wait_for(lambda: job.active() == 0, 2, 'inner Job contains host-exit pending tree')
+                proof.update(native=state, outer_after_host_exit=job.active(), complete=True,
+                             outcome='expected-blocked-drop-contained-on-host-exit')
+                return proof
             state = json.loads((root/'ready').read_text(encoding='utf-8'))
             assert state['mode'] == mode and state['production_wired'] is False
             fields = ['real_registry', 'real_admission', 'active_ownership_released_after_proof']
@@ -64,19 +83,25 @@ def run_case(api, executable, mode, root):
                 assert state[field] is True, field
             assert state['combined_output_bytes'] <= 16*1024
             no_child = mode in ('create-error', 'closed-before-admission', 'late-register-after-scan',
-                               'close-after-registration', 'before-commit-error', 'uncommitted-start', 'controller-expired')
+                               'close-after-registration', 'before-commit-error', 'uncommitted-start', 'controller-expired', 'controller-expired-before-commit', 'renewal-no-budget-reset')
             assert state['atomic_job_association'] == state['native_created'] == (not no_child)
             assert state['native_create_attempted'] == (not no_child or mode == 'create-error')
             assert state['legacy_manual_cancel_rescue'] == (mode == 'legacy-no-latch')
-            if mode in ('create-error', 'resume-error', 'before-commit-error', 'uncommitted-start', 'observation-uncertain', 'stop-error'):
+            if mode in ('create-error', 'resume-error', 'before-commit-error', 'uncommitted-start', 'observation-uncertain', 'stop-error', 'root-drop-recoverable'):
                 assert state['status'] == 'Failed'
             if mode == 'late-register-after-scan':
                 assert state['early_scan_count'] == 0 and state['late_registration_inherited_stop']
                 assert state['independent_native_completed']
             if mode == 'close-before-resume':
                 assert state['resume_denied'] and state['close_published_during_native_pause']
-            if mode == 'controller-expired':
+            if mode.startswith('controller-expired'):
                 assert state['status'] == 'TimedOut' and state['controller_expiry_latched_before_start']
+            if mode == 'output-limit':
+                assert state['status'] == 'OutputLimitExceeded' and state['combined_output_bytes'] == 16*1024
+            if mode in ('renewal-no-budget-reset', 'expiry-running'):
+                assert state['status'] == 'TimedOut'
+            if mode == 'root-drop-recoverable':
+                assert state['root_drop_completed'] and state['observation_errors'] >= 4
             if mode in ('late-register-after-scan', 'close-after-registration', 'close-before-resume',
                         'before-commit-error', 'uncommitted-start'):
                 assert not (root/'executed').exists()

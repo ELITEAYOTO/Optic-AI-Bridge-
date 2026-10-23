@@ -134,3 +134,60 @@ without a scope fail closed. Root uses try_lock after capture, avoiding waiting
 on a queued old sample. The unit test verifies real scoped data, rejection under
 lock, and rejection after scope exit. Production sampling/freshness policy still
 requires review before any integration; no worst-case OS latency is claimed.
+
+
+## Retaining Drop, expiry, and original pipe failure boundary
+
+The fixed outer-Job harness now covers 22 finite schedules. Five additional
+lifecycle schedules distinguish the independent controller's spent budget before
+commit/start, an actual registry renewal which MUST NOT enlarge the keeper's
+captured budget, and producer-clock expiry while a native child is running.
+The frozen-clock controls are deliberately synthetic; they are not a claim of
+an actual Windows monotonic clock failure.
+
+Two tests execute the ACTUAL Root destructor in a scoped worker. With a withheld
+native observation, the destructor retains admission, Job, active accounting and
+its ticket; direct revoke stays pending, removal fails, and another session can
+still admit work. Restoring observation permits terminal proof, controller join,
+permit release, revoke completion and destructor return. No worker is detached.
+
+With repeated query AND termination probe errors the destructor remains blocked.
+The supervisor observes host plus live child, kills ONLY its exact synthetic host
+handle, and observes an empty outer Job BEFORE closing that outer Job handle.
+This demonstrates inner KILL_ON_JOB_CLOSE containment on controlled host exit;
+it is explicitly NOT a successful graceful shutdown, external durable ownership
+transfer, arbitrary crash recovery, or proof against permanently stuck kernel
+operations. The result is classified as expected-blocked-drop-contained-on-host-exit.
+A bounded graceful global shutdown remains unresolved. No timeout releases an
+uncertain keeper or turns it terminal.
+
+The original descendant-retains-pipes boundary is also exercised through this
+new authority path: root exit is observed while a descendant and open pipes remain;
+only actual stop, empty Job and both EOF permit completion. Output overflow is
+bounded at the existing combined 16 KiB and stops the owned tree while session
+authority remains open. stdin is NUL in this fixture; general stdin writers,
+arbitrary executables, Unix native ownership and verified GitRead publication
+are outside its demonstrated scope.
+
+The first new controller-expiry red, initial module-path compiler red and strict
+Clippy reds remain in the local evidence package. Native successes are research
+proofs; normal application dependency closure excludes the fixture. This branch
+adds no production runner and does not close #317 or change the V1 NO-GO.
+
+## Smallest production progression (review required)
+
+Do not transplant this test root. First specify generation-bound authority and
+owner-registration receipts, and a sealed production issuer. Close/commit must
+share session authority on EVERY direct registry/lifecycle path; a private launcher
+mutex is insufficient. A prepared owner must hold admission before effects and
+retain the same irreversible stop latch after close. The subsequent independent
+root must account for all pending owners and expose separate close, stop-request,
+and proven-quiescence results, while legacy synchronous revoke retains its API.
+A durable supervisor/ownership-transfer contract is required before promising a
+bounded application exit under persistent observation failure. Only then migrate
+one verified read-only Git command with task lease, effective deadline, executable
+identity/pin, canonical cwd, controlled environment and separately reviewed output
+provenance (#182). No such production change is authorized by a green prototype.
+The registry's legacy handle-keyed drainage and remove/re-register generation
+boundary also require dedicated review; the current tests do not prove all ABA
+schedules safe.

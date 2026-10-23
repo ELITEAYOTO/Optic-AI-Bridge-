@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "bootstrap/**"]
+    branches: [main, "bootstrap/**", "codex/317-native-registration-authority"]
   pull_request:
 
 permissions:

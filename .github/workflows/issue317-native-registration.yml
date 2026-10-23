@@ -40,6 +40,11 @@ jobs:
         run: |
           cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings
           if ($LASTEXITCODE -ne 0) { throw 'Clippy failed' }
+      - name: Actual memory scope regression
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime real_sample_is_required_scoped_and_capture_is_rejected_under_store_lock
+          if ($LASTEXITCODE -ne 0) { throw 'memory scope regression failed' }
       - name: Fixture absent from normal production dependency closure
         shell: pwsh
         run: |

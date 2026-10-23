@@ -410,7 +410,14 @@ fn authority_native_owner_host() {
     wait(|| gate.exists());
     let path = gate.parent().unwrap();
     let mode = env::var("OPTIC317_OWNER_MODE").unwrap();
-    let proof = if mode == "controller-expired" {
+    let proof = if mode.starts_with("controller-expired")
+        || matches!(
+            mode.as_str(),
+            "renewal-no-budget-reset"
+                | "expiry-running"
+                | "root-drop-recoverable"
+                | "root-drop-persistent"
+        ) {
         lifecycle_cases::exercise(path, &mode)
     } else {
         scenarios::exercise(path, &mode)

@@ -1,7 +1,7 @@
 //! Finite fixed schedules. Every native host is externally Job-owned first.
 use super::*;
 
-fn close(
+pub(super) fn close(
     direct: bool,
     registry: &SessionRegistry,
     lifecycle: &SessionLifecycleManager,
@@ -14,7 +14,7 @@ fn close(
         (report.session_changed, Some(report.cancellation_requests))
     }
 }
-fn wait_closed(registry: &SessionRegistry, handle: &SessionHandle, clock: &dyn Clock) {
+pub(super) fn wait_closed(registry: &SessionRegistry, handle: &SessionHandle, clock: &dyn Clock) {
     wait(|| {
         matches!(
             registry.get_active(handle, clock.now()),
@@ -22,7 +22,7 @@ fn wait_closed(registry: &SessionRegistry, handle: &SessionHandle, clock: &dyn C
         )
     });
 }
-fn provision(
+pub(super) fn provision(
     lifecycle: &SessionLifecycleManager,
     clock: &dyn Clock,
     name: &str,
@@ -288,6 +288,37 @@ pub(super) fn exercise(path: &Path, mode: &str) -> serde_json::Value {
     } else {
         result.unwrap();
         wait(|| path.join("executed").exists());
+    }
+    if mode == "descendant-pipes" {
+        wait(|| {
+            path.join("descendant").exists()
+                && root.slot.as_ref().unwrap().native.root_exited().unwrap()
+        });
+        let k = root.slot.as_mut().unwrap();
+        k.native.capture().unwrap();
+        assert!(!k.native.terminal().unwrap());
+        fs::write(
+            path.join("retained-ready"),
+            b"root exited, descendant retains pipes",
+        )
+        .unwrap();
+        wait(|| path.join("retained-confirmed").exists());
+    }
+    if mode == "output-limit" {
+        wait(|| {
+            let _ = root.observe().unwrap();
+            root.slot.as_ref().unwrap().native.overflow
+        });
+        wait(|| root.observe().unwrap());
+        assert!(registry.get_active(&grant.handle, clock.now()).is_ok());
+        return finish(
+            root,
+            &lifecycle,
+            path,
+            mode,
+            false,
+            serde_json::json!({"overflow_stopped_while_authority_open":true}),
+        );
     }
     if mode == "client-drop" {
         drop(client.take());
