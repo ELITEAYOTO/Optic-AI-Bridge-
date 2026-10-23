@@ -125,10 +125,17 @@ impl SessionRegistry {
             .checked_add(1)
             .ok_or(SessionRegistryError::AdmissionCounterOverflow)?;
         let grant = record.grant.clone();
+        // Capture immutable record identity while this genuine admission is
+        // counted under the same registry lock. A later handle reuse cannot
+        // silently retarget this watcher to a different session generation.
+        let revocation_watch = SessionRevocationWatch {
+            signal: Arc::clone(&record.revocation_signal),
+        };
         Ok(SessionAdmissionPermit {
             registry: self,
             handle: handle.clone(),
             grant,
+            revocation_watch,
         })
     }
 
@@ -362,16 +369,47 @@ pub enum SessionRegistryError {
     StillActive,
 }
 
+/// Read-only observation of *explicit* revocation for one admitted session
+/// record. It does not grant permission to start work, does not extend the
+/// admitted deadline, and does not prove that any process has terminated.
+///
+/// A watcher continues to refer to its original session generation even
+/// after its permit is dropped and the opaque handle is eventually reused.
+#[derive(Clone, Debug)]
+pub struct SessionRevocationWatch {
+    signal: Arc<AtomicBool>,
+}
+
+impl SessionRevocationWatch {
+    #[must_use]
+    pub fn is_revoked(&self) -> bool {
+        self.signal.load(Ordering::Acquire)
+    }
+}
+
 pub struct SessionAdmissionPermit<'a> {
     registry: &'a SessionRegistry,
     handle: SessionHandle,
     grant: SessionGrant,
+    revocation_watch: SessionRevocationWatch,
 }
 
 impl SessionAdmissionPermit<'_> {
     #[must_use]
     pub fn grant(&self) -> &SessionGrant {
         &self.grant
+    }
+
+    /// Obtain a read-only revocation watch bound to the grant's original
+    /// session record; unlike relooking up an opaque handle, it survives
+    /// close/removal without accidentally observing a replacement session.
+    ///
+    /// `false` means only that explicit revocation has not been published.
+    /// Callers must *also* enforce monotonic deadlines, task leases and
+    /// effect authorization independently.
+    #[must_use]
+    pub fn revocation_watch(&self) -> SessionRevocationWatch {
+        self.revocation_watch.clone()
     }
 }
 
