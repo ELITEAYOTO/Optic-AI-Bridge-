@@ -512,6 +512,78 @@ impl OwnedSessionAdmissionPermit {
     }
 }
 
+// Proof harness only. Production authorization still requires independent
+// task-lease/policy/executable checks and actual native owner/guardian wiring.
+#[cfg(all(test, windows))]
+#[derive(Debug, Error)]
+pub(crate) enum ResearchOwnedCommitError {
+    #[error(transparent)]
+    Registry(#[from] SessionRegistryError),
+    #[error("native reservation owner does not match admitted session")]
+    OwnerSessionMismatch,
+    #[error("admission was captured from a different session generation")]
+    GenerationChanged,
+    #[error("native reservation is stopped, spent or already committed")]
+    OwnerUnavailable,
+}
+
+#[cfg(all(test, windows))]
+pub(crate) struct ResearchOwnedCommitReceipt<'a> {
+    _admission: &'a OwnedSessionAdmissionPermit,
+    _reservation: &'a crate::process::NativeProcessReservation,
+    stop: SessionAdmissionStopWatch,
+}
+
+#[cfg(all(test, windows))]
+impl ResearchOwnedCommitReceipt<'_> {
+    #[must_use]
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.stop.is_stop_required_at(now)
+    }
+}
+
+#[cfg(all(test, windows))]
+impl OwnedSessionAdmissionPermit {
+    /// Same serialization point as direct and lifecycle registry revocation.
+    /// Only an already-registered, genuine native owner can claim once.
+    /// Borrowing both prevents this fixture from dropping its owned admission
+    /// while the experimental receipt is alive; it does not prove shutdown.
+    pub(crate) fn research_commit_registered_owner<'a>(
+        &'a self,
+        reservation: &'a crate::process::NativeProcessReservation,
+        now: MonotonicTime,
+    ) -> Result<ResearchOwnedCommitReceipt<'a>, ResearchOwnedCommitError> {
+        if reservation.research_owner_session() != &self.handle {
+            return Err(ResearchOwnedCommitError::OwnerSessionMismatch);
+        }
+        let sessions = self
+            .registry
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&self.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        if !Arc::ptr_eq(&record.revocation_signal, &self.revocation_watch.signal) {
+            return Err(ResearchOwnedCommitError::GenerationChanged);
+        }
+        if record.revoked {
+            return Err(SessionRegistryError::Revoked.into());
+        }
+        if self.grant.is_expired_at(now) || record.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::Expired.into());
+        }
+        if !reservation.research_try_claim_once() {
+            return Err(ResearchOwnedCommitError::OwnerUnavailable);
+        }
+        Ok(ResearchOwnedCommitReceipt {
+            _admission: self,
+            _reservation: reservation,
+            stop: self.stop_watch(),
+        })
+    }
+}
+
 impl Drop for OwnedSessionAdmissionPermit {
     fn drop(&mut self) {
         self.registry.finish_admission(&self.handle);
