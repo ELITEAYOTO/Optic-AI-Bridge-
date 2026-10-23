@@ -38,9 +38,67 @@ struct SessionRecord {
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     active_admissions: u32,
+    // #317 RESEARCH ONLY: the same gate serializes direct revoke with
+    // synthetic owner registration, even when a client holds an older permit.
+    #[cfg(test)]
+    research_owner_gate: Arc<Mutex<()>>,
 }
 
 impl SessionRegistry {
+    /// Test-only gate lookup. No owner or native process is created here.
+    #[cfg(test)]
+    fn research_gate(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<Option<Arc<Mutex<()>>>, SessionRegistryError> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        Ok(sessions
+            .get(handle)
+            .map(|record| Arc::clone(&record.research_owner_gate)))
+    }
+
+    /// #317 RESEARCH ONLY: perform a bounded synthetic owner registration
+    /// under the same gate used by direct registry revoke. All real-native
+    /// effects remain disabled; the closure must not block or spawn children.
+    #[cfg(test)]
+    pub(crate) fn research_commit_owner<R>(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+        publish: impl FnOnce() -> R,
+    ) -> Result<R, SessionRegistryError> {
+        let gate = self
+            .research_gate(handle)?
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        let _guard = gate
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| SessionRegistryError::StateUnavailable)?;
+            let record = sessions
+                .get(handle)
+                .ok_or(SessionRegistryError::UnknownSession)?;
+            if !Arc::ptr_eq(&gate, &record.research_owner_gate) {
+                return Err(SessionRegistryError::UnknownSession);
+            }
+            if record.revoked {
+                return Err(SessionRegistryError::Revoked);
+            }
+            if record.grant.is_expired_at(now) {
+                return Err(SessionRegistryError::Expired);
+            }
+        }
+        // Registry mutex is released, but this per-session gate stays held
+        // until the fixed synthetic JobStore owner becomes visible.
+        Ok(publish())
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -76,6 +134,8 @@ impl SessionRegistry {
                 revoked: false,
                 revocation_signal: Arc::new(AtomicBool::new(false)),
                 active_admissions: 0,
+                #[cfg(test)]
+                research_owner_gate: Arc::new(Mutex::new(())),
             },
         );
         Ok(())
@@ -168,6 +228,14 @@ impl SessionRegistry {
     }
 
     pub fn revoke(&self, handle: &SessionHandle) -> Result<bool, SessionRegistryError> {
+        // Test-instrumented direct revoke must take the very same gate as
+        // synthetic owner commitment. Production does NOT contain this gate.
+        #[cfg(test)]
+        let research_gate = self.research_gate(handle)?;
+        #[cfg(test)]
+        let research_guard = research_gate
+            .as_ref()
+            .map(|gate| gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
         let mut sessions = self
             .sessions
             .lock()
@@ -175,7 +243,15 @@ impl SessionRegistry {
         let Some(record) = sessions.get_mut(handle) else {
             return Ok(false);
         };
+        // A removed/re-registered handle can never be closed under an old
+        // generation's gate. Fail closed, with no native work authorized.
+        #[cfg(test)]
+        if !research_gate.as_ref().is_some_and(|gate| Arc::ptr_eq(gate, &record.research_owner_gate)) {
+            return Err(SessionRegistryError::StateUnavailable);
+        }
         let changed = Self::publish_revocation(record);
+        #[cfg(test)]
+        drop(research_guard);
         // Keep the same guard across publication and the first predicate check.
         // The drain returns it so it remains held until this method returns.
         let _sessions = self.wait_for_admission_drain(handle, sessions)?;
