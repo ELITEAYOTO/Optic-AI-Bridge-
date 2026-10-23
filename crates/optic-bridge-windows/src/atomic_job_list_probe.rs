@@ -10,7 +10,8 @@ use crate::CapturedOutputPipe;
 use std::{
     ffi::{OsStr, c_void},
     fs, io,
-    mem::size_of,
+    io::Write,
+    mem::{size_of, size_of_val},
     os::windows::{
         ffi::OsStrExt,
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
@@ -26,8 +27,9 @@ use windows::{
             CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
             EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetProcessHandleCount,
             InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, STARTUPINFOEXW, STARTUPINFOW,
-            TerminateProcess, UpdateProcThreadAttribute,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+            PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+            STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute,
         },
     },
     core::{PCWSTR, PWSTR},
@@ -39,11 +41,11 @@ struct NativeAttributes {
 }
 
 impl NativeAttributes {
-    fn new() -> io::Result<Self> {
+    fn new(attribute_count: u32) -> io::Result<Self> {
         let mut bytes = 0usize;
         // First call intentionally returns ERROR_INSUFFICIENT_BUFFER, with
         // the exact byte count needed for one process creation attribute.
-        let _ = unsafe { InitializeProcThreadAttributeList(None, 1, None, &mut bytes) };
+        let _ = unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
         if bytes == 0 {
             return Err(io::Error::other("attribute size unavailable"));
         }
@@ -54,7 +56,7 @@ impl NativeAttributes {
         let list = LPPROC_THREAD_ATTRIBUTE_LIST(storage.as_mut_ptr().cast::<c_void>());
         // SAFETY: backing storage is aligned and has >= bytes; it is retained
         // until the matching DeleteProcThreadAttributeList in Drop.
-        unsafe { InitializeProcThreadAttributeList(Some(list), 1, None, &mut bytes) }
+        unsafe { InitializeProcThreadAttributeList(Some(list), attribute_count, None, &mut bytes) }
             .map_err(io::Error::other)?;
         Ok(Self { storage })
     }
@@ -89,7 +91,7 @@ fn launch_suspended_with_job(
     job_handle: HANDLE,
     missing_binary: bool,
 ) -> io::Result<SuspendedChild> {
-    let mut attributes = NativeAttributes::new()?;
+    let mut attributes = NativeAttributes::new(1)?;
     let handles = [job_handle];
     // SAFETY: the array holds a single HANDLE for the lifetime of the
     // attribute list and CreateProcessW call. Its pointer/size match Win32.
@@ -166,6 +168,157 @@ fn launch_suspended_with_job(
     })
 }
 
+/// Permit only fixed stdio handles, never arbitrary inheritable parent handles.
+/// This research primitive never accepts model arguments or produces an exported API.
+fn run_selective_stdio(job: &OwnedJob) -> io::Result<()> {
+    let mut stdout = CapturedOutputPipe::new()?;
+    let mut stderr = CapturedOutputPipe::new()?;
+    let mut unrelated = CapturedOutputPipe::new()?;
+    let null_input = fs::File::open("NUL")?;
+    let stdin_handle = HANDLE(null_input.as_raw_handle());
+    let stdout_handle = HANDLE(stdout.writer_handle()?.as_raw_handle());
+    let stderr_handle = HANDLE(stderr.writer_handle()?.as_raw_handle());
+    let unrelated_handle = HANDLE(unrelated.writer_handle()?.as_raw_handle());
+    for handle in [stdin_handle, stdout_handle, stderr_handle, unrelated_handle] {
+        // SAFETY: these are owned real file/pipe handles, not pseudo handles.
+        // All remain live through the creation-attribute and CreateProcess calls.
+        unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT.0, HANDLE_FLAG_INHERIT) }
+            .map_err(io::Error::other)?;
+    }
+
+    let mut attributes = NativeAttributes::new(2)?;
+    let job_handles = [job.raw()];
+    let permitted_handles = [stdin_handle, stdout_handle, stderr_handle];
+    // SAFETY: both arrays and the initialized attribute list live until
+    // CreateProcessW returns. The spare unrelated writer is NOT allowlisted.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.list(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(job_handles.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(io::Error::other)?;
+    // SAFETY: allowlisted handles were explicitly made inheritable and do
+    // not include a pseudo-handle. bInheritHandles=true is required by Win32.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.list(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(permitted_handles.as_ptr().cast::<c_void>()),
+            size_of_val(&permitted_handles),
+            None,
+            None,
+        )
+    }
+    .map_err(io::Error::other)?;
+
+    let executable = std::env::current_exe()?;
+    let mut executable_wide: Vec<u16> = executable.as_os_str().encode_wide().collect();
+    executable_wide.push(0);
+    let child_args = format!(
+        "\"{}\" --exact job::atomic_job_list_probe::native_stdio_child_fixture --ignored --nocapture",
+        executable.display()
+    );
+    let mut command_line: Vec<u16> = OsStr::new(&child_args).encode_wide().collect();
+    command_line.push(0);
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = stdin_handle;
+    startup.StartupInfo.hStdOutput = stdout_handle;
+    startup.StartupInfo.hStdError = stderr_handle;
+    startup.lpAttributeList = attributes.list();
+    let mut info = PROCESS_INFORMATION::default();
+    // SAFETY: fixed synthetic binary and writable UTF-16 command buffer.
+    // Only the three explicit inheritable std handles are allowed to
+    // cross the process boundary; Job membership occurs at creation.
+    unsafe {
+        CreateProcessW(
+            PCWSTR(executable_wide.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            true,
+            CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+            None,
+            PCWSTR::null(),
+            &startup.StartupInfo as *const STARTUPINFOW,
+            &mut info,
+        )
+    }
+    .map_err(io::Error::other)?;
+    // SAFETY: CreateProcessW succeeded, so both handles are exclusively
+    // returned and must be retained through all fallible native steps.
+    let child = SuspendedChild {
+        process: unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) },
+        _thread: unsafe { OwnedHandle::from_raw_handle(info.hThread.0) },
+    };
+    assert_eq!(job.active_processes()?, 1, "assigned before resume");
+    stdout.close_parent_writer();
+    stderr.close_parent_writer();
+    unrelated.close_parent_writer();
+
+    // Parent's unrelated inheritable writer was not on the Win32 handle list.
+    // Confirm EOF *before* resuming, with child demonstrably still alive.
+    let extra_eof = unrelated.try_read(64)?;
+    assert!(extra_eof.eof && extra_eof.bytes.is_empty());
+    assert_eq!(job.active_processes()?, 1);
+
+    // SAFETY: this is the exact primary thread returned by CreateProcessW
+    // and retained by child until the operation is terminal or cancelled.
+    let resumed = unsafe { ResumeThread(HANDLE(child._thread.as_raw_handle())) };
+    if resumed == u32::MAX {
+        return Err(io::Error::last_os_error());
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(6);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let mut out_eof = false;
+    let mut err_eof = false;
+    const OUTPUT_LIMIT: usize = 16 * 1024;
+    loop {
+        if !out_eof {
+            let read = stdout.try_read(1024)?;
+            out_eof = read.eof;
+            out.extend_from_slice(&read.bytes);
+        }
+        if !err_eof {
+            let read = stderr.try_read(1024)?;
+            err_eof = read.eof;
+            err.extend_from_slice(&read.bytes);
+        }
+        assert!(out.len() + err.len() <= OUTPUT_LIMIT, "combined output exceeded cap");
+        let terminated = job.active_processes()? == 0;
+        if out_eof && err_eof && terminated {
+            break;
+        }
+        assert!(Instant::now() < deadline, "stdio/Job terminal proof timed out");
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(out.windows(b"OPTIC317_STDOUT_FIXED".len()).any(|x| x == b"OPTIC317_STDOUT_FIXED"));
+    assert!(err.windows(b"OPTIC317_STDERR_FIXED".len()).any(|x| x == b"OPTIC317_STDERR_FIXED"));
+    drop(child);
+    Ok(())
+}
+
+#[test]
+#[ignore = "synthetic child only spawned by the independently supervised Rust fixture"]
+fn native_stdio_child_fixture() {
+    io::stdout()
+        .write_all(b"OPTIC317_STDOUT_FIXED\n")
+        .expect("fixed stdout marker");
+    io::stderr()
+        .write_all(b"OPTIC317_STDERR_FIXED\n")
+        .expect("fixed stderr marker");
+}
+
 fn wait_for_gate(path: &Path) -> io::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(7);
     while !path.exists() {
@@ -183,7 +336,7 @@ fn native_atomic_job_list_host_fixture() {
     let mode = std::env::var("OPTIC317_RUST_MODE").expect("supervised mode");
     assert!(matches!(
         mode.as_str(),
-        "atomic" | "invalid" | "no-inherit" | "missing"
+        "atomic" | "invalid" | "no-inherit" | "missing" | "stdio"
     ));
     let gate = std::env::var_os("OPTIC317_RUST_GATE").expect("outer Job gate");
     let ready = std::env::var_os("OPTIC317_RUST_READY").expect("outer Job ready path");
@@ -241,6 +394,13 @@ fn native_atomic_job_list_host_fixture() {
             );
             Some(child)
         }
+        "stdio" => {
+            // Native positive stdio proof, using explicitly allowed inherited
+            // stdout/stderr writers AND a rejected ambient inheritable writer.
+            run_selective_stdio(&job).expect("bounded explicit stdio native proof");
+            assert_eq!(job.active_processes().expect("stdio child terminal"), 0);
+            None
+        }
         "invalid" => {
             let invalid = HANDLE(0x7fff_ffffusize as *mut c_void);
             assert!(launch_suspended_with_job(invalid, false).is_err());
@@ -276,6 +436,7 @@ fn native_atomic_job_list_host_fixture() {
     let signal = match mode.as_str() {
         "atomic" => "mode=atomic;inner_active=1;suspended=1",
         "no-inherit" => "mode=no-inherit;inner_active=1;pipe_eof=1;suspended=1",
+        "stdio" => "mode=stdio;stdout=1;stderr=1;extra_eof=1;bounded=1;job_empty=1",
         "invalid" => "mode=invalid;inner_active=0;no_spawn=1",
         "missing" => "mode=missing;inner_active=0;no_spawn=1;handles_stable=1",
         _ => unreachable!("validated fixed fixture mode"),
