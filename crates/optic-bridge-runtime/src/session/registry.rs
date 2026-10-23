@@ -246,7 +246,10 @@ impl SessionRegistry {
         // A removed/re-registered handle can never be closed under an old
         // generation's gate. Fail closed, with no native work authorized.
         #[cfg(test)]
-        if !research_gate.as_ref().is_some_and(|gate| Arc::ptr_eq(gate, &record.research_owner_gate)) {
+        if !research_gate
+            .as_ref()
+            .is_some_and(|gate| Arc::ptr_eq(gate, &record.research_owner_gate))
+        {
             return Err(SessionRegistryError::StateUnavailable);
         }
         let changed = Self::publish_revocation(record);
