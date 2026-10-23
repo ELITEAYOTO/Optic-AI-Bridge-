@@ -9,6 +9,10 @@ use std::{
 use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
 
+#[cfg(test)]
+#[path = "registry_revoke_tests.rs"]
+mod revoke_phase_tests;
+
 #[derive(Debug)]
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<SessionHandle, SessionRecord>>,
