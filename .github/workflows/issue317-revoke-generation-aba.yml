@@ -37,4 +37,4 @@ jobs:
         shell: bash
         run: |
           echo "OPTIC317_REVOKE_ABA source_sha=${GITHUB_SHA} synthetic_only=true production_fix=false"
-          cargo test --locked -p optic-bridge-runtime --lib research_reused_session_handle_between_close_and_cleanup_reaches_replacement_approval -- --exact --nocapture --test-threads=1
+          cargo test --locked -p optic-bridge-runtime --lib research_reused_session_handle_between_close_and_cleanup_reaches_replacement_approval -- --nocapture --test-threads=1
