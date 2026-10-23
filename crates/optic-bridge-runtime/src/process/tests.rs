@@ -1261,7 +1261,6 @@ async fn record_pressure_never_evicts_another_sessions_terminal_job() {
     fs::remove_dir_all(root).expect("remove fixture");
 }
 
-
 #[test]
 fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessions() {
     // Fixed in-memory synthetic records: no external program or PID is used.
@@ -1279,7 +1278,9 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     let exited = synthetic_record(owner.clone(), 3, ProcessStatus::Exited, 1, 1);
     let failed = synthetic_record(owner.clone(), 4, ProcessStatus::Failed, 1, 1);
     let unrelated = synthetic_record(other.clone(), 5, ProcessStatus::Running, 1, 1);
-    already_signalled.stop_requested.store(true, Ordering::Release);
+    already_signalled
+        .stop_requested
+        .store(true, Ordering::Release);
 
     let ids = (0..6)
         .map(|_| JobId::generate().expect("synthetic job id"))
@@ -1298,7 +1299,9 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
         }
     }
     assert_eq!(
-        manager.active_session_job_count(&owner).expect("owner count"),
+        manager
+            .active_session_job_count(&owner)
+            .expect("owner count"),
         3
     );
     assert_eq!(
@@ -1313,11 +1316,15 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
         assert!(!record.stop_requested.load(Ordering::Acquire));
     }
     assert_eq!(
-        manager.cancel_session(&owner).expect("idempotent cancellation"),
+        manager
+            .cancel_session(&owner)
+            .expect("idempotent cancellation"),
         0
     );
     assert_eq!(
-        manager.active_session_job_count(&owner).expect("retained capacity"),
+        manager
+            .active_session_job_count(&owner)
+            .expect("retained capacity"),
         3,
         "requesting stop never proves a Job has terminated"
     );
@@ -1330,12 +1337,20 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     {
         let store = manager.jobs.lock().expect("retained store");
         for id in &ids[..3] {
-            assert!(store.jobs.contains_key(id), "active/uncertain Job must remain owned");
+            assert!(
+                store.jobs.contains_key(id),
+                "active/uncertain Job must remain owned"
+            );
         }
-        assert!(store.jobs.contains_key(&ids[5]), "unrelated owner unaffected");
+        assert!(
+            store.jobs.contains_key(&ids[5]),
+            "unrelated owner unaffected"
+        );
     }
     assert_eq!(
-        manager.cancel_session(&other).expect("other owner cancellation"),
+        manager
+            .cancel_session(&other)
+            .expect("other owner cancellation"),
         1
     );
     assert!(unrelated.stop_requested.load(Ordering::Acquire));
