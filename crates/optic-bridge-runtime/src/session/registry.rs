@@ -107,6 +107,40 @@ impl SessionRegistry {
         handle: &SessionHandle,
         now: MonotonicTime,
     ) -> Result<SessionAdmissionPermit<'_>, SessionRegistryError> {
+        let (grant, revocation_watch) = self.admit_record(handle, now)?;
+        Ok(SessionAdmissionPermit {
+            registry: self,
+            handle: handle.clone(),
+            grant,
+            revocation_watch,
+        })
+    }
+
+    /// A counted admission whose lifetime is independent of the borrowing
+    /// caller. Future service-owned workers can retain it across threads.
+    ///
+    /// It has exactly the same admission and revoke/drain semantics as
+    /// `begin_admission`; this is not a new permission to execute an effect.
+    /// Its owner must retain it until native quiescence has been *proved*.
+    pub fn begin_owned_admission(
+        self: &Arc<Self>,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<OwnedSessionAdmissionPermit, SessionRegistryError> {
+        let (grant, revocation_watch) = self.admit_record(handle, now)?;
+        Ok(OwnedSessionAdmissionPermit {
+            registry: Arc::clone(self),
+            handle: handle.clone(),
+            grant,
+            revocation_watch,
+        })
+    }
+
+    fn admit_record(
+        &self,
+        handle: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<(SessionGrant, SessionRevocationWatch), SessionRegistryError> {
         let mut sessions = self
             .sessions
             .lock()
@@ -125,18 +159,12 @@ impl SessionRegistry {
             .checked_add(1)
             .ok_or(SessionRegistryError::AdmissionCounterOverflow)?;
         let grant = record.grant.clone();
-        // Capture immutable record identity while this genuine admission is
-        // counted under the same registry lock. A later handle reuse cannot
-        // silently retarget this watcher to a different session generation.
+        // Both permit forms capture the same immutable record identity while
+        // their admission is counted under the shared registry mutex.
         let revocation_watch = SessionRevocationWatch {
             signal: Arc::clone(&record.revocation_signal),
         };
-        Ok(SessionAdmissionPermit {
-            registry: self,
-            handle: handle.clone(),
-            grant,
-            revocation_watch,
-        })
+        Ok((grant, revocation_watch))
     }
 
     pub(crate) fn validate_renewal(
@@ -451,6 +479,40 @@ impl SessionAdmissionPermit<'_> {
 }
 
 impl Drop for SessionAdmissionPermit<'_> {
+    fn drop(&mut self) {
+        self.registry.finish_admission(&self.handle);
+    }
+}
+
+/// A genuine, non-cloneable session admission owned by an `Arc<SessionRegistry>`.
+///
+/// It is a lifetime/stop-observation primitive, never a launch, task-lease,
+/// policy or result-publication authority. The real native owner must keep this
+/// object until termination is independently proven; dropping it early can
+/// let synchronous revoke finish while a process remains alive.
+pub struct OwnedSessionAdmissionPermit {
+    registry: Arc<SessionRegistry>,
+    handle: SessionHandle,
+    grant: SessionGrant,
+    revocation_watch: SessionRevocationWatch,
+}
+
+impl OwnedSessionAdmissionPermit {
+    #[must_use]
+    pub fn grant(&self) -> &SessionGrant {
+        &self.grant
+    }
+
+    #[must_use]
+    pub fn stop_watch(&self) -> SessionAdmissionStopWatch {
+        SessionAdmissionStopWatch {
+            revocation: self.revocation_watch.clone(),
+            captured_expires_at: self.grant.expires_at,
+        }
+    }
+}
+
+impl Drop for OwnedSessionAdmissionPermit {
     fn drop(&mut self) {
         self.registry.finish_admission(&self.handle);
     }

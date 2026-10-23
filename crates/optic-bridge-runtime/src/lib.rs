@@ -169,8 +169,8 @@ pub use session_lifecycle::{
     SessionReapReport, SessionRenewalReport, SessionRevokeReport,
 };
 pub use session_registry::{
-    SessionAdmissionPermit, SessionAdmissionStopWatch, SessionRegistry, SessionRegistryError,
-    SessionRevocationWatch,
+    OwnedSessionAdmissionPermit, SessionAdmissionPermit, SessionAdmissionStopWatch,
+    SessionRegistry, SessionRegistryError, SessionRevocationWatch,
 };
 pub use session_reusable_approval::{SessionReusableApprovalError, SessionReusableApprovalService};
 pub use session_worktree::{
