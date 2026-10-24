@@ -1,5 +1,46 @@
 # Optic AI Bridge — Passation canonique Windows V1 (24 octobre 2026)
 
+## ACTUALISATION ULTÉRIEURE — 24 octobre 2026, après récupération Codex et preuves Windows 10
+
+> **État de continuation prioritaire.** Cette section prime la précédente « ACTUALISATION CANONIQUE — après dix scénarios » et les nombreuses entrées historiques. Les anciens SHA restent des preuves, pas un état courant ni une instruction de reset. Vérifier GitHub au nouveau chat.
+
+### Références GitHub et séparation des dépôts
+
+- Dépôt **unique** : [ELITEAYOTO/Optic-AI-Bridge-](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/), socle Rust/MCP. **Jamais Optic Desktop ni REL**.
+- `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` à la fusion documentaire de [#343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343). Son [push/main CI #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) doit être contrôlé à l'état final sur ce SHA ; la [PR-head CI #40075523748](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075523748) avait les 4 jobs verts, attempt 1 au SHA `4a3a0787`. Après cette passation, `main` peut encore avancer : toujours re-query.
+- **[#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) et [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN, Windows V1 NO-GO.** Recherche propriétaire natif [PR #327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) ouverte, indépendante, ne pas fusionner en bloc.
+- **Ancien red de production à préserver :** `main=cf5a6c3f5aff7d9846106effafd52027126e3ba3`, [CI #40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) Windows rouge : `timeout_terminates_owned_process` obtient `TerminationUncertain` au lieu de `TimedOut`. Une série de succès sur branche de recherche ne corrige pas une telle preuve ni ne démontre sa cause.
+
+### Recherches prouvées mais non intégrées
+
+| PR | Contenu et preuve | Conclusion |
+| --- | --- | --- |
+| [#339](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/339) | Descendant stdout/stderr après root ; [CI #40059685148](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059685148) et #40059681412, SHA `dc8cd3db` | Deadline root-only et readers joins après root : **bug caractérisé**, pas corrigé |
+| [#340](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/340) | Win32 confirmation positive normale, `kill_request=Ok(())`, `confirmed=true`, `confirmation_ms=1`; [CI #40062376385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40062376385) et #40062376329 | **Pas** de reproduction naturelle de `TerminationUncertain` |
+| [#341](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/341) | Descendant stdin/EOF, writer `join()` tardif ; [CI #40063153249](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40063153249) et #40063153233, SHA `7c1bc62f` | **Bug caractérisé**, pas corrigé |
+| [#342](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/342) | **PC Windows 10 19045.7807** : 6 tests synthétiques supervisés, 4 confirmations à 1 ms, outer Job vide avant cleanup ; [CI native #40064790347](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40064790347) et [générale #40064793614](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40064793614) vertes au SHA final `505a4ef8`, Windows 608 pass/15 ignored et Ubuntu 477 pass | **Chemin normal fonctionnel dans cet échantillon**, cause du red inconnu |
+
+Toutes ces PR #339–#342 ont été fermées **sans fusion** et restent consultables. Les tests #339/#341 réussissent parce qu'ils constatent intentionnellement une violation de délai. Ne jamais les promouvoir comme critère de correction ni réutiliser une branche entière.
+
+### Récupération après interruption Codex : règle de projet
+
+[PR documentaire #343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343) intègre le guide [CODEX_INTERRUPTION_RECOVERY.md](CODEX_INTERRUPTION_RECOVERY.md) et sa référence dans `AGENTS.md`. Avant toute action, le nouvel agent lit les règles puis réalise, **si la machine est accessible et autorisée**, la découverte en lecture seule d'un checkpoint externe aux worktrees, sa validation SHA-256 et sa confrontation à Git. La procédure n'exécute aucun daemon et ne contourne aucune protection de cybersécurité. Une session purement GitHub doit noter « local disk inaccessible / not verified » et ne jamais inventer un état local.
+
+L'opérateur a rapporté une récupération locale sous `E:\Optic-IA-Bridge\codex-recovery`, branche historique `codex/317-native-wait-phases` HEAD `c3c5e655…`, quatre commits, snapshot `0010-final-verified`, et plus tard checkpoint `0013-policy-published-ci` à **55 empreintes concordantes**. Il s'agit de **preuves déclarées par Codex, non d'une récupération vérifiée par ce chat**. Six diagnostics et deux tests runtime localement réussis ; Win32 24 / HRESULT 0x80070018 natif dans un scénario rejeté ; root pending / Job non vide / erreur root 6 simulés. Le travail n'est pas une réparation de production, et aucune publication de la branche locale #317 n'est supposée.
+
+### Décisions et chantier suivant
+
+- La production conserve `OwnedSessionAdmissionPermit` mais GitRead utilise encore `HardenedCommandRunner` sans guardian natif complet. Le Job comptable (`JobStore`) **n'est pas** un Job Object Windows.
+- Construire la prochaine **petite preuve** sur les quatre phases (`root waiting`, `root exited / Job nonempty`, `QueryInformationJobObject` error Win32 préservée, `root + Job empty`), sans prétendre expliquer l'intermittence si elle n'apparaît pas. Un cas négatif déterministe, borné et supervisé, et vérification native du propriétaire/quotas/admissions même lorsque l'observation est durablement indisponible.
+- Le signal d'arrêt doit être publiable avant le **drainage potentiellement bloquant** des admissions ; la confirmation Job-tree/EOF et la publication terminale sont distinctes. Pas de libération prématurée de permis de session ou quota, et ne jamais nettoyer une mauvaise génération. Readers stdout/stderr et writer stdin doivent être contrôlés et annulables avec preuves de terminaison, pas `join()` non bornés ni augmentation de délais.
+- Séparer ultérieurement sécurité GitRead/provenance (#176/#182), intermittent AppContainer/Node (#185), premier message MCP (#319), reprise après disparition du service, tests réels Windows 10/11 et matrice release/rollback (#323).
+- Respecter `#![forbid(unsafe_code)]` runtime, Win32 unsafe seulement dans `optic-bridge-windows`, typed Effect/ActionEnvelope, TransportGuard, leases et scopes, délais monotones, buffers bornés, fail-closed et CI Windows/Ubuntu sur SHA exact. Pas de tests user PC sans **autorisation explicite par mission**, ni contournement de blocage Codex, ni fusion de recherche en bloc. Conserver les premiers rouges et les logs de tests vraiment exécutés.
+
+**Prompt opérationnel complet :** [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md) (sa section « REPRISE PRIORITAIRE » précède désormais les dix scénarios).
+
+---
+
+
 ## ACTUALISATION CANONIQUE — 24 octobre 2026, après dix scénarios de crash supervisés
 
 > **Cet encadré est le point de départ actif.** Les tableaux et SHA des sections historiques ci-dessous, qui indiquent encore `100c43b5` et `8202c9c`, décrivent un état **antérieur**, non le dernier checkpoint. Ce document n'est pas un ordre de reset/merge. Vérifier GitHub à chaque nouveau chat et après la présente PR documentaire.
