@@ -63,6 +63,21 @@ fn fixture_stdout_root_exits() {
 }
 
 #[test]
+fn fixture_output_limit_root_exits() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    let mut descendant = synthetic_command("fixture_stdout_descendant");
+    descendant.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    let _synthetic_descendant = descendant.spawn().expect("spawn synthetic pipe holder");
+    // Emit past the byte ceiling *after* opening the descendant's inherited
+    // handles: the output-limit reason must survive its late EOF.
+    println!("{}", "x".repeat(512));
+    io::stdout().flush().expect("flush over-budget output");
+    std::process::exit(0);
+}
+
+#[test]
 fn fixture_stdin_descendant() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
@@ -141,6 +156,31 @@ fn fixture_assert_late_stdin_is_not_success() {
     );
 }
 
+#[test]
+fn fixture_assert_late_output_limit_is_not_reclassified() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    let runner = HardenedCommandRunner::new(RUNNER_TIMEOUT).expect("runner");
+    let mut command_spec = spec("fixture_output_limit_root_exits");
+    command_spec.output_limit = 128;
+    let started = Instant::now();
+    let result = runner.run(&command_spec);
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed > Duration::from_millis(800) && elapsed < Duration::from_secs(10),
+        "synthetic descendant must hold the pipe after output overflow; elapsed={elapsed:?}"
+    );
+    assert!(
+        matches!(result, Err(HardenedCommandError::OutputLimitExceeded { limit: 128 })),
+        "output overflow must not be mislabeled as the subsequent late EOF; got {result:?}"
+    );
+    println!(
+        "ISSUE317_LATE_OVERFLOW_PRESERVED elapsed_ms={}",
+        elapsed.as_millis()
+    );
+}
+
 fn supervise(inner: &str, evidence: &str) {
     let mut command = synthetic_command(inner);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -180,6 +220,14 @@ fn late_stdout_completion_must_not_be_success() {
     supervise(
         "fixture_assert_late_stdout_is_not_success",
         "ISSUE317_LATE_STDOUT_REJECTED",
+    );
+}
+
+#[test]
+fn late_output_limit_remains_specific() {
+    supervise(
+        "fixture_assert_late_output_limit_is_not_reclassified",
+        "ISSUE317_LATE_OVERFLOW_PRESERVED",
     );
 }
 
