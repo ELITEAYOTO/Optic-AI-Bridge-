@@ -354,3 +354,53 @@ fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() 
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child_negative_control() {
+    // Negative control, not a candidate fix: creation and mark_native_created()
+    // are separate calls. Model an abort after a real suspended child was
+    // created but BEFORE the reservation learned that creation succeeded.
+    // No real Git command is run, and the Job remains safely owned by this test.
+    let a = grant();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let job = ResearchKernelJob::prepare().expect("precreate genuine kernel Job");
+    let child = ResearchSuspendedChild::create(&job, &root)
+        .expect("fixed current libtest suspended in Job at creation");
+    assert_eq!(job.active().unwrap(), 1);
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+    // Critically omit mark_native_created, as if the owner aborts in the
+    // explicit post-CreateProcessW / pre-mark gap.
+    drop(reservation);
+    assert_eq!(
+        job.active().unwrap(),
+        1,
+        "kernel still owns a live suspended child after reservation drop"
+    );
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Failed,
+        "NEGATIVE CONTROL: Drop incorrectly infers that no native process ran"
+    );
+    assert_eq!(
+        manager.active_session_job_count(&a.handle).unwrap(),
+        0,
+        "NEGATIVE CONTROL: terminal accounting returned quota before Job emptied"
+    );
+    assert_eq!(
+        manager
+            .find_recorded_private_action(&a.handle, &action)
+            .unwrap(),
+        Some(job_id),
+        "the original ledger record is still traceable despite false terminal"
+    );
+
+    // Independently clean only our synthetic suspended child and native Job.
+    job.terminate().expect("terminate exact synthetic Job");
+    child.await_exit().expect("wait for its owned child");
+    job.await_empty().expect("positive Job-empty cleanup observation");
+    drop(child);
+    drop(job);
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
