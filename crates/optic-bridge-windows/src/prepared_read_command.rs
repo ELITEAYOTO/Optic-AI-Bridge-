@@ -40,6 +40,9 @@ pub struct PreparedReadCommand {
     outcome_taken: bool,
     deadline_expired: bool,
     cancelled: bool,
+    // Positive native Job accounting observed other active members after root exit.
+    // Used for a synthetic regression only; a start marker is insufficient.
+    post_root_active_observed: bool,
     status: Option<ExitStatus>,
     stop_flags: Vec<Arc<AtomicBool>>,
     until: Instant,
@@ -110,6 +113,7 @@ impl PreparedReadCommand {
             outcome_taken: false,
             deadline_expired: false,
             cancelled: false,
+            post_root_active_observed: false,
         })
     }
 
@@ -265,6 +269,12 @@ impl PreparedReadCommand {
         // The command's root completed; background descendants are not an
         // independent authorized operation and must not retain its pipes.
         if self.status.is_some() && active != 0 {
+            // A successful root status does not authorize successful completion
+            // when native accounting still shows active members of its Job.
+            // Explicitly record that termination of the remaining tree was
+            // requested: even if it succeeds, the whole command did not.
+            self.post_root_active_observed = true;
+            self.cancelled = true;
             self.stop_native()?;
         }
         self.terminal = self.attempted
@@ -483,10 +493,19 @@ mod tests {
             String::from_utf8_lossy(&outcome.stdout)
                 .contains("OPTIC317_PREPARED_DESCENDANT_STARTED")
         );
-        // A start marker proves that the descendant ran, but not that it
-        // remained alive after its parent exited. Do not invent a cancellation
-        // event or classify the root outcome as unsafe from that marker alone.
-        // The owner may report terminal only with kernel Job-empty AND pipe EOF.
+        // A startup marker alone cannot prove post-root lifetime. The
+        // stronger evidence is the *native Job accounting observation* made
+        // after the root process returned a terminal status.
+        assert!(
+            owner.post_root_active_observed,
+            "no native evidence of a still-active Job after root exit"
+        );
+        assert!(outcome.cancelled, "forced post-root Job stop must be classified");
+        assert!(
+            !outcome.is_success(),
+            "root exit 0 must not mask native termination of remaining Job members"
+        );
+        // Do not release terminal ownership based on the request alone.
         assert_eq!(
             owner
                 .job
