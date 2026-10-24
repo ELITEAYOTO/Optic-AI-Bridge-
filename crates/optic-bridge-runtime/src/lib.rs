@@ -30,6 +30,9 @@ mod git_merge_commit;
 mod git_merge_plan;
 #[path = "git/read.rs"]
 mod git_read;
+#[cfg(windows)]
+#[path = "git/owner_registry.rs"]
+mod git_owner_registry;
 #[path = "git/tree_manifest.rs"]
 mod git_tree_manifest;
 #[path = "git/tree_write.rs"]
