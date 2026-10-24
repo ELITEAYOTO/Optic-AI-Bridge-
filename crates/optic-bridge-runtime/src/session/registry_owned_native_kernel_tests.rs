@@ -970,3 +970,123 @@ fn transferred_native_job_remains_owned_after_creator_exits() {
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation() {
+    // Research only: a guardian owns the genuine kernel Job, original counted
+    // admission and ledger reservation BEFORE delegating to a short-lived
+    // in-process creator. No child or Job handle is transferred afterwards.
+    // This is NOT a cross-process crash or persistent-error recovery proof.
+    for did_create in [false, true] {
+        let registry = Arc::new(SessionRegistry::new());
+        let a = grant();
+        let b = grant();
+        registry.register(a.clone()).unwrap();
+        registry.register(b.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+        let stop = owned.stop_watch();
+        let (root, manager, mut reservation, action) = reserve(&a.handle);
+        let job_id = reservation.id();
+
+        let receipt = owned
+            .research_commit_registered_owner(&reservation, now)
+            .expect("guardian holds genuine generation-bound admission");
+        drop(receipt);
+        let job = Arc::new(
+            ResearchKernelJob::prepare().expect("guardian prepares actual native Job")
+        );
+        assert_eq!(job.active().unwrap(), 0);
+        reservation.mark_native_created();
+
+        let delegated_job = Arc::clone(&job);
+        let delegated_root = root.clone();
+        let creator = thread::spawn(move || {
+            if did_create {
+                let child = ResearchSuspendedChild::create(&delegated_job, &delegated_root)
+                    .expect("fixed libtest child associated at CreateProcessW");
+                assert_eq!(delegated_job.active().unwrap(), 1);
+                // Simulate a creator returning WITHOUT process-handle handoff.
+                // The guardian's original Job handle must remain authoritative.
+                drop(child);
+            }
+            // No ACK, child handle or Job handle is returned to the guardian.
+        });
+        creator.join().expect("delegated creator ended before close");
+        assert_eq!(
+            job.active().unwrap(),
+            u32::from(did_create),
+            "guardian still owns the real Job after creator return"
+        );
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+
+        assert!(
+            registry
+                .research_request_close_without_drain(&a.handle)
+                .unwrap()
+        );
+        assert!(stop.is_stop_required_at(now));
+        assert!(matches!(
+            registry.begin_owned_admission(&a.handle, now),
+            Err(crate::SessionRegistryError::Revoked)
+        ));
+        let draining_registry = Arc::clone(&registry);
+        let draining_handle = a.handle.clone();
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let closer = thread::spawn(move || {
+            done_tx.send(draining_registry.revoke(&draining_handle)).unwrap();
+        });
+
+        assert!(
+            job.observe_active_with_injected_failure(true).is_err(),
+            "unavailable Job accounting is never proof of quiescence"
+        );
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            manager.result(&a.handle, &job_id).unwrap().status,
+            ProcessStatus::Running
+        );
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&a.handle, &action)
+                .unwrap(),
+            Some(job_id.clone())
+        );
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(crate::SessionRegistryError::AdmissionsInFlight)
+        ));
+        assert!(registry.get_active(&b.handle, now).is_ok());
+
+        if did_create {
+            job.terminate().expect("terminate only guardian's synthetic Job");
+        }
+        job.await_empty()
+            .expect("positive native empty-Job proof before ledger completion");
+        reservation.finish(
+            if did_create {
+                ProcessStatus::Stopped
+            } else {
+                ProcessStatus::Failed
+            },
+            None,
+        );
+        drop(reservation);
+        drop(job);
+        drop(owned);
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
+        assert!(
+            !done_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("original admission drains after native empty-Job proof")
+                .expect("revoke result")
+        );
+        closer.join().unwrap();
+        drop(manager);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
