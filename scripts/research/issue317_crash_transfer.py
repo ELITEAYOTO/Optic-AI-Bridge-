@@ -62,7 +62,7 @@ def main():
                     evidence['before_crash'] = phase
                     assert phase['launcher_terminate_denied'] == (
                         mode.startswith('preowned-') and mode != 'preowned-offer-failed')
-                    assert phase['native_duplication_failed'] == (mode == 'preowned-offer-failed')
+                    assert phase.get('native_duplication_failed', False) == (mode == 'preowned-offer-failed')
                     (root / 'crash-confirmed').write_text('count-observed', encoding='ascii')
                     helper.wait_for(lambda: (root / 'source-exit').exists() or host.poll() is not None,
                                     6, 'owned launcher handle signalled')
