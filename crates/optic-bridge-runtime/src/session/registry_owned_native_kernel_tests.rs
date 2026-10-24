@@ -637,3 +637,158 @@ fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_r
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
+    // Research-only service ownership boundary. The submitter thread finishes
+    // before close; the service keeps the guardian JoinHandle, counted session
+    // admission, JobStore reservation and actual kill-on-close Windows Job.
+    // This does NOT survive service-process death or prove bounded Drop.
+    const FAILED_OBSERVATIONS: usize = 5;
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let worker_root = root.clone();
+
+    let (submitted_tx, submitted_rx) = mpsc::sync_channel(1);
+    let (client_result_tx, client_result_rx) = mpsc::sync_channel(1);
+    let (fault_tx, fault_rx) = mpsc::sync_channel(1);
+    let (retry_tx, retry_rx) = mpsc::sync_channel(1);
+    let guardian = thread::spawn(move || {
+        let job = ResearchKernelJob::prepare().expect("guardian owns precreated native Job");
+        let mut reservation = reservation;
+        let receipt = owned
+            .research_commit_registered_owner(&reservation, now)
+            .expect("single authorized owner commitment");
+        let stop = owned.stop_watch();
+        // Conservative accounting is armed before CreateProcessW. This alone
+        // does not solve the empty-Job recovery problem from the prior tests.
+        reservation.mark_native_created();
+        let child = ResearchSuspendedChild::create(&job, &worker_root)
+            .expect("synthetic suspended child associated at native creation");
+        drop(receipt);
+        assert_eq!(job.active().unwrap(), 1);
+        submitted_tx
+            .send(reservation.id())
+            .expect("transmit JobId, never ownership, to short-lived submitter");
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while !stop.is_stop_required_at(now) {
+            assert!(Instant::now() < until, "service guardian did not see close");
+            thread::yield_now();
+        }
+        job.terminate().expect("stop only this guardian's native Job");
+        child.await_exit().expect("synthetic root exited");
+        for _ in 0..FAILED_OBSERVATIONS {
+            assert!(
+                job.observe_active_with_injected_failure(true).is_err(),
+                "unavailable native accounting is not zero-membership evidence"
+            );
+            fault_tx.send(()).expect("supervisor still retains guardian handle");
+            retry_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("bounded research observation gate");
+        }
+        assert_eq!(
+            job.observe_active_with_injected_failure(false)
+                .expect("real query for controlled fixture cleanup only"),
+            0
+        );
+        reservation.finish(ProcessStatus::Stopped, None);
+        drop(reservation);
+        drop(child);
+        drop(job);
+        drop(owned);
+    });
+
+    // A caller receives an identifier, owns none of the process handles, and
+    // fully exits before service shutdown. It cannot dispose of the guardian.
+    let submitter = thread::spawn(move || {
+        let id = submitted_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("service guardian admitted the synthetic native owner");
+        client_result_tx.send(id).unwrap();
+    });
+    assert_eq!(
+        client_result_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("short-lived submitter response"),
+        job_id
+    );
+    submitter.join().expect("submitter is completely gone before close");
+    assert!(!guardian.is_finished());
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+
+    // Close is only a stop request; it cannot wait for the native accounting
+    // gate, nor may it be reported as whole-process quiescence.
+    assert!(registry.research_request_close_without_drain(&a.handle).unwrap());
+    assert!(matches!(
+        registry.begin_owned_admission(&a.handle, now),
+        Err(crate::SessionRegistryError::Revoked)
+    ));
+    let closer_registry = Arc::clone(&registry);
+    let closer_handle = a.handle.clone();
+    let (drained_tx, drained_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        drained_tx
+            .send(closer_registry.revoke(&closer_handle))
+            .unwrap();
+    });
+
+    for _ in 0..FAILED_OBSERVATIONS {
+        fault_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("guardian encountered native observation uncertainty");
+        assert!(!guardian.is_finished(), "service must still own its guardian");
+        assert!(matches!(
+            drained_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            manager.result(&a.handle, &job_id).unwrap().status,
+            ProcessStatus::Running,
+            "no false terminal result while the service retains native ownership"
+        );
+        assert_eq!(
+            manager.active_session_job_count(&a.handle).unwrap(),
+            1,
+            "no capacity release while observation remains unavailable"
+        );
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&a.handle, &action)
+                .unwrap(),
+            Some(job_id.clone())
+        );
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(crate::SessionRegistryError::AdmissionsInFlight)
+        ));
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        retry_tx.send(()).unwrap();
+    }
+
+    // The service explicitly joins the still-owned guardian only after the
+    // fixture's REAL empty-Job query; no detached task or timeout-based Drop.
+    guardian.join().expect("guardian completed with native proof");
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Stopped
+    );
+    assert!(
+        !drained_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("synchronous revoke drains after proven native quiescence")
+            .expect("revoke result"),
+        "early close already published the stop intent"
+    );
+    closer.join().unwrap();
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
