@@ -102,3 +102,126 @@ fn owned_registered_kernel_tree_stops_before_admission_drains() {
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+
+#[test]
+fn uncertain_kernel_accounting_retains_owned_admission_and_jobstore_until_retry_proves_empty() {
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let permit = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let worker_root = root.clone();
+
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (uncertain_tx, uncertain_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        let job = ResearchKernelJob::prepare().expect("precreated native Job");
+        let mut reservation = reservation;
+        let receipt = permit
+            .research_commit_registered_owner(&reservation, now)
+            .expect("one original-generation native commitment");
+        let watch = permit.stop_watch();
+        let child = ResearchSuspendedChild::create(&job, &worker_root)
+            .expect("suspended child contained at creation");
+        drop(receipt);
+        reservation.mark_native_created();
+        assert_eq!(job.active().unwrap(), 1);
+        ready_tx.send(()).unwrap();
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while !watch.is_stop_required_at(now) {
+            assert!(
+                Instant::now() < until,
+                "revocation not observed by service-owned native worker"
+            );
+            thread::yield_now();
+        }
+        job.terminate().expect("request stop for exact owned Job");
+        child.await_exit().expect("native root has exited");
+        // Root exit AND a successful TerminateJobObject call still do not
+        // authorize terminal publication if whole-Job accounting is unknown.
+        assert!(
+            job.observe_active_with_injected_failure(true).is_err(),
+            "synthetic Win32 query failure must be visible, never mapped to zero"
+        );
+        uncertain_tx.send(()).unwrap();
+        // Simulate a persistently unobservable Job while retaining ALL owners.
+        release_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("supervisor allows exactly one later observation retry");
+        assert_eq!(
+            job.observe_active_with_injected_failure(false)
+                .expect("native accounting recovers"),
+            0,
+            "full Job tree must be empty after observation recovers"
+        );
+        // Only the positive job-empty proof permits terminal publication and
+        // release of the registry admission, not the earlier termination request.
+        reservation.finish(ProcessStatus::Stopped, None);
+        drop(reservation);
+        drop(child);
+        drop(job);
+        drop(permit);
+    });
+
+    ready_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("native child created and worker retained owner");
+    let registry_close = Arc::clone(&registry);
+    let handle = a.handle.clone();
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        closed_tx.send(registry_close.revoke(&handle)).unwrap();
+    });
+    uncertain_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("worker saw stop, root exited, but Job observation failed");
+
+    assert!(
+        matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+        "real revoke must remain blocked on the retained owned admission"
+    );
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Running,
+        "native observation failure must not publish a terminal result"
+    );
+    assert_eq!(
+        manager
+            .find_recorded_private_action(&a.handle, &action)
+            .unwrap(),
+        Some(job_id.clone()),
+        "original JobStore registration remains discoverable during uncertainty"
+    );
+    assert!(matches!(
+        registry.remove_quiescent_inactive(&a.handle, now),
+        Err(crate::SessionRegistryError::AdmissionsInFlight)
+    ));
+    assert!(
+        registry.get_active(&b.handle, now).is_ok(),
+        "unrelated session remains available during uncertain observation"
+    );
+
+    release_tx.send(()).unwrap();
+    worker.join().unwrap();
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Stopped,
+        "only recovered positive whole-Job proof publishes terminal status"
+    );
+    assert!(
+        closed_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("drain finishes only after positive observation")
+            .expect("revoke result")
+    );
+    closer.join().unwrap();
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
