@@ -756,6 +756,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn revoke_requests_existing_job_stop_before_admission_drains() {
+        let root = workspace("stop-before-admission-drain");
+        fs::write(root.join("fixture-adversarial-sleep"), b"1")
+            .expect("create bounded synthetic process fixture");
+        let (lifecycle, sessions, _, processes) = manager(&root);
+        let now = MonotonicTime::from_millis(1);
+        let session = lifecycle.provision(spec(1_000), now).expect("session");
+        let job = processes
+            .start(adversarial_process_spec(session.handle.clone()))
+            .expect("start disposable owned process");
+        assert!(
+            !processes
+                .test_stop_requested(&session.handle, &job)
+                .expect("initial job stop flag")
+        );
+
+        // Hold a real counted admission across the revoke request.
+        // The old lifecycle waits for this permit BEFORE calling cancel_session,
+        // so no stop flag can become visible while it is retained.
+        let admission = sessions
+            .begin_admission(&session.handle, now)
+            .expect("active admitted effect");
+        let lifecycle = Arc::new(lifecycle);
+        let revoke_lifecycle = Arc::clone(&lifecycle);
+        let revoke_handle = session.handle.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let revoke_thread = thread::spawn(move || {
+            done_tx
+                .send(revoke_lifecycle.revoke(&revoke_handle))
+                .expect("send revoke outcome");
+        });
+
+        let mut revoked = false;
+        for _ in 0..100 {
+            if matches!(
+                sessions.get_active(&session.handle, now),
+                Err(SessionRegistryError::Revoked)
+            ) {
+                revoked = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let mut stop_before_drain = false;
+        for _ in 0..200 {
+            if processes
+                .test_stop_requested(&session.handle, &job)
+                .expect("read owned stop flag")
+            {
+                stop_before_drain = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let revoke_still_waiting = matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+
+        // Release before asserting so an expected red on the old implementation
+        // never leaves the revocation thread blocked on this test-only permit.
+        drop(admission);
+        let report = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("revoke must complete after admission leaves")
+            .expect("revoke outcome");
+        revoke_thread.join().expect("revoke thread");
+        let result = await_terminal(&processes, &session.handle, &job).await;
+
+        assert!(revoked, "session must be revoked before waiting for drain");
+        assert!(
+            revoke_still_waiting,
+            "authority cleanup must not finish while admitted effects remain"
+        );
+        assert!(
+            stop_before_drain,
+            "owned process stop request must be published BEFORE admission drain"
+        );
+        assert_eq!(report.cancellation_requests, 1);
+        assert_eq!(result.status, ProcessStatus::Stopped);
+        fs::remove_dir_all(root).expect("remove disposable fixture workspace");
+    }
+
+    #[tokio::test]
     async fn admitted_job_is_visible_to_revoke_then_reaped_without_cross_session_damage() {
         let root = workspace("admission-race");
         fs::write(root.join("fixture-sleep"), b"1").expect("write sleep marker");
