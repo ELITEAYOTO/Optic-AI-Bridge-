@@ -683,14 +683,17 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
             assert!(Instant::now() < until, "service guardian did not see close");
             thread::yield_now();
         }
-        job.terminate().expect("stop only this guardian's native Job");
+        job.terminate()
+            .expect("stop only this guardian's native Job");
         child.await_exit().expect("synthetic root exited");
         for _ in 0..FAILED_OBSERVATIONS {
             assert!(
                 job.observe_active_with_injected_failure(true).is_err(),
                 "unavailable native accounting is not zero-membership evidence"
             );
-            fault_tx.send(()).expect("supervisor still retains guardian handle");
+            fault_tx
+                .send(())
+                .expect("supervisor still retains guardian handle");
             retry_rx
                 .recv_timeout(Duration::from_secs(3))
                 .expect("bounded research observation gate");
@@ -721,13 +724,19 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
             .expect("short-lived submitter response"),
         job_id
     );
-    submitter.join().expect("submitter is completely gone before close");
+    submitter
+        .join()
+        .expect("submitter is completely gone before close");
     assert!(!guardian.is_finished());
     assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
 
     // Close is only a stop request; it cannot wait for the native accounting
     // gate, nor may it be reported as whole-process quiescence.
-    assert!(registry.research_request_close_without_drain(&a.handle).unwrap());
+    assert!(
+        registry
+            .research_request_close_without_drain(&a.handle)
+            .unwrap()
+    );
     assert!(matches!(
         registry.begin_owned_admission(&a.handle, now),
         Err(crate::SessionRegistryError::Revoked)
@@ -745,7 +754,10 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
         fault_rx
             .recv_timeout(Duration::from_secs(3))
             .expect("guardian encountered native observation uncertainty");
-        assert!(!guardian.is_finished(), "service must still own its guardian");
+        assert!(
+            !guardian.is_finished(),
+            "service must still own its guardian"
+        );
         assert!(matches!(
             drained_rx.try_recv(),
             Err(mpsc::TryRecvError::Empty)
@@ -776,7 +788,9 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
 
     // The service explicitly joins the still-owned guardian only after the
     // fixture's REAL empty-Job query; no detached task or timeout-based Drop.
-    guardian.join().expect("guardian completed with native proof");
+    guardian
+        .join()
+        .expect("guardian completed with native proof");
     assert_eq!(
         manager.result(&a.handle, &job_id).unwrap().status,
         ProcessStatus::Stopped
