@@ -1,5 +1,54 @@
 # Optic AI Bridge — Passation canonique Windows V1 (24 octobre 2026)
 
+## ACTUALISATION CANONIQUE — 24 octobre 2026, après dix scénarios de crash supervisés
+
+> **Cet encadré est le point de départ actif.** Les tableaux et SHA des sections historiques ci-dessous, qui indiquent encore `100c43b5` et `8202c9c`, décrivent un état **antérieur**, non le dernier checkpoint. Ce document n'est pas un ordre de reset/merge. Vérifier GitHub à chaque nouveau chat et après la présente PR documentaire.
+
+### Production GitHub et garde-fous, vérifiés avant la PR de passation
+
+- **Dépôt unique :** [ELITEAYOTO/Optic-AI-Bridge-](https://github.com/ELITEAYOTO/Optic-AI-Bridge-) ; **ne pas confondre** avec les dépôts séparés `Optic Desktop` (UI/Figma/installation/update) ou `REL` (reverse engineering), suivis par d'autres agents.
+- `main = 16ca67a75fd49c5681a0672773ffc268c3635f6b`, [CI push/main #40047950688](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40047950688) **success sur ce SHA**. Dernier changement intégré depuis cette passation initiale : documentation #337 ; la primitive de production #336 `OwnedSessionAdmissionPermit` est bien présente, mais **GitRead utilise encore `HardenedCommandRunner`** et ne possède pas le guardian natif expérimental.
+- Une seule PR ouverte : [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327), recherche indépendante à préserver, **ne pas intégrer en bloc**. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) et [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) toujours ouvertes ; Windows V1 **NO-GO**.
+- Conserver séparées les préoccupations #176 (lectures sensibles), #182 (provenance/autorisation Git), #185 (Windows AppContainer/Node) et #319 (première réponse MCP). Ne pas annoncer de fermeture ou de résolution sans vérifier l'état réel de chacune.
+- **GitHub-only** : CI Windows/Ubuntu sur runners hébergés ; aucun test, binaire, processus, modification de configuration ou installation sur le PC de l'opérateur sans **nouvelle autorisation explicite**. Codex a rencontré des contrôles de cybersécurité sur la campagne d'essais locaux : **ne pas tenter de contourner ces contrôles par des prompts alternatifs** ; la recherche est continuée sur GitHub. Si un test autorisé est réellement bloqué, suivre la procédure officielle d'accès, ou rester dans les CI hébergées.
+
+### Preuves expérimentales ultérieures du 24 octobre (toutes HORS production)
+
+Les travaux sont conservés sur **branches de recherche distinctes** ; les comptages ne doivent pas être confondus avec des tests d'acceptation Windows 10/11 physiques. Chaque ligne ci-dessous donne un **SHA de code** et la CI qui a réellement exécuté ce code. Les commits Markdown ultérieurs n'établissent aucune correction supplémentaire.
+
+| Recherche / source | Preuve GitHub sur SHA exact | Portée exacte |
+| --- | --- | --- |
+| `research/317-repeated-native-observation-2026-10-24` — `85e6f280` puis `47b6a631` | [#40049514408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40049514408), [#40050805563](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40050805563) verts | Six scénarios de Job/comptabilité incertaine, puis transfert réussi des handles d'un thread lanceur vers guardian ; les erreurs de requête sont **injectées** et les crashs atomiques non prouvés |
+| `research/317-crash-before-native-ack-2026-10-24` — `3df5ebfd` | [#40053510714](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053510714) vert ; document `9d6dedf` [#40053843692](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053843692) vert | Six scénarios sous **superviseur extérieur** : trois `PendingNoNativeReceipt`, deux `GuardianJobEmptyProven`, un contrôle volontaire `FirstRedGuardianLost`. Pending **ne signifie pas récupération automatique** |
+| `research/317-guardian-preowns-job-2026-10-24` — `949126a2` | [#40054595150](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40054595150) vert | Guardian en processus unique prépossède le vrai Job, garde admission/quota si le thread créateur sort sans ACK ; pas de crash entre processus |
+| `research/317-service-preowned-native-job-2026-10-24` — `49c39d03` | [#40055108927](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055108927) vert | **Deux processus Windows distincts**. Le service prépossède et conserve Job + admission ; lanceur sort avant/après création d'enfant suspendu sans ACK. **Huit** scénarios supervisés |
+| `research/317-limited-launcher-job-rights-2026-10-24` — `17ec42cc` | [#40055810146](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055810146) vert | Prêt du Job par `DuplicateHandle` avec seulement `ASSIGN_PROCESS (0x0001) | QUERY (0x0004)` ; vrai `TerminateJobObject` refusé `ERROR_ACCESS_DENIED` avant création ; enfant synthétique encore créable |
+| `research/317-failed-job-delegation-2026-10-24` — `9122615d` | [#40057184478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057184478) vert, document `3f426028` [#40057508929](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057508929) vert | **Neuf** scénarios ; réel `DuplicateHandle` vers destination invalide renvoie `ERROR_INVALID_PARAMETER (0x80070057)`, sans offre/ACK/enfant ; maintien du Job/quota jusqu'à preuve native positive |
+| `research/317-failed-native-create-2026-10-24` — **`b5a91deea1b306c56a2c03de7bb5a86b699d1d6f`** | **[#40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887)** : `completed/success`, **attempt 1**, Windows **355 passed/0 failed/13 ignored**, Ubuntu **270 passed/0 failed**, fmt et Clippy strict, **dix** scénarios supervisés et tests `--workspace` Windows réussis | Vrai `CreateProcessW` du **binaire libtest fixe** échoue pour cwd inexistant. Job du guardian reste vide ; quotas, permis et état `Running` retenus pendant erreur d'observation injectée ; `Failed` et restitution **après** vraie requête native Job vide. Le code d'erreur précis n'est pas enregistré dans le manifeste (seulement deux codes cwd manquant acceptés). |
+
+Le rapport détaillé et son manifeste sont sur la branche **`research/317-failed-native-create-2026-10-24`**, doc SHA **`4bef362d1e9c45ec3b81a4d6807ae924f6122218`** :
+[ISSUE317_CRASH_BEFORE_NATIVE_ACK_2026-10-24.md](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/blob/research/317-failed-native-create-2026-10-24/docs/research/ISSUE317_CRASH_BEFORE_NATIVE_ACK_2026-10-24.md),
+[artefact CI #12546595512](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887/artifacts/12546595512),
+[rapport #317 #6379288501](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6379288501).
+La **CI de ce commit purement documentaire** [#40058237376](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40058237376) était **en cours au contrôle préparant cette passation** : recontrôler son résultat plutôt que présumer qu'elle est verte.
+
+Le premier échec [#40057892808](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057892808) (strict Rustfmt **avant** les tests) est conservé. Dans la campagne de duplication précédente, [#40056998380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40056998380) avait découvert le code d'erreur Win32 effectif ; l'assertion exacte a ensuite été corrigée. Ne jamais réécrire ces rouges comme des succès sur le même SHA.
+
+### Ce qui n'est PAS prouvé ni livrable
+
+Ces essais sont des **fixtures natives de recherche sur Windows Server 2025** et enfant libtest **suspendu, jamais repris**, sous superviseur extérieur. Ils ne sont **ni une correction de `HardenedCommandRunner` en production, ni un sandbox**, ni une preuve de récupération après crash du service/guardian. Aucune vraie erreur Win32 permanente, reprise durable des quotas après redémarrage, descendance active gardant stdout/stderr, stdin/EOF, shutdown gracieux borné, GitRead task lease/provenance ou acceptation Windows 10/11 physique n'est démontrée. `JobStore` reste un registre comptable, différent du Job Object natif. Une opération `finish` ne vérifie pas intrinsèquement le Job : le **propriétaire** doit fournir et ordonner la preuve réelle avant publication terminale. Ne pas promouvoir ces tests ni élargir l'autorisation.
+
+### Ordre de travail conseillé au successeur
+
+1. Vérifier **en direct** `main`, les PR, la CI #40058237376, les docs de cette passation, les issues #317/#323 et leur état (une nouvelle PR documentaire peut faire évoluer `main`).
+2. Priorité démontrable #317 : **pipes stdout/stderr tenus par un descendant, arrêt/EOF de stdin, descendant hors sortie du root, stop avant drain, fermeture bornée et observabilité après erreur native persistante**, avec vrais handles, budgets bornés, fixtures purement synthétiques et supervisor externe. Ne pas multiplier à l'infini des variantes déjà validées de l'enfant suspendu ; rechercher un défaut d'architecture/fonctionnement démontrable.
+3. Choisir un mécanisme durable de propriété des Jobs et permis, puis définir la réconciliation des `Pending` **sans libération sur timeout**. À défaut de preuve, garder les limites ouvertes et préparer une ADR/revue.
+4. Extraire **un seul petit incrément de production** sur une branche neuve depuis `main` courant **uniquement si** le code et les tests couvrent une propriété indépendante. Fenêtres stop/revoke/JobStore, session génération, lease/repo/exécutable et liveness restent à auditer. Aucun merge global de recherche. PR courte, CI strictes Windows/Ubuntu exact-HEAD, revue, squash puis CI push/main du SHA résultant.
+5. L'acceptation V1 #323 réclame encore #176/#182, #185/#319, Windows 10/11 autorisé, installer/offline/update/rollback/release. Les préoccupations UI/installateur d'**Optic Desktop** sont dans **un autre dépôt** : ne pas intervenir ici.
+
+**Consignes non négociables :** `#![forbid(unsafe_code)]` runtime ; Win32 `unsafe` exclusivement dans `optic-bridge-windows` ; `ActionEnvelope+Effect` typé, `TransportGuard`, permissions explicites, sessions/leases et deadlines monotones ; aucun PID arbitraire, aucun Job traité comme sandbox, aucun privilège ou timeout élargi pour rendre un test vert, aucun abandon de handle ou restitution sans preuve. Préserver PR #327, protéger l'historique rouge, laisser #317/#323 ouvertes et **V1 NO-GO**.
+
+
 > **Point de reprise vérifié sur GitHub le 24 octobre 2026.** Les SHA et les chiffres ci-dessous sont des checkpoints datés, jamais des ordres de réinitialisation. Reconsulter GitHub à chaque reprise et après fusion de cette PR documentaire. Les validations de recherche ne valent pas intégration de production.
 
 ## 1. Objectif, périmètre et autorité
