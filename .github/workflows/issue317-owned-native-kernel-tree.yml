@@ -2,7 +2,7 @@ name: Issue 317 native observation uncertainty research
 
 on:
   push:
-    branches: ['research/317-native-observation-uncertain-2026-10-24', 'research/317-repeated-native-observation-2026-10-24']
+    branches: ['research/317-native-observation-uncertain-2026-10-24', 'research/317-repeated-native-observation-2026-10-24', 'research/317-guardian-preowns-job-2026-10-24']
 
 permissions:
   contents: read
@@ -84,3 +84,9 @@ jobs:
         run: |
           echo "OPTIC317_NATIVE_TRANSFER sha=${GITHUB_SHA} child=suspended real-job=true launcher-exited=true crash-atomic=false owner=research-only"
           cargo test --locked -p optic-bridge-runtime --lib transferred_native_job_remains_owned_after_creator_exits -- --nocapture --test-threads=1
+      - name: Guardian preowns native Job before delegated creator exits
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_GUARDIAN_PREOWN sha=${GITHUB_SHA} real-job=true creator-exit=controlled-no-ack supervisor=in-process cross-process-crash-proven=false"
+          cargo test --locked -p optic-bridge-runtime --lib guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation -- --nocapture --test-threads=1
