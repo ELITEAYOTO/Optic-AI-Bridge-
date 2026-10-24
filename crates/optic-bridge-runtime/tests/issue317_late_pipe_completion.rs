@@ -172,7 +172,10 @@ fn fixture_assert_late_output_limit_is_not_reclassified() {
         "synthetic descendant must hold the pipe after output overflow; elapsed={elapsed:?}"
     );
     assert!(
-        matches!(result, Err(HardenedCommandError::OutputLimitExceeded { limit: 128 })),
+        matches!(
+            result,
+            Err(HardenedCommandError::OutputLimitExceeded { limit: 128 })
+        ),
         "output overflow must not be mislabeled as the subsequent late EOF; got {result:?}"
     );
     println!(
