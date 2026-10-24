@@ -859,7 +859,8 @@ fn transferred_native_job_remains_owned_after_creator_exits() {
             assert!(Instant::now() < until, "original stop signal missing");
             thread::yield_now();
         }
-        job.terminate().expect("terminate the exact transferred Job");
+        job.terminate()
+            .expect("terminate the exact transferred Job");
         child.await_exit().expect("transferred root process exited");
         for _ in 0..FAILED_OBSERVATIONS {
             assert!(
@@ -898,7 +899,9 @@ fn transferred_native_job_remains_owned_after_creator_exits() {
     accepted_rx
         .recv_timeout(Duration::from_secs(3))
         .expect("guardian accepted both kernel handles");
-    launcher.join().expect("native creating worker has fully exited");
+    launcher
+        .join()
+        .expect("native creating worker has fully exited");
     assert!(
         !guardian.is_finished(),
         "guardian survives the process-creating worker"
