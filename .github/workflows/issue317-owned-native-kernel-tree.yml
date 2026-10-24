@@ -59,3 +59,10 @@ jobs:
         run: |
           echo "OPTIC317_PREMARK_NEGATIVE_CONTROL sha=${GITHUB_SHA} real-suspended-child=true negative-control=true production-fix=false"
           cargo test --locked -p optic-bridge-runtime --lib unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child_negative_control -- --nocapture --test-threads=1
+      - name: Conservative native prearm and empty-Job tradeoff
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_PREARM_TRADEOFF sha=${GITHUB_SHA} proof=accounting-only guardian=false production-fix=false"
+          cargo test --locked -p optic-bridge-runtime --lib prearmed_native_creation_drop_retains_quota_with_live_suspended_child -- --nocapture --test-threads=1
+          cargo test --locked -p optic-bridge-runtime --lib prearmed_creation_without_child_retains_uncertain_quota_until_reconciliation -- --nocapture --test-threads=1
