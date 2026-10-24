@@ -1,5 +1,18 @@
 # Current project status
 
+## Production checkpoint — 24 October 2026 after #349 and #350
+
+**This section supersedes the historical SHA inventories below.** Re-query live GitHub before all work; do not treat dated commits as reset targets.
+
+- **Integrated code checkpoint `main=e0de79147e04daaea75cf59694d0e791b824fedc`.** [Merged PR #349](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/349): recover recognized raw Win32 error codes from `QueryInformationJobObject`, preserving complete non-Win32 HRESULTs rather than silently losing native information. Original [draft #346](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/346) is closed *without* merge as superseded. [Exact-head CI #40084066508](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084066508) completed 4/4 successful first attempt, specialized native Windows checks successful, and all three native error tests explicitly observed in Windows logs.
+- **Merged [PR #350](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/350): real stop-before-drain ordering.** In `SessionLifecycleManager::revoke`, session revoke is published first, known owned process stop flags requested **before** waiting for counted admissions; approval/lease cleanup still occurs **after** the unchanged admission-drain barrier. A second owner-scoped cancellation sweep captures processes registered by a previously admitted effect. Stop is a request, **not** terminal proof or resource release.
+- **Proven before/after:** [pre-fix CI #40085019486](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085019486) expected behavioral red on both Windows and Ubuntu in one deterministic test (Windows 343 pass/1 fail/11 ignored, Ubuntu 270 pass/1 fail). [Fixed-head CI #40085443930](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085443930) completed SUCCESS attempt 1 on all 4 jobs. Both native test logs confirm the new regression, late-admitted-job, multi-session isolation and approval-drain invariants passed. Intermediate corrected-head format-only red #40085298973 stays separate.
+- **Independent post-merge `main` CI:** [#40085754973](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085754973), exact integrated `e0de7914`; verify final status, not just the PR head.
+- **Important separate red:** [push/main CI #40084443275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084443275), at `37da993b`, failed the existing [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) Node AppContainer probe *after* `NODE_PROBE_STARTED` and `NETWORK_ATTEMPT`; this is distinct from the prior no-output #185 signature. The three succeeding diagnostic-only serial comparisons do **not** clear the original red.
+- **Release blockers remain:** `HardenedCommandRunner` can still block indefinitely in stdout/stderr/stdin `join()`; newly launched but not-yet-registered effects still need native stop ownership; root + Job-empty + complete EOF, durable uncertainty/recovery, Git provenance/sensitive reads #176/#182, startup #319, Node #185, true Windows 10/11 release/rollback all remain. #327 experimental owner research is not a production fix. **#317/#323 OPEN; Windows V1 NO-GO.** No operator-PC access.
+
+---
+
 ## Verified integration — 24 October 2026 after PR #347
 
 **Newer than the dated recovery checkpoints below.** Always re-query live GitHub; the SHAs below are evidence, not checkout/reset directives.
