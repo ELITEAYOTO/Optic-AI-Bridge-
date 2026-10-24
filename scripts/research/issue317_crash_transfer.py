@@ -31,7 +31,7 @@ def main():
         for red, mode in [(True, 'after-create')] + [(False, m) for m in (
                 'before-create', 'after-create', 'offered', 'job-only', 'accepted-before-ack',
                 'preowned-before-create', 'preowned-after-create',
-                'preowned-offer-failed')]:
+                'preowned-offer-failed', 'preowned-create-failed')]:
             root = output / (('red-' if red else '') + mode)
             root.mkdir()
             (root / 'mode').write_text(mode, encoding='ascii')
@@ -63,6 +63,7 @@ def main():
                     assert phase['launcher_terminate_denied'] == (
                         mode.startswith('preowned-') and mode != 'preowned-offer-failed')
                     assert phase.get('native_duplication_failed', False) == (mode == 'preowned-offer-failed')
+                    assert phase.get('native_creation_failed', False) == (mode == 'preowned-create-failed')
                     (root / 'crash-confirmed').write_text('count-observed', encoding='ascii')
                     helper.wait_for(lambda: (root / 'source-exit').exists() or host.poll() is not None,
                                     6, 'owned launcher handle signalled')
@@ -71,7 +72,7 @@ def main():
                     retained = mode in (
                         'job-only', 'accepted-before-ack',
                         'preowned-before-create', 'preowned-after-create',
-                        'preowned-offer-failed')
+                        'preowned-offer-failed', 'preowned-create-failed')
                     expected_survivors = 2 if mode in (
                         'job-only', 'accepted-before-ack', 'preowned-after-create') else 1
                     helper.wait_for(lambda: outer.active() == expected_survivors,
@@ -99,9 +100,10 @@ def main():
                         assert proof['launcher_terminate_denied'] == (
                             mode.startswith('preowned-') and mode != 'preowned-offer-failed')
                         assert proof['native_duplication_failed'] == (mode == 'preowned-offer-failed')
+                        assert proof['native_creation_failed'] == (mode == 'preowned-create-failed')
                         if retained:
                             expected_status = (
-                                'Failed' if mode in ('preowned-before-create', 'preowned-offer-failed') else 'Stopped')
+                                'Failed' if mode in ('preowned-before-create', 'preowned-offer-failed', 'preowned-create-failed') else 'Stopped')
                             assert proof['terminal_status'] == expected_status
                         helper.wait_for(lambda: outer.active() == 1, 4, 'inner cleanup before outer')
                         evidence['proof'] = proof
