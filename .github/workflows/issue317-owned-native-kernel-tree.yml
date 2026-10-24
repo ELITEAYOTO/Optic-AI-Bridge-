@@ -1,14 +1,14 @@
-name: Issue 317 owned kernel-tree research
+name: Issue 317 native observation uncertainty research
 
 on:
   push:
-    branches: ['research/317-owned-native-kernel-tree-2026-10-24']
+    branches: ['research/317-native-observation-uncertain-2026-10-24']
 
 permissions:
   contents: read
 
 concurrency:
-  group: issue317-owned-tree-${{ github.ref }}
+  group: issue317-uncertain-observation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,3 +41,9 @@ jobs:
         run: |
           echo "OPTIC317_COMBINED_KERNEL_OWNER sha=${GITHUB_SHA} real-job=true child-resume=false gitread-wired=false"
           cargo test --locked -p optic-bridge-runtime --lib owned_registered_kernel_tree_stops_before_admission_drains -- --nocapture --test-threads=1
+      - name: Exact uncertain OS observation and retained admission proof
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_UNCERTAIN_NATIVE_OWNER sha=${GITHUB_SHA} fault=injected-win32-accounting proof=retained-until-positive gitread-wired=false"
+          cargo test --locked -p optic-bridge-runtime --lib uncertain_kernel_accounting_retains_owned_admission_and_jobstore_until_retry_proves_empty -- --nocapture --test-threads=1
