@@ -46,6 +46,11 @@ use windows::{
 
 const JOB_EMPTY_POLL: Duration = Duration::from_millis(10);
 
+// Research-only staged native command. No production GitRead caller yet.
+#[path = "prepared_read_command.rs"]
+mod prepared_read_command;
+pub use prepared_read_command::{PreparedReadCommand, ReadCommandOutcome};
+
 /// Windows Job Object containment configured from an already-authorized process budget.
 ///
 /// The wrapper forces temporary suspended creation, creates/configures the Job Object,
