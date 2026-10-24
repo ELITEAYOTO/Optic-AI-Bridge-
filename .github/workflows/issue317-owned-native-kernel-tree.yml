@@ -78,3 +78,9 @@ jobs:
         run: |
           echo "OPTIC317_GUARDIAN_IN_PROCESS sha=${GITHUB_SHA} real-job=true submitter-exited=true fault=injected native-guardian=research-only host-crash-proven=false"
           cargo test --locked -p optic-bridge-runtime --lib in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner -- --nocapture --test-threads=1
+      - name: Native launcher-to-guardian handle transfer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_NATIVE_TRANSFER sha=${GITHUB_SHA} child=suspended real-job=true launcher-exited=true crash-atomic=false owner=research-only"
+          cargo test --locked -p optic-bridge-runtime --lib transferred_native_job_remains_owned_after_creator_exits -- --nocapture --test-threads=1
