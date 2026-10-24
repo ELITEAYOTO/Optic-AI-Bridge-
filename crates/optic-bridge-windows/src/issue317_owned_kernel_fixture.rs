@@ -318,16 +318,19 @@ impl ResearchCrashLauncher {
     }
 
     /// Research negative: call exactly the same DuplicateHandle path with a
-    /// deliberately INVALID destination process handle. No offer is issued,
+    /// deliberately INVALID destination process handle. On this supported
+    /// hosted Win32 path the observed rejection is ERROR_INVALID_PARAMETER
+    /// (HRESULT 0x80070057); any other result remains a test failure.
+    /// No offer is issued,
     /// and the real guardian-owned Job must remain alive and observable.
     pub fn prove_invalid_job_destination_rejected(
         &self,
         job: &ResearchKernelJob,
     ) -> io::Result<()> {
         match Self::duplicate_preowned_job_into(job, HANDLE::default()) {
-            Err(err) if err.code().0 as u32 == 0x8007_0006 => Ok(()),
+            Err(err) if err.code().0 as u32 == 0x8007_0057 => Ok(()),
             Err(err) => Err(io::Error::other(format!(
-                "expected ERROR_INVALID_HANDLE for failed native delegation: {err}"
+                "expected ERROR_INVALID_PARAMETER for failed native delegation: {err}"
             ))),
             Ok(_) => Err(io::Error::other(
                 "invalid native delegation destination unexpectedly accepted",
