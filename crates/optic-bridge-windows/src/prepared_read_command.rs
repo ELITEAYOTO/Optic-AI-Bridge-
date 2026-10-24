@@ -286,6 +286,12 @@ impl PreparedReadCommand {
     }
 
     /// Only after full proof. A no-spawn failure has status None, not success.
+    /// Read-only native Job accounting for independent owner/regression checks.
+    /// A nonzero count is NOT itself a command success or termination receipt.
+    pub fn native_active_processes(&self) -> Result<u32> {
+        self.job.active_processes()
+    }
+
     pub fn take_outcome(&mut self) -> Result<ReadCommandOutcome> {
         if !self.terminal || self.outcome_taken {
             return Err(Error::other(
