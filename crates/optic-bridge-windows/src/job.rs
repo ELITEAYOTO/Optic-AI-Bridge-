@@ -222,7 +222,7 @@ fn query_active_processes(job: HANDLE) -> Result<u32> {
             None,
         )
     }
-    .map_err(Error::other)?;
+    .map_err(Error::from)?;
     Ok(accounting.ActiveProcesses)
 }
 
