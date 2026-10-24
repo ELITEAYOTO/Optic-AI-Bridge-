@@ -669,7 +669,10 @@ mod native_error_regression {
     fn invalid_job_accounting_preserves_original_win32_error() {
         // An invalid borrowed handle has no process or ownership to clean up.
         // QueryInformationJobObject must retain ERROR_INVALID_HANDLE (Win32 6).
-        let error = query_active_processes(HANDLE::default())
+        // NULL is a special API value, not a guaranteed bad handle.
+        // A non-null dangling pointer with address 1 is never an owned kernel Job handle.
+        let invalid_job = HANDLE(std::ptr::dangling_mut::<c_void>());
+        let error = query_active_processes(invalid_job)
             .expect_err("invalid Job handle must fail native accounting");
         assert_eq!(
             error.raw_os_error(),
