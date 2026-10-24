@@ -105,3 +105,66 @@ receipt. An offer or timeout cannot resolve that ambiguity. A service process
 crash additionally needs external durable quarantine/accounting; this fixture's
 in-process guardian does not provide it. Descendant stdio, EOF, persistent real
 Win32 failures, host power loss, and production task/lease provenance remain open.
+
+
+## Separate service-preowned Job extension — 24 October 2026
+
+Research-only extension on `research/317-service-preowned-native-job-2026-10-24`.
+The *original* six-case matrix above remains historical evidence for
+`3df5ebfd` / `9d6dedf` / `ef264fc`; it has not been retroactively rewritten.
+
+**Exact code SHA:** `49c39d0339f6ac53cadc3ee924f359f329555f4d`.
+[CI #40055108927](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055108927)
+completed successfully, attempt 1 on that exact SHA. Hosted Windows
+runtime library: **355 passed / 0 failed / 13 ignored**; Ubuntu:
+**270 passed / 0 failed**; Rustfmt, strict Clippy, and full Windows
+workspace tests passed. The Windows hosted runner reported
+`Windows-2025Server-10.0.26100-SP0`, not an operator PC Windows 10/11
+acceptance. The exact Windows job emitted a supervisor manifest with
+`complete: true`; the evidence artifact is available from
+[the run](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055108927/artifacts/12544229304).
+The **first source attempt** [#40055072684](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055072684)
+failed strict Rustfmt before tests. Only the exact formatting difference
+was corrected, without weakening assertions or gates.
+
+The new service-like guardian creates and retains the REAL native Job with
+memory and process limits and owns the counted admission and JobStore
+reservation **before** a separate Windows launcher process is permitted
+to act. It duplicates a Job HANDLE into that fixed test launcher, but
+retains the original native handle: neither later receipt nor child-handle
+transfer is required to *obtain* native Job ownership. The delegated
+launcher creates only the fixed current-libtest child, suspended with
+creation-time Job membership; a separate outer supervisor observes
+survivors **before** emergency cleanup.
+
+| Added schedule | Before-crash outer count (host+launcher+optional child) | After-launcher-death outer count | Guardian proof / terminal status |
+| --- | ---: | ---: | --- |
+| `preowned-before-create` | 2 | 1 (host only) | Positive original Job-empty proof; `Failed` |
+| `preowned-after-create` | 3 | 2 (host and suspended child) | Original Job remains owned; exact Job terminated and positively empty; `Stopped` |
+
+In both schedules **no ACK** is delivered, no root process handle is
+accepted by the guardian, and a synthetic unavailable native observation
+cannot justify releasing the real admission, quota or ledger entry.
+The registry's early-stop request is separate from synchronous revoke
+drain; unrelated session admission remains usable. The guardian finally
+publishes a terminal status *only after a positive native Job-empty query*.
+The outer Job cleans up only after these observations; outer cleanup does
+not count as inner proof. The previous negative and receipt-less schedules
+continue to pass with their original expected pending/red results.
+
+**Important exclusions:** the guardian remains in the service host, and
+a crash of the guardian / entire host is not recovered. The delegated
+Job handle is duplicated with SAME_ACCESS for this fixed trusted
+fixture, **not** a production minimum-rights design. The mailbox is
+a synthetic test handshake, not a task-lease or authenticated runtime
+protocol. Failures of the native duplication call, interruption inside
+`CreateProcessW`, permanent kernel observation errors, held
+stdout/stderr descendants, stdin/EOF, bounded shutdown, Windows 10/11
+acceptance, task-lease/executable/repository provenance and restart
+reconciliation remain unresolved. This does NOT implement a production
+owner and does NOT authorize migration of real GitRead.
+
+Integration decision: **research only, NO-GO**; no broad experimental
+merge; #317/#323 remain open. Any minimal production extraction must
+be based on current `main`, with independently verified exact-commit
+Windows and Ubuntu CI and review of #176/#182.
