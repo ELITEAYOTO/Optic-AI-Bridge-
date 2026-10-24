@@ -30,7 +30,8 @@ def main():
     try:
         for red, mode in [(True, 'after-create')] + [(False, m) for m in (
                 'before-create', 'after-create', 'offered', 'job-only', 'accepted-before-ack',
-                'preowned-before-create', 'preowned-after-create')]:
+                'preowned-before-create', 'preowned-after-create',
+                'preowned-offer-failed')]:
             root = output / (('red-' if red else '') + mode)
             root.mkdir()
             (root / 'mode').write_text(mode, encoding='ascii')
@@ -59,7 +60,9 @@ def main():
                     phase = json.loads((root / 'crash-ready').read_text())
                     assert outer.active() == phase['expected_outer']
                     evidence['before_crash'] = phase
-                    assert phase['launcher_terminate_denied'] == mode.startswith('preowned-')
+                    assert phase['launcher_terminate_denied'] == (
+                        mode.startswith('preowned-') and mode != 'preowned-offer-failed')
+                    assert phase['native_duplication_failed'] == (mode == 'preowned-offer-failed')
                     (root / 'crash-confirmed').write_text('count-observed', encoding='ascii')
                     helper.wait_for(lambda: (root / 'source-exit').exists() or host.poll() is not None,
                                     6, 'owned launcher handle signalled')
@@ -67,7 +70,8 @@ def main():
                     # No call to TerminateJobObject on outer until finally.
                     retained = mode in (
                         'job-only', 'accepted-before-ack',
-                        'preowned-before-create', 'preowned-after-create')
+                        'preowned-before-create', 'preowned-after-create',
+                        'preowned-offer-failed')
                     expected_survivors = 2 if mode in (
                         'job-only', 'accepted-before-ack', 'preowned-after-create') else 1
                     helper.wait_for(lambda: outer.active() == expected_survivors,
@@ -92,10 +96,12 @@ def main():
                         assert proof['termination_proven_by_guardian'] == retained
                         assert proof['quota_released'] == retained
                         assert proof['job_preowned'] == mode.startswith('preowned-')
-                        assert proof['launcher_terminate_denied'] == mode.startswith('preowned-')
+                        assert proof['launcher_terminate_denied'] == (
+                            mode.startswith('preowned-') and mode != 'preowned-offer-failed')
+                        assert proof['native_duplication_failed'] == (mode == 'preowned-offer-failed')
                         if retained:
                             expected_status = (
-                                'Failed' if mode == 'preowned-before-create' else 'Stopped')
+                                'Failed' if mode in ('preowned-before-create', 'preowned-offer-failed') else 'Stopped')
                             assert proof['terminal_status'] == expected_status
                         helper.wait_for(lambda: outer.active() == 1, 4, 'inner cleanup before outer')
                         evidence['proof'] = proof
