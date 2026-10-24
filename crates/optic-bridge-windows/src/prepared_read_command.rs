@@ -577,10 +577,7 @@ mod tests {
             vec![Arc::clone(&stop)],
         )
         .expect("prepare owner before child creation");
-        let gate = env::temp_dir().join(format!(
-            "optic317-prepared-revoke-{}",
-            std::process::id()
-        ));
+        let gate = env::temp_dir().join(format!("optic317-prepared-revoke-{}", std::process::id()));
         let _ = fs::remove_file(&gate);
         let mut command = Command::new(env::current_exe().expect("test binary"));
         command
@@ -595,7 +592,9 @@ mod tests {
         if let Some(root) = env::var_os("SystemRoot") {
             command.env("SystemRoot", root);
         }
-        owner.start(&mut command).expect("start owned native fixture");
+        owner
+            .start(&mut command)
+            .expect("start owned native fixture");
         let handshake = Instant::now();
         while !gate.is_file() {
             assert!(
@@ -611,7 +610,10 @@ mod tests {
         );
         let cancelled_at = Instant::now();
         stop.store(true, Ordering::Release);
-        while !owner.poll_terminal().expect("stop and native EOF observation") {
+        while !owner
+            .poll_terminal()
+            .expect("stop and native EOF observation")
+        {
             assert!(
                 cancelled_at.elapsed() < Duration::from_millis(1300),
                 "stopped native child cannot hold both pipes until its 2500ms natural exit"
@@ -625,7 +627,10 @@ mod tests {
             "test requires external cancellation before the 3000ms deadline"
         );
         assert_eq!(owner.job.active_processes().expect("Job empty"), 0);
-        assert!(owner.out_eof && owner.err_eof, "both native pipes must reach EOF");
+        assert!(
+            owner.out_eof && owner.err_eof,
+            "both native pipes must reach EOF"
+        );
         assert!(
             String::from_utf8_lossy(&outcome.stdout)
                 .contains("OPTIC317_PREPARED_DESCENDANT_STARTED"),
