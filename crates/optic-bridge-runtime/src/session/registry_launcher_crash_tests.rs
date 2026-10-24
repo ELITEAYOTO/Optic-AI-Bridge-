@@ -278,9 +278,11 @@ fn service_host() {
         );
         let mut proof = base;
         proof["outcome"] = serde_json::json!("GuardianJobEmptyProven");
-        proof["terminal_status"] = serde_json::json!(
-            if mode == "preowned-before-create" { "Failed" } else { "Stopped" }
-        );
+        proof["terminal_status"] = serde_json::json!(if mode == "preowned-before-create" {
+            "Failed"
+        } else {
+            "Stopped"
+        });
         proof["termination_proven_by_guardian"] = serde_json::json!(true);
         proof["terminal_published"] = serde_json::json!(true);
         proof["quota_released"] = serde_json::json!(true);
