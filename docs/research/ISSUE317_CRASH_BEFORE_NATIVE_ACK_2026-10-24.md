@@ -168,3 +168,63 @@ Integration decision: **research only, NO-GO**; no broad experimental
 merge; #317/#323 remain open. Any minimal production extraction must
 be based on current `main`, with independently verified exact-commit
 Windows and Ubuntu CI and review of #176/#182.
+
+
+## Limited launcher Job access — 24 October 2026 (separate research)
+
+The original historical checkpoints and outcome matrices above remain unchanged.
+Branch: `research/317-limited-launcher-job-rights-2026-10-24`.
+**Exact successful code SHA:** `17ec42ccdb5e1ddc9268c4cea63c9665278ae765`.
+[Windows/Ubuntu CI #40055810146](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055810146):
+**SUCCESS on attempt 1 of that SHA**, strict Rustfmt/Clippy both operating systems,
+Windows runtime library **355 passed / 0 failed / 13 ignored**, Ubuntu
+runtime library **270 passed / 0 failed**, all eight externally supervised
+synthetic crash schedules, and `cargo test --locked --workspace` on Windows.
+Supervisor manifest printed `complete:true` on Windows Server 2025 build
+26100. [Evidence artifact](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055810146/artifacts/12545173622).
+
+**Change and native permission proof:** the service/guardian retains the
+original full-rights, already limited, kill-on-close native Job. The exact
+fixed synthetic launcher receives a *distinct duplicated Job handle*
+with **only** `JOB_OBJECT_ASSIGN_PROCESS (0x0001)` and
+`JOB_OBJECT_QUERY (0x0004)`; `DUPLICATE_SAME_ACCESS` is not used
+for this service-to-launcher offer. On the launcher side, a real
+`TerminateJobObject` attempt **before any child is created** is
+required to fail with Windows `ERROR_ACCESS_DENIED` (HRESULT
+`0x80070005`). If it unexpectedly succeeds or produces another
+error, the test fails. The limited handle still supports a real
+`QueryInformationJobObject` and creation of the fixed suspended
+libtest child with `PROC_THREAD_ATTRIBUTE_JOB_LIST`. The independent
+outer supervisor verifies the reported access-denial proof and the
+survivor count **before** its emergency cleanup.
+
+| Hosted schedule | Launcher lacks TerminateJobObject authority? | Outer survivors after launcher death | Guardian's final native proof and outcome |
+| --- | --- | ---: | --- |
+| `preowned-before-create` | Yes, Win32 denied before create | 1 (host only) | Original Job positively empty; `Failed` |
+| `preowned-after-create` | Yes, Win32 denied before create; child creation succeeded | 2 (host + synthetic child) | Guardian terminates original Job; positively empty; `Stopped` |
+
+Both cases report `launcher_terminate_denied=true`,
+`native_job_receipt=true`, `root_handle_receipt=false`,
+`original_admission_retained=true`, `revoke_pending_before_proof=true`,
+`terminal_published=true` and `quota_released=true` **only after**
+the positive inner-Job proof. The six older scenarios retain their
+distinct expected outcomes (including the intentional negative control).
+This is controlled kernel evidence, not a production permission policy.
+
+**First failures remain visible, not reclassified as green:**
+- [#40055602734](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055602734) stopped at a strict Rustfmt import-order difference.
+- [#40055647652](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055647652) reached Windows compilation, which revealed that this pinned `windows` crate does not export those two access-mask names and expects a typed `DUPLICATE_HANDLE_OPTIONS`; corrected using the documented numeric masks and explicit options type.
+- [#40055754894](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40055754894) failed strict Rustfmt line wrapping before tests.
+No assertion, branch rule, scope, policy, or CI gate was relaxed.
+
+**Remaining NO-GO boundaries:** service-to-launcher mailbox remains
+a fixed trusted synthetic fixture; no authenticated real task-lease,
+root identity/provenance check, least-privilege process handle, or
+AppContainer GitRead integration has been proved. No test demonstrates
+a full service-host crash, permanent native observation failure,
+independent guardian restart/reconciliation, descendant-held
+stdout/stderr, stdin EOF or bounded service shutdown. The child is never
+resumed; the native Job is **not a sandbox**. The proof is from hosted
+Windows Server 2025 rather than operator Windows 10/11 acceptance.
+`main` remains untouched, PR #327 independent, issues #317/#323 open;
+Windows V1 remains **NO-GO**.
