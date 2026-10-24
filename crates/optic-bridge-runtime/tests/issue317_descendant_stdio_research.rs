@@ -4,7 +4,6 @@ use std::{
     collections::BTreeMap,
     env,
     io::{self, Write},
-    path::PathBuf,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
