@@ -526,8 +526,11 @@ fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_r
             assert!(Instant::now() < until, "close signal did not arrive");
             thread::yield_now();
         }
-        job.terminate().expect("request termination of exact owned Job");
-        child.await_exit().expect("root exit still does not prove Job empty");
+        job.terminate()
+            .expect("request termination of exact owned Job");
+        child
+            .await_exit()
+            .expect("root exit still does not prove Job empty");
         for _ in 0..FAILED_OBSERVATIONS {
             assert!(
                 job.observe_active_with_injected_failure(true).is_err(),
@@ -555,7 +558,9 @@ fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_r
         .recv_timeout(Duration::from_secs(3))
         .expect("worker owns an actual suspended Job member before close");
     assert!(
-        registry.research_request_close_without_drain(&a.handle).unwrap(),
+        registry
+            .research_request_close_without_drain(&a.handle)
+            .unwrap(),
         "initial close must change the session generation"
     );
     assert!(
@@ -563,7 +568,9 @@ fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_r
         "original-generation worker must observe stop before drain"
     );
     assert!(
-        !registry.research_request_close_without_drain(&a.handle).unwrap(),
+        !registry
+            .research_request_close_without_drain(&a.handle)
+            .unwrap(),
         "repeated stop publication is idempotent"
     );
     assert!(matches!(
@@ -612,7 +619,9 @@ fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_r
         continue_tx.send(()).unwrap();
     }
 
-    worker.join().expect("owner cleaned up after genuine empty-Job proof");
+    worker
+        .join()
+        .expect("owner cleaned up after genuine empty-Job proof");
     assert_eq!(
         manager.result(&a.handle, &job_id).unwrap().status,
         ProcessStatus::Stopped
