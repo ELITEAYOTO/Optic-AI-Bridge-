@@ -34,6 +34,7 @@ fn mode(root: &Path) -> String {
             | "accepted-before-ack"
             | "preowned-before-create"
             | "preowned-after-create"
+            | "preowned-offer-failed"
     ));
     s
 }
@@ -44,6 +45,19 @@ fn launcher_host() {
     let root = PathBuf::from(env::var_os("OPTIC317_TRANSFER_ROOT").unwrap());
     wait(|| root.join("launch-gate").exists());
     let mode = mode(&root);
+    if mode == "preowned-offer-failed" {
+        assert!(
+            !root.join("preowned-job").exists(),
+            "rejected DuplicateHandle must not issue a mailbox offer"
+        );
+        write(
+            &root,
+            "launcher-phase",
+            serde_json::json!({"created":false,"preowned":false,"launcher_terminate_denied":false,"native_duplication_failed":true}),
+        );
+        thread::sleep(Duration::from_secs(12));
+        panic!("fixed launcher survived independent invalid-offer boundary");
+    }
     if mode.starts_with("preowned-") {
         // This is a DUPLICATE of the service's original Job, already created
         // and limited before the launcher began any native child creation.
@@ -56,11 +70,11 @@ fn launcher_host() {
         // Negative proof before any child exists: the delegated handle can
         // query its Job, but cannot terminate it on the guardian's behalf.
         job.prove_terminate_denied().unwrap();
-        if mode == "preowned-before-create" {
+        if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
             write(
                 &root,
                 "launcher-phase",
-                serde_json::json!({"created":false,"native_active":0,"preowned":true,"launcher_terminate_denied":true}),
+                serde_json::json!({"created":false,"native_active":0,"preowned":true,"launcher_terminate_denied":true,"native_duplication_failed":false}),
             );
             thread::sleep(Duration::from_secs(12));
             panic!("fixed delegated launcher was not terminated externally");
@@ -70,7 +84,7 @@ fn launcher_host() {
         write(
             &root,
             "launcher-phase",
-            serde_json::json!({"created":true,"native_active":1,"preowned":true,"launcher_terminate_denied":true}),
+            serde_json::json!({"created":true,"native_active":1,"preowned":true,"launcher_terminate_denied":true,"native_duplication_failed":false}),
         );
         assert!(!root.join("ack").exists());
         // The service retains its OWN kernel Job handle even when this
@@ -147,8 +161,19 @@ fn service_host() {
             };
             let launcher=ResearchCrashLauncher::create(path).unwrap();
             if let Some(native) = &job {
-                let offer = launcher.offer_preowned_job(native).unwrap();
-                write(path, "preowned-job", serde_json::json!(offer));
+                if scenario == "preowned-offer-failed" {
+                    launcher
+                        .prove_invalid_job_destination_rejected(native)
+                        .expect("real Win32 invalid destination must reject duplication");
+                    assert_eq!(native.active().unwrap(), 0);
+                    assert!(
+                        !path.join("preowned-job").exists(),
+                        "failed delegation must not publish a remote handle"
+                    );
+                } else {
+                    let offer = launcher.offer_preowned_job(native).unwrap();
+                    write(path, "preowned-job", serde_json::json!(offer));
+                }
             }
             fs::write(path.join("launch-gate"),b"real-owner-prearmed").unwrap();
             wait(||path.join("launcher-phase").exists());
@@ -156,7 +181,14 @@ fn service_host() {
                 let phase: serde_json::Value = serde_json::from_slice(
                     &fs::read(path.join("launcher-phase")).unwrap()
                 ).unwrap();
-                assert_eq!(phase["launcher_terminate_denied"], true);
+                assert_eq!(
+                    phase["launcher_terminate_denied"],
+                    scenario != "preowned-offer-failed"
+                );
+                assert_eq!(
+                    phase["native_duplication_failed"],
+                    scenario == "preowned-offer-failed"
+                );
             }
             let mut child=None;
             if matches!(scenario.as_str(),"job-only"|"accepted-before-ack") {
@@ -167,7 +199,7 @@ fn service_host() {
                 job=Some(accepted_job);
             }
             assert!(!path.join("ack").exists());
-            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned,"child_duplicate":child.is_some(),"ack_sent":false}));
+            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create" | "preowned-offer-failed") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned && scenario != "preowned-offer-failed","native_duplication_failed":scenario == "preowned-offer-failed","child_duplicate":child.is_some(),"ack_sent":false}));
             wait(||path.join("crash-confirmed").exists());
             launcher.terminate_and_wait().unwrap();
             write(path,"source-exit",serde_json::json!({"exact_owned_process_exit":true}));
@@ -195,7 +227,7 @@ fn service_host() {
                 if let Some(child)=&child {child.await_exit().unwrap();}
                 native.await_empty().unwrap();assert_eq!(native.active().unwrap(),0);
                 reservation.finish(
-                    if scenario == "preowned-before-create" {
+                    if matches!(scenario.as_str(), "preowned-before-create" | "preowned-offer-failed") {
                         ProcessStatus::Failed
                     } else {
                         ProcessStatus::Stopped
@@ -255,7 +287,7 @@ fn service_host() {
         let base = serde_json::json!({"mode":mode,"production_wired":false,"launcher_exit_proven":true,"ack_sent":false,
             "owner_live_before_reconciliation":true,"original_admission_retained":true,"quota_retained_before_proof":1,
             "status_before_proof":"Running","revoke_pending_before_proof":true,"other_session_usable":true,
-            "native_job_receipt":!pending,"job_preowned":mode.starts_with("preowned-"),"launcher_terminate_denied":mode.starts_with("preowned-"),"root_handle_receipt":mode=="accepted-before-ack"});
+            "native_job_receipt":!pending,"job_preowned":mode.starts_with("preowned-"),"launcher_terminate_denied":mode.starts_with("preowned-") && mode != "preowned-offer-failed","native_duplication_failed":mode=="preowned-offer-failed","root_handle_receipt":mode=="accepted-before-ack"});
         if pending {
             let mut proof = base;
             proof["outcome"] = serde_json::json!("PendingNoNativeReceipt");
@@ -279,7 +311,7 @@ fn service_host() {
         assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
         assert_eq!(
             manager.result(&a.handle, &id).unwrap().status,
-            if mode == "preowned-before-create" {
+            if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
                 ProcessStatus::Failed
             } else {
                 ProcessStatus::Stopped
@@ -287,7 +319,7 @@ fn service_host() {
         );
         let mut proof = base;
         proof["outcome"] = serde_json::json!("GuardianJobEmptyProven");
-        proof["terminal_status"] = serde_json::json!(if mode == "preowned-before-create" {
+        proof["terminal_status"] = serde_json::json!(if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
             "Failed"
         } else {
             "Stopped"
