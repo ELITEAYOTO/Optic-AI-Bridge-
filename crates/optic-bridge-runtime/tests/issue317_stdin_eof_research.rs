@@ -4,7 +4,7 @@ use optic_bridge_runtime::{HardenedCommandRunner, HardenedCommandSpec};
 use std::{
     collections::BTreeMap,
     env,
-    io::{Read, Write},
+    io::Read,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
