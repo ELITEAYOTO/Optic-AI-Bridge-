@@ -228,3 +228,57 @@ resumed; the native Job is **not a sandbox**. The proof is from hosted
 Windows Server 2025 rather than operator Windows 10/11 acceptance.
 `main` remains untouched, PR #327 independent, issues #317/#323 open;
 Windows V1 remains **NO-GO**.
+
+
+## Rejected native destination delegation — research-only checkpoint
+
+Branch: `research/317-failed-job-delegation-2026-10-24`.
+**Exact tested code SHA:** `9122615dd40856cf57b6f1d61ebbf66e1ece632b`.
+[Hosted CI #40057184478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057184478)
+**SUCCESS on attempt 1 of this SHA**: Windows runtime library
+**355 passed, 0 failed, 13 ignored**, Ubuntu **270 passed, 0 failed**,
+Rustfmt and strict Clippy on both platforms, **nine** externally
+supervised Windows-native scenarios, and the full Windows
+`cargo test --locked --workspace` suite. The fixture ran on a
+hosted Windows Server runner, not an authorized operator Windows 10/11
+machine. [Manifest and synthetic host logs](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057184478/artifacts/12546266069)
+were uploaded.
+
+**New negative scenario, `preowned-offer-failed`:** with the original,
+limited, kill-on-close Job held by the guardian and a genuine counted
+session admission/JobStore reservation, the fixed synthetic launcher is
+started under separate outer supervision. The guardian calls the same
+private Win32 `DuplicateHandle` path used for a successful limited
+`JOB_OBJECT_ASSIGN_PROCESS | JOB_OBJECT_QUERY` delegation, but supplies
+an intentionally **invalid target-process handle**. Windows rejects the
+operation with `ERROR_INVALID_PARAMETER` (HRESULT `0x80070057`).
+No remote Job handle or ACK is published and no child is created. The
+separate launcher is then terminated by its exact owned process handle.
+
+The outer supervisor observed **two** processes (service host + launcher)
+before termination and **one** (service host alone) after launcher
+termination, before emergency outer cleanup. The guardian still holds
+its original Job; the manifest confirms `native_duplication_failed=true`,
+`native_job_receipt=true`, `original_admission_retained=true`,
+`quota_retained_before_proof=1`,
+`revoke_pending_before_proof=true`, `status_before_proof=Running`,
+`other_session_usable=true`, and `root_handle_receipt=false`.
+Under an injected native accounting fault the admission and reservation
+remain retained and no terminal state is published; only a **real positive
+zero-members native Job observation** allows the guardian to publish
+`Failed`, release the active quota, and complete the waiting revoke.
+The outer supervisor's cleanup is **not credited** as the native proof.
+
+**First failures, preserved exactly:**
+- [#40056936313](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40056936313) stopped at strict Rustfmt; the source formatting was corrected without changing assertions.
+- [#40056998380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40056998380) passed Rustfmt/Clippy and Rust tests but failed the ninth native schedule. The first-host log in [artifact #12545488548](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40056998380/artifacts/12545488548) showed that the invalid destination is rejected with **`0x80070057`**, rather than the initially expected **`0x80070006`**. The assertion was corrected to require precisely the *observed* Windows error; accepting any error or retrying the failed CI was avoided. This initial panic is a test expectation fault, not evidence of a real production resource leak.
+
+**Strict limitations:** this is a deterministic invalid-target failure
+with an existing service-owned native Job, **not** a proof covering
+inaccessible source handles, partial native creation, all
+`DuplicateHandle` failure modes, a service-host crash, persistent real
+native accounting failures, durable restart/reconciliation, descendant
+stdio ownership, stdin/EOF, bounded shutdown, or real GitRead/task-lease
+provenance. A green research CI does not authorize promotion of the
+experimental branch. Production `main` and security policies are
+unchanged; #317/#323 remain open and Windows V1 remains **NO-GO**.
