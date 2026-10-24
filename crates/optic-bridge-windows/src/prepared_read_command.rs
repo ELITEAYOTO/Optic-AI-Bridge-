@@ -307,7 +307,7 @@ impl Drop for PreparedReadCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, fs, thread};
+    use std::{env, fs, io::Write, thread};
     use windows::Win32::System::{
         JobObjects::TerminateJobObject,
         Threading::{GetCurrentProcess, GetProcessHandleCount},
@@ -387,6 +387,7 @@ mod tests {
             .stderr(Stdio::inherit());
         let _owned_descendant = descendant.spawn().expect("spawn disposable descendant");
         println!("OPTIC317_PREPARED_ROOT_EXITED");
+        std::io::stdout().flush().expect("flush synthetic root output");
         std::process::exit(0);
     }
 
