@@ -1,5 +1,10 @@
 # Repository entry point for coding agents
 
+## Latest verified take-over — 24 Oct 2026 (ten hosted Windows crash schedules)
+
+**Start with the updated [24 October canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md#actualisation-canonique--24-octobre-2026-après-dix-scénarios-de-crash-supervisés) and [complete next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md#copier-ce-prompt--reprise-actualisée-après-dix-scénarios-24102026).** GitHub-verified production `main=16ca67a7` with successful [push/main CI #40047950688](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40047950688), independent **unmerged** `research/317-failed-native-create-2026-10-24` code `b5a91dee` with [Windows/Ubuntu CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887) green (ten controlled native schedules, not production). Only PR #327 open, #317/#323 remain open, **V1 NO-GO**. The older 24 Oct checkpoint `100c43b5`/`8202c9c` below is historical. Verify GitHub live; doc PR can advance main. No operator-PC authorization or Codex safety-filter circumvention.
+
+
 ## Current verified continuation — 24 October 2026
 
 **Begin with the [24 Oct Windows V1 canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and the [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).** The preceding 23/22 Oct handoffs are dated history, not present-day GitHub state. Research on native Job owner/uncertain observation is **not** a production Git runner or V1 authorization. Always re-query main SHA, open PRs, issues and CI before changing anything.

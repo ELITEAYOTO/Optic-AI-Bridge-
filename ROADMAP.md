@@ -1,5 +1,12 @@
 # Delivery roadmap
 
+## Updated priority after ten hosted native crash scenarios — 24 Oct 2026
+
+Latest researched and verified **unmerged** code: `research/317-failed-native-create-2026-10-24@b5a91dee`, exact [CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887) fully green with **ten** native externally supervised Windows scenarios. Production `main=16ca67a7` remained unchanged at this checkpoint; **#317/#323 OPEN, V1 NO-GO**. See [latest handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) for the research matrix, negative controls and semantics.
+
+**Next engineering priority:** reproduce and characterize **descendant-held stdout/stderr pipe handles after parent exit**, bounded stdin closure/EOF and asynchronous stop-before-admission-drain under persistent native uncertainty. Keep the original guardian Job, generation-bound permit, JobStore quota and nonterminal status retained until independent native evidence; a timer cannot manufacture a terminal receipt. Prove host-loss/restart recovery or explicitly document why a persistent supervisor/ADR is required. Do not continue generating only near-identical 'suspended child/no-ACK' tests now that those controls are green. Only then extract one small independent production-safe increment from **current `main`** with exact-head Windows/Ubuntu gates; do not bulk merge research. GitRead task-lease/repo/exe and provenance (#176/#182), #185/#319, Windows 10/11 physical device and installer/release/rollback gates remain separate. GitHub-hosted only; Codex local blocked by controls is not a reason to bypass them.
+
+
 ## Current immediate sequencing — 24 October 2026
 
 The [24 Oct canonical Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) supersedes the older 23 Oct research snapshots for the **current** work order. Production already has the *counted owned session admission* from #336, while research has separately proved JobStore commitment, kernel Job association at CreateProcessW, external synthetic creator-host death, combined stop-before-drain and **temporary injected** Win32 accounting uncertainty (latest exact-source [CI #40046563179](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40046563179)). None of the combined native research is wired to GitRead in main.
