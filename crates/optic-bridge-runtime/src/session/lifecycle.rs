@@ -246,22 +246,33 @@ impl SessionLifecycleManager {
         &self,
         session: &SessionHandle,
     ) -> Result<SessionRevokeReport, SessionLifecycleError> {
-        // Invalidate the session and wait for already-admitted effects to leave their
-        // admission critical section before touching leases or process jobs. New
-        // admissions fail immediately once the revoked bit is set.
-        let session_changed = self.sessions.revoke(session)?;
+        // Close new admissions and publish the existing per-session stop flag
+        // before any potentially blocking admission-drain barrier. An admitted
+        // native owner may need this signal to become quiescent.
+        let session_changed = self.sessions.publish_revocation_before_drain(session)?;
+        // Ask already-registered, session-owned jobs to stop now, while a
+        // counted admission can still be in flight. This is only a stop
+        // request: it is NOT native termination confirmation or capacity release.
+        let immediate_process_result = self.processes.cancel_session(session);
 
-        // Admission is closed and all already-admitted effects have drained before
-        // authority cleanup begins. Attempt every owner-scoped cleanup operation before
-        // propagating an error so one registry failure cannot leave other authority live.
+        // Preserve the original admission drain barrier: leases, approval
+        // authority and their resource reservations remain until all already
+        // admitted effects have left the critical section.
+        let _ = self.sessions.revoke(session)?;
+
+        // An admitted effect may register its job after the first cancellation
+        // sweep. Perform a second owner-scoped sweep AFTER draining to catch
+        // these late registrations; a stop flag is set at most once per job.
+        // Attempt all cleanup paths before propagating any cleanup error.
         let approval_result = self.approvals.revoke_session(session);
         let reusable_approval_result = self.reusable_approvals.revoke_session(session);
         let lease_result = self.task_leases.revoke_session(session);
-        let process_result = self.processes.cancel_session(session);
+        let late_process_result = self.processes.cancel_session(session);
         let revoked_approvals = approval_result?;
         let revoked_reusable_approvals = reusable_approval_result?;
         let revoked_leases = lease_result?;
-        let cancellation_requests = process_result?;
+        let cancellation_requests = immediate_process_result?
+            .saturating_add(late_process_result?);
 
         Ok(SessionRevokeReport {
             session_changed,
