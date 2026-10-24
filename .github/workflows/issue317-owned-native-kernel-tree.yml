@@ -66,3 +66,9 @@ jobs:
           echo "OPTIC317_PREARM_TRADEOFF sha=${GITHUB_SHA} proof=accounting-only guardian=false production-fix=false"
           cargo test --locked -p optic-bridge-runtime --lib prearmed_native_creation_drop_retains_quota_with_live_suspended_child -- --nocapture --test-threads=1
           cargo test --locked -p optic-bridge-runtime --lib prearmed_creation_without_child_retains_uncertain_quota_until_reconciliation -- --nocapture --test-threads=1
+      - name: Close request versus retained native quiescence
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_CLOSE_REQUEST sha=${GITHUB_SHA} native-job=true early-close=test-only uncertain-quota=retained gitread-wired=false"
+          cargo test --locked -p optic-bridge-runtime --lib close_request_returns_before_native_quiescence_while_owner_and_quota_remain_retained -- --nocapture --test-threads=1
