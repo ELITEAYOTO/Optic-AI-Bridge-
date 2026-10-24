@@ -370,6 +370,85 @@ mod tests {
     }
 
     #[test]
+    fn synthetic_root_that_leaves_child_holding_pipes() {
+        if env::var_os("OPTIC317_PREPARED_ROOT").is_none() {
+            return;
+        }
+        let mut descendant = Command::new(env::current_exe().expect("test fixture executable"));
+        descendant
+            .args([
+                "--exact",
+                "job::prepared_read_command::tests::synthetic_descendant_retains_pipes",
+                "--nocapture",
+            ])
+            .env("OPTIC317_PREPARED_DESCENDANT", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let _owned_descendant = descendant.spawn().expect("spawn disposable descendant");
+        println!("OPTIC317_PREPARED_ROOT_EXITED");
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn synthetic_descendant_retains_pipes() {
+        if env::var_os("OPTIC317_PREPARED_DESCENDANT").is_none() {
+            return;
+        }
+        println!("OPTIC317_PREPARED_DESCENDANT_STARTED");
+        thread::sleep(Duration::from_millis(2500));
+    }
+
+    #[test]
+    fn native_job_closes_descendant_held_pipes_after_root_exit() {
+        let mut owner = PreparedReadCommand::prepare(
+            LimitedJobObject::new(4, 512 * 1024 * 1024, 25).expect("limits"),
+            16 * 1024,
+            200,
+            vec![],
+        )
+        .expect("prepare before child spawn");
+        let mut command = Command::new(env::current_exe().expect("test fixture executable"));
+        command
+            .args([
+                "--exact",
+                "job::prepared_read_command::tests::synthetic_root_that_leaves_child_holding_pipes",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("OPTIC317_PREPARED_ROOT", "1");
+        if let Some(root) = env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+        let started = Instant::now();
+        owner.start(&mut command).expect("suspended contained root");
+        while !owner.poll_terminal().expect("native Job/pipe observation") {
+            assert!(
+                started.elapsed() < Duration::from_millis(1200),
+                "native Job/pipes not confirmed within bounded safety margin"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let outcome = owner.take_outcome().expect("native terminal evidence");
+        assert!(
+            started.elapsed() < Duration::from_millis(1200),
+            "retained synthetic child exceeded controlled deadline"
+        );
+        assert!(
+            String::from_utf8_lossy(&outcome.stdout).contains("OPTIC317_PREPARED_ROOT_EXITED"),
+            "root fixture did not demonstrate a successful early exit"
+        );
+        assert!(
+            !outcome.is_success(),
+            "root success while owned descendants are cancelled cannot count as operation success"
+        );
+        assert!(
+            outcome.cancelled || outcome.deadline_expired,
+            "native stop or hard deadline must be visible in terminal evidence"
+        );
+    }
+
+    #[test]
     fn zero_root_exit_cannot_hide_cancellation_or_limits() {
         use std::os::windows::process::ExitStatusExt;
         let mut outcome = ReadCommandOutcome {
