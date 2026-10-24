@@ -1,5 +1,16 @@
 # Optic AI Bridge — Passation canonique Windows V1 (24 octobre 2026)
 
+## Latest production checkpoint — 24 October 2026 after #349 and #350
+
+**Supersedes prior "latest" checkpoint inventories below.** Only repository `ELITEAYOTO/Optic-AI-Bridge-`, never Optic Desktop or REL. No computer-use authorization, self-hosted CI or security-filter workarounds. Re-check live SHA/PR/CI/issue state.
+
+- Code checkpoint `main=e0de79147e04daaea75cf59694d0e791b824fedc` combines merged [#347](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/347) (late stdio success misclassification, *not* a bounded join), merged [#349](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/349) (Win32 native Job accounting error codes), and merged [#350](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/350) (publish revoke + request stop of **already registered** session-owned jobs *before* admission drain, then maintain existing lease/approval barrier and sweep late registered jobs after draining). Research [#346](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/346) closed **unmerged as superseded**; experimental #327 stays open unmerged.
+- [PR #349 exact CI #40084066508](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084066508) 4/4 green attempt 1 and original native test names confirmed in Windows logs. [PR #350 pre-fix red #40085019486](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085019486) reproduced missing early stop on both Windows and Linux; [fixed exact-head full CI #40085443930](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085443930) completed 4/4 green attempt 1. Logs confirm early stop, late registration, multisession scope and deferred approval cleanup. Independent post-squash [main CI #40085754973](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085754973) must be checked at final status.
+- **Preserve independent Windows red:** prior [main CI #40084443275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084443275) hit [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) after `NODE_PROBE_STARTED` and `NETWORK_ATTEMPT` (10s `TimedOut`, no normal exit); earlier #185 `no output` signature is separate. Diagnostic reruns don't clear original. Earlier #317 native `TerminationUncertain` red #40059745546 remains unexplained.
+- **Still not solved:** an *unregistered* spawned effect may hold admission without a pre-spawn owner observing stop; stdout/stderr/stdin blocking joins still unbounded; root/Job-empty/EOF proof, permanent query errors and uncertainty, crash/restart reconciliation absent from production GitRead. #176/#182, #185/#319, Windows 10/11 acceptance independent. **#317/#323 OPEN, Windows V1 NO-GO**. Next actual production change must register owner/quota before native creation and prove bounded stop and actual quiescence, not merely change status classification.
+
+---
+
 ## Latest integration — 24 October 2026 after PR #347
 
 **This section supersedes all historical "current" SHA/PR inventories below.** Before doing anything, verify live `main`, exact push CI, open PRs and issues. Scope strictly `ELITEAYOTO/Optic-AI-Bridge-`; **no** Optic Desktop, REL, operator-PC tests or attempts to evade agent safety controls.
