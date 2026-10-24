@@ -345,7 +345,9 @@ mod tests {
         if let Some(root) = env::var_os("SystemRoot") {
             command.env("SystemRoot", root);
         }
-        owner.start(&mut command).expect("create suspended assigned child");
+        owner
+            .start(&mut command)
+            .expect("create suspended assigned child");
         let started = Instant::now();
         while !owner.poll_terminal().expect("native/pipe observation") {
             assert!(
@@ -354,15 +356,15 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(5));
         }
-        let outcome = owner.take_outcome().expect("terminal native ownership proof");
+        let outcome = owner
+            .take_outcome()
+            .expect("terminal native ownership proof");
         assert!(outcome.is_success(), "normal synthetic child: {outcome:?}");
         assert!(
-            String::from_utf8_lossy(&outcome.stdout)
-                .contains("OPTIC317_PREPARED_CAPTURED_STDOUT")
+            String::from_utf8_lossy(&outcome.stdout).contains("OPTIC317_PREPARED_CAPTURED_STDOUT")
         );
         assert!(
-            String::from_utf8_lossy(&outcome.stderr)
-                .contains("OPTIC317_PREPARED_CAPTURED_STDERR")
+            String::from_utf8_lossy(&outcome.stderr).contains("OPTIC317_PREPARED_CAPTURED_STDERR")
         );
         assert!(owner.take_outcome().is_err(), "outcome is single-use");
     }
