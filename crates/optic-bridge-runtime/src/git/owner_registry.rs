@@ -138,9 +138,18 @@ impl NativeGitOwners {
         if revoked.load(Ordering::Acquire) {
             return Err(OwnerError::Revoked);
         }
-        let memory = state.memory.checked_add(budget.memory).ok_or(OwnerError::Capacity)?;
-        let output = state.output.checked_add(budget.output).ok_or(OwnerError::Capacity)?;
-        let cpu = state.cpu.checked_add(budget.cpu).ok_or(OwnerError::Capacity)?;
+        let memory = state
+            .memory
+            .checked_add(budget.memory)
+            .ok_or(OwnerError::Capacity)?;
+        let output = state
+            .output
+            .checked_add(budget.output)
+            .ok_or(OwnerError::Capacity)?;
+        let cpu = state
+            .cpu
+            .checked_add(budget.cpu)
+            .ok_or(OwnerError::Capacity)?;
         if state.records.len() >= self.ceiling.count
             || memory > self.ceiling.memory
             || output > self.ceiling.output
@@ -219,7 +228,11 @@ impl NativeGitOwners {
 
     fn outstanding(&self, session: &SessionHandle) -> Result<usize, OwnerError> {
         let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
-        Ok(state.records.values().filter(|r| &r.session == session).count())
+        Ok(state
+            .records
+            .values()
+            .filter(|r| &r.session == session)
+            .count())
     }
 
     // Does not hold the global budget mutex during potentially blocking native
@@ -282,7 +295,10 @@ impl NativeGitOwners {
             let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
             let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
             if &record.session != session
-                || !record.native.as_ref().is_some_and(|p| Arc::ptr_eq(p, &owner))
+                || !record
+                    .native
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(p, &owner))
             {
                 return Err(OwnerError::WrongOwner);
             }
@@ -323,7 +339,11 @@ mod tests {
     }
 
     fn budget() -> Budget {
-        Budget { memory: 512 * 1024 * 1024, output: 16384, cpu: 25 }
+        Budget {
+            memory: 512 * 1024 * 1024,
+            output: 16384,
+            cpu: 25,
+        }
     }
 
     fn ledger() -> NativeGitOwners {
@@ -344,37 +364,59 @@ mod tests {
         sessions.register(grant.clone()).expect("register");
         let now = MonotonicTime::from_millis(1);
         let owners = ledger();
-        let id = owners.reserve(&sessions, &grant.handle, now, budget()).expect("reserve before spawn");
-        let signals = owners.stop_signals(id, &grant.handle).expect("native watchdog signals");
-        let mut native = Some(PreparedReadCommand::prepare(
-            LimitedJobObject::new(1, budget().memory, budget().cpu).expect("job"),
-            budget().output as usize,
-            3000,
-            signals,
-        ).expect("native preparation before child creation"));
-        owners.adopt(id, &grant.handle, &mut native).expect("adopt BEFORE spawn");
+        let id = owners
+            .reserve(&sessions, &grant.handle, now, budget())
+            .expect("reserve before spawn");
+        let signals = owners
+            .stop_signals(id, &grant.handle)
+            .expect("native watchdog signals");
+        let mut native = Some(
+            PreparedReadCommand::prepare(
+                LimitedJobObject::new(1, budget().memory, budget().cpu).expect("job"),
+                budget().output as usize,
+                3000,
+                signals,
+            )
+            .expect("native preparation before child creation"),
+        );
+        owners
+            .adopt(id, &grant.handle, &mut native)
+            .expect("adopt BEFORE spawn");
         assert!(native.is_none());
 
         let sessions_for_revoke = Arc::clone(&sessions);
         let handle_for_revoke = grant.handle.clone();
         let (done_tx, done_rx) = mpsc::channel();
         let revoker = thread::spawn(move || {
-            done_tx.send(sessions_for_revoke.revoke(&handle_for_revoke)).expect("send revoke");
+            done_tx
+                .send(sessions_for_revoke.revoke(&handle_for_revoke))
+                .expect("send revoke");
         });
         let start = Instant::now();
         while !owners.stop_signals(id, &grant.handle).expect("signals")[1].load(Ordering::Acquire) {
-            assert!(start.elapsed() < Duration::from_secs(2), "revocation signal absent");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "revocation signal absent"
+            );
             thread::sleep(Duration::from_millis(5));
         }
         assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         assert_eq!(owners.outstanding(&grant.handle).expect("reserved"), 1);
 
-        let result = owners.reap_terminal(id, &grant.handle).expect("native observation");
+        let result = owners
+            .reap_terminal(id, &grant.handle)
+            .expect("native observation");
         let receipt = result.expect("no-spawn revoked Job and EOF must be proven");
         assert!(receipt.cancelled && receipt.status.is_none());
         assert!(!receipt.is_success());
         assert_eq!(owners.outstanding(&grant.handle).expect("released"), 0);
-        assert_eq!(done_rx.recv_timeout(Duration::from_secs(3)).expect("drained session").expect("revoke"), true);
+        assert_eq!(
+            done_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("drained session")
+                .expect("revoke"),
+            true
+        );
         revoker.join().expect("join revoke");
     }
 
@@ -387,12 +429,26 @@ mod tests {
         sessions.register(b.clone()).expect("register B");
         let owners = ledger();
         let now = MonotonicTime::from_millis(1);
-        let id = owners.reserve(&sessions, &a.handle, now, budget()).expect("reserve A");
-        assert!(matches!(owners.stop_signals(id, &b.handle), Err(OwnerError::WrongOwner)));
-        assert!(matches!(owners.reap_terminal(id, &b.handle), Err(OwnerError::WrongOwner)));
-        assert!(matches!(owners.reserve(&sessions, &b.handle, now, budget()), Err(OwnerError::Capacity)));
+        let id = owners
+            .reserve(&sessions, &a.handle, now, budget())
+            .expect("reserve A");
+        assert!(matches!(
+            owners.stop_signals(id, &b.handle),
+            Err(OwnerError::WrongOwner)
+        ));
+        assert!(matches!(
+            owners.reap_terminal(id, &b.handle),
+            Err(OwnerError::WrongOwner)
+        ));
+        assert!(matches!(
+            owners.reserve(&sessions, &b.handle, now, budget()),
+            Err(OwnerError::Capacity)
+        ));
         assert_eq!(owners.stop_session(&b.handle).expect("foreign stop"), 0);
         assert_eq!(owners.stop_session(&a.handle).expect("owned stop"), 1);
-        assert_eq!(owners.outstanding(&a.handle).expect("retained reservation"), 1);
+        assert_eq!(
+            owners.outstanding(&a.handle).expect("retained reservation"),
+            1
+        );
     }
 }
