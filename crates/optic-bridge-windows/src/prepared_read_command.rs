@@ -129,6 +129,21 @@ impl PreparedReadCommand {
     /// The caller must supply an already-authorized structured command. No
     /// caller-supplied stdio/creation flags survive this boundary. Any returned
     /// error can own a suspended child: retain and recover this SAME owner.
+    /// Acceptable for service ownership only while never started and wired to
+    /// the exact session stop/revoke atomics. A caller cannot substitute an
+    /// unrelated owner that would ignore revocation or carry an existing child.
+    pub fn matches_unstarted_owner_signals(
+        &self,
+        stop: &Arc<AtomicBool>,
+        revoked: &Arc<AtomicBool>,
+    ) -> bool {
+        !self.attempted
+            && self.child.is_none()
+            && self.stop_flags.len() == 2
+            && Arc::ptr_eq(&self.stop_flags[0], stop)
+            && Arc::ptr_eq(&self.stop_flags[1], revoked)
+    }
+
     pub fn start(&mut self, command: &mut Command) -> Result<()> {
         self.start_with_operations(
             command,
