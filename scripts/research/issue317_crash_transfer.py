@@ -59,6 +59,7 @@ def main():
                     phase = json.loads((root / 'crash-ready').read_text())
                     assert outer.active() == phase['expected_outer']
                     evidence['before_crash'] = phase
+                    assert phase['launcher_terminate_denied'] == mode.startswith('preowned-')
                     (root / 'crash-confirmed').write_text('count-observed', encoding='ascii')
                     helper.wait_for(lambda: (root / 'source-exit').exists() or host.poll() is not None,
                                     6, 'owned launcher handle signalled')
@@ -91,6 +92,7 @@ def main():
                         assert proof['termination_proven_by_guardian'] == retained
                         assert proof['quota_released'] == retained
                         assert proof['job_preowned'] == mode.startswith('preowned-')
+                        assert proof['launcher_terminate_denied'] == mode.startswith('preowned-')
                         if retained:
                             expected_status = (
                                 'Failed' if mode == 'preowned-before-create' else 'Stopped')
