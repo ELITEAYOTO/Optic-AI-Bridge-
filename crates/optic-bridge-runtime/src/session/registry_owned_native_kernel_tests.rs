@@ -103,7 +103,6 @@ fn owned_registered_kernel_tree_stops_before_admission_drains() {
     fs::remove_dir_all(root).unwrap();
 }
 
-
 #[test]
 fn uncertain_kernel_accounting_retains_owned_admission_and_jobstore_until_retry_proves_empty() {
     let registry = Arc::new(SessionRegistry::new());
