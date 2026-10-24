@@ -35,6 +35,7 @@ fn mode(root: &Path) -> String {
             | "preowned-before-create"
             | "preowned-after-create"
             | "preowned-offer-failed"
+            | "preowned-create-failed"
     ));
     s
 }
@@ -70,9 +71,21 @@ fn launcher_host() {
         // Negative proof before any child exists: the delegated handle can
         // query its Job, but cannot terminate it on the guardian's behalf.
         job.prove_terminate_denied().unwrap();
+        if mode == "preowned-create-failed" {
+            ResearchSuspendedChild::prove_missing_cwd_creation_rejected(&job, &root)
+                .expect("fixed libtest CreateProcessW rejects nonexistent cwd");
+            assert_eq!(job.active().unwrap(), 0);
+            write(
+                &root,
+                "launcher-phase",
+                serde_json::json!({"created":false,"native_active":0,"preowned":true,"launcher_terminate_denied":true,"native_duplication_failed":false,"native_creation_failed":true}),
+            );
+            thread::sleep(Duration::from_secs(12));
+            panic!("fixed native-create-failure launcher was not terminated externally");
+        }
         if matches!(
             mode.as_str(),
-            "preowned-before-create" | "preowned-offer-failed"
+            "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed"
         ) {
             write(
                 &root,
@@ -192,6 +205,10 @@ fn service_host() {
                     phase["native_duplication_failed"],
                     scenario == "preowned-offer-failed"
                 );
+                assert_eq!(
+                    phase["native_creation_failed"].as_bool().unwrap_or(false),
+                    scenario == "preowned-create-failed"
+                );
             }
             let mut child=None;
             if matches!(scenario.as_str(),"job-only"|"accepted-before-ack") {
@@ -202,7 +219,7 @@ fn service_host() {
                 job=Some(accepted_job);
             }
             assert!(!path.join("ack").exists());
-            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create" | "preowned-offer-failed") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned && scenario != "preowned-offer-failed","native_duplication_failed":scenario == "preowned-offer-failed","child_duplicate":child.is_some(),"ack_sent":false}));
+            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed" | "preowned-create-failed") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned && scenario != "preowned-offer-failed","native_duplication_failed":scenario == "preowned-offer-failed","native_creation_failed":scenario == "preowned-create-failed","child_duplicate":child.is_some(),"ack_sent":false}));
             wait(||path.join("crash-confirmed").exists());
             launcher.terminate_and_wait().unwrap();
             write(path,"source-exit",serde_json::json!({"exact_owned_process_exit":true}));
@@ -224,13 +241,13 @@ fn service_host() {
                 assert!(native.observe_active_with_injected_failure(true).is_err());
                 uncertain_tx.send(()).unwrap();
                 wait(||path.join("reconcile").exists());
-                if scenario != "preowned-before-create" {
+                if !matches!(scenario.as_str(), "preowned-before-create" | "preowned-create-failed") {
                     native.terminate().unwrap();
                 }
                 if let Some(child)=&child {child.await_exit().unwrap();}
                 native.await_empty().unwrap();assert_eq!(native.active().unwrap(),0);
                 reservation.finish(
-                    if matches!(scenario.as_str(), "preowned-before-create" | "preowned-offer-failed") {
+                    if matches!(scenario.as_str(), "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed") {
                         ProcessStatus::Failed
                     } else {
                         ProcessStatus::Stopped
@@ -290,7 +307,7 @@ fn service_host() {
         let base = serde_json::json!({"mode":mode,"production_wired":false,"launcher_exit_proven":true,"ack_sent":false,
             "owner_live_before_reconciliation":true,"original_admission_retained":true,"quota_retained_before_proof":1,
             "status_before_proof":"Running","revoke_pending_before_proof":true,"other_session_usable":true,
-            "native_job_receipt":!pending,"job_preowned":mode.starts_with("preowned-"),"launcher_terminate_denied":mode.starts_with("preowned-") && mode != "preowned-offer-failed","native_duplication_failed":mode=="preowned-offer-failed","root_handle_receipt":mode=="accepted-before-ack"});
+            "native_job_receipt":!pending,"job_preowned":mode.starts_with("preowned-"),"launcher_terminate_denied":mode.starts_with("preowned-") && mode != "preowned-offer-failed","native_duplication_failed":mode=="preowned-offer-failed","native_creation_failed":mode=="preowned-create-failed","root_handle_receipt":mode=="accepted-before-ack"});
         if pending {
             let mut proof = base;
             proof["outcome"] = serde_json::json!("PendingNoNativeReceipt");
@@ -316,7 +333,7 @@ fn service_host() {
             manager.result(&a.handle, &id).unwrap().status,
             if matches!(
                 mode.as_str(),
-                "preowned-before-create" | "preowned-offer-failed"
+                "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed"
             ) {
                 ProcessStatus::Failed
             } else {
@@ -327,7 +344,7 @@ fn service_host() {
         proof["outcome"] = serde_json::json!("GuardianJobEmptyProven");
         proof["terminal_status"] = serde_json::json!(if matches!(
             mode.as_str(),
-            "preowned-before-create" | "preowned-offer-failed"
+            "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed"
         ) {
             "Failed"
         } else {
