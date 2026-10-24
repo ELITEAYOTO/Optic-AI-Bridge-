@@ -70,7 +70,10 @@ fn launcher_host() {
         // Negative proof before any child exists: the delegated handle can
         // query its Job, but cannot terminate it on the guardian's behalf.
         job.prove_terminate_denied().unwrap();
-        if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
+        if matches!(
+            mode.as_str(),
+            "preowned-before-create" | "preowned-offer-failed"
+        ) {
             write(
                 &root,
                 "launcher-phase",
@@ -311,7 +314,10 @@ fn service_host() {
         assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 0);
         assert_eq!(
             manager.result(&a.handle, &id).unwrap().status,
-            if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
+            if matches!(
+            mode.as_str(),
+            "preowned-before-create" | "preowned-offer-failed"
+        ) {
                 ProcessStatus::Failed
             } else {
                 ProcessStatus::Stopped
@@ -319,7 +325,10 @@ fn service_host() {
         );
         let mut proof = base;
         proof["outcome"] = serde_json::json!("GuardianJobEmptyProven");
-        proof["terminal_status"] = serde_json::json!(if matches!(mode.as_str(), "preowned-before-create" | "preowned-offer-failed") {
+        proof["terminal_status"] = serde_json::json!(if matches!(
+            mode.as_str(),
+            "preowned-before-create" | "preowned-offer-failed"
+        ) {
             "Failed"
         } else {
             "Stopped"
