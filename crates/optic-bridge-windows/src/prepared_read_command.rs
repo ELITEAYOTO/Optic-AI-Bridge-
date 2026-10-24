@@ -422,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn native_job_closes_descendant_held_pipes_after_root_exit() {
+    fn native_terminal_receipt_after_descendant_start_marker() {
         let mut owner = PreparedReadCommand::prepare(
             LimitedJobObject::new(4, 512 * 1024 * 1024, 25).expect("limits"),
             16 * 1024,
@@ -483,14 +483,16 @@ mod tests {
             String::from_utf8_lossy(&outcome.stdout)
                 .contains("OPTIC317_PREPARED_DESCENDANT_STARTED")
         );
-        assert!(
-            !outcome.is_success(),
-            "root success while owned descendants are cancelled cannot count as operation success"
+        // A start marker proves that the descendant ran, but not that it
+        // remained alive after its parent exited. Do not invent a cancellation
+        // event or classify the root outcome as unsafe from that marker alone.
+        // The owner may report terminal only with kernel Job-empty AND pipe EOF.
+        assert_eq!(
+            owner.job.active_processes().expect("native terminal accounting"),
+            0,
+            "native Job must be confirmed empty"
         );
-        assert!(
-            outcome.cancelled || outcome.deadline_expired,
-            "native stop or hard deadline must be visible in terminal evidence"
-        );
+        assert!(owner.out_eof && owner.err_eof, "both inherited pipes must reach EOF");
         fs::remove_file(gate).expect("remove synthetic gate marker");
     }
 
