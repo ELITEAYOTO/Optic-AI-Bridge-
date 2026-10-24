@@ -1,5 +1,11 @@
 # Delivery roadmap
 
+## Current immediate sequencing — 24 October 2026
+
+The [24 Oct canonical Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) supersedes the older 23 Oct research snapshots for the **current** work order. Production already has the *counted owned session admission* from #336, while research has separately proved JobStore commitment, kernel Job association at CreateProcessW, external synthetic creator-host death, combined stop-before-drain and **temporary injected** Win32 accounting uncertainty (latest exact-source [CI #40046563179](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40046563179)). None of the combined native research is wired to GitRead in main.
+
+**Next critical acceptance order:** (1) nonblocking stop publication distinct from terminal drain/reap with an accountable retained owner even under *persistently unavailable native observation*; (2) externally supervised Windows native descendant/stdio-EOF, creator/service death and quota/handle uncertainty tests; (3) only then one bounded production-owned read-only Git effect under approved lease/executable/repo provenance and security #176/#182; (4) CI #185/#319, Windows 10/11 devices, release/rollback acceptance. Keep issues #317/#323 OPEN and V1 NO-GO. No user-PC testing, new feature, broad research merge, or release by implication. Treat the 23 Oct sections below as history, and inspect GitHub live.
+
 Reviewed: 2026-10-22. [STATUS.md](STATUS.md) owns current evidence; this page owns
 the next delivery order. Earlier phase/H-track snapshots remain historical
 planning inputs, not a second statement of current completion.
