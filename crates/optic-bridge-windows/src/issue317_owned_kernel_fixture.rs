@@ -287,29 +287,52 @@ impl ResearchCrashLauncher {
     /// INTO this fixed launcher process. The caller must retain its original
     /// Job handle; the returned integer is valid ONLY in the launcher process.
     /// A delivered value is not an ACK or terminal-cleanup proof.
-    pub fn offer_preowned_job(&self, job: &ResearchKernelJob) -> io::Result<u64> {
+    fn duplicate_preowned_job_into(
+        job: &ResearchKernelJob,
+        destination: HANDLE,
+    ) -> windows::core::Result<u64> {
         // Win32 JOB_OBJECT_ASSIGN_PROCESS=0x0001, JOB_OBJECT_QUERY=0x0004.
-        // These constants are not exported by the pinned windows crate.
+        // The pinned windows crate does not export these symbolic masks.
         const LIMITED_LAUNCHER_JOB_ACCESS: u32 = 0x0001 | 0x0004;
         let mut target = HANDLE::default();
-        // SAFETY: source is this service's owned Job, target is the exact
-        // process handle returned from creating the fixed research launcher.
+        // SAFETY: the source is this guardian's owned Job; the caller supplies
+        // a target process handle for the *fixed synthetic* launcher only.
+        // Neither DUPLICATE_SAME_ACCESS nor CLOSE_SOURCE may be used here.
         unsafe {
             DuplicateHandle(
                 GetCurrentProcess(),
                 job.raw(),
-                HANDLE(self.0.process.as_raw_handle()),
+                destination,
                 &mut target,
-                // Minimal rights for creation-time Job membership and
-                // the fixed test's accounting query. No TERMINATE, SET,
-                // DUPLICATE, WRITE_DAC, or ALL_ACCESS entitlement.
                 LIMITED_LAUNCHER_JOB_ACCESS,
                 false,
                 DUPLICATE_HANDLE_OPTIONS(0),
-            )
+            )?;
         }
-        .map_err(io::Error::other)?;
         Ok(target.0 as usize as u64)
+    }
+
+    pub fn offer_preowned_job(&self, job: &ResearchKernelJob) -> io::Result<u64> {
+        Self::duplicate_preowned_job_into(job, HANDLE(self.0.process.as_raw_handle()))
+            .map_err(io::Error::other)
+    }
+
+    /// Research negative: call exactly the same DuplicateHandle path with a
+    /// deliberately INVALID destination process handle. No offer is issued,
+    /// and the real guardian-owned Job must remain alive and observable.
+    pub fn prove_invalid_job_destination_rejected(
+        &self,
+        job: &ResearchKernelJob,
+    ) -> io::Result<()> {
+        match Self::duplicate_preowned_job_into(job, HANDLE::default()) {
+            Err(err) if err.code().0 as u32 == 0x8007_0006 => Ok(()),
+            Err(err) => Err(io::Error::other(format!(
+                "expected ERROR_INVALID_HANDLE for failed native delegation: {err}"
+            ))),
+            Ok(_) => Err(io::Error::other(
+                "invalid native delegation destination unexpectedly accepted",
+            )),
+        }
     }
     fn duplicate(&self, value: u64) -> io::Result<OwnedHandle> {
         let value = usize::try_from(value).map_err(io::Error::other)?;
