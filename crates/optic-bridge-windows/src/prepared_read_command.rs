@@ -488,11 +488,17 @@ mod tests {
         // event or classify the root outcome as unsafe from that marker alone.
         // The owner may report terminal only with kernel Job-empty AND pipe EOF.
         assert_eq!(
-            owner.job.active_processes().expect("native terminal accounting"),
+            owner
+                .job
+                .active_processes()
+                .expect("native terminal accounting"),
             0,
             "native Job must be confirmed empty"
         );
-        assert!(owner.out_eof && owner.err_eof, "both inherited pipes must reach EOF");
+        assert!(
+            owner.out_eof && owner.err_eof,
+            "both inherited pipes must reach EOF"
+        );
         fs::remove_file(gate).expect("remove synthetic gate marker");
     }
 
