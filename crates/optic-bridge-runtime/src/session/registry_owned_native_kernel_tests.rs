@@ -224,3 +224,125 @@ fn uncertain_kernel_accounting_retains_owned_admission_and_jobstore_until_retry_
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() {
+    // Research-only negative control: four consecutive injected query errors
+    // stand in for an unavailable native observer. The final positive query is
+    // only test cleanup, NOT a persistent-fault shutdown implementation.
+    const FAILED_OBSERVATIONS: usize = 4;
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let worker_root = root.clone();
+
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (fault_tx, fault_rx) = mpsc::sync_channel(1);
+    let (continue_tx, continue_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        let job = ResearchKernelJob::prepare().expect("precreate real native Job");
+        let mut reservation = reservation;
+        let receipt = owned
+            .research_commit_registered_owner(&reservation, now)
+            .expect("single original-generation owner commitment");
+        let stop = owned.stop_watch();
+        let child = ResearchSuspendedChild::create(&job, &worker_root)
+            .expect("synthetic suspended child belongs to the Job at creation");
+        drop(receipt);
+        reservation.mark_native_created();
+        assert_eq!(job.active().unwrap(), 1);
+        ready_tx.send(()).unwrap();
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while !stop.is_stop_required_at(now) {
+            assert!(Instant::now() < until, "revoke failed to publish stop");
+            thread::yield_now();
+        }
+        job.terminate().expect("stop exact owned Job");
+        child.await_exit().expect("root exit is not full-tree proof");
+        for _ in 0..FAILED_OBSERVATIONS {
+            assert!(
+                job.observe_active_with_injected_failure(true).is_err(),
+                "OS query errors must never become an empty-Job observation"
+            );
+            // The supervisor checks retained capacity BEFORE allowing another
+            // observation. No indefinite sleep or detached worker is needed.
+            fault_tx.send(()).unwrap();
+            continue_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("bounded synthetic fault gate");
+        }
+        assert_eq!(
+            job.observe_active_with_injected_failure(false)
+                .expect("test-only positive observation to permit safe cleanup"),
+            0
+        );
+        reservation.finish(ProcessStatus::Stopped, None);
+        drop(reservation);
+        drop(child);
+        drop(job);
+        drop(owned);
+    });
+
+    ready_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("native owner prepared before revocation");
+    let close_registry = Arc::clone(&registry);
+    let close_handle = a.handle.clone();
+    let (closed_tx, closed_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        closed_tx.send(close_registry.revoke(&close_handle)).unwrap();
+    });
+
+    for _ in 0..FAILED_OBSERVATIONS {
+        fault_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("worker observed stop and an injected query error");
+        assert!(
+            matches!(closed_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "synchronous revoke remains pending while an admission is retained"
+        );
+        assert_eq!(
+            manager.result(&a.handle, &job_id).unwrap().status,
+            ProcessStatus::Running,
+            "no terminal publication is valid during native uncertainty"
+        );
+        assert_eq!(
+            manager.active_session_job_count(&a.handle).unwrap(),
+            1,
+            "uncertain process capacity is not returned to the session"
+        );
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&a.handle, &action)
+                .unwrap(),
+            Some(job_id.clone()),
+            "native owner reservation remains registered"
+        );
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(crate::SessionRegistryError::AdmissionsInFlight)
+        ));
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        continue_tx.send(()).unwrap();
+    }
+
+    worker.join().expect("test worker reaped after positive Job proof");
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Stopped
+    );
+    assert!(closed_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("drain eventually completes after a real empty-Job observation")
+        .expect("registry revoke result"));
+    closer.join().unwrap();
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
