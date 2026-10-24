@@ -1,5 +1,17 @@
 # Delivery roadmap
 
+## Next gates — 24 October 2026, after #349/#350
+
+**Engineering code checkpoint:** `main=e0de79147e04daaea75cf59694d0e791b824fedc`. [PR #349](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/349) preserves genuine native Windows Job query errors; [PR #350](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/350) requests cancellation of **registered** session-owned process jobs before the admission-drain barrier, with a second sweep for late registration. Exact corrected-head full CI [#40085443930](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085443930) 4/4 green; independent [push/main CI #40085754973](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085754973) **completed SUCCESS on `e0de7914` at first attempt, 4/4 jobs**.
+
+1. **P0 #317 actual finite pipe/process lifetime:** replace direct-root-only `HardenedCommandRunner`'s blocking stdout/stderr/stdin joins with owned native/process-group supervision and cancellable bounded pipe EOF, holding admission/quotas until root and full Job/process tree are independently proven terminal. The prior #347 correction changes eventual results, not elapsed lifetime.
+2. **P0 #317 late native registration and stop ownership:** prove process owner registered before any native spawn, stop observed during admission drain even if the job is not yet recorded, retained ownership on failed OS accounting, and true Job-empty/EOF receipts. Two cancellation sweeps (#350) are **not** sufficient for a guardian that holds an admission indefinitely without reacting to revoke. Never bulk-merge #327.
+3. **P0 #317 durable and uncertain state:** preserve distinct OS observation phases, original Win32/HRESULT, no release of uncertain reservations, crash/guardian/restart reconciliation, bounded shutdown.
+4. **P0 #176/#182** sensitive files and Git provenance; **P1 #185/#319** intermittent Node AppContainer and first MCP response; keep prior failed CI and compare distinct no-output vs post-network-attempt signatures.
+5. **V1 #323 NO-GO:** real authorized Windows 10/11 acceptance, offline install/update/rollback and exact-integrated-main CI. No release tag or operator-PC command until explicitly authorized.
+
+---
+
 ## Updated sequencing — 24 Oct 2026 after physical Windows 10 validation / Codex recovery procedure
 
 **Release gate remains NO-GO:** #317 and #323 open. Production `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` after docs-only #343; confirm latest independent push/main CI [#40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) on its exact SHA. Earlier red Windows [#40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) (`TerminationUncertain` instead of `TimedOut`) must remain visible regardless of newer green research jobs. [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) is an independent unmerged owner experiment.
