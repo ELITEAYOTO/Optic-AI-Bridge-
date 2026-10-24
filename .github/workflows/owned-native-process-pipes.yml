@@ -86,3 +86,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pinned toolchain install failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::live_native_owner_survives_revoke_until_job_empty_and_pipe_eof -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'session-owned native ledger proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::revoked_before_adoption_is_owned_and_proven_no_spawn_before_releasing_admission -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'pre-adoption revoke no-spawn recovery proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::mismatched_native_stop_signals_cannot_be_adopted_or_release_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'exact session-owner stop-signal validation failed' }
