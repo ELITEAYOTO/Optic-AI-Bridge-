@@ -29,7 +29,8 @@ def main():
                   research_only=True, complete=False, cases=[])
     try:
         for red, mode in [(True, 'after-create')] + [(False, m) for m in (
-                'before-create', 'after-create', 'offered', 'job-only', 'accepted-before-ack')]:
+                'before-create', 'after-create', 'offered', 'job-only', 'accepted-before-ack',
+                'preowned-before-create', 'preowned-after-create')]:
             root = output / (('red-' if red else '') + mode)
             root.mkdir()
             (root / 'mode').write_text(mode, encoding='ascii')
@@ -63,8 +64,12 @@ def main():
                                     6, 'owned launcher handle signalled')
                     assert (root / 'source-exit').exists()
                     # No call to TerminateJobObject on outer until finally.
-                    retained = mode in ('job-only', 'accepted-before-ack')
-                    helper.wait_for(lambda: outer.active() == (2 if retained else 1),
+                    retained = mode in (
+                        'job-only', 'accepted-before-ack',
+                        'preowned-before-create', 'preowned-after-create')
+                    expected_survivors = 2 if mode in (
+                        'job-only', 'accepted-before-ack', 'preowned-after-create') else 1
+                    helper.wait_for(lambda: outer.active() == expected_survivors,
                                     4, 'survivor count before any outer cleanup')
                     evidence['survivors_before_outer_cleanup'] = outer.active()
                     (root / 'survivor-confirmed').write_text('independent-count', encoding='ascii')
@@ -85,6 +90,11 @@ def main():
                         assert proof['revoke_pending_before_proof']
                         assert proof['termination_proven_by_guardian'] == retained
                         assert proof['quota_released'] == retained
+                        assert proof['job_preowned'] == mode.startswith('preowned-')
+                        if retained:
+                            expected_status = (
+                                'Failed' if mode == 'preowned-before-create' else 'Stopped')
+                            assert proof['terminal_status'] == expected_status
                         helper.wait_for(lambda: outer.active() == 1, 4, 'inner cleanup before outer')
                         evidence['proof'] = proof
                         evidence['outcome'] = proof['outcome']
