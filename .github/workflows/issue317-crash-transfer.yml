@@ -1,7 +1,7 @@
 name: Issue 317 crash before native ACK
 on:
   push:
-    branches: ['research/317-crash-before-native-ack-2026-10-24', 'research/317-service-preowned-native-job-2026-10-24', 'research/317-limited-launcher-job-rights-2026-10-24', 'research/317-failed-job-delegation-2026-10-24']
+    branches: ['research/317-crash-before-native-ack-2026-10-24', 'research/317-service-preowned-native-job-2026-10-24', 'research/317-limited-launcher-job-rights-2026-10-24', 'research/317-failed-job-delegation-2026-10-24', 'research/317-failed-native-create-2026-10-24']
 permissions:
   contents: read
 jobs:
