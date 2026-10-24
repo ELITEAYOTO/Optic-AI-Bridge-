@@ -406,3 +406,77 @@ fn unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn prearmed_native_creation_drop_retains_quota_with_live_suspended_child() {
+    // Companion to the unmarked negative control: arm conservatively BEFORE
+    // CreateProcessW. This proves accounting only, not guardian ownership.
+    let a = grant();
+    let (root, manager, mut reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let job = ResearchKernelJob::prepare().expect("precreate real kernel Job");
+    reservation.mark_native_created();
+    let child = ResearchSuspendedChild::create(&job, &root)
+        .expect("fixed suspended synthetic child associated during CreateProcessW");
+    assert_eq!(job.active().unwrap(), 1);
+    drop(reservation);
+    assert_eq!(job.active().unwrap(), 1);
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::TerminationUncertain,
+        "prearmed Drop may not publish Failed while the Job contains a child"
+    );
+    assert_eq!(
+        manager.active_session_job_count(&a.handle).unwrap(),
+        1,
+        "capacity must remain reserved under uncertain native ownership"
+    );
+    assert_eq!(
+        manager.remove_terminal_session_records(&a.handle).unwrap(),
+        0,
+        "an uncertain record cannot be reaped as completed"
+    );
+    assert_eq!(
+        manager
+            .find_recorded_private_action(&a.handle, &action)
+            .unwrap(),
+        Some(job_id)
+    );
+    // The test still owns the independent real Job. A production guardian
+    // needs explicit responsibility and a proof-driven reconciliation path.
+    job.terminate().expect("terminate only this synthetic Job");
+    child.await_exit().expect("wait for its exact suspended child");
+    job.await_empty().expect("whole Job empty before releasing native handle");
+    drop(child);
+    drop(job);
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn prearmed_creation_without_child_retains_uncertain_quota_until_reconciliation() {
+    // Safety/liveness tradeoff: prearming *before* a failed native call cannot
+    // distinguish an empty Job from a live child on its own. The result stays
+    // uncertain even when this fixture never calls CreateProcessW.
+    let a = grant();
+    let (root, manager, mut reservation, _) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let job = ResearchKernelJob::prepare().expect("precreate real empty Job");
+    assert_eq!(job.active().unwrap(), 0);
+    reservation.mark_native_created();
+    drop(reservation);
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::TerminationUncertain
+    );
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+    assert_eq!(manager.remove_terminal_session_records(&a.handle).unwrap(), 0);
+    assert_eq!(
+        job.active().unwrap(),
+        0,
+        "empty-Job proof exists but the abandoned record cannot consume it"
+    );
+    drop(job);
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
