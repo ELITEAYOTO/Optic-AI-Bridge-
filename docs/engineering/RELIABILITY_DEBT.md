@@ -1,5 +1,13 @@
 # Reliability and implementation debt
 
+## Latest proven status — 24 Oct 2026, integrated PR #347
+
+- Production `main=d33ccaad22167d13923f664286267a410bc5974a` includes #317's narrow **late-join result classification** fix, merged [#347](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/347). Initial pre-fix Windows/Linux red `6538cc68` / [#40081162463](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40081162463); final targeted `126a47b7` / [#40082678386](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40082678386) **11/11 per platform**; exact-head full [#40082678379](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40082678379) **4/4 green**. Post-merge main [#40083036492](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40083036492) must be independently checked for final status. Independent [#40081265695](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40081265695) Windows red was the **existing** unexplained #185 Node AppContainer timeout; do not hide it.
+- **P0 STILL OPEN #317:** runtime `stdout_reader.join()`, `stderr_reader.join()` and `input_writer.join()` may still block indefinitely. Correcting the *eventual error* is not bound cleanup, native descendant containment or full GitRead migration. Pre-spawn service-owned Job/quotas/admission; root + Job-empty + EOF; stop-before-drain; native errors and uncertainty; stdin and crash recovery remain unproven. [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327), [#346](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/346) remain unmerged research. Original `TerminationUncertain` CI red [#40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) remains evidence.
+- **V1 #323 NO-GO**; no changes to user PC or safety settings. See [STATUS.md](../../STATUS.md#verified-integration--24-october-2026-after-pr-347) for authoritative exact references.
+
+---
+
 ## Current P0/P1 debt after Codex recovery and Windows 10 evidence — 24 Oct 2026
 
 **Baseline:** documentation-only `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` after [#343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343), [push CI #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) Windows/Ubuntu/dependency/release all success. The earlier [push/main failure #40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) `TerminationUncertain` remains a genuine unexplained red. #317/#323 **OPEN**, V1 NO-GO.
