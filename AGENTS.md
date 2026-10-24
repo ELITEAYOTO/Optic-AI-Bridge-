@@ -1,5 +1,13 @@
 # Repository entry point for coding agents
 
+## Active 24 Oct continuation — post recovery-policy merge
+
+**Read the newest [Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md#actualisation-ultérieure--24-octobre-2026-après-récupération-codex-et-preuves-windows-10) and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md#reprise-prioritaire--24-octobre-2026-après-les-recherches-339342-et-la-procédure-de-récupération-codex).** Latest checked docs-only `main=dce94cc0`, [push/main CI #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) success; latest research #339 stdout/stderr, #341 stdin/EOF bugs still unwired/unfixed; #340/#342 successful normal native observations did not root-cause the earlier main [red #40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546). Only #327 open research at checkpoint. #317/#323 OPEN, Windows V1 NO-GO. These are dated, verify live refs. Codex local snapshots are not available from every agent environment; do not claim recovery without direct hash verification.
+
+## Codex interruption recovery
+
+At the start of every session, follow [Codex interruption recovery](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md), including its read-only checkpoint discovery before mutations. Preserve authorized work outside all worktrees; verify Git, snapshot hashes and the exact tested SHA before resuming after interruption. Do not overwrite another agent's work, evade safety controls or interpret recovery as release readiness. Existing repository guardrails and Windows V1 NO-GO still apply.
+
 ## Latest verified take-over — 24 Oct 2026 (ten hosted Windows crash schedules)
 
 **Start with the updated [24 October canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md#actualisation-canonique--24-octobre-2026-après-dix-scénarios-de-crash-supervisés) and [complete next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md#copier-ce-prompt--reprise-actualisée-après-dix-scénarios-24102026).** GitHub-verified production `main=16ca67a7` with successful [push/main CI #40047950688](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40047950688), independent **unmerged** `research/317-failed-native-create-2026-10-24` code `b5a91dee` with [Windows/Ubuntu CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887) green (ten controlled native schedules, not production). Only PR #327 open, #317/#323 remain open, **V1 NO-GO**. The older 24 Oct checkpoint `100c43b5`/`8202c9c` below is historical. Verify GitHub live; doc PR can advance main. No operator-PC authorization or Codex safety-filter circumvention.
