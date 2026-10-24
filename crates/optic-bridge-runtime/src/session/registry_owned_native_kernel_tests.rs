@@ -993,9 +993,8 @@ fn guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation() {
             .research_commit_registered_owner(&reservation, now)
             .expect("guardian holds genuine generation-bound admission");
         drop(receipt);
-        let job = Arc::new(
-            ResearchKernelJob::prepare().expect("guardian prepares actual native Job")
-        );
+        let job =
+            Arc::new(ResearchKernelJob::prepare().expect("guardian prepares actual native Job"));
         assert_eq!(job.active().unwrap(), 0);
         reservation.mark_native_created();
 
@@ -1012,7 +1011,9 @@ fn guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation() {
             }
             // No ACK, child handle or Job handle is returned to the guardian.
         });
-        creator.join().expect("delegated creator ended before close");
+        creator
+            .join()
+            .expect("delegated creator ended before close");
         assert_eq!(
             job.active().unwrap(),
             u32::from(did_create),
@@ -1034,17 +1035,16 @@ fn guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation() {
         let draining_handle = a.handle.clone();
         let (done_tx, done_rx) = mpsc::sync_channel(1);
         let closer = thread::spawn(move || {
-            done_tx.send(draining_registry.revoke(&draining_handle)).unwrap();
+            done_tx
+                .send(draining_registry.revoke(&draining_handle))
+                .unwrap();
         });
 
         assert!(
             job.observe_active_with_injected_failure(true).is_err(),
             "unavailable Job accounting is never proof of quiescence"
         );
-        assert!(matches!(
-            done_rx.try_recv(),
-            Err(mpsc::TryRecvError::Empty)
-        ));
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         assert_eq!(
             manager.result(&a.handle, &job_id).unwrap().status,
             ProcessStatus::Running
@@ -1063,7 +1063,8 @@ fn guardian_preowned_job_reconciles_launcher_loss_before_and_after_creation() {
         assert!(registry.get_active(&b.handle, now).is_ok());
 
         if did_create {
-            job.terminate().expect("terminate only guardian's synthetic Job");
+            job.terminate()
+                .expect("terminate only guardian's synthetic Job");
         }
         job.await_empty()
             .expect("positive native empty-Job proof before ledger completion");
