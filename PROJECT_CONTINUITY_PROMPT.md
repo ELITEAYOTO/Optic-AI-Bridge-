@@ -1,5 +1,14 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Dernière consigne active — 24 octobre 2026 après reprise Codex
+
+**Copier intégralement la nouvelle section `REPRISE PRIORITAIRE`** du [prompt Windows V1 du 24 octobre](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md) ; elle remplace les checkpoints antérieurs décrits ci-dessous. Lire [la passation Windows actualisée](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), [AGENTS.md](AGENTS.md) et le guide permanent [CODEX_INTERRUPTION_RECOVERY.md](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md).
+
+Dernier `main` de référence **avant la présente passation** : `dce94cc02f178d91b1eec4dc06134ab57df47ff6` après #343 documentaire. Le [push/main CI #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) doit être vérifié réellement. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) et [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) restent ouvertes, **V1 NO-GO** ; #327 reste une recherche indépendante. PR #339–#342 fermées sans fusion, preuves #317 stdout/stderr, stdin/EOF, Windows 10 normal confirmation et intermittence inconnue. La CI main rouge [#40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) est une vraie preuve historique non résolue. Codex interruption recovery #343 protège le travail local sans contourner les règles de cybersécurité ni prouver la sécurité V1. Aucun PC opérateur par défaut, ni mélange avec Optic Desktop/REL. Actualiser GitHub à chaque nouvelle session.
+
+---
+
+
 ## Prompt actif de reprise — 24 octobre 2026, après dix scénarios
 
 **Pour changer de chat, copier la nouvelle section `COPIER CE PROMPT` de [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).** Le [handoff canonique actualisé](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) donne les preuves et limites. Dernier `main` observé : `16ca67a75fd49c5681a0672773ffc268c3635f6b` avec [CI #40047950688](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40047950688) verte ; seule PR #327 ouverte ; #317/#323 ouvertes, **V1 NO-GO**. Dernier code **non fusionné** `research/317-failed-native-create-2026-10-24@b5a91dee`, [CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887) verte (10 scénarios Windows supervisés, tests Ubuntu et workspace Windows). Doc de recherche `4bef362d` : CI #40058237376 à revérifier. Cette PR documentaire peut avancer main, donc ne présumer aucun état actuel sans contrôler GitHub. Prochaine priorité : pipes descendants stdout/stderr, stdin EOF, stop avant drainage, incertitude OS persistante et liveness/shutdown, **pas** la répétition de tests de création suspendue déjà verts. Pas de PC utilisateur sans nouvelle autorisation ni de contournement des contrôles bloquant Codex. Les checkpoints `100c43b5` et `8202c9c` ci-dessous sont désormais historiques.

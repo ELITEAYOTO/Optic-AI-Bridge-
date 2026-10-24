@@ -1,5 +1,21 @@
 # Reliability and implementation debt
 
+## Current P0/P1 debt after Codex recovery and Windows 10 evidence — 24 Oct 2026
+
+**Baseline:** documentation-only `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` after [#343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343), [push CI #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) Windows/Ubuntu/dependency/release all success. The earlier [push/main failure #40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) `TerminationUncertain` remains a genuine unexplained red. #317/#323 **OPEN**, V1 NO-GO.
+
+- **P0 #317 root vs native Job uncertainty:** [research #340](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/340), [physical Win10 #342](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/342) positively confirmed ordinary termination on bounded synthetic samples but did **not** reproduce/diagnose the red. Need specific native root vs Job accounting phases and unmodified Win32 error codes, negative bounded OS observation and retained native owner/quotas/admission.
+- **P0 #317 stdio ownership:** [research #339](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/339) reproduced descendant-held stdout/stderr reader joins beyond deadline; [research #341](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/341) reproduced late stdin/EOF writer join. All research unmerged; need inverted correctness tests and cancellation/positive ownership receipts before a production patch.
+- **P0 #317 stop ordering and host loss:** stop must be observable **before** blocking admission drain, and SessionRegistry admission, JobStore quota and genuine native Job ownership cannot be released on uncertainty or wrong session generation. Recoverability after service crash, permanent native accounting error, and bounded shutdown not yet proven.
+- **P0 #176/#182:** sensitive read/authorized Git provenance, executable/repository scope and lease chain remain release blockers.
+- **P1 #185/#319:** AppContainer/Node timing and first MCP response intermittent behavior remain distinct.
+- **Operator reliability:** [permanent Codex interruption recovery guide](CODEX_INTERRUPTION_RECOVERY.md) added by #343 with external checkpoints and fail-closed pointer reconciliation. This prevents some lost-work scenarios **only if the snapshots exist and pass checksums**; it cannot bypass security policy or guarantee same-disk disaster recovery. Local snapshot counts are operator reports, not remote CI evidence.
+
+See the most recent [Windows V1 handoff](HANDOFF_WINDOWS_V1_2026-10-24.md) and [successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md); the below 22 October section is historical.
+
+---
+
+
 ## Current Windows V1 reliability/security debt (2026-10-22)
 
 - **P0 #317:** production Rust runner still risks unbounded pipe `join()` after child exit; missing native stdin/OS-failure cleanup, held Session/HostStartup owner resources and stop-before-drain / seal-reap guarantees. Eight test-only Windows native cases passed at `d295d92e` ([#39718651623](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/39718651623)); no production fix or bulk merge.
