@@ -20,9 +20,9 @@ use windows::{
         Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::{
             JobObjects::{
-                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_ASSIGN_PROCESS, JOB_OBJECT_QUERY,
-                JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-                JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_ASSIGN_PROCESS,
+                JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_QUERY,
                 JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
