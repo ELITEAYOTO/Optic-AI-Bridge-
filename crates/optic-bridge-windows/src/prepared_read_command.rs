@@ -500,7 +500,10 @@ mod tests {
             owner.post_root_active_observed,
             "no native evidence of a still-active Job after root exit"
         );
-        assert!(outcome.cancelled, "forced post-root Job stop must be classified");
+        assert!(
+            outcome.cancelled,
+            "forced post-root Job stop must be classified"
+        );
         assert!(
             !outcome.is_success(),
             "root exit 0 must not mask native termination of remaining Job members"
