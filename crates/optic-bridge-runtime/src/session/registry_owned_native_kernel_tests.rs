@@ -265,7 +265,9 @@ fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() 
             thread::yield_now();
         }
         job.terminate().expect("stop exact owned Job");
-        child.await_exit().expect("root exit is not full-tree proof");
+        child
+            .await_exit()
+            .expect("root exit is not full-tree proof");
         for _ in 0..FAILED_OBSERVATIONS {
             assert!(
                 job.observe_active_with_injected_failure(true).is_err(),
@@ -297,7 +299,9 @@ fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() 
     let close_handle = a.handle.clone();
     let (closed_tx, closed_rx) = mpsc::sync_channel(1);
     let closer = thread::spawn(move || {
-        closed_tx.send(close_registry.revoke(&close_handle)).unwrap();
+        closed_tx
+            .send(close_registry.revoke(&close_handle))
+            .unwrap();
     });
 
     for _ in 0..FAILED_OBSERVATIONS {
@@ -333,15 +337,19 @@ fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() 
         continue_tx.send(()).unwrap();
     }
 
-    worker.join().expect("test worker reaped after positive Job proof");
+    worker
+        .join()
+        .expect("test worker reaped after positive Job proof");
     assert_eq!(
         manager.result(&a.handle, &job_id).unwrap().status,
         ProcessStatus::Stopped
     );
-    assert!(closed_rx
-        .recv_timeout(Duration::from_secs(3))
-        .expect("drain eventually completes after a real empty-Job observation")
-        .expect("registry revoke result"));
+    assert!(
+        closed_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("drain eventually completes after a real empty-Job observation")
+            .expect("registry revoke result")
+    );
     closer.join().unwrap();
     drop(manager);
     fs::remove_dir_all(root).unwrap();
