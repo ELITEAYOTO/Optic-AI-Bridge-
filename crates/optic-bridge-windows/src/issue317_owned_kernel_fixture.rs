@@ -85,7 +85,9 @@ impl ResearchKernelJob {
     /// A failed query is not proof of an empty Job or permission to reclaim.
     pub fn observe_active_with_injected_failure(&self, unavailable: bool) -> io::Result<u32> {
         if unavailable {
-            return Err(io::Error::other("injected native accounting observation failure"));
+            return Err(io::Error::other(
+                "injected native accounting observation failure",
+            ));
         }
         self.active()
     }
