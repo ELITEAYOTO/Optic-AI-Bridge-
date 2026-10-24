@@ -227,7 +227,11 @@ impl ResearchSuspendedChild {
         let mut command: Vec<u16> = OsStr::new(&line).encode_wide().chain(Some(0)).collect();
         let missing = root.join("optic317_missing_cwd_never_created");
         let chosen_cwd = if missing_cwd { missing.as_path() } else { root };
-        let cwd: Vec<u16> = chosen_cwd.as_os_str().encode_wide().chain(Some(0)).collect();
+        let cwd: Vec<u16> = chosen_cwd
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
 
         let mut vars = BTreeMap::<String, std::ffi::OsString>::new();
         for key in ["SystemRoot", "WINDIR"] {
