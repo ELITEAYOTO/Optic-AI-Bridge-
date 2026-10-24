@@ -205,12 +205,17 @@ impl OwnedJob {
     }
 
     fn active_processes(&self) -> Result<u32> {
-        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        query_active_processes(self.0)
+    }
+}
+
+fn query_active_processes(job: HANDLE) -> Result<u32> {
+    let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
         // SAFETY: the requested information class matches `accounting` and the buffer
         // remains valid for the entire synchronous call.
         unsafe {
             QueryInformationJobObject(
-                Some(self.0),
+                Some(job),
                 JobObjectBasicAccountingInformation,
                 (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast::<c_void>(),
                 size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
@@ -218,8 +223,7 @@ impl OwnedJob {
             )
         }
         .map_err(Error::other)?;
-        Ok(accounting.ActiveProcesses)
-    }
+    Ok(accounting.ActiveProcesses)
 }
 
 impl Drop for OwnedJob {
@@ -654,5 +658,23 @@ mod tests {
             "unwrapping containment allowed the child to survive"
         );
         std::fs::remove_dir_all(root).expect("remove fixture dir");
+    }
+}
+
+#[cfg(test)]
+mod native_error_regression {
+    use super::*;
+
+    #[test]
+    fn invalid_job_accounting_preserves_original_win32_error() {
+        // An invalid borrowed handle has no process or ownership to clean up.
+        // QueryInformationJobObject must retain ERROR_INVALID_HANDLE (Win32 6).
+        let error = query_active_processes(HANDLE::default())
+            .expect_err("invalid Job handle must fail native accounting");
+        assert_eq!(
+            error.raw_os_error(),
+            Some(windows::Win32::Foundation::ERROR_INVALID_HANDLE.0 as i32),
+            "native accounting failure must expose the original Win32 code"
+        );
     }
 }
