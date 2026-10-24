@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'crates/optic-bridge-windows/**'
+      - 'crates/optic-bridge-runtime/src/git/owner_registry.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/owned-native-process-pipes.yml'
@@ -63,3 +64,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'independent owned watchdog proof failed' }
           & $Probe appcontainer::tests::explicit_environment_ --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'explicit environment proof failed' }
+
+  session-owned-native-ledger:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact source before native ledger test
+        shell: pwsh
+        run: |
+          $Actual = git rev-parse HEAD
+          if ($Actual -ne '${{ github.event.pull_request.head.sha }}') { throw 'unexpected native ledger test SHA' }
+          "OPTIC317_LEDGER_SOURCE_SHA=$Actual"
+      - name: Prove session-owned live child revoke and kernel/pipe receipt
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'pinned toolchain install failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::live_native_owner_survives_revoke_until_job_empty_and_pipe_eof -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'session-owned native ledger proof failed' }
