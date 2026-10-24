@@ -1,0 +1,38 @@
+name: Issue 317 actual bounded completion acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-runtime/tests/issue317_late_pipe_completion.rs'
+      - '.github/workflows/issue317-bounded-wall-clock.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actual-deadline-acceptance:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          echo "ISSUE317_WALL_CLOCK_SOURCE_SHA=$(git rev-parse HEAD)"
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Validate fixture formatting
+        run: cargo fmt --all -- --check
+      - name: Require actual completion before deadline, not only eventual timeout
+        run: cargo test --locked -p optic-bridge-runtime --test issue317_late_pipe_completion bounded_wall_clock_requires_actual_pipe_cleanup -- --ignored --nocapture --test-threads=1
