@@ -369,6 +369,156 @@ mod tests {
     }
 
     #[test]
+    fn revoked_before_adoption_is_owned_and_proven_no_spawn_before_releasing_admission() {
+        use std::process::Command;
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("revoked-before-adoption");
+        sessions.register(grant.clone()).expect("register");
+        let owners = ledger();
+        let id = owners
+            .reserve(&sessions, &grant.handle, MonotonicTime::from_millis(1), budget())
+            .expect("reserve counted admission before native preparation");
+        let signals = owners.stop_signals(id, &grant.handle).expect("stop/revoke watch");
+        let mut prepared = Some(
+            PreparedReadCommand::prepare(
+                LimitedJobObject::new(1, budget().memory, budget().cpu).expect("job"),
+                budget().output as usize,
+                3000,
+                signals.clone(),
+            )
+            .expect("prepare native job and streams without launching"),
+        );
+
+        let sessions_for_revoke = Arc::clone(&sessions);
+        let handle = grant.handle.clone();
+        let (tx, rx) = mpsc::channel();
+        let revoker = thread::spawn(move || {
+            tx.send(sessions_for_revoke.revoke(&handle))
+                .expect("send revoke result");
+        });
+        let started = Instant::now();
+        while !signals[1].load(Ordering::Acquire) {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "revoke bit never published"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let held_during_revoke = owners.outstanding(&grant.handle).expect("reservation");
+        let drain_pending = matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let not_adopted = matches!(
+            owners.reap_terminal(id, &grant.handle),
+            Err(OwnerError::MissingPayload)
+        );
+        // Revoke does NOT grant permission to spawn, but must not strand the
+        // counted reservation with no OS owner capable of proving no-spawn.
+        owners
+            .adopt(id, &grant.handle, &mut prepared)
+            .expect("adopt stopped preparation solely for native cleanup");
+        let transferred = prepared.is_none();
+        let mut command = Command::new(std::env::current_exe().expect("test binary"));
+        let launch_error = owners
+            .with_owner(id, &grant.handle, |native| native.start(&mut command))
+            .expect_err("revoked native process MUST NOT be spawned");
+        let interrupted = matches!(
+            launch_error,
+            OwnerError::Native(ref e) if e.kind() == io::ErrorKind::Interrupted
+        );
+        let job_empty = owners
+            .with_owner(id, &grant.handle, |native| native.native_active_processes())
+            .expect("native Job accounting");
+        let receipt = owners
+            .reap_terminal(id, &grant.handle)
+            .expect("full Job and EOF no-spawn proof")
+            .expect("terminal native evidence");
+        let capacity_released = owners.outstanding(&grant.handle).expect("released reservation");
+        let revoke_result = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("revoke must drain after native proof")
+            .expect("revoke result");
+        revoker.join().expect("revoke thread");
+
+        assert_eq!(held_during_revoke, 1);
+        assert!(drain_pending && not_adopted && transferred && interrupted);
+        assert_eq!(job_empty, 0);
+        assert!(receipt.status.is_none(), "no native root can have been created");
+        assert!(receipt.cancelled && !receipt.is_success());
+        assert!(receipt.stdout.is_empty() && receipt.stderr.is_empty());
+        assert_eq!(capacity_released, 0);
+        assert!(revoke_result);
+    }
+
+    #[test]
+    fn mismatched_native_stop_signals_cannot_be_adopted_or_release_capacity() {
+        use std::process::Command;
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("native-signals-bound-to-session");
+        sessions.register(grant.clone()).expect("register");
+        let owners = ledger();
+        let id = owners
+            .reserve(&sessions, &grant.handle, MonotonicTime::from_millis(1), budget())
+            .expect("reserve");
+        let signals = owners.stop_signals(id, &grant.handle).expect("owner signals");
+        let unrelated = vec![
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        ];
+        let mut foreign = Some(
+            PreparedReadCommand::prepare(
+                LimitedJobObject::new(1, budget().memory, budget().cpu).expect("foreign job"),
+                budget().output as usize,
+                3000,
+                unrelated,
+            )
+            .expect("prepare unrelated native owner"),
+        );
+        let rejected = matches!(
+            owners.adopt(id, &grant.handle, &mut foreign),
+            Err(OwnerError::UnboundNativeOwner)
+        );
+        let caller_kept_foreign = foreign.is_some();
+        let capacity_still_held = owners.outstanding(&grant.handle).expect("reservation");
+        let no_owner_adopted = matches!(
+            owners.reap_terminal(id, &grant.handle),
+            Err(OwnerError::MissingPayload)
+        );
+        // Complete this valid no-spawn case using the actual bound atomics.
+        let mut correctly_bound = Some(
+            PreparedReadCommand::prepare(
+                LimitedJobObject::new(1, budget().memory, budget().cpu).expect("job"),
+                budget().output as usize,
+                3000,
+                signals,
+            )
+            .expect("prepare actual session owner"),
+        );
+        owners
+            .adopt(id, &grant.handle, &mut correctly_bound)
+            .expect("adopt only exact stop/revoke identity");
+        let stopped = owners.stop_session(&grant.handle).expect("session-scoped stop");
+        let mut command = Command::new(std::env::current_exe().expect("test binary"));
+        let start_rejected = matches!(
+            owners.with_owner(id, &grant.handle, |native| native.start(&mut command)),
+            Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::Interrupted
+        );
+        let receipt = owners
+            .reap_terminal(id, &grant.handle)
+            .expect("prove no native child and EOF")
+            .expect("terminal receipt");
+        let released = owners.outstanding(&grant.handle).expect("capacity released");
+
+        assert!(rejected && caller_kept_foreign && no_owner_adopted);
+        assert_eq!(capacity_still_held, 1);
+        assert_eq!(stopped, 1);
+        assert!(start_rejected);
+        assert!(receipt.cancelled && receipt.status.is_none());
+        assert!(!receipt.is_success());
+        assert_eq!(released, 0);
+    }
+
+    #[test]
     fn reserved_owner_retains_admission_until_native_quiescence() {
         let sessions = Arc::new(SessionRegistry::new());
         let grant = grant("owner-a");
