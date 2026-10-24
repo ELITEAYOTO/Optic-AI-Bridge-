@@ -2,9 +2,7 @@
 //! These supervised synthetic tests prove that an operation cannot report
 //! success *after* its advertised deadline. They deliberately do not claim
 //! that the current blocking joins complete within that deadline.
-use optic_bridge_runtime::{
-    HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec,
-};
+use optic_bridge_runtime::{HardenedCommandError, HardenedCommandRunner, HardenedCommandSpec};
 use std::{
     collections::BTreeMap,
     env,
@@ -109,7 +107,10 @@ fn fixture_assert_late_stdout_is_not_success() {
         matches!(result, Err(HardenedCommandError::TimedOut)),
         "a successful root is not proof of deadline compliance; got {result:?}"
     );
-    println!("ISSUE317_LATE_STDOUT_REJECTED elapsed_ms={}", elapsed.as_millis());
+    println!(
+        "ISSUE317_LATE_STDOUT_REJECTED elapsed_ms={}",
+        elapsed.as_millis()
+    );
 }
 
 #[test]
@@ -134,7 +135,10 @@ fn fixture_assert_late_stdin_is_not_success() {
         matches!(result, Err(HardenedCommandError::TimedOut)),
         "a successful root is not proof of deadline compliance; got {result:?}"
     );
-    println!("ISSUE317_LATE_STDIN_REJECTED elapsed_ms={}", elapsed.as_millis());
+    println!(
+        "ISSUE317_LATE_STDIN_REJECTED elapsed_ms={}",
+        elapsed.as_millis()
+    );
 }
 
 fn supervise(inner: &str, evidence: &str) {
@@ -144,7 +148,9 @@ fn supervise(inner: &str, evidence: &str) {
     let started = Instant::now();
     loop {
         if let Some(status) = host.try_wait().expect("poll exact fixture host") {
-            let output = host.wait_with_output().expect("capture bounded host output");
+            let output = host
+                .wait_with_output()
+                .expect("capture bounded host output");
             assert!(
                 status.success(),
                 "fixture failed: stdout={} stderr={}",
