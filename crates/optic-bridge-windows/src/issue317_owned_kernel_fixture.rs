@@ -20,7 +20,8 @@ use windows::{
         Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::{
             JobObjects::{
-                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_ASSIGN_PROCESS, JOB_OBJECT_QUERY,
+                JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
                 JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
                 JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
@@ -90,6 +91,23 @@ impl ResearchKernelJob {
             ));
         }
         self.active()
+    }
+
+    /// Research-only negative permission assertion, performed while the
+    /// delegated Job is empty. The launcher must NOT have TERMINATE rights.
+    pub fn prove_terminate_denied(&self) -> io::Result<()> {
+        // SAFETY: only the fixed fixture's limited borrowed Job handle is used.
+        // The test invokes this before child creation, so even a regression
+        // accidentally granting termination cannot kill an unrelated process.
+        match unsafe { TerminateJobObject(self.raw(), 87) } {
+            Err(err) if err.code().0 as u32 == 0x8007_0005 => Ok(()),
+            Err(err) => Err(io::Error::other(format!(
+                "expected access denied for launcher Job termination: {err}"
+            ))),
+            Ok(()) => Err(io::Error::other(
+                "launcher Job handle unexpectedly has terminate permission",
+            )),
+        }
     }
 
     pub fn terminate(&self) -> io::Result<()> {
@@ -278,9 +296,12 @@ impl ResearchCrashLauncher {
                 job.raw(),
                 HANDLE(self.0.process.as_raw_handle()),
                 &mut target,
-                0,
+                // Minimal rights for creation-time Job membership and
+                // the fixed test's accounting query. No TERMINATE, SET,
+                // DUPLICATE, WRITE_DAC, or ALL_ACCESS entitlement.
+                JOB_OBJECT_ASSIGN_PROCESS | JOB_OBJECT_QUERY,
                 false,
-                DUPLICATE_SAME_ACCESS,
+                0,
             )
         }
         .map_err(io::Error::other)?;
