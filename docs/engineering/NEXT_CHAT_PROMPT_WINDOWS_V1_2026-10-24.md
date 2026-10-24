@@ -2,6 +2,8 @@
 
 ## REPRISE PRIORITAIRE — 24 octobre 2026 après les recherches #339–#342 et la procédure de récupération Codex
 
+**Dernier contrôle post-politique :** [PR #343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343) fusionnée par squash, `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` ; [CI push/main #40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) **quatre jobs verts** sur ce SHA. La présente mise à jour documentaire peut à son tour avancer `main`; la session suivante doit re-vérifier le nouvel intégré et sa CI au SHA exact. Une seule PR de recherche indépendante #327 demeure ouverte au checkpoint, et #317/#323 restent ouvertes.
+
 > **Cette section est la consigne active la plus récente** et prime les passages anciens de ce fichier. Les SHA et numéros de CI ci-dessous sont des points de preuve historiques, jamais des cibles de reset, checkout destructif ou fusion. **Relire GitHub live** en commençant la nouvelle session. Ce fichier est documentaire et n'autorise aucune action sur un PC.
 
 ### PROMPT COMPLET À COPIER DANS LE NOUVEAU CHAT
