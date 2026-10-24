@@ -271,8 +271,7 @@ impl SessionLifecycleManager {
         let revoked_approvals = approval_result?;
         let revoked_reusable_approvals = reusable_approval_result?;
         let revoked_leases = lease_result?;
-        let cancellation_requests = immediate_process_result?
-            .saturating_add(late_process_result?);
+        let cancellation_requests = immediate_process_result?.saturating_add(late_process_result?);
 
         Ok(SessionRevokeReport {
             session_changed,
