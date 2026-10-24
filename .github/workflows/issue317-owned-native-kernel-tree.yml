@@ -53,3 +53,9 @@ jobs:
         run: |
           echo "OPTIC317_REPEATED_OBSERVATION sha=${GITHUB_SHA} fault=injected-repeated query-count=4 recovery=test-only production-fix=false"
           cargo test --locked -p optic-bridge-runtime --lib repeated_native_accounting_failures_retain_owner_and_quota_before_recovery -- --nocapture --test-threads=1
+      - name: Native created-before-mark false-terminal negative control
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_PREMARK_NEGATIVE_CONTROL sha=${GITHUB_SHA} real-suspended-child=true negative-control=true production-fix=false"
+          cargo test --locked -p optic-bridge-runtime --lib unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child_negative_control -- --nocapture --test-threads=1
