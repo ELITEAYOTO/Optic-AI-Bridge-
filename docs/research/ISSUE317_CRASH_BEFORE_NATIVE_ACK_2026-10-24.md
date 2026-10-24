@@ -39,12 +39,13 @@ remains, but is NOT used to release this service's quota. The host is then ended
 by outer recovery. This is conservative quarantine in a fixture, not durable
 production recovery, bounded graceful shutdown or automatic reconciliation.
 
-With a duplicate Job, the child must still survive launcher death (outer count 2)
-before stop. A deliberately injected query failure retains Running/quota and
+With a duplicate Job, the child must still survive launcher death (outer count 2:
+service host plus one suspended synthetic child) before stop. A deliberately injected query failure retains Running/quota and
 blocks synchronous revoke; an independent close request has already returned.
 Only actual TerminateJobObject, optional process-handle exit, and a positive
 zero-members query on that accepted Job permit Stopped and admission release.
-The supervisor checks count 1 BEFORE any outer cleanup. Job-only acceptance
+The supervisor checks outer count 1 (the service host alone) BEFORE any outer
+cleanup. Job-only acceptance
 proves tree emptiness without asserting a separate root-handle exit receipt.
 
 The first-red control is deliberately synthesized: missing acceptance returns
@@ -73,11 +74,12 @@ python scripts/research/issue317_crash_transfer.py --test-exe <exact-built-libte
 - Initial prototype `c1ace797`: [CI #40052119243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052119243) **failed**. Preserve this original red checkpoint; it is not a successful research result.
 - Corrected Win32 fixture `ce11fbe8`: [CI #40052249699](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052249699) **passed**, including six externally supervised Windows schedules, rustfmt, strict Clippy and runtime library tests on the hosted matrix.
 - Workspace-check addition `ab812b26`: [CI #40052329408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052329408) **passed**, including the added Windows `cargo test --locked --workspace` step.
-- Latest tested SHA `3df5ebfd2b955b00d4041731038721c7b017f2d0`: [CI #40053510714](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053510714) **passed on attempt 1**. Ubuntu runtime library: **270 passed, 0 failed**. Windows runtime library: **355 passed, 0 failed, 13 ignored** (two fixed external-host entrypoints intentionally ignored by regular libtest). Windows full workspace validation also passed. Rustfmt and strict Clippy succeeded on both operating systems.
+- Latest source-changing checkpoint `3df5ebfd2b955b00d4041731038721c7b017f2d0`: [CI #40053510714](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053510714) **passed on attempt 1**. Ubuntu runtime library: **270 passed, 0 failed**. Windows runtime library: **355 passed, 0 failed, 13 ignored** (two fixed external-host entrypoints intentionally ignored by regular libtest). Windows full workspace validation also passed. Rustfmt and strict Clippy succeeded on both operating systems.
+- Subsequent report-only checkpoint `9d6dedf431215a41718d1611effff5b4c3f8409b`: [CI #40053843692](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053843692) **passed on attempt 1**, with both Windows and Ubuntu jobs successful. Windows again passed the six externally supervised schedules and full workspace suite. No production behavior changed in this report-only commit. These checks validate the latest previously published branch tip at the time of this audit, not the present documentation clarification commit.
 
 The latest Windows job's printed supervisor manifest contains `complete: true` and identifies the runner as `Windows-2025Server-10.0.26100-SP0`, **not a local Windows 10/11 acceptance test**. Evidence artifact `issue317-crash-evidence-3df5ebfd2b955b00d4041731038721c7b017f2d0` (artifact ID `12544656231`) was uploaded by the workflow. The six observed outcomes are:
 
-| Supervised case | Native Job duplicate accepted? | Synthetic descendants observed before outer cleanup | Result |
+| Supervised case | Native Job duplicate accepted? | Total processes in outer Job before cleanup (includes service host) | Result |
 | --- | --- | ---: | --- |
 | Negative control: `after-create` with intentionally lost guardian | No | 1 | `FirstRedGuardianLost` (expected test counterexample, **not** a discovered production incident) |
 | `before-create` | No | 1 | `PendingNoNativeReceipt` |
@@ -86,7 +88,7 @@ The latest Windows job's printed supervisor manifest contains `complete: true` a
 | `job-only` | Yes | 2 | `GuardianJobEmptyProven` |
 | `accepted-before-ack` | Yes | 2 | `GuardianJobEmptyProven` |
 
-The counts are the **outer supervisor's** independent synthetic process accounting before it performs emergency outer cleanup. In the no-native-receipt cases, the in-process guardian retains the original admission and quota and **does not** publish a false terminal result; the supervisor must eventually end the entire synthetic service host. This is quarantine, **not** a service liveness fix. In the accepted-native-Job cases, a real positive inner-Job observation authorizes native terminal publication and resource release; the outer Job does not manufacture this proof.
+The counts are the **outer supervisor's** independent process accounting before it performs emergency outer cleanup: **1 = service host only; 2 = service host plus one synthetic child**. They are *not* counts of descendants alone. In the no-native-receipt cases, the in-process guardian retains the original admission and quota and **does not** publish a false terminal result; the supervisor must eventually end the entire synthetic service host. This is quarantine, **not** a service liveness fix. In the accepted-native-Job cases, a real positive inner-Job observation authorizes native terminal publication and resource release; the outer Job does not manufacture this proof.
 
 The earlier first-red failure, the absence of a receipt, and the positive accepted-Job proofs are distinct evidence categories. A green CI means the **expected scenario assertions** passed, not that all crash paths are production-safe. No broad research merge or V1 GO is authorized.
 
@@ -95,7 +97,9 @@ The earlier first-red failure, the absence of a receipt, and the positive accept
 Prefer a service owner that already holds the admission, registration and native
 Job before delegating child creation. Cross-process handoff must define durable
 acceptance, duplicate ownership, acknowledgement loss, partial handle delivery,
-and reconciliation for inaccessible source handles. Crash-before-create with
+and reconciliation for inaccessible source handles. The scheduled crash points
+bracket ownership transitions, but do not exhaust every native-call interruption
+or failure path. Crash-before-create with
 conservative prearm illustrates retained capacity without a recoverable native
 receipt. An offer or timeout cannot resolve that ambiguity. A service process
 crash additionally needs external durable quarantine/accounting; this fixture's
