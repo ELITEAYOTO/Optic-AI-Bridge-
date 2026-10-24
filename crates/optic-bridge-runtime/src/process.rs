@@ -743,6 +743,25 @@ impl ProcessManager {
         Ok(changed)
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_stop_requested(
+        &self,
+        session: &SessionHandle,
+        job: &JobId,
+    ) -> Result<bool, ProcessError> {
+        // Observe the real per-job stop flag without changing it. This is test-only,
+        // owner-scoped, and does not infer or publish native termination proof.
+        let store = self
+            .jobs
+            .lock()
+            .map_err(|_| ProcessError::StateUnavailable)?;
+        let record = store.jobs.get(job).ok_or(ProcessError::UnknownJob)?;
+        if &record.owner != session {
+            return Err(ProcessError::UnknownJob);
+        }
+        Ok(record.stop_requested.load(Ordering::Acquire))
+    }
+
     pub(crate) fn active_session_job_count(
         &self,
         session: &SessionHandle,
