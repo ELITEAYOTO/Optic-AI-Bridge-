@@ -159,7 +159,11 @@ impl HardenedCommandRunner {
             })
             .transpose()?;
 
-        if timed_out {
+        // The direct child can exit before descendants release inherited stdio.
+        // Finishing a blocking pipe join after the deadline is not success.
+        // This corrects the reported outcome; bounding those joins still
+        // requires owned process-tree and pipe lifecycle work (issue #317).
+        if timed_out || started.elapsed() >= self.timeout {
             return Err(HardenedCommandError::TimedOut);
         }
         if exceeded.load(Ordering::Acquire) {
