@@ -50,6 +50,8 @@ enum OwnerError {
     MissingPayload,
     #[error("native owner observation in progress")]
     ObservationBusy,
+    #[error("prepared native owner does not match session stop signals or was already started")]
+    UnboundNativeOwner,
     #[error("session was revoked before owner adoption")]
     Revoked,
     #[error(transparent)]
@@ -206,11 +208,20 @@ impl NativeGitOwners {
         if record.native.is_some() {
             return Err(OwnerError::AlreadyAdopted);
         }
-        if record.stop.load(Ordering::Acquire) || record.revoked.load(Ordering::Acquire) {
-            return Err(OwnerError::Revoked);
+        // Adopting an *unstarted* native owner is cleanup ownership, NOT
+        // authorization to launch. Even after revoke, it must be possible to
+        // retain and prove the no-spawn Job/EOF receipt before releasing the
+        // counted service admission. Accept ONLY the exact pre-reserved stop
+        // atomics so a substituted owner cannot ignore revocation.
+        let native = owner.as_ref().ok_or(OwnerError::MissingPayload)?;
+        if !native.matches_unstarted_owner_signals(&record.stop, &record.revoked) {
+            return Err(OwnerError::UnboundNativeOwner);
+        }
+        if record.revoked.load(Ordering::Acquire) {
+            record.stop.store(true, Ordering::Release);
         }
         // Check all fallible conditions before taking the caller-owned value.
-        let native = owner.take().ok_or(OwnerError::MissingPayload)?;
+        let native = owner.take().expect("prepared owner already validated");
         record.native = Some(Arc::new(Mutex::new(native)));
         Ok(())
     }
