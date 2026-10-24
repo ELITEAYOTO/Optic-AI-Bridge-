@@ -104,7 +104,9 @@ fn externally_supervised_stdin_eof_deadline_reproduction() {
     let started = Instant::now();
     loop {
         if let Some(status) = host.try_wait().expect("poll fixture host") {
-            let output = host.wait_with_output().expect("capture bounded host output");
+            let output = host
+                .wait_with_output()
+                .expect("capture bounded host output");
             assert!(
                 status.success(),
                 "synthetic stdin fixture failed: stdout={} stderr={}",
