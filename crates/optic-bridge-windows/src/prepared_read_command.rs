@@ -471,6 +471,18 @@ mod tests {
                 .contains("OPTIC317_PREPARED_DESCENDANT_STARTED"),
             "descendant must be positively observed before any ownership claim"
         );
+        println!(
+            "ISSUE317_PREPARED_NATIVE_EVIDENCE root={:?} cancelled={} deadline_expired={} active_after_terminal={} out_eof={} err_eof={} elapsed_ms={} descendant_marked={}",
+            outcome.status,
+            outcome.cancelled,
+            outcome.deadline_expired,
+            owner.job.active_processes().expect("native Job accounting"),
+            owner.out_eof,
+            owner.err_eof,
+            started.elapsed().as_millis(),
+            String::from_utf8_lossy(&outcome.stdout)
+                .contains("OPTIC317_PREPARED_DESCENDANT_STARTED")
+        );
         assert!(
             !outcome.is_success(),
             "root success while owned descendants are cancelled cannot count as operation success"
