@@ -68,9 +68,27 @@ cargo test --locked -p optic-bridge-runtime --lib;
 cargo test --locked -p optic-bridge-runtime --lib --no-run --message-format=json;
 python scripts/research/issue317_crash_transfer.py --test-exe <exact-built-libtest> --output crash-evidence.
 
-Results are pending until actual hosted logs/manifest are inspected. Expected
-outcomes in source are assertions, not measurements. First failures must remain
-visible; no security control, lockfile or test gate may be relaxed.
+### Hosted evidence verified on exact SHAs
+
+- Initial prototype `c1ace797`: [CI #40052119243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052119243) **failed**. Preserve this original red checkpoint; it is not a successful research result.
+- Corrected Win32 fixture `ce11fbe8`: [CI #40052249699](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052249699) **passed**, including six externally supervised Windows schedules, rustfmt, strict Clippy and runtime library tests on the hosted matrix.
+- Workspace-check addition `ab812b26`: [CI #40052329408](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40052329408) **passed**, including the added Windows `cargo test --locked --workspace` step.
+- Latest tested SHA `3df5ebfd2b955b00d4041731038721c7b017f2d0`: [CI #40053510714](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40053510714) **passed on attempt 1**. Ubuntu runtime library: **270 passed, 0 failed**. Windows runtime library: **355 passed, 0 failed, 13 ignored** (two fixed external-host entrypoints intentionally ignored by regular libtest). Windows full workspace validation also passed. Rustfmt and strict Clippy succeeded on both operating systems.
+
+The latest Windows job's printed supervisor manifest contains `complete: true` and identifies the runner as `Windows-2025Server-10.0.26100-SP0`, **not a local Windows 10/11 acceptance test**. Evidence artifact `issue317-crash-evidence-3df5ebfd2b955b00d4041731038721c7b017f2d0` (artifact ID `12544656231`) was uploaded by the workflow. The six observed outcomes are:
+
+| Supervised case | Native Job duplicate accepted? | Synthetic descendants observed before outer cleanup | Result |
+| --- | --- | ---: | --- |
+| Negative control: `after-create` with intentionally lost guardian | No | 1 | `FirstRedGuardianLost` (expected test counterexample, **not** a discovered production incident) |
+| `before-create` | No | 1 | `PendingNoNativeReceipt` |
+| `after-create` | No | 1 | `PendingNoNativeReceipt` |
+| `offered` without acceptance | No | 1 | `PendingNoNativeReceipt` |
+| `job-only` | Yes | 2 | `GuardianJobEmptyProven` |
+| `accepted-before-ack` | Yes | 2 | `GuardianJobEmptyProven` |
+
+The counts are the **outer supervisor's** independent synthetic process accounting before it performs emergency outer cleanup. In the no-native-receipt cases, the in-process guardian retains the original admission and quota and **does not** publish a false terminal result; the supervisor must eventually end the entire synthetic service host. This is quarantine, **not** a service liveness fix. In the accepted-native-Job cases, a real positive inner-Job observation authorizes native terminal publication and resource release; the outer Job does not manufacture this proof.
+
+The earlier first-red failure, the absence of a receipt, and the positive accepted-Job proofs are distinct evidence categories. A green CI means the **expected scenario assertions** passed, not that all crash paths are production-safe. No broad research merge or V1 GO is authorized.
 
 ## Residual risk and architecture
 
