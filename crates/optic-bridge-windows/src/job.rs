@@ -692,9 +692,8 @@ mod native_error_regression {
     }
     #[test]
     fn win32_hresult_24_preserves_win32_code() {
-        let native = windows::core::Error::from(
-            windows::Win32::Foundation::WIN32_ERROR(24).to_hresult(),
-        );
+        let native =
+            windows::core::Error::from(windows::Win32::Foundation::WIN32_ERROR(24).to_hresult());
         assert_eq!(job_query_io_error(native).raw_os_error(), Some(24));
     }
 
