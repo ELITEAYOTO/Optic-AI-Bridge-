@@ -1421,8 +1421,20 @@ async fn monitor_child(
             // and a successful request is not sufficient evidence that it is dead. In both cases
             // require bounded OS confirmation before releasing process ownership.
             let kill_request = child.start_kill();
+            #[cfg(all(test, windows))]
+            let confirmation_started = Instant::now();
             let confirmation =
                 wait_for_termination_confirmation(child.wait(), TERMINATION_CONFIRM_TIMEOUT).await;
+            // Research-only phase evidence: no runtime log, API or status change.
+            // The original CI assertion must still reject an uncertain timeout.
+            #[cfg(all(test, windows))]
+            if reason == ProcessStatus::TimedOut {
+                eprintln!(
+                    "OPTIC_317_TIMEOUT_DIAGNOSTIC reason={reason:?} kill_request={kill_request:?} confirmed={} confirmation_ms={}",
+                    confirmation.is_some(),
+                    confirmation_started.elapsed().as_millis()
+                );
+            }
             match (kill_request, confirmation) {
                 (_, Some(exit)) => break (reason, exit.code()),
                 (Ok(()), None) | (Err(_), None) => {
@@ -1506,7 +1518,23 @@ async fn wait_for_termination_confirmation<F>(wait: F, timeout: Duration) -> Opt
 where
     F: Future<Output = std::io::Result<ExitStatus>>,
 {
-    match tokio::time::timeout(timeout, wait).await {
+    let observation = tokio::time::timeout(timeout, wait).await;
+    // Research-only diagnostic to distinguish a real wait error from an
+    // elapsed confirmation budget. Neither outcome proves native quiescence.
+    #[cfg(all(test, windows))]
+    match &observation {
+        Ok(Ok(_)) => eprintln!("OPTIC_317_CONFIRMATION_PHASE positive_root_and_job_receipt"),
+        Ok(Err(error)) => eprintln!(
+            "OPTIC_317_CONFIRMATION_PHASE wait_error kind={:?} os_code={:?}",
+            error.kind(),
+            error.raw_os_error()
+        ),
+        Err(_) => eprintln!(
+            "OPTIC_317_CONFIRMATION_PHASE wait_budget_elapsed_ms={}",
+            timeout.as_millis()
+        ),
+    }
+    match observation {
         Ok(Ok(status)) => Some(status),
         Ok(Err(_)) | Err(_) => None,
     }
