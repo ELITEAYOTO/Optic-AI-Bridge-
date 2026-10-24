@@ -809,3 +809,161 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn transferred_native_job_remains_owned_after_creator_exits() {
+    // Research-only successful ownership transfer, not a crash-atomic handoff.
+    // A separate short-lived launcher creates the actual native child; the
+    // guardian owns the counted admission and JobStore reservation first,
+    // then receives BOTH Win32 Job and child handles before launcher exit.
+    const FAILED_OBSERVATIONS: usize = 3;
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let launcher_root = root.clone();
+    let job = ResearchKernelJob::prepare().expect("precreate real native Job");
+
+    let (launch_tx, launch_rx) = mpsc::sync_channel(1);
+    let (handoff_tx, handoff_rx) = mpsc::sync_channel(1);
+    let (accepted_tx, accepted_rx) = mpsc::sync_channel(1);
+    let (fault_tx, fault_rx) = mpsc::sync_channel(1);
+    let (retry_tx, retry_rx) = mpsc::sync_channel(1);
+
+    let guardian = thread::spawn(move || {
+        let mut reservation = reservation;
+        let receipt = owned
+            .research_commit_registered_owner(&reservation, now)
+            .expect("real admission commits original registered owner");
+        let stop = owned.stop_watch();
+        drop(receipt);
+        reservation.mark_native_created();
+        launch_tx
+            .send(())
+            .expect("prearmed accounting precedes native launch");
+        let (job, child): (ResearchKernelJob, ResearchSuspendedChild) = handoff_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("bounded transfer of both real native handles");
+        assert_eq!(job.active().unwrap(), 1);
+        accepted_tx
+            .send(())
+            .expect("service guardian acknowledges resource acceptance");
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while !stop.is_stop_required_at(now) {
+            assert!(Instant::now() < until, "original stop signal missing");
+            thread::yield_now();
+        }
+        job.terminate().expect("terminate the exact transferred Job");
+        child.await_exit().expect("transferred root process exited");
+        for _ in 0..FAILED_OBSERVATIONS {
+            assert!(
+                job.observe_active_with_injected_failure(true).is_err(),
+                "native observation failure is not empty-Job proof"
+            );
+            fault_tx.send(()).expect("guardian remains supervised");
+            retry_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("bounded synthetic observation gate");
+        }
+        assert_eq!(
+            job.observe_active_with_injected_failure(false)
+                .expect("real positive observation for controlled cleanup"),
+            0
+        );
+        reservation.finish(ProcessStatus::Stopped, None);
+        drop(reservation);
+        drop(child);
+        drop(job);
+        drop(owned);
+    });
+    let launcher = thread::spawn(move || {
+        launch_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("service prearms before CreateProcessW");
+        let child = ResearchSuspendedChild::create(&job, &launcher_root)
+            .expect("only fixed synthetic libtest is created suspended");
+        assert_eq!(job.active().unwrap(), 1);
+        handoff_tx
+            .send((job, child))
+            .expect("transfer native handles to service guardian");
+        // No native handle or quota is owned by the launcher after send.
+    });
+
+    accepted_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("guardian accepted both kernel handles");
+    launcher.join().expect("native creating worker has fully exited");
+    assert!(
+        !guardian.is_finished(),
+        "guardian survives the process-creating worker"
+    );
+    assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+    assert!(
+        registry
+            .research_request_close_without_drain(&a.handle)
+            .unwrap()
+    );
+    assert!(matches!(
+        registry.begin_owned_admission(&a.handle, now),
+        Err(crate::SessionRegistryError::Revoked)
+    ));
+    let draining_registry = Arc::clone(&registry);
+    let draining_handle = a.handle.clone();
+    let (drained_tx, drained_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        drained_tx
+            .send(draining_registry.revoke(&draining_handle))
+            .unwrap();
+    });
+    for _ in 0..FAILED_OBSERVATIONS {
+        fault_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("native guardian still retains uncertainty");
+        assert!(!guardian.is_finished());
+        assert!(matches!(
+            drained_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            manager.result(&a.handle, &job_id).unwrap().status,
+            ProcessStatus::Running,
+            "no terminal publication from termination request or failed query"
+        );
+        assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&a.handle, &action)
+                .unwrap(),
+            Some(job_id.clone())
+        );
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(crate::SessionRegistryError::AdmissionsInFlight)
+        ));
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        retry_tx.send(()).unwrap();
+    }
+    guardian
+        .join()
+        .expect("service guardian joined after real Job-empty observation");
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Stopped
+    );
+    assert!(
+        !drained_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("drain follows native proof")
+            .expect("revoke result"),
+        "early close already published the stop request"
+    );
+    closer.join().unwrap();
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
