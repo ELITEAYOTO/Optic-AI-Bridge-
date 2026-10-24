@@ -1,0 +1,47 @@
+name: Command deadline result classification
+on:
+  push:
+    branches: ['fix/317-reject-late-command-success']
+permissions:
+  contents: read
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Exact source and pinned Rust
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+          rustc +1.99.0 -Vv
+      - name: Format and strict Clippy
+        shell: bash
+        run: |
+          if ! cargo +1.99.0 fmt --all -- --check; then
+            cargo +1.99.0 fmt --all
+            python -c "import base64,pathlib; print(\u0027OPTIC317_FORMATTED_SOURCE \u0027+base64.b64encode(pathlib.Path(\u0027crates/optic-bridge-runtime/tests/issue317_late_completion.rs\u0027).read_bytes()).decode())"
+            exit 1
+          fi
+          cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
+      - name: Build fixed integration host
+        shell: bash
+        run: cargo +1.99.0 test --locked -p optic-bridge-runtime --test issue317_late_completion --no-run --message-format=json > build.jsonl
+      - name: Supervised classification and unchanged error precedence
+        shell: bash
+        run: python scripts/research/supervise_late_completion.py --build-json build.jsonl --output deadline-evidence
+      - name: Preserve first failures and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deadline-evidence-${{ matrix.os }}
+          path: deadline-evidence/
+          if-no-files-found: warn
+          retention-days: 14
