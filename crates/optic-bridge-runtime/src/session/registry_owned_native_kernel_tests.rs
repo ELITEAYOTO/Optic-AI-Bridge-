@@ -486,3 +486,145 @@ fn prearmed_creation_without_child_retains_uncertain_quota_until_reconciliation(
     drop(manager);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn close_request_returns_before_native_quiescence_while_owner_and_quota_remain_retained() {
+    // This proves a test-only CLOSE operation can return before the real
+    // counted admission drains. It cannot be used as a terminal Job receipt.
+    const FAILED_OBSERVATIONS: usize = 3;
+    let registry = Arc::new(SessionRegistry::new());
+    let a = grant();
+    let b = grant();
+    registry.register(a.clone()).unwrap();
+    registry.register(b.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owned = registry.begin_owned_admission(&a.handle, now).unwrap();
+    let watcher = owned.stop_watch();
+    let (root, manager, reservation, action) = reserve(&a.handle);
+    let job_id = reservation.id();
+    let worker_root = root.clone();
+
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (fault_tx, fault_rx) = mpsc::sync_channel(1);
+    let (continue_tx, continue_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        let job = ResearchKernelJob::prepare().expect("precreate exact native Job");
+        let mut reservation = reservation;
+        let receipt = owned
+            .research_commit_registered_owner(&reservation, now)
+            .expect("registered owner committed before close");
+        let stop = owned.stop_watch();
+        let child = ResearchSuspendedChild::create(&job, &worker_root)
+            .expect("fixed synthetic child assigned at native creation");
+        drop(receipt);
+        reservation.mark_native_created();
+        assert_eq!(job.active().unwrap(), 1);
+        ready_tx.send(()).unwrap();
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while !stop.is_stop_required_at(now) {
+            assert!(Instant::now() < until, "close signal did not arrive");
+            thread::yield_now();
+        }
+        job.terminate().expect("request termination of exact owned Job");
+        child.await_exit().expect("root exit still does not prove Job empty");
+        for _ in 0..FAILED_OBSERVATIONS {
+            assert!(
+                job.observe_active_with_injected_failure(true).is_err(),
+                "injected query failure must never be mistaken for Job-empty"
+            );
+            fault_tx.send(()).unwrap();
+            continue_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("bounded independent supervisor observation");
+        }
+
+        assert_eq!(
+            job.observe_active_with_injected_failure(false)
+                .expect("fixture-only positive native Job observation"),
+            0
+        );
+        reservation.finish(ProcessStatus::Stopped, None);
+        drop(reservation);
+        drop(child);
+        drop(job);
+        drop(owned);
+    });
+
+    ready_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("worker owns an actual suspended Job member before close");
+    assert!(
+        registry.research_request_close_without_drain(&a.handle).unwrap(),
+        "initial close must change the session generation"
+    );
+    assert!(
+        watcher.is_stop_required_at(now),
+        "original-generation worker must observe stop before drain"
+    );
+    assert!(
+        !registry.research_request_close_without_drain(&a.handle).unwrap(),
+        "repeated stop publication is idempotent"
+    );
+    assert!(matches!(
+        registry.begin_owned_admission(&a.handle, now),
+        Err(crate::SessionRegistryError::Revoked)
+    ));
+
+    let closer_registry = Arc::clone(&registry);
+    let closer_handle = a.handle.clone();
+    let (drained_tx, drained_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        drained_tx
+            .send(closer_registry.revoke(&closer_handle))
+            .unwrap();
+    });
+
+    for _ in 0..FAILED_OBSERVATIONS {
+        fault_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("worker observed close despite retained admission");
+        assert!(
+            matches!(drained_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "ordinary synchronous revoke is still waiting on the real owner"
+        );
+        assert_eq!(
+            manager.result(&a.handle, &job_id).unwrap().status,
+            ProcessStatus::Running,
+            "native uncertainty cannot publish a terminal result"
+        );
+        assert_eq!(
+            manager.active_session_job_count(&a.handle).unwrap(),
+            1,
+            "native uncertainty cannot return a quota"
+        );
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&a.handle, &action)
+                .unwrap(),
+            Some(job_id.clone())
+        );
+        assert!(matches!(
+            registry.remove_quiescent_inactive(&a.handle, now),
+            Err(crate::SessionRegistryError::AdmissionsInFlight)
+        ));
+        assert!(registry.get_active(&b.handle, now).is_ok());
+        continue_tx.send(()).unwrap();
+    }
+
+    worker.join().expect("owner cleaned up after genuine empty-Job proof");
+    assert_eq!(
+        manager.result(&a.handle, &job_id).unwrap().status,
+        ProcessStatus::Stopped
+    );
+    assert!(
+        !drained_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("normal revoke drains after the owner releases its admission")
+            .expect("synchronous revoke result"),
+        "the prior close already published the generation's revoked bit"
+    );
+    closer.join().unwrap();
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+}
