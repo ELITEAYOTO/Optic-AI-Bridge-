@@ -386,6 +386,17 @@ mod tests {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
         let _owned_descendant = descendant.spawn().expect("spawn disposable descendant");
+        let gate = std::path::PathBuf::from(
+            env::var_os("OPTIC317_PREPARED_GATE").expect("synthetic handshake path"),
+        );
+        let until = Instant::now() + Duration::from_millis(1000);
+        while !gate.is_file() {
+            assert!(
+                Instant::now() < until,
+                "descendant did not confirm it had started"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
         println!("OPTIC317_PREPARED_ROOT_EXITED");
         std::io::stdout().flush().expect("flush synthetic root output");
         std::process::exit(0);
@@ -397,6 +408,14 @@ mod tests {
             return;
         }
         println!("OPTIC317_PREPARED_DESCENDANT_STARTED");
+        std::io::stdout()
+            .flush()
+            .expect("flush synthetic descendant output");
+        let gate = std::path::PathBuf::from(
+            env::var_os("OPTIC317_PREPARED_GATE").expect("synthetic handshake path"),
+        );
+        fs::write(&gate, b"synthetic descendant confirmed alive")
+            .expect("write disposable synthetic gate");
         thread::sleep(Duration::from_millis(2500));
     }
 
@@ -405,10 +424,15 @@ mod tests {
         let mut owner = PreparedReadCommand::prepare(
             LimitedJobObject::new(4, 512 * 1024 * 1024, 25).expect("limits"),
             16 * 1024,
-            200,
+            1600,
             vec![],
         )
         .expect("prepare before child spawn");
+        let gate = env::temp_dir().join(format!(
+            "optic317-prepared-native-descendant-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&gate);
         let mut command = Command::new(env::current_exe().expect("test fixture executable"));
         command
             .args([
@@ -417,7 +441,8 @@ mod tests {
                 "--nocapture",
             ])
             .env_clear()
-            .env("OPTIC317_PREPARED_ROOT", "1");
+            .env("OPTIC317_PREPARED_ROOT", "1")
+            .env("OPTIC317_PREPARED_GATE", &gate);
         if let Some(root) = env::var_os("SystemRoot") {
             command.env("SystemRoot", root);
         }
@@ -425,19 +450,24 @@ mod tests {
         owner.start(&mut command).expect("suspended contained root");
         while !owner.poll_terminal().expect("native Job/pipe observation") {
             assert!(
-                started.elapsed() < Duration::from_millis(1200),
-                "native Job/pipes not confirmed within bounded safety margin"
+                started.elapsed() < Duration::from_millis(2100),
+                "native Job/pipes not confirmed before synthetic descendant's 2500ms natural exit"
             );
             thread::sleep(Duration::from_millis(5));
         }
         let outcome = owner.take_outcome().expect("native terminal evidence");
         assert!(
-            started.elapsed() < Duration::from_millis(1200),
+            started.elapsed() < Duration::from_millis(2100),
             "retained synthetic child exceeded controlled deadline"
         );
         assert!(
             String::from_utf8_lossy(&outcome.stdout).contains("OPTIC317_PREPARED_ROOT_EXITED"),
             "root fixture did not demonstrate a successful early exit"
+        );
+        assert!(
+            String::from_utf8_lossy(&outcome.stdout)
+                .contains("OPTIC317_PREPARED_DESCENDANT_STARTED"),
+            "descendant must be positively observed before any ownership claim"
         );
         assert!(
             !outcome.is_success(),
@@ -447,6 +477,7 @@ mod tests {
             outcome.cancelled || outcome.deadline_expired,
             "native stop or hard deadline must be visible in terminal evidence"
         );
+        fs::remove_file(gate).expect("remove synthetic gate marker");
     }
 
     #[test]
