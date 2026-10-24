@@ -419,6 +419,167 @@ mod tests {
         revoker.join().expect("join revoke");
     }
 
+    // Spawned only inside the synthetic, service-owned Windows Job. This is
+    // not a GitRead or arbitrary executable path, and it performs no I/O to
+    // user projects, network, secrets or external process IDs.
+    #[test]
+    fn owned_native_running_child_fixture() {
+        if std::env::var_os("OPTIC317_LEDGER_CHILD").is_none() {
+            return;
+        }
+        use std::io::Write;
+        println!("OPTIC317_LEDGER_CHILD_ACTUALLY_RUNNING");
+        std::io::stdout().flush().expect("synthetic child flush");
+        let path = std::path::PathBuf::from(
+            std::env::var_os("OPTIC317_LEDGER_STARTED").expect("synthetic startup marker"),
+        );
+        std::fs::write(path, b"alive before revoke").expect("mark synthetic child running");
+        thread::sleep(Duration::from_secs(5));
+    }
+
+    #[test]
+    fn live_native_owner_survives_revoke_until_job_empty_and_pipe_eof() {
+        use std::{env, process::Command};
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("live-owned-process");
+        sessions.register(grant.clone()).expect("register synthetic session");
+        let now = MonotonicTime::from_millis(1);
+        let owners = ledger();
+        let id = owners
+            .reserve(&sessions, &grant.handle, now, budget())
+            .expect("reserve counted owner before native creation");
+        let signals = owners
+            .stop_signals(id, &grant.handle)
+            .expect("obtain independent stop signals");
+
+        let mut native = Some(
+            PreparedReadCommand::prepare(
+                LimitedJobObject::new(1, budget().memory, budget().cpu).expect("native limits"),
+                budget().output as usize,
+                8_000,
+                signals,
+            )
+            .expect("allocate native Job and pipes before child creation"),
+        );
+        owners
+            .adopt(id, &grant.handle, &mut native)
+            .expect("adopt prepared native resources before spawn");
+        assert!(native.is_none());
+
+        let gate = env::temp_dir().join(format!(
+            "optic317-service-ledger-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&gate);
+        let mut command = Command::new(env::current_exe().expect("synthetic test executable"));
+        command
+            .args([
+                "--exact",
+                "git_owner_registry::tests::owned_native_running_child_fixture",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("OPTIC317_LEDGER_CHILD", "1")
+            .env("OPTIC317_LEDGER_STARTED", &gate);
+        if let Some(system_root) = env::var_os("SystemRoot") {
+            command.env("SystemRoot", system_root);
+        }
+        owners
+            .with_owner(id, &grant.handle, |owner| owner.start(&mut command))
+            .expect("registered owner for native spawn");
+
+        let started = Instant::now();
+        while !gate.is_file() {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "owned synthetic child did not confirm its live execution"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let active_before_revoke = owners
+            .with_owner(id, &grant.handle, |owner| owner.native_active_processes())
+            .expect("native Job accounting before revoke");
+        let pending_before_revoke = owners
+            .reap_terminal(id, &grant.handle)
+            .expect("native owner still running")
+            .is_none();
+        let reservation_before_revoke = owners
+            .outstanding(&grant.handle)
+            .expect("counted budget retained");
+
+        let (tx, rx) = mpsc::channel();
+        let revoked_sessions = Arc::clone(&sessions);
+        let revoked_handle = grant.handle.clone();
+        let revoker = thread::spawn(move || {
+            tx.send(revoked_sessions.revoke(&revoked_handle))
+                .expect("send completed revoke");
+        });
+
+        let observing = Instant::now();
+        while !owners.stop_signals(id, &grant.handle).expect("stop signals")[1]
+            .load(Ordering::Acquire)
+        {
+            assert!(
+                observing.elapsed() < Duration::from_secs(2),
+                "native owner did not see session revoke"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let admission_still_blocks_revoke =
+            matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let reservation_during_revoke = owners
+            .outstanding(&grant.handle)
+            .expect("hold reservation until native receipt");
+
+        let stopping = Instant::now();
+        let outcome = loop {
+            if let Some(receipt) = owners
+                .reap_terminal(id, &grant.handle)
+                .expect("native terminal observation")
+            {
+                break receipt;
+            }
+            assert!(
+                stopping.elapsed() < Duration::from_secs(3),
+                "owned native termination and EOF not confirmed in finite time"
+            );
+            thread::sleep(Duration::from_millis(5));
+        };
+
+        let reservation_after_proof = owners
+            .outstanding(&grant.handle)
+            .expect("native confirmed release");
+        let revoke_result = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("session revoke must complete after native receipt")
+            .expect("session registry revoke");
+        revoker.join().expect("join revoke worker");
+        let _ = std::fs::remove_file(&gate);
+
+        // Assert collected evidence after the revoker has been joined.
+        assert_eq!(active_before_revoke, 1, "actual native Job member required");
+        assert!(pending_before_revoke, "running native child is not terminal");
+        assert_eq!(reservation_before_revoke, 1);
+        assert!(admission_still_blocks_revoke);
+        assert_eq!(reservation_during_revoke, 1);
+        assert!(
+            stopping.elapsed() < Duration::from_secs(5),
+            "native cancellation must precede synthetic 5-second natural exit"
+        );
+        assert!(outcome.cancelled && !outcome.is_success());
+        assert!(!outcome.deadline_expired, "external revoke, not 8s deadline");
+        assert!(outcome.status.is_some(), "owned native root must be observed");
+        assert!(
+            String::from_utf8_lossy(&outcome.stdout)
+                .contains("OPTIC317_LEDGER_CHILD_ACTUALLY_RUNNING")
+        );
+        assert_eq!(reservation_after_proof, 0);
+        assert!(revoke_result);
+    }
+
     #[test]
     fn reservation_rejects_cross_session_access_and_preserves_capacity() {
         let sessions = Arc::new(SessionRegistry::new());
