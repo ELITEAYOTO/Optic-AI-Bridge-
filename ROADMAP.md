@@ -1,5 +1,21 @@
 # Delivery roadmap
 
+## Updated sequencing — 24 Oct 2026 after physical Windows 10 validation / Codex recovery procedure
+
+**Release gate remains NO-GO:** #317 and #323 open. Production `main=dce94cc02f178d91b1eec4dc06134ab57df47ff6` after docs-only #343; confirm latest independent push/main CI [#40075855681](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40075855681) on its exact SHA. Earlier red Windows [#40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) (`TerminationUncertain` instead of `TimedOut`) must remain visible regardless of newer green research jobs. [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) is an independent unmerged owner experiment.
+
+1. **P0 native uncertainty / owner authority (#317):** distinguish root wait, root exit + Job nonempty, query failure with preserved Win32 code, and proven root + Job-empty; demonstrate bounded negative observation, native owner retention, generation-bound `OwnedSessionAdmissionPermit` / `JobStore` quota, and out-of-band stop-before-draining admission. No automatic terminal publication or dropping owner when uncertain.
+2. **P0 bounded pipes / stdin (#317):** design root+Job+all pipe owners as a single auditable lifetime. Invert the already demonstrated regression evidence from closed research [#339 stdout/stderr](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/339) and [#341 stdin/EOF](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/341) into *correctness* tests before a minimal reviewed production change. No detached readers/writers or timeout-only “clean” result.
+3. **P0 owner loss / shutdown:** prove crash/guardian loss and restart reconciliation with true native processes and positive OS quiescence. Research #340 and physical Windows 10 #342 verified **normal paths**, not permanent observation failure. Preserve original failed main CI and all negative outcomes.
+4. **P0 sensitive Git authorization (#176/#182):** repo/exe/provenance, task leases, secrets/aliases, deterministic GitRead policy after native owner contract proven. Do not wire the entirety of PR #327 into production.
+5. **P1 startup / isolation (#185/#319):** real AppContainer/Node and first MCP response controls, kept separate from #317.
+6. **V1 freeze (#323):** real Windows 10/11 acceptance, offline installer, update/rollback, exact-integrated-main CI and emergency procedures; V1 only GO after independently demonstrated security/availability gates.
+
+**Operational (not production):** docs-only [PR #343](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/343) added [Codex interruption recovery](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md) to preserve checkpoints across interrupted assistant sessions. The procedure cannot override security blocks or survive same-disk failure by itself. Local snapshot reports are not remote CI evidence. Do not create competing handoff documents; use [this 24 Oct canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).
+
+---
+
+
 ## Updated priority after ten hosted native crash scenarios — 24 Oct 2026
 
 Latest researched and verified **unmerged** code: `research/317-failed-native-create-2026-10-24@b5a91dee`, exact [CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887) fully green with **ten** native externally supervised Windows scenarios. Production `main=16ca67a7` remained unchanged at this checkpoint; **#317/#323 OPEN, V1 NO-GO**. See [latest handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) for the research matrix, negative controls and semantics.
