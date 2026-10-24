@@ -1,0 +1,40 @@
+name: Issue 317 late-pipe result regression
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-runtime/src/hardened_command.rs'
+      - 'crates/optic-bridge-runtime/tests/issue317_late_pipe_completion.rs'
+      - '.github/workflows/issue-317-late-pipe-result.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-fixtures:
+    name: Late pipe result / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          echo "ISSUE317_TEST_SOURCE_SHA=$(git rev-parse HEAD)"
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Check format
+        run: cargo fmt --all -- --check
+      - name: Run supervised deadline-result regressions
+        run: cargo test --locked -p optic-bridge-runtime --test issue317_late_pipe_completion -- --nocapture --test-threads=1

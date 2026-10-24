@@ -159,6 +159,9 @@ impl HardenedCommandRunner {
             })
             .transpose()?;
 
+        // Preserve the reason that actually stopped the direct child: a
+        // previously detected output limit is not reclassified as a timeout
+        // merely because descendants kept inherited pipes open afterwards.
         if timed_out {
             return Err(HardenedCommandError::TimedOut);
         }
@@ -166,6 +169,13 @@ impl HardenedCommandRunner {
             return Err(HardenedCommandError::OutputLimitExceeded {
                 limit: spec.output_limit,
             });
+        }
+        // The direct child can exit before descendants release inherited stdio.
+        // Finishing a blocking pipe join after the deadline is not success.
+        // This corrects the eventual result only: bounding the joins still
+        // requires owned process-tree/pipe lifetimes (issue #317).
+        if started.elapsed() >= self.timeout {
+            return Err(HardenedCommandError::TimedOut);
         }
         if let Some(result) = input_result {
             result?;
