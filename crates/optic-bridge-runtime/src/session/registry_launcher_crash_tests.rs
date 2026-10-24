@@ -219,7 +219,7 @@ fn service_host() {
                 job=Some(accepted_job);
             }
             assert!(!path.join("ack").exists());
-            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed" | "preowned-create-failed") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned && scenario != "preowned-offer-failed","native_duplication_failed":scenario == "preowned-offer-failed","native_creation_failed":scenario == "preowned-create-failed","child_duplicate":child.is_some(),"ack_sent":false}));
+            write(path,"crash-ready",serde_json::json!({"expected_outer":if matches!(scenario.as_str(), "before-create" | "preowned-before-create" | "preowned-offer-failed" | "preowned-create-failed") {2}else{3},"job_duplicate":!preowned && job.is_some(),"job_preowned":preowned,"launcher_terminate_denied":preowned && scenario != "preowned-offer-failed","native_duplication_failed":scenario == "preowned-offer-failed","native_creation_failed":scenario == "preowned-create-failed","child_duplicate":child.is_some(),"ack_sent":false}));
             wait(||path.join("crash-confirmed").exists());
             launcher.terminate_and_wait().unwrap();
             write(path,"source-exit",serde_json::json!({"exact_owned_process_exit":true}));
