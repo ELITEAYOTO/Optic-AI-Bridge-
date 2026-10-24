@@ -377,9 +377,16 @@ mod tests {
         sessions.register(grant.clone()).expect("register");
         let owners = ledger();
         let id = owners
-            .reserve(&sessions, &grant.handle, MonotonicTime::from_millis(1), budget())
+            .reserve(
+                &sessions,
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                budget(),
+            )
             .expect("reserve counted admission before native preparation");
-        let signals = owners.stop_signals(id, &grant.handle).expect("stop/revoke watch");
+        let signals = owners
+            .stop_signals(id, &grant.handle)
+            .expect("stop/revoke watch");
         let mut prepared = Some(
             PreparedReadCommand::prepare(
                 LimitedJobObject::new(1, budget().memory, budget().cpu).expect("job"),
@@ -432,7 +439,9 @@ mod tests {
             .reap_terminal(id, &grant.handle)
             .expect("full Job and EOF no-spawn proof")
             .expect("terminal native evidence");
-        let capacity_released = owners.outstanding(&grant.handle).expect("released reservation");
+        let capacity_released = owners
+            .outstanding(&grant.handle)
+            .expect("released reservation");
         let revoke_result = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("revoke must drain after native proof")
@@ -442,7 +451,10 @@ mod tests {
         assert_eq!(held_during_revoke, 1);
         assert!(drain_pending && not_adopted && transferred && interrupted);
         assert_eq!(job_empty, 0);
-        assert!(receipt.status.is_none(), "no native root can have been created");
+        assert!(
+            receipt.status.is_none(),
+            "no native root can have been created"
+        );
         assert!(receipt.cancelled && !receipt.is_success());
         assert!(receipt.stdout.is_empty() && receipt.stderr.is_empty());
         assert_eq!(capacity_released, 0);
@@ -458,9 +470,16 @@ mod tests {
         sessions.register(grant.clone()).expect("register");
         let owners = ledger();
         let id = owners
-            .reserve(&sessions, &grant.handle, MonotonicTime::from_millis(1), budget())
+            .reserve(
+                &sessions,
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                budget(),
+            )
             .expect("reserve");
-        let signals = owners.stop_signals(id, &grant.handle).expect("owner signals");
+        let signals = owners
+            .stop_signals(id, &grant.handle)
+            .expect("owner signals");
         let unrelated = vec![
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
@@ -497,7 +516,9 @@ mod tests {
         owners
             .adopt(id, &grant.handle, &mut correctly_bound)
             .expect("adopt only exact stop/revoke identity");
-        let stopped = owners.stop_session(&grant.handle).expect("session-scoped stop");
+        let stopped = owners
+            .stop_session(&grant.handle)
+            .expect("session-scoped stop");
         let mut command = Command::new(std::env::current_exe().expect("test binary"));
         let start_rejected = matches!(
             owners.with_owner(id, &grant.handle, |native| native.start(&mut command)),
@@ -507,7 +528,9 @@ mod tests {
             .reap_terminal(id, &grant.handle)
             .expect("prove no native child and EOF")
             .expect("terminal receipt");
-        let released = owners.outstanding(&grant.handle).expect("capacity released");
+        let released = owners
+            .outstanding(&grant.handle)
+            .expect("capacity released");
 
         assert!(rejected && caller_kept_foreign && no_owner_adopted);
         assert_eq!(capacity_still_held, 1);
