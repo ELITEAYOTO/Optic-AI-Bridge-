@@ -72,3 +72,9 @@ jobs:
         run: |
           echo "OPTIC317_CLOSE_REQUEST sha=${GITHUB_SHA} native-job=true early-close=test-only uncertain-quota=retained gitread-wired=false"
           cargo test --locked -p optic-bridge-runtime --lib close_request_returns_before_native_quiescence_while_owner_and_quota_remain_retained -- --nocapture --test-threads=1
+      - name: Service-owned guardian survives submitter and uncertain shutdown
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_GUARDIAN_IN_PROCESS sha=${GITHUB_SHA} real-job=true submitter-exited=true fault=injected native-guardian=research-only host-crash-proven=false"
+          cargo test --locked -p optic-bridge-runtime --lib in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner -- --nocapture --test-threads=1
