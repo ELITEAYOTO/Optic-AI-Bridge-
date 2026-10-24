@@ -282,3 +282,69 @@ stdio ownership, stdin/EOF, bounded shutdown, or real GitRead/task-lease
 provenance. A green research CI does not authorize promotion of the
 experimental branch. Production `main` and security policies are
 unchanged; #317/#323 remain open and Windows V1 remains **NO-GO**.
+
+
+## Failed native creation with a service-preowned Job — 24 October 2026
+
+Branch `research/317-failed-native-create-2026-10-24`.
+**Validated code SHA:** `b5a91deea1b306c56a2c03de7bb5a86b699d1d6f`.
+[Hosted Windows/Ubuntu CI #40057931887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887)
+**SUCCESS on the first attempt at that exact SHA**: Rustfmt and strict Clippy
+on both platforms; Windows runtime library **355 passed, 0 failed, 13
+ignored**; Ubuntu runtime library **270 passed, 0 failed**; full
+Windows `cargo test --locked --workspace` passed. All **ten** synthetic
+externally supervised Windows schedules completed with the expected
+outcomes. The emitted manifest has `complete:true`, records
+`Windows-2025Server-10.0.26100-SP0`, and is preserved in
+[the uploaded artifact](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057931887/artifacts/12546595512).
+
+**New schedule `preowned-create-failed`:** the guardian creates and
+retains the real, resource-limited native Job, original generation-bound
+counted admission, and `JobStore` quota/identity before delegation. The
+independent fixed research launcher receives only
+`JOB_OBJECT_ASSIGN_PROCESS | JOB_OBJECT_QUERY` and proves that
+`TerminateJobObject` is denied on that restricted handle. It invokes
+the **real** `CreateProcessW` path for the exact current libtest binary,
+but with a fixture-owned working directory guaranteed absent. The
+Win32 syscall fails: the fixture accepts only a Windows
+`ERROR_DIRECTORY` or `ERROR_PATH_NOT_FOUND` HRESULT (the exact one
+returned was **not** recorded in the manifest), and verifies the
+guardian-owned Job has **zero** active processes. It does not accept a
+generic injected error as a native failure. An unexpected successful
+child creation would trigger exact-Job cleanup and fail the test.
+
+The supervisor observed **2** processes before launcher termination
+(host + launcher), **1** afterwards (host only), *before* emergency
+outer-Job cleanup. The mode delivered **no** child handle or ACK and
+published `native_creation_failed:true`, `native_duplication_failed:false`,
+`launcher_terminate_denied:true`, and `job_preowned:true`. The
+genuine guardian admission was retained, the reservation remained
+`Running`, capacity remained **1** and normal `revoke` remained
+blocked under an injected native-accounting observation failure.
+The guardian subsequently obtained a **real positive empty-Job query**
+before publishing terminal `Failed`, releasing the quota and admission,
+and joining the responsible owner. The outer supervisor did not provide
+or receive credit for the inner proof. An unrelated session remained
+usable.
+
+**First-red evidence preserved:**
+[CI #40057892808](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40057892808)
+failed strict Rustfmt for one multiline statement **before functional
+execution**. Commit `b5a91dee` applied the exact formatter change
+without changing assertions or disabling any CI/security gate.
+The success applies to that *new SHA's first attempt*, not a rerun
+of a failed SHA.
+
+**Limitations / production decision:** this tests a deterministically
+missing working directory on an authorized fixed executable, not every
+`CreateProcessW` partial-success/error condition or all possible
+Windows error codes. It is a research-only fixture with a separate
+synthetic launcher and a living service host; it does not prove
+service-host crash/restart reconciliation, permanently failed native
+observation, descendant-held stdout/stderr pipes, stdin/EOF,
+AppContainer/provenance/task leases or physical Windows 10/11
+acceptance. Research `#![forbid(unsafe_code)]` remains intact in the
+runtime; Win32 `unsafe` is confined to the Windows crate. No
+production GitRead migration, no broad research merge, no change to
+`main`, and no V1 GO. PR #327 remains independent; #317/#323 remain
+open.
