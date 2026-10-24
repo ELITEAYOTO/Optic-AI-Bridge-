@@ -410,12 +410,11 @@ mod tests {
         assert!(receipt.cancelled && receipt.status.is_none());
         assert!(!receipt.is_success());
         assert_eq!(owners.outstanding(&grant.handle).expect("released"), 0);
-        assert_eq!(
+        assert!(
             done_rx
                 .recv_timeout(Duration::from_secs(3))
                 .expect("drained session")
-                .expect("revoke"),
-            true
+                .expect("revoke")
         );
         revoker.join().expect("join revoke");
     }
