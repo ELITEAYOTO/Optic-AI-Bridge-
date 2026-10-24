@@ -211,18 +211,18 @@ impl OwnedJob {
 
 fn query_active_processes(job: HANDLE) -> Result<u32> {
     let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-        // SAFETY: the requested information class matches `accounting` and the buffer
-        // remains valid for the entire synchronous call.
-        unsafe {
-            QueryInformationJobObject(
-                Some(job),
-                JobObjectBasicAccountingInformation,
-                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast::<c_void>(),
-                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-                None,
-            )
-        }
-        .map_err(Error::other)?;
+    // SAFETY: the requested information class matches `accounting` and the buffer
+    // remains valid for the entire synchronous call.
+    unsafe {
+        QueryInformationJobObject(
+            Some(job),
+            JobObjectBasicAccountingInformation,
+            (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast::<c_void>(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
     Ok(accounting.ActiveProcesses)
 }
 
