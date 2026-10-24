@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -27,7 +29,10 @@ jobs:
       - name: Record exact synthetic test source
         shell: pwsh
         run: |
-          Write-Output "OPTIC_317_RECEIPT_SOURCE_SHA=${{ github.sha }}"
+          $expected = "${{ github.event.pull_request.head.sha }}"
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Synthetic test checkout does not match exact PR head" }
+          Write-Output "OPTIC_317_RECEIPT_SOURCE_SHA=$actual"
           Write-Output "OPTIC_317_RECEIPT_BASE_SHA=cf5a6c3f5aff7d9846106effafd52027126e3ba3"
           rustc -Vv
           [Environment]::OSVersion.VersionString
