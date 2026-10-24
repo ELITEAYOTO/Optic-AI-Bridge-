@@ -525,6 +525,116 @@ mod tests {
     }
 
     #[test]
+    fn pre_spawn_revocation_prevents_native_child_creation() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut owner = PreparedReadCommand::prepare(
+            LimitedJobObject::new(4, 512 * 1024 * 1024, 25).expect("limits"),
+            16 * 1024,
+            1500,
+            vec![Arc::clone(&stop)],
+        )
+        .expect("own Job and pipes before launch");
+        // Equivalent to session revocation after preparation but before the
+        // service authorizes native creation: no child must be created.
+        stop.store(true, Ordering::Release);
+        let mut command = Command::new(env::current_exe().expect("test binary"));
+        command
+            .args([
+                "--exact",
+                "job::prepared_read_command::tests::synthetic_native_read_fixture",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("OPTIC317_PREPARED_SYNTHETIC", "1");
+        let error = owner
+            .start(&mut command)
+            .expect_err("revoked reservation must fail closed");
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
+        assert!(owner.child.is_none(), "no child should exist after veto");
+        assert_eq!(owner.job.active_processes().expect("Job accounting"), 0);
+        let started = Instant::now();
+        while !owner.poll_terminal().expect("post-veto native proof") {
+            assert!(
+                started.elapsed() < Duration::from_millis(900),
+                "pre-spawn native cleanup must finish in finite time"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let outcome = owner.take_outcome().expect("terminal no-spawn record");
+        assert!(outcome.cancelled && !outcome.is_success());
+        assert!(outcome.status.is_none(), "no root process was created");
+        assert!(outcome.stdout.is_empty() && outcome.stderr.is_empty());
+        assert!(owner.out_eof && owner.err_eof);
+    }
+
+    #[test]
+    fn external_stop_signal_terminates_registered_native_child_and_pipes() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut owner = PreparedReadCommand::prepare(
+            LimitedJobObject::new(4, 512 * 1024 * 1024, 25).expect("limits"),
+            16 * 1024,
+            3000,
+            vec![Arc::clone(&stop)],
+        )
+        .expect("prepare owner before child creation");
+        let gate = env::temp_dir().join(format!(
+            "optic317-prepared-revoke-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&gate);
+        let mut command = Command::new(env::current_exe().expect("test binary"));
+        command
+            .args([
+                "--exact",
+                "job::prepared_read_command::tests::synthetic_descendant_retains_pipes",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("OPTIC317_PREPARED_DESCENDANT", "1")
+            .env("OPTIC317_PREPARED_GATE", &gate);
+        if let Some(root) = env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+        owner.start(&mut command).expect("start owned native fixture");
+        let handshake = Instant::now();
+        while !gate.is_file() {
+            assert!(
+                handshake.elapsed() < Duration::from_millis(1200),
+                "native child must prove it started before external stop"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            owner.job.active_processes().expect("active native child"),
+            1,
+            "the native child must still be running when revocation arrives"
+        );
+        let cancelled_at = Instant::now();
+        stop.store(true, Ordering::Release);
+        while !owner.poll_terminal().expect("stop and native EOF observation") {
+            assert!(
+                cancelled_at.elapsed() < Duration::from_millis(1300),
+                "stopped native child cannot hold both pipes until its 2500ms natural exit"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let outcome = owner.take_outcome().expect("confirmed native cleanup");
+        assert!(outcome.cancelled && !outcome.is_success());
+        assert!(
+            !outcome.deadline_expired,
+            "test requires external cancellation before the 3000ms deadline"
+        );
+        assert_eq!(owner.job.active_processes().expect("Job empty"), 0);
+        assert!(owner.out_eof && owner.err_eof, "both native pipes must reach EOF");
+        assert!(
+            String::from_utf8_lossy(&outcome.stdout)
+                .contains("OPTIC317_PREPARED_DESCENDANT_STARTED"),
+            "the already-running native child must have actually executed"
+        );
+        fs::remove_file(gate).expect("remove disposable native stop marker");
+    }
+
+    #[test]
     fn zero_root_exit_cannot_hide_cancellation_or_limits() {
         use std::os::windows::process::ExitStatusExt;
         let mut outcome = ReadCommandOutcome {
