@@ -398,7 +398,9 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         println!("OPTIC317_PREPARED_ROOT_EXITED");
-        std::io::stdout().flush().expect("flush synthetic root output");
+        std::io::stdout()
+            .flush()
+            .expect("flush synthetic root output");
         std::process::exit(0);
     }
 
