@@ -1,5 +1,9 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Active successor prompt — 24 October 2026
+
+Copy [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md); its source of truth is the [24 Oct canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md). Verified source snapshot **before the docs PR**: main **100c43b5** (push/main CI #40027279676 green) with only PR #327 open; last **unmerged** research **8202c9c** (Windows 348 / Ubuntu 270 passes, [CI #40046563179](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40046563179)). Native uncertainty is synthetically injected and later resolved; **persistent OS failure and bounded service shutdown are NOT proved**, V1 #323 still NO-GO. The 23 October and prior successor prompts below remain archives, not active state. Codex may be used via a user-transmitted scoped prompt for needed Windows-PC tests; no standing PC authorization, no self-hosted runner. Recheck live GitHub and CI after this docs PR.
+
 ## Active successor prompt — 23 October 2026
 
 Read and copy [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md), grounded in the [23 October engineering handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md). This supersedes **only the earlier prompts for current sequencing**; history below is intentionally kept. Source snapshot before doc PR: main `3fe3de0c`, #327 open with original red #185, new `codex/317-service-retention` head `1c7dac9` CI native/general green but **not wired**; three no-go boundaries are admission lifetime, indefinite Drop and crash-before-Job-assignment. Verify GitHub live; the docs PR may have advanced main.

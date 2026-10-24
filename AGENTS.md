@@ -1,5 +1,9 @@
 # Repository entry point for coding agents
 
+## Current verified continuation — 24 October 2026
+
+**Begin with the [24 Oct Windows V1 canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and the [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).** The preceding 23/22 Oct handoffs are dated history, not present-day GitHub state. Research on native Job owner/uncertain observation is **not** a production Git runner or V1 authorization. Always re-query main SHA, open PRs, issues and CI before changing anything.
+
 **Newest continuation (2026-10-23):** [Windows V1 engineering handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-23.md) and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-23.md). See #317 crash-before-assign/admission/shutdown gates and #182 provenance. No production fix/release implied.
 
 
