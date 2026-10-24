@@ -222,8 +222,18 @@ fn query_active_processes(job: HANDLE) -> Result<u32> {
             None,
         )
     }
-    .map_err(Error::from)?;
+    .map_err(job_query_io_error)?;
     Ok(accounting.ActiveProcesses)
+}
+
+fn job_query_io_error(error: windows::core::Error) -> Error {
+    // Win32 failures in windows-rs are wrapped as FACILITY_WIN32 HRESULTs.
+    // Recover only an explicitly recognized Win32 mapping. For any other
+    // HRESULT preserve the entire code rather than truncating its low bits.
+    match windows::Win32::Foundation::WIN32_ERROR::from_error(&error) {
+        Some(code) => Error::from_raw_os_error(code.0 as i32),
+        None => Error::from(error),
+    }
 }
 
 impl Drop for OwnedJob {
@@ -679,5 +689,19 @@ mod native_error_regression {
             Some(windows::Win32::Foundation::ERROR_INVALID_HANDLE.0 as i32),
             "native accounting failure must expose the original Win32 code"
         );
+    }
+    #[test]
+    fn win32_hresult_24_preserves_win32_code() {
+        let native = windows::core::Error::from(
+            windows::Win32::Foundation::WIN32_ERROR(24).to_hresult(),
+        );
+        assert_eq!(job_query_io_error(native).raw_os_error(), Some(24));
+    }
+
+    #[test]
+    fn non_win32_hresult_preserves_entire_status() {
+        let status = HRESULT(0x8000_4005_u32 as i32);
+        let native = windows::core::Error::from(status);
+        assert_eq!(job_query_io_error(native).raw_os_error(), Some(status.0));
     }
 }
