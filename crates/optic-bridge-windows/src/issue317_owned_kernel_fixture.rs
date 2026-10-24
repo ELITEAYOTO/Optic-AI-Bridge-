@@ -162,12 +162,56 @@ pub struct ResearchSuspendedChild {
 }
 impl ResearchSuspendedChild {
     pub fn create(job: &ResearchKernelJob, root: &Path) -> io::Result<Self> {
-        Self::create_fixed(Some(job), root, false)
+        Self::create_fixed(Some(job), root, false, false)
     }
+
+    /// Only the fixed current-libtest executable is passed to CreateProcessW.
+    /// A missing, fixture-owned working directory causes native creation to
+    /// fail before any child is allowed to start. The guardian's original Job
+    /// remains owned; a failed syscall alone never grants terminal status.
+    pub fn prove_missing_cwd_creation_rejected(
+        job: &ResearchKernelJob,
+        root: &Path,
+    ) -> io::Result<()> {
+        let missing = root.join("optic317_missing_cwd_never_created");
+        if missing.exists() {
+            return Err(io::Error::other("negative fixture cwd unexpectedly exists"));
+        }
+        match Self::create_fixed(Some(job), root, false, true) {
+            Err(err) => {
+                let code = err
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<windows::core::Error>())
+                    .map(|native| native.code().0 as u32);
+                if !matches!(code, Some(0x8007_010B) | Some(0x8007_0003)) {
+                    return Err(io::Error::other(format!(
+                        "expected real Win32 missing-directory CreateProcessW error: {err} (HRESULT {code:?})"
+                    )));
+                }
+                if job.active()? != 0 {
+                    return Err(io::Error::other(
+                        "failed CreateProcessW unexpectedly created native Job members",
+                    ));
+                }
+                Ok(())
+            }
+            Ok(child) => {
+                // Unexpected success must fail the test and clean up ONLY the
+                // fixed suspended process in this fixture's owned Job.
+                job.terminate()?;
+                child.await_exit()?;
+                Err(io::Error::other(
+                    "CreateProcessW unexpectedly succeeded with missing fixture cwd",
+                ))
+            }
+        }
+    }
+
     fn create_fixed(
         job: Option<&ResearchKernelJob>,
         root: &Path,
         launcher: bool,
+        missing_cwd: bool,
     ) -> io::Result<Self> {
         let exe = env::current_exe()?.canonicalize()?;
         let mut app: Vec<u16> = exe.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -181,7 +225,9 @@ impl ResearchSuspendedChild {
             format!(r#""{}" --help"#, exe.display())
         };
         let mut command: Vec<u16> = OsStr::new(&line).encode_wide().chain(Some(0)).collect();
-        let cwd: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+        let missing = root.join("optic317_missing_cwd_never_created");
+        let chosen_cwd = if missing_cwd { missing.as_path() } else { root };
+        let cwd: Vec<u16> = chosen_cwd.as_os_str().encode_wide().chain(Some(0)).collect();
 
         let mut vars = BTreeMap::<String, std::ffi::OsString>::new();
         for key in ["SystemRoot", "WINDIR"] {
@@ -275,7 +321,7 @@ impl ResearchSuspendedChild {
 pub struct ResearchCrashLauncher(ResearchSuspendedChild);
 impl ResearchCrashLauncher {
     pub fn create(root: &Path) -> io::Result<Self> {
-        ResearchSuspendedChild::create_fixed(None, root, true).map(Self)
+        ResearchSuspendedChild::create_fixed(None, root, true, false).map(Self)
     }
     pub fn terminate_and_wait(&self) -> io::Result<()> {
         // SAFETY: exact CreateProcessW result owned by this wrapper, not a PID.
