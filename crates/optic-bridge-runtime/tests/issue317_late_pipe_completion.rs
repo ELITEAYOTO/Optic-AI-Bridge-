@@ -241,3 +241,69 @@ fn late_stdin_completion_must_not_be_success() {
         "ISSUE317_LATE_STDIN_REJECTED",
     );
 }
+
+#[test]
+fn fixture_assert_stdout_finishes_within_hard_deadline() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    let runner = HardenedCommandRunner::new(RUNNER_TIMEOUT).expect("runner");
+    let started = Instant::now();
+    let result = runner.run(&spec("fixture_stdout_root_exits"));
+    let elapsed = started.elapsed();
+    assert!(
+        matches!(result, Err(HardenedCommandError::TimedOut)),
+        "late descendant-held output must fail closed; got {result:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(900),
+        "ISSUE317_UNBOUNDED_STDOUT: root exited, but pipe reader retained the call for {elapsed:?} after a 200ms deadline"
+    );
+    println!("ISSUE317_BOUNDED_STDOUT_CONFIRMED elapsed_ms={}", elapsed.as_millis());
+}
+
+#[test]
+fn fixture_assert_stdin_finishes_within_hard_deadline() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    let runner = HardenedCommandRunner::new(RUNNER_TIMEOUT).expect("runner");
+    let input = vec![b'x'; INPUT_BYTES];
+    let started = Instant::now();
+    let result = runner.run_with_input(
+        &spec("fixture_stdin_root_exits"),
+        &input,
+        INPUT_BYTES as u64,
+    );
+    let elapsed = started.elapsed();
+    assert!(
+        matches!(result, Err(HardenedCommandError::TimedOut)),
+        "late descendant-held stdin must fail closed; got {result:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(900),
+        "ISSUE317_UNBOUNDED_STDIN: root exited, but inherited stdin writer retained the call for {elapsed:?} after a 200ms deadline"
+    );
+    println!("ISSUE317_BOUNDED_STDIN_CONFIRMED elapsed_ms={}", elapsed.as_millis());
+}
+
+// These are P0 acceptance gates, intentionally ignored by routine workspace CI
+// until the production native ownership/cancellation implementation is ready.
+// Their dedicated research CI explicitly executes them and MUST preserve red.
+#[test]
+#[ignore = "P0 #317: production lacks bounded native pipe/process-tree ownership"]
+fn bounded_wall_clock_requires_actual_pipe_cleanup_stdout() {
+    supervise(
+        "fixture_assert_stdout_finishes_within_hard_deadline",
+        "ISSUE317_BOUNDED_STDOUT_CONFIRMED",
+    );
+}
+
+#[test]
+#[ignore = "P0 #317: production lacks bounded native pipe/process-tree ownership"]
+fn bounded_wall_clock_requires_actual_pipe_cleanup_stdin() {
+    supervise(
+        "fixture_assert_stdin_finishes_within_hard_deadline",
+        "ISSUE317_BOUNDED_STDIN_CONFIRMED",
+    );
+}
