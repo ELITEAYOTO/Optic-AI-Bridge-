@@ -2,7 +2,7 @@ name: Issue 317 native observation uncertainty research
 
 on:
   push:
-    branches: ['research/317-native-observation-uncertain-2026-10-24']
+    branches: ['research/317-native-observation-uncertain-2026-10-24', 'research/317-repeated-native-observation-2026-10-24']
 
 permissions:
   contents: read
@@ -47,3 +47,9 @@ jobs:
         run: |
           echo "OPTIC317_UNCERTAIN_NATIVE_OWNER sha=${GITHUB_SHA} fault=injected-win32-accounting proof=retained-until-positive gitread-wired=false"
           cargo test --locked -p optic-bridge-runtime --lib uncertain_kernel_accounting_retains_owned_admission_and_jobstore_until_retry_proves_empty -- --nocapture --test-threads=1
+      - name: Repeated accounting failures retain native owner and quota
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "OPTIC317_REPEATED_OBSERVATION sha=${GITHUB_SHA} fault=injected-repeated query-count=4 recovery=test-only production-fix=false"
+          cargo test --locked -p optic-bridge-runtime --lib repeated_native_accounting_failures_retain_owner_and_quota_before_recovery -- --nocapture --test-threads=1
