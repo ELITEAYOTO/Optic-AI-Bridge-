@@ -315,9 +315,9 @@ fn service_host() {
         assert_eq!(
             manager.result(&a.handle, &id).unwrap().status,
             if matches!(
-            mode.as_str(),
-            "preowned-before-create" | "preowned-offer-failed"
-        ) {
+                mode.as_str(),
+                "preowned-before-create" | "preowned-offer-failed"
+            ) {
                 ProcessStatus::Failed
             } else {
                 ProcessStatus::Stopped
