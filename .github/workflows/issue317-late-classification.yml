@@ -27,7 +27,7 @@ jobs:
         run: |
           if ! cargo +1.99.0 fmt --all -- --check; then
             cargo +1.99.0 fmt --all
-            python -c "import base64,pathlib; print(\u0027OPTIC317_FORMATTED_SOURCE \u0027+base64.b64encode(pathlib.Path(\u0027crates/optic-bridge-runtime/tests/issue317_late_completion.rs\u0027).read_bytes()).decode())"
+            python -c "import base64,pathlib; print('OPTIC317_FORMATTED_SOURCE '+base64.b64encode(pathlib.Path('crates/optic-bridge-runtime/tests/issue317_late_completion.rs').read_bytes()).decode())"
             exit 1
           fi
           cargo +1.99.0 clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
