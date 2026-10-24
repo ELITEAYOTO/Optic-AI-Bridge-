@@ -17,7 +17,7 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::{BOOL, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::{
             JobObjects::{
                 CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
@@ -297,7 +297,7 @@ impl ResearchCrashLauncher {
         job: &ResearchKernelJob,
     ) -> io::Result<ResearchTransferredChild> {
         let process = self.duplicate(value)?;
-        let mut member = BOOL::default();
+        let mut member = Default::default();
         // SAFETY: duplicate process handle and validated owned Job. Kernel checks
         // membership by object handles; no PID number is an identity receipt.
         unsafe {
