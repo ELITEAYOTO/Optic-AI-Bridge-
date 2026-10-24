@@ -1,0 +1,41 @@
+# Controlled research only. This is not a production correctness assertion.
+name: Research 317 stdin EOF after root exit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - crates/optic-bridge-runtime/tests/issue317_stdin_eof_research.rs
+      - .github/workflows/research-317-stdin-eof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stdin-eof:
+    name: Synthetic stdin EOF / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Validate checked-out source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          echo "OPTIC_317_STDIN_SOURCE_SHA=$(git rev-parse HEAD)"
+          rustc --version || true
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Execute bounded synthetic stdin EOF proof
+        run: cargo test --locked -p optic-bridge-runtime --test issue317_stdin_eof_research externally_supervised_stdin_eof_deadline_reproduction -- --exact --nocapture --test-threads=1
