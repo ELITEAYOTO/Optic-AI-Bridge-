@@ -264,6 +264,28 @@ impl ResearchCrashLauncher {
             .map_err(io::Error::other)?;
         self.0.await_exit()
     }
+    /// Research-only: duplicate a guardian-owned, already limited native Job
+    /// INTO this fixed launcher process. The caller must retain its original
+    /// Job handle; the returned integer is valid ONLY in the launcher process.
+    /// A delivered value is not an ACK or terminal-cleanup proof.
+    pub fn offer_preowned_job(&self, job: &ResearchKernelJob) -> io::Result<u64> {
+        let mut target = HANDLE::default();
+        // SAFETY: source is this service's owned Job, target is the exact
+        // process handle returned from creating the fixed research launcher.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                job.raw(),
+                HANDLE(self.0.process.as_raw_handle()),
+                &mut target,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(io::Error::other)?;
+        Ok(target.0 as usize as u64)
+    }
     fn duplicate(&self, value: u64) -> io::Result<OwnedHandle> {
         let value = usize::try_from(value).map_err(io::Error::other)?;
         if value == 0 || value > isize::MAX as usize {
@@ -317,6 +339,21 @@ impl ResearchCrashLauncher {
 impl ResearchKernelJob {
     /// Opaque values in SOURCE process only; not handles in the recipient.
     /// Fixed private fixture writes these to its bounded test mailbox.
+    /// Only the fixed research launcher consumes a *previously duplicated*
+    /// handle received through its bounded private fixture mailbox. It does
+    /// not take ownership from the guardian, which retains its original Job.
+    pub fn adopt_preowned_job_offer(value: u64) -> io::Result<Self> {
+        let raw = usize::try_from(value).map_err(io::Error::other)?;
+        if raw == 0 || raw > isize::MAX as usize {
+            return Err(io::Error::other("invalid preowned Job offer"));
+        }
+        // SAFETY: in this closed research harness the service duplicated this
+        // Job into our process and transfers exactly one target-owned handle.
+        let job = Self(unsafe { OwnedHandle::from_raw_handle(raw as *mut _) });
+        job.active()?; // Validate that the handle really refers to a Job.
+        Ok(job)
+    }
+
     pub fn transfer_offer(&self, child: &ResearchSuspendedChild) -> [u64; 2] {
         [
             self.0.as_raw_handle() as usize as u64,
