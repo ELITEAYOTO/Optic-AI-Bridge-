@@ -36,6 +36,9 @@ jobs:
           if ($exe.Count -ne 1) { throw 'Ambiguous test executable' }
           python scripts/research/issue317_crash_transfer.py --test-exe $exe[0].executable --output crash-evidence
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Full Windows workspace validation
+        if: runner.os == 'Windows'
+        run: cargo test --locked --workspace
       - name: Preserve manifest and first failures
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
