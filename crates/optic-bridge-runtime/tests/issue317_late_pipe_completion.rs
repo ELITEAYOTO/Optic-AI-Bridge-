@@ -259,7 +259,10 @@ fn fixture_assert_stdout_finishes_within_hard_deadline() {
         elapsed < Duration::from_millis(900),
         "ISSUE317_UNBOUNDED_STDOUT: root exited, but pipe reader retained the call for {elapsed:?} after a 200ms deadline"
     );
-    println!("ISSUE317_BOUNDED_STDOUT_CONFIRMED elapsed_ms={}", elapsed.as_millis());
+    println!(
+        "ISSUE317_BOUNDED_STDOUT_CONFIRMED elapsed_ms={}",
+        elapsed.as_millis()
+    );
 }
 
 #[test]
@@ -284,7 +287,10 @@ fn fixture_assert_stdin_finishes_within_hard_deadline() {
         elapsed < Duration::from_millis(900),
         "ISSUE317_UNBOUNDED_STDIN: root exited, but inherited stdin writer retained the call for {elapsed:?} after a 200ms deadline"
     );
-    println!("ISSUE317_BOUNDED_STDIN_CONFIRMED elapsed_ms={}", elapsed.as_millis());
+    println!(
+        "ISSUE317_BOUNDED_STDIN_CONFIRMED elapsed_ms={}",
+        elapsed.as_millis()
+    );
 }
 
 // These are P0 acceptance gates, intentionally ignored by routine workspace CI
