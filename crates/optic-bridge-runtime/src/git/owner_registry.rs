@@ -443,7 +443,9 @@ mod tests {
 
         let sessions = Arc::new(SessionRegistry::new());
         let grant = grant("live-owned-process");
-        sessions.register(grant.clone()).expect("register synthetic session");
+        sessions
+            .register(grant.clone())
+            .expect("register synthetic session");
         let now = MonotonicTime::from_millis(1);
         let owners = ledger();
         let id = owners
@@ -467,10 +469,7 @@ mod tests {
             .expect("adopt prepared native resources before spawn");
         assert!(native.is_none());
 
-        let gate = env::temp_dir().join(format!(
-            "optic317-service-ledger-{}",
-            std::process::id()
-        ));
+        let gate = env::temp_dir().join(format!("optic317-service-ledger-{}", std::process::id()));
         let _ = std::fs::remove_file(&gate);
         let mut command = Command::new(env::current_exe().expect("synthetic test executable"));
         command
@@ -518,7 +517,9 @@ mod tests {
         });
 
         let observing = Instant::now();
-        while !owners.stop_signals(id, &grant.handle).expect("stop signals")[1]
+        while !owners
+            .stop_signals(id, &grant.handle)
+            .expect("stop signals")[1]
             .load(Ordering::Acquire)
         {
             assert!(
@@ -528,8 +529,7 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
 
-        let admission_still_blocks_revoke =
-            matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let admission_still_blocks_revoke = matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
         let reservation_during_revoke = owners
             .outstanding(&grant.handle)
             .expect("hold reservation until native receipt");
@@ -561,7 +561,10 @@ mod tests {
 
         // Assert collected evidence after the revoker has been joined.
         assert_eq!(active_before_revoke, 1, "actual native Job member required");
-        assert!(pending_before_revoke, "running native child is not terminal");
+        assert!(
+            pending_before_revoke,
+            "running native child is not terminal"
+        );
         assert_eq!(reservation_before_revoke, 1);
         assert!(admission_still_blocks_revoke);
         assert_eq!(reservation_during_revoke, 1);
@@ -570,8 +573,14 @@ mod tests {
             "native cancellation must precede synthetic 5-second natural exit"
         );
         assert!(outcome.cancelled && !outcome.is_success());
-        assert!(!outcome.deadline_expired, "external revoke, not 8s deadline");
-        assert!(outcome.status.is_some(), "owned native root must be observed");
+        assert!(
+            !outcome.deadline_expired,
+            "external revoke, not 8s deadline"
+        );
+        assert!(
+            outcome.status.is_some(),
+            "owned native root must be observed"
+        );
         assert!(
             String::from_utf8_lossy(&outcome.stdout)
                 .contains("OPTIC317_LEDGER_CHILD_ACTUALLY_RUNNING")
