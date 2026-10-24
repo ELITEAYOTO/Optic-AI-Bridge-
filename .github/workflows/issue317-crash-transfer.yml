@@ -1,7 +1,7 @@
 name: Issue 317 crash before native ACK
 on:
   push:
-    branches: ['research/317-crash-before-native-ack-2026-10-24']
+    branches: ['research/317-crash-before-native-ack-2026-10-24', 'research/317-service-preowned-native-job-2026-10-24']
 permissions:
   contents: read
 jobs:
@@ -25,7 +25,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked -p optic-bridge-runtime --all-targets --all-features -- -D warnings
       - run: cargo test --locked -p optic-bridge-runtime --lib
-      - name: Build exact fixture and supervise six native crash schedules
+      - name: Build exact fixture and supervise controlled native crash schedules
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
