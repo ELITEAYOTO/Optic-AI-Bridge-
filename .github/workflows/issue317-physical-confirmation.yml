@@ -1,0 +1,43 @@
+name: Issue317 physical confirmation comparison
+on:
+  push:
+    branches: ['codex/317-win10-confirmation-review']
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Pinned Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          rustc +1.99.0 -Vv
+      - name: Format and strict Clippy
+        shell: pwsh
+        run: |
+          cargo +1.99.0 fmt --all -- --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Compile fixed host and exercise supervised comparison
+        shell: pwsh
+        run: |
+          cargo +1.99.0 test --locked -p optic-bridge-runtime --lib --no-run --message-format=json > build.jsonl
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $exe = @(Get-Content build.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'optic_bridge_runtime' -and $_.executable })
+          if ($exe.Count -ne 1) { throw 'ambiguous fixed host' }
+          python scripts/research/issue317_confirmation_physical.py --test-exe $exe[0].executable --output confirmation-evidence
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Preserve first results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: issue317-confirmation-comparison
+          path: confirmation-evidence/
+          retention-days: 7
