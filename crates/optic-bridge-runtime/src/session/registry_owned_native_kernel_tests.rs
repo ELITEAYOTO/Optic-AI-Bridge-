@@ -356,7 +356,8 @@ fn repeated_native_accounting_failures_retain_owner_and_quota_before_recovery() 
 }
 
 #[test]
-fn unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child_negative_control() {
+fn unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child_negative_control()
+{
     // Negative control, not a candidate fix: creation and mark_native_created()
     // are separate calls. Model an abort after a real suspended child was
     // created but BEFORE the reservation learned that creation succeeded.
@@ -398,7 +399,8 @@ fn unmarked_native_creation_drop_reports_terminal_while_job_still_contains_child
     // Independently clean only our synthetic suspended child and native Job.
     job.terminate().expect("terminate exact synthetic Job");
     child.await_exit().expect("wait for its owned child");
-    job.await_empty().expect("positive Job-empty cleanup observation");
+    job.await_empty()
+        .expect("positive Job-empty cleanup observation");
     drop(child);
     drop(job);
     drop(manager);
