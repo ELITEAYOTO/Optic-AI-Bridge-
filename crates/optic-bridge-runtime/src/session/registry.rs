@@ -202,6 +202,25 @@ impl SessionRegistry {
         Ok(record.grant.clone())
     }
 
+    /// Publish the irreversible revoked bit and notify already-admitted owners,
+    /// but do not wait for those owners here. The session lifecycle uses this
+    /// first to request owned process cancellation before admission drainage.
+    /// Authority/grant cleanup remains forbidden until the regular revoke
+    /// barrier has finished. This does not grant a new admission capability.
+    pub(crate) fn publish_revocation_before_drain(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<bool, SessionRegistryError> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let Some(record) = sessions.get_mut(handle) else {
+            return Ok(false);
+        };
+        Ok(Self::publish_revocation(record))
+    }
+
     pub fn revoke(&self, handle: &SessionHandle) -> Result<bool, SessionRegistryError> {
         let mut sessions = self
             .sessions
