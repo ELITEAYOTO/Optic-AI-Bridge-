@@ -56,4 +56,6 @@ pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
 pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};
 
 #[cfg(all(windows, feature = "issue317-owned-kernel-fixture"))]
-pub use issue317_owned_kernel_fixture::{ResearchKernelJob, ResearchSuspendedChild};
+pub use issue317_owned_kernel_fixture::{
+    ResearchCrashLauncher, ResearchKernelJob, ResearchSuspendedChild,
+};

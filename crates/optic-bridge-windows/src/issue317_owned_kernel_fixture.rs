@@ -17,21 +17,21 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::{HANDLE, WAIT_OBJECT_0},
+        Foundation::{BOOL, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::{
             JobObjects::{
-                CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
-                JobObjectExtendedLimitInformation, QueryInformationJobObject,
-                SetInformationJobObject, TerminateJobObject,
+                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+                JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+                QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
                 CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
-                DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
+                DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
                 InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
                 PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, STARTUPINFOEXW, STARTUPINFOW,
-                UpdateProcThreadAttribute, WaitForSingleObject,
+                TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
             },
         },
     },
@@ -143,10 +143,24 @@ pub struct ResearchSuspendedChild {
 }
 impl ResearchSuspendedChild {
     pub fn create(job: &ResearchKernelJob, root: &Path) -> io::Result<Self> {
+        Self::create_fixed(Some(job), root, false)
+    }
+    fn create_fixed(
+        job: Option<&ResearchKernelJob>,
+        root: &Path,
+        launcher: bool,
+    ) -> io::Result<Self> {
         let exe = env::current_exe()?.canonicalize()?;
         let mut app: Vec<u16> = exe.as_os_str().encode_wide().chain(Some(0)).collect();
         // The Rust libtest child never resumes: no code or tool may run.
-        let line = format!(r#""{}" --help"#, exe.display());
+        let line = if launcher {
+            format!(
+                r#""{}" --exact session_registry::owned_native_research_tests::launcher_crash::launcher_host --ignored --nocapture --test-threads=1"#,
+                exe.display()
+            )
+        } else {
+            format!(r#""{}" --help"#, exe.display())
+        };
         let mut command: Vec<u16> = OsStr::new(&line).encode_wide().chain(Some(0)).collect();
         let cwd: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
 
@@ -156,7 +170,7 @@ impl ResearchSuspendedChild {
                 vars.insert(key.to_owned(), value);
             }
         }
-        for key in ["TEMP", "TMP"] {
+        for key in ["TEMP", "TMP", "OPTIC317_TRANSFER_ROOT"] {
             vars.insert(key.to_owned(), root.as_os_str().to_owned());
         }
         let mut environment = Vec::<u16>::new();
@@ -168,25 +182,41 @@ impl ResearchSuspendedChild {
         }
         environment.push(0);
 
-        let jobs = [job.raw()];
-        let mut attrs = Attrs::prepare()?;
-        // SAFETY: configured existing kernel Job supplied as creation attribute;
-        // both array and backing buffer outlive the CreateProcessW call.
-        unsafe {
-            UpdateProcThreadAttribute(
-                attrs.raw(),
-                0,
-                PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
-                Some(jobs.as_ptr().cast()),
-                size_of::<HANDLE>(),
-                None,
-                None,
-            )
+        let mut attrs = if job.is_some() {
+            Some(Attrs::prepare()?)
+        } else {
+            None
+        };
+        let jobs = job.map(|j| [j.raw()]);
+        if let (Some(attrs), Some(jobs)) = (attrs.as_mut(), jobs.as_ref()) {
+            // SAFETY: exact owned Job supplied at creation; arrays live through syscall.
+            unsafe {
+                UpdateProcThreadAttribute(
+                    attrs.raw(),
+                    0,
+                    PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+                    Some(jobs.as_ptr().cast()),
+                    size_of::<HANDLE>(),
+                    None,
+                    None,
+                )
+            }
+            .map_err(io::Error::other)?;
         }
-        .map_err(io::Error::other)?;
         let mut startup = STARTUPINFOEXW::default();
-        startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
-        startup.lpAttributeList = attrs.raw();
+        startup.StartupInfo.cb = if job.is_some() {
+            size_of::<STARTUPINFOEXW>()
+        } else {
+            size_of::<STARTUPINFOW>()
+        } as u32;
+        if let Some(attrs) = attrs.as_mut() {
+            startup.lpAttributeList = attrs.raw();
+        }
+        let flags = if launcher {
+            CREATE_UNICODE_ENVIRONMENT
+        } else {
+            CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT
+        };
         let mut info = PROCESS_INFORMATION::default();
         // SAFETY: fixed libtest executable, explicit minimal environment, no
         // inherited handles, and child is suspended in the PRECREATED Job.
@@ -197,7 +227,7 @@ impl ResearchSuspendedChild {
                 None,
                 None,
                 false,
-                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                flags,
                 Some(environment.as_ptr().cast()),
                 PCWSTR(cwd.as_ptr()),
                 &startup.StartupInfo as *const STARTUPINFOW,
@@ -217,6 +247,91 @@ impl ResearchSuspendedChild {
             Ok(())
         } else {
             Err(io::Error::other("suspended child termination unconfirmed"))
+        }
+    }
+}
+
+/// Feature-gated fixed launcher, owned by the surviving service test host.
+/// No PID lookup, caller-selected executable, shell, or caller creation flags.
+pub struct ResearchCrashLauncher(ResearchSuspendedChild);
+impl ResearchCrashLauncher {
+    pub fn create(root: &Path) -> io::Result<Self> {
+        ResearchSuspendedChild::create_fixed(None, root, true).map(Self)
+    }
+    pub fn terminate_and_wait(&self) -> io::Result<()> {
+        // SAFETY: exact CreateProcessW result owned by this wrapper, not a PID.
+        unsafe { TerminateProcess(HANDLE(self.0.process.as_raw_handle()), 93) }
+            .map_err(io::Error::other)?;
+        self.0.await_exit()
+    }
+    fn duplicate(&self, value: u64) -> io::Result<OwnedHandle> {
+        let value = usize::try_from(value).map_err(io::Error::other)?;
+        if value == 0 || value > isize::MAX as usize {
+            return Err(io::Error::other("invalid offered handle"));
+        }
+        let mut result = HANDLE::default();
+        // SAFETY: source is the exact owned launcher process. No CLOSE_SOURCE:
+        // the launcher retains originals until acknowledgement or process death.
+        unsafe {
+            DuplicateHandle(
+                HANDLE(self.0.process.as_raw_handle()),
+                HANDLE(value as *mut _),
+                GetCurrentProcess(),
+                &mut result,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(io::Error::other)?;
+        Ok(unsafe { OwnedHandle::from_raw_handle(result.0) })
+    }
+    pub fn accept_job(&self, value: u64) -> io::Result<ResearchKernelJob> {
+        let job = ResearchKernelJob(self.duplicate(value)?);
+        job.active()?; // Reject a non-Job object before treating it as authority.
+        Ok(job)
+    }
+    pub fn accept_child(
+        &self,
+        value: u64,
+        job: &ResearchKernelJob,
+    ) -> io::Result<ResearchTransferredChild> {
+        let process = self.duplicate(value)?;
+        let mut member = BOOL::default();
+        // SAFETY: duplicate process handle and validated owned Job. Kernel checks
+        // membership by object handles; no PID number is an identity receipt.
+        unsafe {
+            IsProcessInJob(
+                HANDLE(process.as_raw_handle()),
+                Some(job.raw()),
+                &mut member,
+            )
+        }
+        .map_err(io::Error::other)?;
+        if !member.as_bool() {
+            return Err(io::Error::other("offered child not in accepted Job"));
+        }
+        Ok(ResearchTransferredChild(process))
+    }
+}
+impl ResearchKernelJob {
+    /// Opaque values in SOURCE process only; not handles in the recipient.
+    /// Fixed private fixture writes these to its bounded test mailbox.
+    pub fn transfer_offer(&self, child: &ResearchSuspendedChild) -> [u64; 2] {
+        [
+            self.0.as_raw_handle() as usize as u64,
+            child.process.as_raw_handle() as usize as u64,
+        ]
+    }
+}
+pub struct ResearchTransferredChild(OwnedHandle);
+impl ResearchTransferredChild {
+    pub fn await_exit(&self) -> io::Result<()> {
+        // SAFETY: validated owned process duplicate, bounded wait.
+        if unsafe { WaitForSingleObject(HANDLE(self.0.as_raw_handle()), 3000) } == WAIT_OBJECT_0 {
+            Ok(())
+        } else {
+            Err(io::Error::other("transferred root exit unconfirmed"))
         }
     }
 }
