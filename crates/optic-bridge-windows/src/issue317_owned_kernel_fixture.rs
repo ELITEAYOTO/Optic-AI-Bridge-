@@ -80,6 +80,16 @@ impl ResearchKernelJob {
         .map_err(io::Error::other)?;
         Ok(value.ActiveProcesses)
     }
+    /// Research-only deterministic OS-query fault. Does not call Win32 on
+    /// the injected branch and MUST NOT be interpreted as a real OS error.
+    /// A failed query is not proof of an empty Job or permission to reclaim.
+    pub fn observe_active_with_injected_failure(&self, unavailable: bool) -> io::Result<u32> {
+        if unavailable {
+            return Err(io::Error::other("injected native accounting observation failure"));
+        }
+        self.active()
+    }
+
     pub fn terminate(&self) -> io::Result<()> {
         // SAFETY: owned kernel Job, scoped synthetic process only.
         unsafe { TerminateJobObject(self.raw(), 87) }.map_err(io::Error::other)
