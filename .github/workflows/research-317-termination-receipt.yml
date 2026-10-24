@@ -1,0 +1,39 @@
+# Diagnostic only: this workflow cannot turn the red integrated-main gate green.
+# It executes only an exact synthetic Rust test on a hosted Windows runner.
+name: Research 317 Windows termination receipt
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - crates/optic-bridge-runtime/src/process.rs
+      - .github/workflows/research-317-termination-receipt.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-termination-phase:
+    name: Windows native termination phase
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.99.0
+      - name: Record exact synthetic test source
+        shell: pwsh
+        run: |
+          Write-Output "OPTIC_317_RECEIPT_SOURCE_SHA=${{ github.sha }}"
+          Write-Output "OPTIC_317_RECEIPT_BASE_SHA=cf5a6c3f5aff7d9846106effafd52027126e3ba3"
+          rustc -Vv
+          [Environment]::OSVersion.VersionString
+      - name: Strict formatting and lint (full workspace)
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Isolate existing timeout test without masking failures
+        run: cargo test --locked -p optic-bridge-runtime --lib process::tests::timeout_terminates_owned_process -- --exact --nocapture --test-threads=1
