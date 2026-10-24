@@ -230,22 +230,35 @@ impl NativeGitOwners {
         session: &SessionHandle,
         visit: impl FnOnce(&mut PreparedReadCommand) -> io::Result<R>,
     ) -> Result<R, OwnerError> {
-        let owner = self.get_owner(id, session)?;
+        let (owner, _observation) = self.claim_owner(id, session)?;
         let mut native = owner.lock().map_err(|_| OwnerError::Unavailable)?;
         Ok(visit(&mut native)?)
     }
 
-    fn get_owner(
+    // Both native start and terminal proof share ONE per-owner observer gate.
+    // Neither operation keeps the global ledger locked while using the OS.
+    fn claim_owner(
         &self,
         id: OwnerId,
         session: &SessionHandle,
-    ) -> Result<Arc<Mutex<PreparedReadCommand>>, OwnerError> {
+    ) -> Result<(Arc<Mutex<PreparedReadCommand>>, Observation), OwnerError> {
         let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
         let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
         if &record.session != session {
             return Err(OwnerError::WrongOwner);
         }
-        record.native.as_ref().cloned().ok_or(OwnerError::MissingPayload)
+        let owner = record.native.as_ref().ok_or(OwnerError::MissingPayload)?;
+        if record
+            .observing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(OwnerError::ObservationBusy);
+        }
+        Ok((
+            Arc::clone(owner),
+            Observation(Arc::clone(&record.observing)),
+        ))
     }
 
     // No caller-supplied success boolean: the only release path requires the
@@ -256,25 +269,7 @@ impl NativeGitOwners {
         id: OwnerId,
         session: &SessionHandle,
     ) -> Result<Option<ReadCommandOutcome>, OwnerError> {
-        let (owner, _observation) = {
-            let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
-            let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
-            if &record.session != session {
-                return Err(OwnerError::WrongOwner);
-            }
-            if record
-                .observing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-            {
-                return Err(OwnerError::ObservationBusy);
-            }
-            let observation = Observation(Arc::clone(&record.observing));
-            let Some(owner) = record.native.as_ref() else {
-                return Err(OwnerError::MissingPayload);
-            };
-            (Arc::clone(owner), observation)
-        };
+        let (owner, _observation) = self.claim_owner(id, session)?;
         let outcome = {
             let mut native = owner.lock().map_err(|_| OwnerError::Unavailable)?;
             if !native.poll_terminal()? {
