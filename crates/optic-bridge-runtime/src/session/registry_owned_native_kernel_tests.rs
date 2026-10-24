@@ -667,12 +667,15 @@ fn in_process_guardian_outlives_submitter_and_retains_uncertain_native_owner() {
             .research_commit_registered_owner(&reservation, now)
             .expect("single authorized owner commitment");
         let stop = owned.stop_watch();
+        // The commitment receipt borrows the registered reservation; release
+        // that read-only borrow before mutating the conservative creation state.
+        // No stop/close authority is inferred from dropping this receipt.
+        drop(receipt);
         // Conservative accounting is armed before CreateProcessW. This alone
         // does not solve the empty-Job recovery problem from the prior tests.
         reservation.mark_native_created();
         let child = ResearchSuspendedChild::create(&job, &worker_root)
             .expect("synthetic suspended child associated at native creation");
-        drop(receipt);
         assert_eq!(job.active().unwrap(), 1);
         submitted_tx
             .send(reservation.id())
