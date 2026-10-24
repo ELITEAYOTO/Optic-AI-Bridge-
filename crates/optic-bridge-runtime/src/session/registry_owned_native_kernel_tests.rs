@@ -445,8 +445,11 @@ fn prearmed_native_creation_drop_retains_quota_with_live_suspended_child() {
     // The test still owns the independent real Job. A production guardian
     // needs explicit responsibility and a proof-driven reconciliation path.
     job.terminate().expect("terminate only this synthetic Job");
-    child.await_exit().expect("wait for its exact suspended child");
-    job.await_empty().expect("whole Job empty before releasing native handle");
+    child
+        .await_exit()
+        .expect("wait for its exact suspended child");
+    job.await_empty()
+        .expect("whole Job empty before releasing native handle");
     drop(child);
     drop(job);
     drop(manager);
@@ -470,7 +473,10 @@ fn prearmed_creation_without_child_retains_uncertain_quota_until_reconciliation(
         ProcessStatus::TerminationUncertain
     );
     assert_eq!(manager.active_session_job_count(&a.handle).unwrap(), 1);
-    assert_eq!(manager.remove_terminal_session_records(&a.handle).unwrap(), 0);
+    assert_eq!(
+        manager.remove_terminal_session_records(&a.handle).unwrap(),
+        0
+    );
     assert_eq!(
         job.active().unwrap(),
         0,
