@@ -51,6 +51,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'prepared native Job/EOF proof failed' }
           & $Probe --exact job::prepared_read_command::tests::native_terminal_receipt_after_descendant_start_marker --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'native owned descendant-pipe termination proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::pre_spawn_revocation_prevents_native_child_creation --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native pre-spawn revoked-owner proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::external_stop_signal_terminates_registered_native_child_and_pipes --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native independent stop and pipe-EOF proof failed' }
           & $Probe --exact file::tests::exclusive_state_file_never_truncates_and_rejects_aliases --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'exclusive native state file proof failed' }
           & $Probe --exact appcontainer::tests::ephemeral_plan_is_fresh_and_can_be_recorded_before_creation --nocapture
