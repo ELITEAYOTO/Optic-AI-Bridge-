@@ -228,6 +228,24 @@ impl SessionRegistry {
         changed
     }
 
+    /// Research-only authority-close experiment. Publishes the *same* original
+    /// session-generation stop bit as ordinary revoke, under the same mutex,
+    /// but does NOT wait for admission drainage. This is not proof of native
+    /// quiescence, nor a public service shutdown API.
+    #[cfg(all(test, windows))]
+    fn research_request_close_without_drain(
+        &self,
+        handle: &SessionHandle,
+    ) -> Result<bool, SessionRegistryError> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        Ok(sessions
+            .get_mut(handle)
+            .is_some_and(Self::publish_revocation))
+    }
+
     fn wait_for_admission_drain<'a>(
         &self,
         handle: &SessionHandle,
