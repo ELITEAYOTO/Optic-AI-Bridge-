@@ -17,12 +17,11 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{DUPLICATE_HANDLE_OPTIONS, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::{
             JobObjects::{
-                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_ASSIGN_PROCESS,
-                JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_QUERY,
+                CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+                JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
                 JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
@@ -287,6 +286,9 @@ impl ResearchCrashLauncher {
     /// Job handle; the returned integer is valid ONLY in the launcher process.
     /// A delivered value is not an ACK or terminal-cleanup proof.
     pub fn offer_preowned_job(&self, job: &ResearchKernelJob) -> io::Result<u64> {
+        // Win32 JOB_OBJECT_ASSIGN_PROCESS=0x0001, JOB_OBJECT_QUERY=0x0004.
+        // These constants are not exported by the pinned windows crate.
+        const LIMITED_LAUNCHER_JOB_ACCESS: u32 = 0x0001 | 0x0004;
         let mut target = HANDLE::default();
         // SAFETY: source is this service's owned Job, target is the exact
         // process handle returned from creating the fixed research launcher.
@@ -299,9 +301,9 @@ impl ResearchCrashLauncher {
                 // Minimal rights for creation-time Job membership and
                 // the fixed test's accounting query. No TERMINATE, SET,
                 // DUPLICATE, WRITE_DAC, or ALL_ACCESS entitlement.
-                JOB_OBJECT_ASSIGN_PROCESS | JOB_OBJECT_QUERY,
+                LIMITED_LAUNCHER_JOB_ACCESS,
                 false,
-                0,
+                DUPLICATE_HANDLE_OPTIONS(0),
             )
         }
         .map_err(io::Error::other)?;
