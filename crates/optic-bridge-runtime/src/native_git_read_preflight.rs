@@ -159,6 +159,15 @@ pub enum NativeGitReadAdmissionError {
     StopRequired,
 }
 
+/// Runtime-owned dependencies; never populate from untrusted MCP parameters.
+/// Grouped to keep the admitted preflight interface explicit and reviewable.
+pub struct NativeGitReadTrustedContext<'a> {
+    pub sessions: &'a Arc<SessionRegistry>,
+    pub trusted_session: &'a SessionHandle,
+    pub task_leases: &'a TaskLeaseRegistry,
+    pub policy: &'a PolicyEngine,
+}
+
 /// Acquire a real owned session admission from the trusted application handle,
 /// then combine it with the verified registry-backed GitRead lease witness.
 ///
@@ -168,22 +177,21 @@ pub enum NativeGitReadAdmissionError {
 /// service-owned native Job guardian must retain it until actual terminal
 /// evidence, not just a timeout/result code. This function never spawns.
 pub fn begin_admitted_native_git_read_preflight(
-    sessions: &Arc<SessionRegistry>,
-    trusted_session: &SessionHandle,
-    task_leases: &TaskLeaseRegistry,
-    policy: &PolicyEngine,
+    trusted: &NativeGitReadTrustedContext<'_>,
     envelope: &ActionEnvelope,
     canonical_repository: &str,
     git_executable: &str,
     now: MonotonicTime,
 ) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
-    if &envelope.session != trusted_session {
+    if &envelope.session != trusted.trusted_session {
         return Err(NativeGitReadAdmissionError::WrongTrustedSession);
     }
-    let admission = sessions.begin_owned_admission(trusted_session, now)?;
+    let admission = trusted
+        .sessions
+        .begin_owned_admission(trusted.trusted_session, now)?;
     let lease_witness = verify_registered_native_git_read_preflight(
-        task_leases,
-        policy,
+        trusted.task_leases,
+        trusted.policy,
         envelope,
         admission.grant(),
         canonical_repository,
@@ -328,11 +336,14 @@ mod tests {
             trusted_session: &SessionHandle,
             now: MonotonicTime,
         ) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
-            begin_admitted_native_git_read_preflight(
-                &self.sessions,
+            let trusted = NativeGitReadTrustedContext {
+                sessions: &self.sessions,
                 trusted_session,
-                &self.registry,
-                &PolicyEngine,
+                task_leases: &self.registry,
+                policy: &PolicyEngine,
+            };
+            begin_admitted_native_git_read_preflight(
+                &trusted,
                 action,
                 &self.repository,
                 &self.executable,

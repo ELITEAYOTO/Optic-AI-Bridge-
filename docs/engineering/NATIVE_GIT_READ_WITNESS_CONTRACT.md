@@ -32,3 +32,5 @@ This step does NOT connect the live MCP GitRead handler or guarantee race-free
 pre-spawn authority. It does NOT satisfy either original behavioral acceptance
 #352 or #355, nor Windows guardian loss, Job-empty, real EOF or V1 installation.
 No legacy GitRead permission change, no unsafe additions, no release.
+
+The admitted helper now takes a `NativeGitReadTrustedContext` grouping the server-owned session handle, registries and policy engine, rather than a long unstructured parameter list. The `ActionEnvelope` and the trusted session are still compared independently before any counted admission.
