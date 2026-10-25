@@ -5,7 +5,7 @@
 
 use crate::{OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError};
 use optic_bridge_core::{MonotonicTime, SessionHandle};
-use optic_bridge_windows::{PreparedReadCommand, ReadCommandOutcome};
+use optic_bridge_windows::{LimitedJobObject, PreparedReadCommand, ReadCommandOutcome};
 use std::{
     collections::BTreeMap,
     io,
@@ -176,6 +176,81 @@ impl NativeGitOwners {
                 observing: Arc::new(AtomicBool::new(false)),
             },
         );
+        Ok(id)
+    }
+
+    /// The only failure-reclamation path for a reservation whose identifier
+    /// has never been returned to a caller. Called solely if the trusted
+    /// PreparedReadCommand::prepare path failed: it constructs Job/pipes/watchdog
+    /// but has no process-spawn operation. Never expose this as release(id).
+    fn reclaim_failed_unexposed_preparation(
+        &self,
+        id: OwnerId,
+        session: &SessionHandle,
+    ) -> Result<(), OwnerError> {
+        let released = {
+            let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
+            let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
+            if &record.session != session {
+                return Err(OwnerError::WrongOwner);
+            }
+            if record.native.is_some() || record.observing.load(Ordering::Acquire) {
+                return Err(OwnerError::ObservationBusy);
+            }
+            let record = state.records.remove(&id).expect("unexposed reservation exists");
+            state.memory -= record.budget.memory;
+            state.output -= record.budget.output;
+            state.cpu -= record.budget.cpu;
+            record
+        };
+        // Session revoke may be waiting for this counted admission. Keep
+        // the ledger unlocked while dropping it.
+        drop(released);
+        Ok(())
+    }
+
+    /// Trusted atomic service entry: reserve admission and all capacities
+    /// first, construct a never-started native Job/pipe owner, and adopt it.
+    /// The reservation id is not returned or otherwise exposed until adoption.
+    /// Only a *pre-spawn preparation failure* can reclaim the still-unexposed
+    /// record. Once an owner exists, errors retain it for native recovery.
+    fn reserve_prepared(
+        &self,
+        sessions: &Arc<SessionRegistry>,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        budget: Budget,
+        timeout_ms: u32,
+    ) -> Result<OwnerId, OwnerError> {
+        let id = self.reserve(sessions, session, now, budget)?;
+        let signals = self.stop_signals(id, session)?;
+        // None of these operations can create a child. Native preparation
+        // only establishes Job limits, pipes and watchdog ownership.
+        let prepared = (|| -> Result<PreparedReadCommand, OwnerError> {
+            let output_limit = usize::try_from(budget.output).map_err(|_| OwnerError::Capacity)?;
+            let limits = LimitedJobObject::new(1, budget.memory, budget.cpu)?;
+            Ok(PreparedReadCommand::prepare(
+                limits,
+                output_limit,
+                timeout_ms,
+                signals,
+            )?)
+        })();
+        let native = match prepared {
+            Ok(native) => native,
+            Err(error) => {
+                // A trusted preparation error (including invalid timeout)
+                // is positive proof that this record never owned a child.
+                // On any ledger failure we conservatively retain capacity.
+                self.reclaim_failed_unexposed_preparation(id, session)?;
+                return Err(error);
+            }
+        };
+        let mut native = Some(native);
+        // A raced revoke is compatible with *custody* of this still-unstarted
+        // owner; it does not grant spawn rights. An adoption error retains
+        // reservations rather than guessing about OS resources.
+        self.adopt(id, session, &mut native)?;
         Ok(id)
     }
 
