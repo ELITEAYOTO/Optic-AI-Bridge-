@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — fail-closed native GitRead policy preflight (2026-10-25)
+
+- [PR #362](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/362) introduces a **policy-only** preflight for later GitRead native ownership, checking the real GitRead action, exact TaskLease identity/session/epoch, canonical repository scope, FixedTool executable and full bounded session/lease duration. Test-first missing-method E0599 reproduced on Windows/Ubuntu; corrected-head [CI #40182783889](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40182783889) passed **4/4** at `39abd8276cd6cd1254163a2d1b56ea6a87148cae`, first attempt. Squash main commit `739bdd5de3a86d72eaa251cb4f9f311e69b33e0e`. Existing MCP GitRead execution, policy and Win32 process ownership **unchanged**.
+- Independent [push/main CI #40183165673](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40183165673) failed Windows from the separately tracked **#185 Node/AppContainer no-output timeout**; other three jobs green. Original failure retained despite three succeeding diagnostic-only comparisons. This red does not establish a GitRead regression; no suppression or automatic retry. #352/#355 still behavioral RED; #317/#323 OPEN; Windows V1 NO-GO.
+
 ## Unreleased — exact native GitRead repository lease scope (2026-10-25)
 
 - [PR #360](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/360) adds `LeaseScope::GitReadRepository { canonical_root }` as a *typed, inert* exact repository marker and proves it does not alias generic `Repository`. Test-first Windows/Ubuntu compile failures were preserved; corrected-head [CI #40181004649](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181004649) succeeded 4/4, and independent merged-main [CI #40181293600](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181293600) succeeded 4/4, both first attempt. Integrated `main=0b2fcc6ee5329d3112500e79fc2a724eb9736c31`. **No production GitRead native launcher, policy elevation, bounded stdio completion or release readiness**; #317/#323 remain open, Windows V1 NO-GO.
