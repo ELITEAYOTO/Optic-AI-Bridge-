@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — exact native GitRead repository lease scope (2026-10-25)
+
+- [PR #360](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/360) adds `LeaseScope::GitReadRepository { canonical_root }` as a *typed, inert* exact repository marker and proves it does not alias generic `Repository`. Test-first Windows/Ubuntu compile failures were preserved; corrected-head [CI #40181004649](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181004649) succeeded 4/4, and independent merged-main [CI #40181293600](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181293600) succeeded 4/4, both first attempt. Integrated `main=0b2fcc6ee5329d3112500e79fc2a724eb9736c31`. **No production GitRead native launcher, policy elevation, bounded stdio completion or release readiness**; #317/#323 remain open, Windows V1 NO-GO.
+
 ## Unreleased — counted, owned session admission (2026-10-23)
 
 - Add a non-cloneable `OwnedSessionAdmissionPermit` retained via `Arc<SessionRegistry>` for future service-owned workers, sharing the identical counted admission and original-generation stop/deadline semantics with the existing borrowed permit. Concurrency tests cover independent OS-thread lifetime, synchronous revoke stop-before-drain, mixed permits, expiry/renewal and deliberate handle reuse. **No native runner/Job owner migration, process termination proof, task-lease change, security policy or V1 release.** [Scope and proof obligations](docs/engineering/ISSUE317_OWNED_SESSION_ADMISSION_2026-10-23.md).
