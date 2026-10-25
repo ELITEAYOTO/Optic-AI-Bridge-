@@ -1,5 +1,13 @@
 # Delivery roadmap
 
+## Next P0 boundary — 25 October 2026 after #362
+
+Code [#362](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/362) merged a *policy-only* `evaluate_native_git_read_preflight` on `main=739bdd5de3a86d72eaa251cb4f9f311e69b33e0e` with first-attempt full [PR CI #40182783889](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40182783889) 4/4. This checks GitRead action + exact TaskLease/session/epoch, root scope, FixedTool pin *scope* and finite watchdog envelope; it is **not** native authorization to spawn and is not called from live MCP yet. Independent [push/main #40183165673](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40183165673) retained separate #185 Windows Node/AppContainer RED; Ubuntu/dependency/release passed.
+
+**Next smallest production step:** join the genuine MCP action/policy decision and active registry-backed TaskLease (including opened-and-hashed executable identity, canonical repository path and revoke watch) to a *service-owned* native reservation **before any process creation**, recheck immediately before spawn, preserve admissions/quotas on uncertainty. Prove #355 post-revoke no-spawn and #352 real wall-clock stdout/stderr **and stdin** independently; then prove root+Job-empty+EOF terminal, host-loss recovery, Win10/Win11 packaging/update/rollback. Research PRs #327/#352/#353/#355/#358 are not a bulk integration plan. **#317/#323 OPEN; Windows V1 NO-GO.**
+
+---
+
 ## P0 sequencing — 25 October 2026 after five research PRs
 
 **Verified production `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`**, independent [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) 4/4 green. Merged #356/#357 typed common GitRead command construction only; native owner is **NOT live**. #317/#323 remain open, V1 NO-GO.
