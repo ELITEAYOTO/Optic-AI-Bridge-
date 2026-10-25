@@ -1,5 +1,9 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+**Latest 25 October 2026:** [canonical status](STATUS.md), [Windows handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md) take precedence. `main=d7d4d50…` [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) green, #356/#357 typed GitRead spec merged; native GitRead still research. Open PRs #327/#352/#353/#355/#358, #352 elapsed-pipe and #355 revoke-before-spawn acceptance RED; #353/#358 native owner/lease green in research. Issues #317/#323 OPEN; V1 NO-GO. No standing permission to access operator computer or bypass safety controls.
+
+
+
 **25 Oct 2026 checkpoint:** see [newest `STATUS.md`](STATUS.md), [current Windows technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). Integrated main `6a645715…` green at [#40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634), open #327/#352/#353; #352 actual wall-clock pipeline acceptance RED, #353 native owner research GREEN but not wired to GitRead. #317/#323 OPEN, V1 NO-GO; refresh GitHub before action. Codex recovery does not authorize device access or safety bypass.
 
 
