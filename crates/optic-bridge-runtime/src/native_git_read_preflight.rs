@@ -228,6 +228,8 @@ mod tests {
 
     impl Drop for Fixture {
         fn drop(&mut self) {
+            // Windows executable pins deny deletion while the registry owns them.
+            drop(std::mem::take(&mut self.registry));
             fs::remove_dir_all(&self.root).expect("cleanup fixture");
         }
     }
