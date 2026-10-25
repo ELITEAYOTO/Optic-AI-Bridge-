@@ -94,6 +94,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'trusted never-spawned preparation failure recovery proof failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_preparation_does_not_steal_another_sessions_capacity -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'cross-session pre-spawn preparation reclamation proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::real_gitread_spec_runs_under_native_owner_with_exact_repo_and_budget -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'real GitRead service command spec under native owner / repo and budget proof failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::git_read_native_rejects_noncanonical_or_unpinned_executable -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'canonical pinned Git executable before native reservation proof failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::git_read_native_reservation_denies_invalid_task_lease_before_capacity -- --exact --nocapture
