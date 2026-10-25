@@ -455,6 +455,60 @@ mod tests {
     }
 
     #[test]
+    fn non_git_read_grants_cannot_reserve_native_git_execution_capacity() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let owners = ledger();
+        let now = MonotonicTime::from_millis(1);
+
+        // None of these independently useful capabilities authorizes GitRead.
+        // In particular FileRead does not imply GitRead, nor does ProcessRun.
+        for (name, capability) in [
+            ("file-read-only", Capability::FileRead),
+            ("process-run-only", Capability::ProcessRun),
+            ("git-integrate-only", Capability::GitIntegrate),
+        ] {
+            let mut attempted = grant(name);
+            attempted.capabilities = BTreeSet::from([capability]);
+            sessions.register(attempted.clone()).expect("register limited session");
+            assert!(matches!(
+                owners.reserve_prepared(
+                    &sessions,
+                    &attempted.handle,
+                    now,
+                    budget(),
+                    3000
+                ),
+                Err(OwnerError::MissingGitReadCapability)
+            ));
+            assert_eq!(
+                owners.outstanding(&attempted.handle).expect("no owner allocated"),
+                0
+            );
+            // A rejected attempt must drop its admission, not keep a revoke
+            // barrier open or subtract from a different session's ceilings.
+            assert!(
+                sessions
+                    .revoke(&attempted.handle)
+                    .expect("denied reservation must not retain admission")
+            );
+        }
+
+        let permitted = grant("explicit-git-read");
+        sessions.register(permitted.clone()).expect("authorized GitRead session");
+        let id = owners
+            .reserve_prepared(&sessions, &permitted.handle, now, budget(), 3000)
+            .expect("GitRead-capable grant may own a prepared native Job");
+        assert_eq!(owners.outstanding(&permitted.handle).expect("reserved"), 1);
+        assert_eq!(owners.stop_session(&permitted.handle).expect("request stop"), 1);
+        let receipt = owners
+            .reap_terminal(id, &permitted.handle)
+            .expect("OS no-spawn terminal evidence")
+            .expect("prepared Job stopped with native EOF");
+        assert!(receipt.cancelled && receipt.status.is_none());
+        assert_eq!(owners.outstanding(&permitted.handle).expect("released"), 0);
+    }
+
+    #[test]
     fn failed_native_preparation_reclaims_only_unexposed_never_spawned_owner() {
         use std::process::Command;
 
