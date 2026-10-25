@@ -1481,6 +1481,140 @@ mod tests {
     }
 
     #[test]
+    fn real_gitread_spec_runs_under_native_owner_with_exact_repo_and_budget() {
+        use optic_bridge_core::{ActionId, HardLimits};
+        use std::{env, fs};
+
+        let git = env::var_os("PATH")
+            .and_then(|path| {
+                env::split_paths(&path).find_map(|dir| {
+                    let candidate = dir.join("git.exe");
+                    candidate.is_file().then_some(candidate)
+                })
+            })
+            .and_then(|path| fs::canonicalize(path).ok())
+            .expect("real Git executable on Windows CI PATH");
+        let token = ActionId::generate().expect("fixture token").to_token();
+        let root = env::temp_dir().join(format!("optic317-real-git-native-{token}"));
+        let repo = root.join("repo");
+        let other = root.join("other-repo");
+        fs::create_dir_all(&root).expect("synthetic fixture root");
+        for path in [&repo, &other] {
+            assert!(
+                Command::new(&git)
+                    .arg("init")
+                    .arg("--quiet")
+                    .arg(path)
+                    .status()
+                    .expect("initialize Git fixture")
+                    .success(),
+                "synthetic Git repository initialization"
+            );
+        }
+        let service = GitReadService::from_hard_limits(&repo, &git, HardLimits::default())
+            .expect("validated configured Git service");
+        let other_service = GitReadService::from_hard_limits(&other, &git, HardLimits::default())
+            .expect("second configured Git service");
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("real-GitRead-native-service-spec");
+        sessions.register(grant.clone()).expect("register authorized fixture session");
+        let leases = TaskLeaseRegistry::new();
+        let mut lease = task_lease(&grant);
+        let pinned = LeaseScope::ProcessExecutable {
+            executable: service
+                .git_executable()
+                .to_str()
+                .expect("Windows fixture canonical UTF-8 Git path")
+                .to_owned(),
+            class: ProcessExecutionClass::FixedTool,
+        };
+        lease.scopes.retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
+        lease.scopes.insert(pinned);
+        let lease_id = lease.id.clone();
+        leases.register(lease).expect("pin real Git executable identity");
+        let owners = ledger();
+        let owner_id = owners
+            .reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                budget(),
+                8000,
+            )
+            .expect("reserved exact Git executable/root and native Job first");
+        let args = [
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+            "--ignore-submodules=all",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+
+        // A valid Git service targeting a DIFFERENT canonical repository
+        // cannot spend this already-authorized owner reservation.
+        assert!(matches!(
+            owners.start_git_read(
+                owner_id,
+                &grant.handle,
+                &other_service,
+                &args,
+                8192,
+            ),
+            Err(OwnerError::UnboundGitReadSpec)
+        ));
+        assert!(matches!(
+            owners.start_git_read(
+                owner_id,
+                &grant.handle,
+                &service,
+                &args,
+                budget().output + 1,
+            ),
+            Err(OwnerError::UnboundGitReadSpec)
+        ));
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("still held"),
+            1,
+            "denied starts must preserve service ownership"
+        );
+        owners
+            .start_git_read(owner_id, &grant.handle, &service, &args, 8192)
+            .expect("native suspended Git launched through production spec");
+        let started = Instant::now();
+        let receipt = loop {
+            if let Some(receipt) = owners
+                .reap_terminal(owner_id, &grant.handle)
+                .expect("kernel Job/EOF check")
+            {
+                break receipt;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(6),
+                "real Git did not provide native job and pipe terminal proof"
+            );
+            thread::sleep(Duration::from_millis(5));
+        };
+        assert!(receipt.is_success(), "real native Git status: {receipt:?}");
+        assert!(
+            receipt.stdout.windows(b"# branch.oid".len()).any(|v| v == b"# branch.oid"),
+            "Git must actually execute status with the exact structured spec"
+        );
+        assert_eq!(owners.outstanding(&grant.handle).expect("fully reaped"), 0);
+        assert!(sessions.revoke(&grant.handle).expect("session admission drained"));
+        fs::remove_dir_all(root).expect("remove only synthetic Git repositories");
+    }
+
+    #[test]
     fn revoking_exact_task_lease_stops_prepared_native_owner_before_spawn() {
         use std::process::Command;
 
