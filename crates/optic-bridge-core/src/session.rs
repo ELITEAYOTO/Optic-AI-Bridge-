@@ -73,6 +73,10 @@ pub enum LeaseScope {
     WorkspaceAll,
     WorkspacePrefix(WorkspacePath),
     Repository,
+    /// Application-owned canonical repository root for one native GitRead
+    /// authority. Unlike the generic Repository marker, this pins the lease
+    /// to an exact directory; this marker alone grants no GitRead effect.
+    GitReadRepository { canonical_root: String },
     SearchMetadata(SearchMetadataScope),
     ReadContent(ReadContentScope),
     ReadSensitive(ReadSensitiveScope),
