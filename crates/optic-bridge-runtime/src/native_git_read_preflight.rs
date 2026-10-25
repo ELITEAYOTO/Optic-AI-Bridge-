@@ -5,14 +5,15 @@
 //! opened-executable identity and a final pre-spawn stop/deadline check are
 //! separate mandatory controls. Legacy GitRead is deliberately unchanged.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
-use optic_bridge_core::{ActionEnvelope, MonotonicTime, SessionGrant, TaskLeaseId};
+use optic_bridge_core::{ActionEnvelope, MonotonicTime, SessionGrant, SessionHandle, TaskLeaseId};
 use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use thiserror::Error;
 
-use crate::task_lease_registry::{
-    TaskLeaseRegistry, TaskLeaseRegistryError, TaskLeaseRevocationWatch,
+use crate::{
+    session_registry::{OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError},
+    task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError, TaskLeaseRevocationWatch},
 };
 
 /// A read-only witness to one concrete registry entry, never a spawn permit.
@@ -23,6 +24,7 @@ use crate::task_lease_registry::{
 #[must_use = "a lease witness must be retained by its native owner"]
 pub struct NativeGitReadLeaseWitness {
     lease_id: TaskLeaseId,
+    lease_expires_at: MonotonicTime,
     revocation: TaskLeaseRevocationWatch,
 }
 
@@ -37,6 +39,13 @@ impl NativeGitReadLeaseWitness {
     #[must_use]
     pub fn is_revoked(&self) -> bool {
         self.revocation.is_revoked()
+    }
+
+    /// A once-admitted lease never gains extra time from later renewal.
+    /// This is a stop request only, not proof that native cleanup completed.
+    #[must_use]
+    pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.is_revoked() || now >= self.lease_expires_at
     }
 }
 
@@ -100,6 +109,7 @@ pub fn verify_registered_native_git_read_preflight(
             }
             Ok(NativeGitReadLeaseWitness {
                 lease_id: lease.id,
+                lease_expires_at: lease.expires_at,
                 revocation,
             })
         }
@@ -109,9 +119,91 @@ pub fn verify_registered_native_git_read_preflight(
     }
 }
 
+    
+/// Non-cloneable ownership of a real, counted session admission and an
+/// independently registered, policy-checked GitRead lease witness.
+///
+/// This is *not* a native launch permit. Native Job ownership and pipes must
+/// be registered before a child can exist, and the owner must keep this value
+/// through provable native quiescence (including TerminationUncertain).
+#[must_use = "native owners must retain admission through terminal OS proof"]
+pub struct NativeGitReadAdmittedPreflight {
+    session_admission: OwnedSessionAdmissionPermit,
+    lease_witness: NativeGitReadLeaseWitness,
+}
+
+impl NativeGitReadAdmittedPreflight {
+    #[must_use]
+    pub fn lease_id(&self) -> &TaskLeaseId {
+        self.lease_witness.lease_id()
+    }
+
+    /// Combines original session and TaskLease generation stop conditions.
+    /// A false result is NOT authority to spawn: policy, executable pins,
+    /// native registration and final pre-spawn checks remain mandatory.
+    #[must_use]
+    pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.session_admission.stop_watch().is_stop_required_at(now)
+            || self.lease_witness.is_stop_required_at(now)
+    }
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum NativeGitReadAdmissionError {
+    #[error("GitRead ActionEnvelope session is not the trusted application session")]
+    WrongTrustedSession,
+    #[error("native GitRead session admission denied: {0}")]
+    Session(#[from] SessionRegistryError),
+    #[error("native GitRead lease/policy preflight denied: {0}")]
+    Preflight(#[from] NativeGitReadLeaseError),
+    #[error("native GitRead revoked or expired during admission preflight")]
+    StopRequired,
+}
+
+/// Acquire a real owned session admission from the trusted application handle,
+/// then combine it with the verified registry-backed GitRead lease witness.
+///
+/// Caller supplies the actual server-owned handle, canonical target and fixed
+/// executable, never identities originating from untrusted MCP arguments.
+/// Admission automatically releases on any failure. On success, the future
+/// service-owned native Job guardian must retain it until actual terminal
+/// evidence, not just a timeout/result code. This function never spawns.
+pub fn begin_admitted_native_git_read_preflight(
+    sessions: &Arc<SessionRegistry>,
+    trusted_session: &SessionHandle,
+    task_leases: &TaskLeaseRegistry,
+    policy: &PolicyEngine,
+    envelope: &ActionEnvelope,
+    canonical_repository: &str,
+    git_executable: &str,
+    now: MonotonicTime,
+) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
+    if &envelope.session != trusted_session {
+        return Err(NativeGitReadAdmissionError::WrongTrustedSession);
+    }
+    let admission = sessions.begin_owned_admission(trusted_session, now)?;
+    let lease_witness = verify_registered_native_git_read_preflight(
+        task_leases,
+        policy,
+        envelope,
+        admission.grant(),
+        canonical_repository,
+        git_executable,
+        now,
+    )?;
+    let result = NativeGitReadAdmittedPreflight {
+        session_admission: admission,
+        lease_witness,
+    };
+    if result.is_stop_required_at(now) {
+        return Err(NativeGitReadAdmissionError::StopRequired);
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, env, fs, path::PathBuf};
+    use std::{collections::BTreeSet, env, fs, path::PathBuf, sync::Arc};
 
     use optic_bridge_core::{
         ActionId, Capability, Effect, LeaseScope, PrincipalId, ProcessExecutionClass, ProjectId,
@@ -125,6 +217,7 @@ mod tests {
         repository: String,
         executable: String,
         registry: TaskLeaseRegistry,
+        sessions: Arc<SessionRegistry>,
         grant: SessionGrant,
         lease: TaskLease,
         envelope: ActionEnvelope,
@@ -197,12 +290,15 @@ mod tests {
             registry
                 .register(lease.clone())
                 .expect("registered real record");
+            let sessions = Arc::new(SessionRegistry::new());
+            sessions.register(grant.clone()).expect("registered session");
             assert!(now < grant.expires_at);
             Self {
                 root,
                 repository,
                 executable,
                 registry,
+                sessions,
                 grant,
                 lease,
                 envelope,
@@ -222,6 +318,24 @@ mod tests {
                 repo,
                 &self.executable,
                 MonotonicTime::from_millis(10),
+            )
+        }
+
+        fn admit(
+            &self,
+            action: &ActionEnvelope,
+            trusted_session: &SessionHandle,
+            now: MonotonicTime,
+        ) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
+            begin_admitted_native_git_read_preflight(
+                &self.sessions,
+                trusted_session,
+                &self.registry,
+                &PolicyEngine,
+                action,
+                &self.repository,
+                &self.executable,
+                now,
             )
         }
     }
@@ -311,6 +425,113 @@ mod tests {
             fixture.check(&fixture.envelope, "relative/repo"),
             Err(NativeGitReadLeaseError::NonAbsoluteTarget)
         ));
+    }
+
+
+    #[test]
+    fn admitted_native_gitread_binds_real_session_and_lease_without_spawning() {
+        let fixture = Fixture::new();
+        let now = MonotonicTime::from_millis(10);
+        let admitted = fixture
+            .admit(&fixture.envelope, &fixture.grant.handle, now)
+            .expect("real admitted session and registered lease");
+        assert_eq!(admitted.lease_id(), &fixture.lease.id);
+        assert!(!admitted.is_stop_required_at(now));
+        assert!(admitted.is_stop_required_at(fixture.lease.expires_at));
+        drop(admitted);
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("admission released"));
+    }
+
+    #[test]
+    fn admitted_native_gitread_rejects_forged_session_and_releases_failed_admission() {
+        let fixture = Fixture::new();
+        let now = MonotonicTime::from_millis(10);
+        let mut forged = fixture.envelope.clone();
+        forged.session = SessionHandle::generate().expect("foreign handle");
+        assert!(matches!(
+            fixture.admit(&forged, &fixture.grant.handle, now),
+            Err(NativeGitReadAdmissionError::WrongTrustedSession)
+        ));
+
+        let mut missing_lease = fixture.envelope.clone();
+        missing_lease.task_lease = None;
+        assert!(matches!(
+            fixture.admit(&missing_lease, &fixture.grant.handle, now),
+            Err(NativeGitReadAdmissionError::Preflight(
+                NativeGitReadLeaseError::LeaseRequired
+            ))
+        ));
+
+        let unknown_session = SessionHandle::generate().expect("unknown session");
+        let mut unknown_action = fixture.envelope.clone();
+        unknown_action.session = unknown_session.clone();
+        assert!(matches!(
+            fixture.admit(&unknown_action, &unknown_session, now),
+            Err(NativeGitReadAdmissionError::Session(
+                SessionRegistryError::UnknownSession
+            ))
+        ));
+        // No failed attempt may leave admission capacity counted.
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("no hanging permits"));
+        assert!(matches!(
+            fixture.admit(&fixture.envelope, &fixture.grant.handle, now),
+            Err(NativeGitReadAdmissionError::Session(
+                SessionRegistryError::Revoked
+            ))
+        ));
+    }
+
+    #[test]
+    fn admitted_native_gitread_retains_session_capacity_until_explicit_drop() {
+        let fixture = Fixture::new();
+        let now = MonotonicTime::from_millis(10);
+        let admitted = fixture
+            .admit(&fixture.envelope, &fixture.grant.handle, now)
+            .expect("owned session admission");
+        assert!(fixture.sessions.publish_revocation_before_drain(&fixture.grant.handle)
+            .expect("publish session revoke"));
+        assert!(admitted.is_stop_required_at(now));
+        assert_eq!(
+            fixture.sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, now)
+                .expect_err("registered owner must block early removal"),
+            SessionRegistryError::AdmissionsInFlight
+        );
+        drop(admitted);
+        assert!(!fixture.sessions.revoke(&fixture.grant.handle).expect("already revoked"));
+        assert!(fixture.sessions
+            .remove_quiescent_inactive(&fixture.grant.handle, now)
+            .expect("terminal owner releases capacity"));
+    }
+
+    #[test]
+    fn admitted_native_gitread_old_lease_witness_stays_stopped_after_id_reuse() {
+        let fixture = Fixture::new();
+        let now = MonotonicTime::from_millis(10);
+        let admitted = fixture
+            .admit(&fixture.envelope, &fixture.grant.handle, now)
+            .expect("original admitted owner");
+        assert!(fixture.registry.revoke(&fixture.lease.id).expect("lease revoke"));
+        assert!(admitted.is_stop_required_at(now));
+        assert!(fixture.registry.remove_revoked(&fixture.lease.id).expect("remove old record"));
+        fixture.registry.register(fixture.lease.clone()).expect("replace same ID");
+        assert!(admitted.is_stop_required_at(now), "old owner must not rebind");
+        drop(admitted);
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("finish"));
+    }
+
+    #[test]
+    fn admitted_native_gitread_rejects_expired_session_or_lease() {
+        let fixture = Fixture::new();
+        let expiration = fixture.grant.expires_at;
+        assert!(matches!(
+            fixture.admit(&fixture.envelope, &fixture.grant.handle, expiration),
+            Err(NativeGitReadAdmissionError::Session(
+                SessionRegistryError::Expired
+            ))
+        ));
+        // A failed admission on expiry must not block synchronous revocation.
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("revoke"));
     }
 
     #[test]
