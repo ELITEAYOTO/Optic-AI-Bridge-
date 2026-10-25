@@ -737,6 +737,12 @@ mod tests {
             capabilities: BTreeSet::from([Capability::GitRead]),
             scopes: BTreeSet::from([
                 LeaseScope::Repository,
+                LeaseScope::GitReadRepository {
+                    canonical_root: fixture_repository_root()
+                        .to_str()
+                        .expect("canonical UTF-8 fixture repository")
+                        .to_owned(),
+                },
                 LeaseScope::ProcessExecutable {
                     executable: fixture_git_executable()
                         .to_str()
@@ -1396,7 +1402,7 @@ mod tests {
             Err(OwnerError::Lease(TaskLeaseRegistryError::UnknownLease))
         ));
 
-        for variant in 0..10 {
+        for variant in 0..13 {
             let mut lease = task_lease(&grant);
             match variant {
                 0 => lease.session = SessionHandle::generate().expect("other session"),
@@ -1426,6 +1432,24 @@ mod tests {
                             .to_owned(),
                         class: ProcessExecutionClass::Interpreter,
                     });
+                }
+                // A generic Repository scope does not pin a GitRead root.
+                10 => lease
+                    .scopes
+                    .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. })),
+                11 => {
+                    lease
+                        .scopes
+                        .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+                    lease.scopes.insert(LeaseScope::GitReadRepository {
+                        canonical_root: fixture_repository_root()
+                            .join("other-repository")
+                            .to_string_lossy()
+                            .into_owned(),
+                    });
+                }
+                12 => {
+                    lease.scopes.remove(&LeaseScope::Repository);
                 }
                 _ => unreachable!(),
             }
@@ -1651,6 +1675,16 @@ mod tests {
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         lease.scopes.insert(pinned.clone());
+        lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+        lease.scopes.insert(LeaseScope::GitReadRepository {
+            canonical_root: service
+                .repository_root()
+                .to_str()
+                .expect("canonical UTF-8 real Git fixture repository")
+                .to_owned(),
+        });
         // One native Job process is insufficient for the Git for Windows
         // launcher. Two must be explicitly present in the exact task lease,
         // and counted against an independent aggregate native-process ceiling.
@@ -1990,6 +2024,16 @@ mod tests {
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         short_lease.scopes.insert(pinned);
+        short_lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+        short_lease.scopes.insert(LeaseScope::GitReadRepository {
+            canonical_root: service
+                .repository_root()
+                .to_str()
+                .expect("canonical UTF-8 real Git fixture repository")
+                .to_owned(),
+        });
         short_lease.resource_ceiling.process_count = 2;
         short_lease.expires_at = MonotonicTime::from_millis(25_000);
         let short_id = short_lease.id.clone();
