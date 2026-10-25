@@ -824,7 +824,13 @@ mod tests {
         );
         assert_eq!(spec.env, git_read_environment());
         assert_eq!(spec.output_limit, 4096);
-        for disallowed in ["PATH", "HOME", "GIT_CONFIG_SYSTEM", "HTTP_PROXY", "HTTPS_PROXY"] {
+        for disallowed in [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_SYSTEM",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+        ] {
             assert!(!spec.env.contains_key(&OsString::from(disallowed)));
         }
         // Verify that a nonzero limit is required before any spawn path.
