@@ -469,19 +469,17 @@ mod tests {
         ] {
             let mut attempted = grant(name);
             attempted.capabilities = BTreeSet::from([capability]);
-            sessions.register(attempted.clone()).expect("register limited session");
+            sessions
+                .register(attempted.clone())
+                .expect("register limited session");
             assert!(matches!(
-                owners.reserve_prepared(
-                    &sessions,
-                    &attempted.handle,
-                    now,
-                    budget(),
-                    3000
-                ),
+                owners.reserve_prepared(&sessions, &attempted.handle, now, budget(), 3000),
                 Err(OwnerError::MissingGitReadCapability)
             ));
             assert_eq!(
-                owners.outstanding(&attempted.handle).expect("no owner allocated"),
+                owners
+                    .outstanding(&attempted.handle)
+                    .expect("no owner allocated"),
                 0
             );
             // A rejected attempt must drop its admission, not keep a revoke
@@ -494,12 +492,19 @@ mod tests {
         }
 
         let permitted = grant("explicit-git-read");
-        sessions.register(permitted.clone()).expect("authorized GitRead session");
+        sessions
+            .register(permitted.clone())
+            .expect("authorized GitRead session");
         let id = owners
             .reserve_prepared(&sessions, &permitted.handle, now, budget(), 3000)
             .expect("GitRead-capable grant may own a prepared native Job");
         assert_eq!(owners.outstanding(&permitted.handle).expect("reserved"), 1);
-        assert_eq!(owners.stop_session(&permitted.handle).expect("request stop"), 1);
+        assert_eq!(
+            owners
+                .stop_session(&permitted.handle)
+                .expect("request stop"),
+            1
+        );
         let receipt = owners
             .reap_terminal(id, &permitted.handle)
             .expect("OS no-spawn terminal evidence")
