@@ -43,6 +43,7 @@ mod journaled_mutation;
 mod mutation;
 #[path = "mutation/authority.rs"]
 mod mutation_authority;
+mod native_git_read_preflight;
 #[cfg(windows)]
 mod private_node_task;
 mod private_project_stage;
@@ -66,7 +67,6 @@ mod session_reusable_approval;
 #[path = "session/worktree.rs"]
 mod session_worktree;
 mod task_lease_registry;
-mod native_git_read_preflight;
 mod tool_profile_registry;
 #[path = "mutation/transactional.rs"]
 mod transactional_file;
@@ -127,6 +127,9 @@ pub use mutation::{
 pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
 };
+pub use native_git_read_preflight::{
+    NativeGitReadLeaseError, NativeGitReadLeaseWitness, verify_registered_native_git_read_preflight,
+};
 #[cfg(windows)]
 pub use private_node_task::PrivateNodeTaskStart;
 #[cfg(windows)]
@@ -178,9 +181,6 @@ pub use session_worktree::{
     SessionWorktree, SessionWorktreeError, SessionWorktreeManager, SessionWorktreeRecoveryReport,
 };
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
-pub use native_git_read_preflight::{
-    NativeGitReadLeaseError, NativeGitReadLeaseWitness, verify_registered_native_git_read_preflight,
-};
 pub use tool_profile_registry::{ToolProfileRegistry, ToolProfileRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};

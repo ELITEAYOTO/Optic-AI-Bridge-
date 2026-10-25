@@ -76,17 +76,12 @@ pub fn verify_registered_native_git_read_preflight(
 
     // The eventual caller supplies these from trusted canonicalized runtime
     // state, not from model-provided strings or user-controlled path aliases.
-    if !Path::new(canonical_repository).is_absolute()
-        || !Path::new(git_executable).is_absolute()
-    {
+    if !Path::new(canonical_repository).is_absolute() || !Path::new(git_executable).is_absolute() {
         return Err(NativeGitReadLeaseError::NonAbsoluteTarget);
     }
 
-    let (lease, revocation) = registry.get_active_with_revocation_watch(
-        id,
-        &session.handle,
-        now,
-    )?;
+    let (lease, revocation) =
+        registry.get_active_with_revocation_watch(id, &session.handle, now)?;
     match policy.evaluate_native_git_read_preflight(
         envelope,
         session,
@@ -147,9 +142,13 @@ mod tests {
             let executable = root.join("fixed-tool.bin");
             fs::write(&executable, b"synthetic fixed tool; never executed").expect("tool bytes");
             let repository = fs::canonicalize(repository)
-                .expect("canonical repository").to_string_lossy().into_owned();
+                .expect("canonical repository")
+                .to_string_lossy()
+                .into_owned();
             let executable = fs::canonicalize(executable)
-                .expect("canonical tool").to_string_lossy().into_owned();
+                .expect("canonical tool")
+                .to_string_lossy()
+                .into_owned();
 
             let now = MonotonicTime::from_millis(10);
             let session = SessionHandle::generate().expect("session");
@@ -173,7 +172,9 @@ mod tests {
                 capabilities: BTreeSet::from([Capability::GitRead]),
                 scopes: BTreeSet::from([
                     LeaseScope::Repository,
-                    LeaseScope::GitReadRepository { canonical_root: repository.clone() },
+                    LeaseScope::GitReadRepository {
+                        canonical_root: repository.clone(),
+                    },
                     LeaseScope::ProcessExecutable {
                         executable: executable.clone(),
                         class: ProcessExecutionClass::FixedTool,
@@ -193,15 +194,34 @@ mod tests {
                 policy_epoch: grant.policy_epoch,
             };
             let registry = TaskLeaseRegistry::new();
-            registry.register(lease.clone()).expect("registered real record");
+            registry
+                .register(lease.clone())
+                .expect("registered real record");
             assert!(now < grant.expires_at);
-            Self { root, repository, executable, registry, grant, lease, envelope }
+            Self {
+                root,
+                repository,
+                executable,
+                registry,
+                grant,
+                lease,
+                envelope,
+            }
         }
 
-        fn check(&self, action: &ActionEnvelope, repo: &str) -> Result<NativeGitReadLeaseWitness, NativeGitReadLeaseError> {
+        fn check(
+            &self,
+            action: &ActionEnvelope,
+            repo: &str,
+        ) -> Result<NativeGitReadLeaseWitness, NativeGitReadLeaseError> {
             verify_registered_native_git_read_preflight(
-                &self.registry, &PolicyEngine, action, &self.grant,
-                repo, &self.executable, MonotonicTime::from_millis(10),
+                &self.registry,
+                &PolicyEngine,
+                action,
+                &self.grant,
+                repo,
+                &self.executable,
+                MonotonicTime::from_millis(10),
             )
         }
     }
@@ -219,7 +239,10 @@ mod tests {
         legacy.task_lease = None;
         assert_eq!(
             PolicyEngine.evaluate(
-                &legacy, &fixture.grant, None, MonotonicTime::from_millis(10),
+                &legacy,
+                &fixture.grant,
+                None,
+                MonotonicTime::from_millis(10),
             ),
             PolicyDecision::Allow,
             "legacy GitRead authorization must remain unchanged"
@@ -230,14 +253,16 @@ mod tests {
         ));
 
         let mut unregistered = fixture.envelope.clone();
-        unregistered.task_lease = Some(
-            optic_bridge_core::TaskLeaseId::generate().expect("unknown lease"),
-        );
+        unregistered.task_lease =
+            Some(optic_bridge_core::TaskLeaseId::generate().expect("unknown lease"));
         assert!(matches!(
             fixture.check(&unregistered, &fixture.repository),
-            Err(NativeGitReadLeaseError::Registry(TaskLeaseRegistryError::UnknownLease))
+            Err(NativeGitReadLeaseError::Registry(
+                TaskLeaseRegistryError::UnknownLease
+            ))
         ));
-        let witness = fixture.check(&fixture.envelope, &fixture.repository)
+        let witness = fixture
+            .check(&fixture.envelope, &fixture.repository)
             .expect("registered and correctly scoped GitRead");
         assert_eq!(witness.lease_id(), &fixture.lease.id);
         assert!(!witness.is_revoked());
@@ -248,11 +273,15 @@ mod tests {
         let fixture = Fixture::new();
         let other_repo = fixture.root.join("another-repo");
         fs::create_dir(&other_repo).expect("other repo");
-        let other_repo = fs::canonicalize(other_repo).expect("canonical")
-            .to_string_lossy().into_owned();
+        let other_repo = fs::canonicalize(other_repo)
+            .expect("canonical")
+            .to_string_lossy()
+            .into_owned();
         assert!(matches!(
             fixture.check(&fixture.envelope, &other_repo),
-            Err(NativeGitReadLeaseError::Policy(PolicyReason::ScopeNotAuthorized))
+            Err(NativeGitReadLeaseError::Policy(
+                PolicyReason::ScopeNotAuthorized
+            ))
         ));
         let mut wrong_session = fixture.envelope.clone();
         wrong_session.session = SessionHandle::generate().expect("other session");
@@ -264,13 +293,17 @@ mod tests {
         stale_epoch.policy_epoch += 1;
         assert!(matches!(
             fixture.check(&stale_epoch, &fixture.repository),
-            Err(NativeGitReadLeaseError::Policy(PolicyReason::StalePolicyEpoch))
+            Err(NativeGitReadLeaseError::Policy(
+                PolicyReason::StalePolicyEpoch
+            ))
         ));
         let mut excess = fixture.envelope.clone();
         excess.resources.timeout_ms = 20_000;
         assert!(matches!(
             fixture.check(&excess, &fixture.repository),
-            Err(NativeGitReadLeaseError::Policy(PolicyReason::ResourceBudgetExceeded))
+            Err(NativeGitReadLeaseError::Policy(
+                PolicyReason::ResourceBudgetExceeded
+            ))
         ));
         assert!(matches!(
             fixture.check(&fixture.envelope, "relative/repo"),
@@ -281,20 +314,38 @@ mod tests {
     #[test]
     fn witness_remains_bound_after_revocation_removal_and_same_id_reuse() {
         let fixture = Fixture::new();
-        let original = fixture.check(&fixture.envelope, &fixture.repository)
+        let original = fixture
+            .check(&fixture.envelope, &fixture.repository)
             .expect("original witness");
         assert!(fixture.registry.revoke(&fixture.lease.id).expect("revoke"));
-        assert!(original.is_revoked(), "published revoke reaches original watch");
+        assert!(
+            original.is_revoked(),
+            "published revoke reaches original watch"
+        );
         assert!(matches!(
             fixture.check(&fixture.envelope, &fixture.repository),
-            Err(NativeGitReadLeaseError::Registry(TaskLeaseRegistryError::Revoked))
+            Err(NativeGitReadLeaseError::Registry(
+                TaskLeaseRegistryError::Revoked
+            ))
         ));
-        assert!(fixture.registry.remove_revoked(&fixture.lease.id).expect("remove old"));
+        assert!(
+            fixture
+                .registry
+                .remove_revoked(&fixture.lease.id)
+                .expect("remove old")
+        );
         let replacement = fixture.lease.clone();
-        fixture.registry.register(replacement).expect("same-ID new record");
-        let current = fixture.check(&fixture.envelope, &fixture.repository)
+        fixture
+            .registry
+            .register(replacement)
+            .expect("same-ID new record");
+        let current = fixture
+            .check(&fixture.envelope, &fixture.repository)
             .expect("new registered generation is independently checked");
-        assert!(original.is_revoked(), "old witness cannot observe replacement");
+        assert!(
+            original.is_revoked(),
+            "old witness cannot observe replacement"
+        );
         assert!(!current.is_revoked(), "new witness belongs to new record");
     }
 }
