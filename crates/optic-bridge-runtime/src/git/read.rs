@@ -286,6 +286,20 @@ impl GitReadService {
         args: &[OsString],
         output_limit: u64,
     ) -> Result<HardenedCommandOutput, GitReadError> {
+        let spec = self.command_spec(args, output_limit)?;
+        self.runner.run(&spec).map_err(map_runner_error)
+    }
+
+    /// The single application-owned source of GitRead command identity,
+    /// mandatory Git options and sanitized environment. The future Windows
+    /// native owner must consume this identical structured spec rather than
+    /// reconstructing commands or accepting caller-supplied executables.
+    /// This builder neither launches Git nor grants authority to launch it.
+    pub(crate) fn command_spec(
+        &self,
+        args: &[OsString],
+        output_limit: u64,
+    ) -> Result<HardenedCommandSpec, GitReadError> {
         if output_limit == 0 {
             return Err(GitReadError::ZeroRequestLimit);
         }
@@ -299,14 +313,13 @@ impl GitReadService {
             "core.untrackedCache=false",
         ]);
         command_args.extend(args.iter().cloned());
-        let spec = HardenedCommandSpec {
+        Ok(HardenedCommandSpec {
             executable: self.git_executable.clone(),
             cwd: self.repository_root.clone(),
             args: command_args,
             env: git_read_environment(),
             output_limit,
-        };
-        self.runner.run(&spec).map_err(map_runner_error)
+        })
     }
 }
 
@@ -772,6 +785,59 @@ mod tests {
 
     fn path(value: &str) -> WorkspacePath {
         WorkspacePath::parse(value).expect("workspace path")
+    }
+
+    #[test]
+    fn git_read_command_spec_is_identical_for_native_and_legacy_adapters() {
+        let fixture = RepoFixture::new("single-command-spec");
+        let service = fixture.service();
+        // Typed arguments include an option-shaped literal path. The builder
+        // cannot silently reorder it, add -C, or consult process PATH/HOME.
+        let arguments = os_args([
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--",
+            "-literal-user-controlled-name",
+        ]);
+        let spec = service
+            .command_spec(&arguments, 4096)
+            .expect("fixed application-owned GitRead spec");
+
+        assert_eq!(spec.executable, service.git_executable());
+        assert_eq!(spec.cwd, service.repository_root());
+        assert_eq!(
+            spec.args,
+            os_args([
+                "--no-pager",
+                "--literal-pathspecs",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.untrackedCache=false",
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--",
+                "-literal-user-controlled-name",
+            ])
+        );
+        assert_eq!(spec.env, git_read_environment());
+        assert_eq!(spec.output_limit, 4096);
+        for disallowed in [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_SYSTEM",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+        ] {
+            assert!(!spec.env.contains_key(&OsString::from(disallowed)));
+        }
+        // Verify that a nonzero limit is required before any spawn path.
+        assert!(matches!(
+            service.command_spec(&arguments, 0),
+            Err(GitReadError::ZeroRequestLimit)
+        ));
     }
 
     #[test]
