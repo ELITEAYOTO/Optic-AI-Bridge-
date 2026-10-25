@@ -136,12 +136,14 @@ impl PreparedReadCommand {
         &self,
         stop: &Arc<AtomicBool>,
         revoked: &Arc<AtomicBool>,
+        lease_revoked: Option<&Arc<AtomicBool>>,
     ) -> bool {
         !self.attempted
             && self.child.is_none()
-            && self.stop_flags.len() == 2
+            && self.stop_flags.len() == 2 + usize::from(lease_revoked.is_some())
             && Arc::ptr_eq(&self.stop_flags[0], stop)
             && Arc::ptr_eq(&self.stop_flags[1], revoked)
+            && lease_revoked.is_none_or(|signal| Arc::ptr_eq(&self.stop_flags[2], signal))
     }
 
     pub fn start(&mut self, command: &mut Command) -> Result<()> {
