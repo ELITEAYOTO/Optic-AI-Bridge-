@@ -1758,7 +1758,9 @@ mod tests {
             Err(OwnerError::InvalidGitReadLease)
         ));
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("foreign repo denied"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("foreign repo denied"),
             0
         );
         let owner_id = owners
