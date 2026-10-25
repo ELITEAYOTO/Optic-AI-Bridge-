@@ -1114,4 +1114,112 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn git_read_native_reservation_denies_invalid_task_lease_before_capacity() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("lease-authority");
+        sessions.register(grant.clone()).expect("register session");
+        let owners = ledger();
+        let leases = TaskLeaseRegistry::new();
+        let now = MonotonicTime::from_millis(1);
+
+        let absent = TaskLeaseId::generate().expect("unknown lease");
+        assert!(matches!(
+            owners.reserve_prepared(&sessions, &leases, &absent, &grant.handle, now, budget(), 3000),
+            Err(OwnerError::Lease(TaskLeaseRegistryError::UnknownLease))
+        ));
+
+        for variant in 0..7 {
+            let mut lease = task_lease(&grant);
+            match variant {
+                0 => lease.session = SessionHandle::generate().expect("other session"),
+                1 => lease.capabilities = BTreeSet::from([Capability::FileRead]),
+                2 => lease.scopes = BTreeSet::from([LeaseScope::WorkspaceAll]),
+                3 => lease.policy_epoch += 1,
+                4 => lease.expires_at = now,
+                5 => lease.resource_ceiling.output_bytes = 1,
+                6 => lease.resource_ceiling.timeout_ms = 1,
+                _ => unreachable!(),
+            }
+            let id = lease.id.clone();
+            leases.register(lease).expect("register synthetic lease");
+            let attempt = owners.reserve_prepared(
+                &sessions,
+                &leases,
+                &id,
+                &grant.handle,
+                now,
+                budget(),
+                3000,
+            );
+            assert!(
+                matches!(
+                    attempt,
+                    Err(OwnerError::InvalidGitReadLease | OwnerError::Lease(_))
+                ),
+                "variant {variant} must fail before owner allocation: {attempt:?}"
+            );
+            assert_eq!(owners.outstanding(&grant.handle).expect("no reservation"), 0);
+        }
+        let valid = task_lease(&grant);
+        let revoked_id = valid.id.clone();
+        leases.register(valid).expect("revocable lease");
+        assert!(leases.revoke(&revoked_id).expect("revoke before reservation"));
+        assert!(matches!(
+            owners.reserve_prepared(
+                &sessions,
+                &leases,
+                &revoked_id,
+                &grant.handle,
+                now,
+                budget(),
+                3000,
+            ),
+            Err(OwnerError::Lease(TaskLeaseRegistryError::Revoked))
+        ));
+        assert_eq!(owners.outstanding(&grant.handle).expect("still empty"), 0);
+        assert!(sessions.revoke(&grant.handle).expect("no stranded admission"));
+    }
+
+    #[test]
+    fn revoking_exact_task_lease_stops_prepared_native_owner_before_spawn() {
+        use std::process::Command;
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("lease-revoke-no-spawn");
+        sessions.register(grant.clone()).expect("session");
+        let leases = TaskLeaseRegistry::new();
+        let lease = task_lease(&grant);
+        let lease_id = lease.id.clone();
+        leases.register(lease).expect("lease");
+        let owners = ledger();
+        let owner_id = owners
+            .reserve_prepared(
+                &sessions,
+                &leases,
+                &lease_id,
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                budget(),
+                3000,
+            )
+            .expect("preparation held under exact lease");
+        assert_eq!(owners.outstanding(&grant.handle).expect("reserved"), 1);
+        assert!(leases.revoke(&lease_id).expect("publish task lease stop"));
+        let mut command = Command::new(std::env::current_exe().expect("synthetic binary"));
+        assert!(matches!(
+            owners.with_owner(owner_id, &grant.handle, |native| native.start(&mut command)),
+            Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::Interrupted
+        ));
+        assert_eq!(owners.outstanding(&grant.handle).expect("still counted"), 1);
+        let receipt = owners
+            .reap_terminal(owner_id, &grant.handle)
+            .expect("native Job and two pipe EOF observations")
+            .expect("never spawned child proved terminal");
+        assert!(receipt.status.is_none());
+        assert!(receipt.cancelled && !receipt.is_success());
+        assert_eq!(owners.outstanding(&grant.handle).expect("capacity released"), 0);
+        assert!(sessions.revoke(&grant.handle).expect("admission drained"));
+    }
 }
