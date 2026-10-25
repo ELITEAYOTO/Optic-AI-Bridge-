@@ -1,0 +1,38 @@
+name: Issue 317 GitRead pre-spawn revocation acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'crates/optic-bridge-mcp/src/git_tools.rs'
+      - '.github/workflows/issue317-gitread-pre-spawn-revoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  revoke-before-native-git-spawn:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact research source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          echo "ISSUE317_GITREAD_PRESPAWN_SHA=$(git rev-parse HEAD)"
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
+      - name: Validate research fixture formatting
+        run: cargo fmt --all -- --check
+      - name: Require revoke-before-spawn rather than merely post-hoc denial
+        run: cargo test --locked -p optic-bridge-mcp --lib issue317_revocation_between_authorization_and_git_spawn_must_prevent_execution -- --ignored --nocapture --test-threads=1
