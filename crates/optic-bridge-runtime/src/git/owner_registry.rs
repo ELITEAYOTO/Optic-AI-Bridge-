@@ -515,7 +515,9 @@ impl NativeGitOwners {
     ) -> Result<(), OwnerError> {
         let spec = service.status_command_spec(output_limit)?;
         let active = authority.registry.get_active(authority.id, session, now)?;
-        let (signal, watched) = authority.registry.watch_active(authority.id, session, now)?;
+        let (signal, watched) = authority
+            .registry
+            .watch_active(authority.id, session, now)?;
         let (owner, _observation) = self.claim_owner(id, session)?;
         {
             let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
@@ -1757,7 +1759,11 @@ mod tests {
                 8000,
             )
             .expect("second real Git status owner prepared before task revoke");
-        assert!(leases.revoke(&lease_id).expect("publish exact lease revocation"));
+        assert!(
+            leases
+                .revoke(&lease_id)
+                .expect("publish exact lease revocation")
+        );
         assert!(matches!(
             owners.start_git_status(
                 revoked_owner,
@@ -1775,7 +1781,9 @@ mod tests {
             Err(OwnerError::Lease(TaskLeaseRegistryError::Revoked))
         ));
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("revoke retains native owner"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("revoke retains native owner"),
             1
         );
         let stopped = Instant::now();
@@ -1795,7 +1803,9 @@ mod tests {
         assert!(receipt.cancelled && receipt.status.is_none());
         assert!(!receipt.is_success());
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("revoke cleanup capacity"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("revoke cleanup capacity"),
             0
         );
         assert!(
