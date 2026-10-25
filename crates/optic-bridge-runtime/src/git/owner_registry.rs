@@ -317,6 +317,12 @@ impl NativeGitOwners {
         if canonical_repository != authority.repository_root || !canonical_repository.is_dir() {
             return Err(OwnerError::GitRepositoryNotAuthorized);
         }
+        let repository_scope = LeaseScope::GitReadRepository {
+            canonical_root: canonical_repository
+                .to_str()
+                .ok_or(OwnerError::GitRepositoryNotAuthorized)?
+                .to_owned(),
+        };
         let lease = authority.registry.get_active(authority.id, session, now)?;
         if !lease.has_scope(&LeaseScope::ProcessExecutable {
             executable: git_path.to_owned(),
@@ -336,6 +342,7 @@ impl NativeGitOwners {
             || lease.expires_at < until
             || !lease.allows(Capability::GitRead)
             || !lease.has_scope(&LeaseScope::Repository)
+            || !lease.has_scope(&repository_scope)
             || lease.policy_epoch != grant.policy_epoch
             || lease.resource_ceiling.process_count < budget.processes
             || lease.resource_ceiling.memory_bytes < budget.memory
@@ -525,6 +532,13 @@ impl NativeGitOwners {
         output_limit: u64,
     ) -> Result<(), OwnerError> {
         let spec = service.status_command_spec(output_limit)?;
+        let repository_scope = LeaseScope::GitReadRepository {
+            canonical_root: spec
+                .cwd
+                .to_str()
+                .ok_or(OwnerError::GitRepositoryNotAuthorized)?
+                .to_owned(),
+        };
         // A previously captured admission timestamp cannot extend launch
         // rights. Read the trusted runtime clock AFTER constructing the spec.
         let now = clock.now();
@@ -550,6 +564,7 @@ impl NativeGitOwners {
                 || active.policy_epoch != record.admission.grant().policy_epoch
                 || !active.allows(Capability::GitRead)
                 || !active.has_scope(&LeaseScope::Repository)
+                || !active.has_scope(&repository_scope)
                 || record.git_executable.as_deref() != Some(spec.executable.as_path())
                 || record.repository_root.as_deref() != Some(spec.cwd.as_path())
                 || authority.git_executable != spec.executable.as_path()
