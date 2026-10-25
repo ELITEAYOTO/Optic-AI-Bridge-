@@ -40,6 +40,23 @@ struct LeaseRecord {
     process_authorities: HashMap<String, ProcessAuthority>,
 }
 
+/// Read-only observation bound to one concrete, verified TaskLease record.
+/// This is cancellation evidence, not approval to create or resume a process.
+/// Removal and even reuse of the opaque lease ID cannot retarget this signal.
+#[derive(Clone, Debug)]
+pub(crate) struct TaskLeaseRevocationWatch {
+    signal: Arc<AtomicBool>,
+}
+
+impl TaskLeaseRevocationWatch {
+    // The future native owner will consume this generation-bound stop watch.
+    #[allow(dead_code)]
+    #[must_use]
+    pub(crate) fn is_revoked(&self) -> bool {
+        self.signal.load(Ordering::Acquire)
+    }
+}
+
 impl TaskLeaseRegistry {
     #[must_use]
     pub fn new() -> Self {
@@ -118,6 +135,21 @@ impl TaskLeaseRegistry {
         session: &SessionHandle,
         now: MonotonicTime,
     ) -> Result<TaskLease, TaskLeaseRegistryError> {
+        self.get_active_with_revocation_watch(id, session, now)
+            .map(|(lease, _watch)| lease)
+    }
+
+    /// Verify the exact registered lease, including the pinned executable
+    /// identity, and capture its original revocation signal under ONE lock.
+    /// Consumers must still enforce session admission, typed policy, the
+    /// native watchdog deadline and final pre-spawn revocation validation.
+    /// No native child or owner is created by this observation.
+    pub(crate) fn get_active_with_revocation_watch(
+        &self,
+        id: &TaskLeaseId,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<(TaskLease, TaskLeaseRevocationWatch), TaskLeaseRegistryError> {
         let leases = self
             .leases
             .lock()
@@ -125,7 +157,12 @@ impl TaskLeaseRegistry {
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
         validate_active_record(record, session, now)?;
         validate_process_authorities(record)?;
-        Ok(record.lease.clone())
+        Ok((
+            record.lease.clone(),
+            TaskLeaseRevocationWatch {
+                signal: Arc::clone(&record.revocation_signal),
+            },
+        ))
     }
 
     pub(crate) fn renew_active_session(
