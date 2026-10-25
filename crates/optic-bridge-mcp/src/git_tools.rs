@@ -934,4 +934,80 @@ mod tests {
             "optic.session_inactive"
         );
     }
+
+    // Research acceptance, deliberately ignored by the ordinary workspace suite.
+    // This is not a production fix: the current GitRead worker can pass its
+    // original policy check, wait here, and spawn Git after session revocation.
+    // Requiring pre-spawn cancellation must be implemented by a native owner
+    // that retains its admission and resource accounting until terminal proof.
+    #[tokio::test]
+    #[ignore = "issue #317 research: live GitRead does not yet own a pre-spawn revoke barrier"]
+    async fn issue317_revocation_between_authorization_and_git_spawn_must_prevent_execution() {
+        use std::{sync::mpsc, time::Duration};
+
+        let fixture = RepoFixture::new("revoke-before-git-spawn");
+        let server = fixture.server(&[Capability::GitRead]);
+        let reader = server.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let (executed_tx, executed_rx) = mpsc::channel();
+
+        let request = tokio::spawn(async move {
+            reader
+                .run_git_read(move |service| {
+                    entered_tx.send(()).expect("admitted Git operation entered");
+                    resume_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("bounded synthetic pre-spawn barrier");
+                    // A successful real Git status here proves that the Git
+                    // executable was started AFTER the session was revoked.
+                    let result = service.status_with_max_bytes(4096);
+                    executed_tx
+                        .send(result.is_ok())
+                        .expect("report real Git execution result");
+                    result
+                })
+                .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("operation admission deadline")
+            .expect("admitted operation signal");
+        let sessions = Arc::clone(&server.sessions);
+        let session = server.session.clone();
+        let revoke = tokio::task::spawn_blocking(move || sessions.revoke(&session));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server
+                .sessions
+                .get_active(&server.session, server.clock.now())
+                .is_ok()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("revoke must publish before admission drainage");
+
+        resume_tx.send(()).expect("release bounded barrier");
+        let git_executed =
+            tokio::task::spawn_blocking(move || executed_rx.recv_timeout(Duration::from_secs(5)))
+                .await
+                .expect("execution observation task")
+                .expect("bounded execution observation");
+        let _request_outcome = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("Git worker completion deadline")
+            .expect("Git request task");
+        tokio::time::timeout(Duration::from_secs(5), revoke)
+            .await
+            .expect("revoke drain deadline")
+            .expect("revoke task")
+            .expect("revoke result");
+
+        assert!(
+            !git_executed,
+            "ISSUE317_POST_REVOKE_GIT_SPAWN: real Git status executed after revocation; pre-spawn native ownership/stop check absent"
+        );
+    }
 }
