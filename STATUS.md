@@ -1,5 +1,15 @@
 # Current project status
 
+## Current integrated Windows V1 checkpoint — 25 October 2026, after PR #360
+
+**Production `main=0b2fcc6ee5329d3112500e79fc2a724eb9736c31`**: independently confirmed [push/main CI #40181293600](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181293600) **SUCCESS (attempt 1, Windows/Ubuntu/dependencies/release 4/4)**. This checkpoint supersedes older dated heads; re-query live GitHub before action.
+
+- [PR #360](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/360) merged only the inert `LeaseScope::GitReadRepository { canonical_root }` type and its non-interchangeability regression with generic `Repository`. First test-only head `987cfdf7…` produced intended compile E0599 failures on Windows and Ubuntu ([CI #40180872178](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40180872178); overall cancelled after new push but first failing job logs preserved). Corrected head `5335519401932629eb93897a5179b744c4d70e09` passed [CI #40181004649](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40181004649) **4/4 first attempt**. No new policy permission, active native launcher or process guarantee; real `GitReadService` continues to use `HardenedCommandRunner`.
+- [Draft #358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) has reconciled research HEAD `735619a2c39898e612c98a367718b614fc21f804`, retaining native #353 `b091dc28…` ancestry without force-push. Dedicated [native CI #40179682571](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40179682571) and [preparation #40179682501](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40179682501) passed; full [CI #40179682499](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40179682499) **FAILED first attempt, separate #185 Windows Node/AppContainer timeout**, preserved in PR #358 and issue #185. The enum variant is now also on production main; reconcile overlapping changes before any new research integration.
+- **Open #317/#323, Windows V1 NO-GO.** Five research PRs #327/#352/#353/#355/#358 remain unmerged. Dedicated #352 actual pipe wall-clock and #355 post-revocation Git spawn acceptance are RED; #185 intermittent AppContainer is independent. An exact repo marker is necessary but not sufficient: next P0 must bind real MCP `ActionEnvelope`/policy, a nonexpired scoped TaskLease, native Job ownership before spawn, stop-before-drain, valid root+Job+EOF receipts, stdin and crash recovery. No speculative release or operator-PC access.
+
+---
+
 ## CANONICAL LIVE CHECKPOINT — 25 OCTOBER 2026, AFTER #356/#357 AND RESEARCH #353/#358
 
 > This is the newest dated checkpoint, not permission to overwrite or reset old work. Earlier "latest" sections remain historical. Always verify live GitHub again on takeover.
