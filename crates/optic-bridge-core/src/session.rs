@@ -73,6 +73,12 @@ pub enum LeaseScope {
     WorkspaceAll,
     WorkspacePrefix(WorkspacePath),
     Repository,
+    /// Application-owned canonical root of one GitRead repository. This
+    /// narrows a future native launch lease; it does not grant GitRead by
+    /// itself or replace an independently authorized Repository scope.
+    GitReadRepository {
+        canonical_root: String,
+    },
     SearchMetadata(SearchMetadataScope),
     ReadContent(ReadContentScope),
     ReadSensitive(ReadSensitiveScope),
