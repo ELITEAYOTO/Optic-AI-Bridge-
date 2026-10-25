@@ -276,6 +276,29 @@ mod tests {
     }
 
     #[test]
+    fn native_git_read_repository_scope_does_not_alias_generic_repository() {
+        // A generic Repository marker cannot select which canonical Git
+        // working tree a future native GitRead owner may execute within.
+        let root_a = LeaseScope::GitReadRepository {
+            canonical_root: "C:\\repos\\a".to_owned(),
+        };
+        let root_b = LeaseScope::GitReadRepository {
+            canonical_root: "C:\\repos\\b".to_owned(),
+        };
+        let scopes = BTreeSet::from([LeaseScope::Repository, root_a.clone()]);
+        assert!(scopes.contains(&LeaseScope::Repository));
+        assert!(scopes.contains(&root_a));
+        assert!(!scopes.contains(&root_b));
+        assert_eq!(scopes.len(), 2);
+
+        // Conversely, the exact native-only root scope does not by itself
+        // authorize unrelated generic repository operations.
+        let exact_only = BTreeSet::from([root_a]);
+        assert!(!exact_only.contains(&LeaseScope::Repository));
+        assert!(!exact_only.contains(&root_b));
+    }
+
+    #[test]
     fn process_isolation_eligibility_is_exact_to_executable_and_class() {
         let session = SessionHandle::generate().expect("session");
         let lease = TaskLease {
