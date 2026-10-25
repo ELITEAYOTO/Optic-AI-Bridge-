@@ -444,6 +444,86 @@ mod tests {
     }
 
     #[test]
+    fn failed_native_preparation_reclaims_only_unexposed_never_spawned_owner() {
+        use std::process::Command;
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("preparation-failure-no-spawn");
+        sessions.register(grant.clone()).expect("session grant");
+        let owners = ledger();
+        let now = MonotonicTime::from_millis(1);
+
+        // The 0-ms value is rejected inside the real native prepare path,
+        // strictly AFTER the service has reserved admission and budgets.
+        // No fixture command, shell or native child is launched.
+        let error = owners
+            .reserve_prepared(&sessions, &grant.handle, now, budget(), 0)
+            .expect_err("invalid native timeout must fail preparation");
+        assert!(
+            matches!(error, OwnerError::Native(ref native) if native.kind() == io::ErrorKind::InvalidInput),
+            "native invalid-input proof required: {error:?}"
+        );
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("failed preparation released"),
+            0,
+            "trusted pre-spawn failure must not strand a counted admission"
+        );
+
+        // Capacity is actually available for a second authorized reservation.
+        // A successful preparation remains owned until independently proven
+        // no-spawn terminal after explicitly requesting session-scoped stop.
+        let id = owners
+            .reserve_prepared(&sessions, &grant.handle, now, budget(), 3000)
+            .expect("fresh preparation after trusted failed no-spawn path");
+        assert_eq!(id, OwnerId(2), "reclaimed IDs must not be reused");
+        assert_eq!(owners.outstanding(&grant.handle).expect("owned"), 1);
+        assert_eq!(owners.stop_session(&grant.handle).expect("owned stop"), 1);
+        let mut command = Command::new(std::env::current_exe().expect("synthetic binary"));
+        assert!(matches!(
+            owners.with_owner(id, &grant.handle, |native| native.start(&mut command)),
+            Err(OwnerError::Native(ref native)) if native.kind() == io::ErrorKind::Interrupted
+        ));
+        let outcome = owners
+            .reap_terminal(id, &grant.handle)
+            .expect("OS no-child/Job-empty/EOF evidence")
+            .expect("native no-spawn receipt");
+        assert!(outcome.cancelled && outcome.status.is_none());
+        assert!(!outcome.is_success());
+        assert_eq!(owners.outstanding(&grant.handle).expect("final release"), 0);
+    }
+
+    #[test]
+    fn failed_preparation_does_not_steal_another_sessions_capacity() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let a = grant("fail-prepare-a");
+        let b = grant("normal-prepare-b");
+        sessions.register(a.clone()).expect("register A");
+        sessions.register(b.clone()).expect("register B");
+        let owners = ledger();
+        let now = MonotonicTime::from_millis(1);
+        assert!(matches!(
+            owners.reserve_prepared(&sessions, &a.handle, now, budget(), 0),
+            Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::InvalidInput
+        ));
+        assert_eq!(owners.outstanding(&a.handle).expect("A release"), 0);
+        let id = owners
+            .reserve_prepared(&sessions, &b.handle, now, budget(), 3000)
+            .expect("independent session B uses recovered global capacity");
+        assert!(matches!(
+            owners.stop_signals(id, &a.handle),
+            Err(OwnerError::WrongOwner)
+        ));
+        assert_eq!(owners.outstanding(&b.handle).expect("B admitted"), 1);
+        assert_eq!(owners.stop_session(&b.handle).expect("stop B"), 1);
+        let receipt = owners
+            .reap_terminal(id, &b.handle)
+            .expect("native B terminal")
+            .expect("never-spawned owner B stopped and proven");
+        assert!(receipt.cancelled && receipt.status.is_none());
+        assert_eq!(owners.outstanding(&b.handle).expect("B released"), 0);
+    }
+
+    #[test]
     fn revoked_before_adoption_is_owned_and_proven_no_spawn_before_releasing_admission() {
         use std::process::Command;
 
