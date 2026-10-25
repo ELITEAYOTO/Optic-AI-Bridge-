@@ -1738,6 +1738,29 @@ mod tests {
         leases
             .register(lease)
             .expect("pin real Git executable identity");
+        // Both Git repositories exist and use the SAME executable. The lease
+        // must not authorize the second repository by virtue of Repository
+        // alone: reject before adopting or reserving native capacity.
+        assert!(matches!(
+            owners.reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: other_service.repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                authorized_budget,
+                8000,
+            ),
+            Err(OwnerError::InvalidGitReadLease)
+        ));
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("foreign repo denied"),
+            0
+        );
         let owner_id = owners
             .reserve_prepared(
                 &sessions,
