@@ -37,6 +37,12 @@ struct Ceiling {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct OwnerId(u64);
 
+/// An exact, live task-lease registry reference; never model-controlled.
+struct GitReadLeaseRef<'a> {
+    registry: &'a TaskLeaseRegistry,
+    id: &'a TaskLeaseId,
+}
+
 #[derive(Debug, Error)]
 enum OwnerError {
     #[error("owner reservation capacity exceeded")]
@@ -237,8 +243,7 @@ impl NativeGitOwners {
     fn reserve_prepared(
         &self,
         sessions: &Arc<SessionRegistry>,
-        leases: &TaskLeaseRegistry,
-        lease_id: &TaskLeaseId,
+        authority: GitReadLeaseRef<'_>,
         session: &SessionHandle,
         now: MonotonicTime,
         budget: Budget,
@@ -252,8 +257,14 @@ impl NativeGitOwners {
             return Err(OwnerError::MissingGitReadCapability);
         }
         // get_active verifies revoked/expired lease AND registered executable pins.
-        let lease = leases.get_active(lease_id, session, now)?;
-        if !lease.allows(Capability::GitRead)
+        let lease = authority.registry.get_active(authority.id, session, now)?;
+        // No command may outlive either the session grant or its task lease.
+        // The native watchdog does not independently observe monotonic lease
+        // expiry, so require both lifetimes to cover the finite command horizon.
+        let until = now.saturating_add_millis(u64::from(timeout_ms));
+        if grant.expires_at < until
+            || lease.expires_at < until
+            || !lease.allows(Capability::GitRead)
             || !lease.has_scope(&LeaseScope::Repository)
             || lease.policy_epoch != grant.policy_epoch
             || lease.resource_ceiling.process_count < 1
@@ -263,7 +274,7 @@ impl NativeGitOwners {
         {
             return Err(OwnerError::InvalidGitReadLease);
         }
-        let (lease_revoked, current_lease) = leases.watch_active(lease_id, session, now)?;
+        let (lease_revoked, current_lease) = authority.registry.watch_active(authority.id, session, now)?;
         if current_lease.id != lease.id || current_lease.policy_epoch != lease.policy_epoch {
             return Err(OwnerError::InvalidGitReadLease);
         }
@@ -538,7 +549,11 @@ mod tests {
         let lease = task_lease(&grant);
         let id = lease.id.clone();
         leases.register(lease)?;
-        owners.reserve_prepared(sessions, &leases, &id, session, now, budget, timeout_ms)
+        owners.reserve_prepared(sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &id,
+                }, session, now, budget, timeout_ms)
     }
 
     #[test]
@@ -1138,8 +1153,10 @@ mod tests {
         assert!(matches!(
             owners.reserve_prepared(
                 &sessions,
-                &leases,
-                &absent,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &absent,
+                },
                 &grant.handle,
                 now,
                 budget(),
@@ -1148,7 +1165,7 @@ mod tests {
             Err(OwnerError::Lease(TaskLeaseRegistryError::UnknownLease))
         ));
 
-        for variant in 0..7 {
+        for variant in 0..8 {
             let mut lease = task_lease(&grant);
             match variant {
                 0 => lease.session = SessionHandle::generate().expect("other session"),
@@ -1158,14 +1175,17 @@ mod tests {
                 4 => lease.expires_at = now,
                 5 => lease.resource_ceiling.output_bytes = 1,
                 6 => lease.resource_ceiling.timeout_ms = 1,
+                7 => lease.expires_at = now.saturating_add_millis(100),
                 _ => unreachable!(),
             }
             let id = lease.id.clone();
             leases.register(lease).expect("register synthetic lease");
             let attempt = owners.reserve_prepared(
                 &sessions,
-                &leases,
-                &id,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &id,
+                },
                 &grant.handle,
                 now,
                 budget(),
@@ -1183,6 +1203,30 @@ mod tests {
                 0
             );
         }
+        let mut short_session = grant.clone();
+        short_session.handle = SessionHandle::generate().expect("short session");
+        short_session.expires_at = now.saturating_add_millis(100);
+        sessions.register(short_session.clone()).expect("short grant");
+        let short_lease = task_lease(&short_session);
+        let short_id = short_lease.id.clone();
+        leases.register(short_lease).expect("short task lease");
+        assert!(matches!(
+            owners.reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &short_id,
+                },
+                &short_session.handle,
+                now,
+                budget(),
+                3000,
+            ),
+            Err(OwnerError::InvalidGitReadLease)
+        ));
+        assert_eq!(owners.outstanding(&short_session.handle).expect("no short owner"), 0);
+        assert!(sessions.revoke(&short_session.handle).expect("no short admission"));
+
         let valid = task_lease(&grant);
         let revoked_id = valid.id.clone();
         leases.register(valid).expect("revocable lease");
@@ -1194,8 +1238,10 @@ mod tests {
         assert!(matches!(
             owners.reserve_prepared(
                 &sessions,
-                &leases,
-                &revoked_id,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &revoked_id,
+                },
                 &grant.handle,
                 now,
                 budget(),
@@ -1226,8 +1272,10 @@ mod tests {
         let owner_id = owners
             .reserve_prepared(
                 &sessions,
-                &leases,
-                &lease_id,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                },
                 &grant.handle,
                 MonotonicTime::from_millis(1),
                 budget(),
