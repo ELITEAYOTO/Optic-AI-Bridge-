@@ -7,11 +7,14 @@ use crate::{
     OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
     TaskLeaseRegistryError,
 };
-use optic_bridge_core::{Capability, LeaseScope, MonotonicTime, SessionHandle, TaskLeaseId};
+use optic_bridge_core::{
+    Capability, LeaseScope, MonotonicTime, ProcessExecutionClass, SessionHandle, TaskLeaseId,
+};
 use optic_bridge_windows::{LimitedJobObject, PreparedReadCommand, ReadCommandOutcome};
 use std::{
     collections::BTreeMap,
     io,
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -38,9 +41,12 @@ struct Ceiling {
 struct OwnerId(u64);
 
 /// An exact, live task-lease registry reference; never model-controlled.
+/// The future service adapter must provide its configured, canonical Git
+/// executable, not a caller-selectable command or path.
 struct GitReadLeaseRef<'a> {
     registry: &'a TaskLeaseRegistry,
     id: &'a TaskLeaseId,
+    git_executable: &'a Path,
 }
 
 #[derive(Debug, Error)]
@@ -67,6 +73,8 @@ enum OwnerError {
     Revoked,
     #[error("GitRead task lease has missing capability, repository scope, policy epoch or budget")]
     InvalidGitReadLease,
+    #[error("exact canonical Git executable is not pinned by this GitRead lease")]
+    GitExecutableNotAuthorized,
     #[error(transparent)]
     Lease(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
@@ -256,8 +264,25 @@ impl NativeGitOwners {
         if !grant.allows(Capability::GitRead) {
             return Err(OwnerError::MissingGitReadCapability);
         }
-        // get_active verifies revoked/expired lease AND registered executable pins.
+        // A canonical configured executable and an exact FixedTool scope are
+        // required. The registry verifies the original opened-and-hashed
+        // executable pin before any counted reservation. GitRead does not
+        // implicitly grant arbitrary ProcessRun.
+        let canonical_git = std::fs::canonicalize(authority.git_executable)
+            .map_err(|_| OwnerError::GitExecutableNotAuthorized)?;
+        if canonical_git != authority.git_executable {
+            return Err(OwnerError::GitExecutableNotAuthorized);
+        }
+        let git_path = canonical_git
+            .to_str()
+            .ok_or(OwnerError::GitExecutableNotAuthorized)?;
         let lease = authority.registry.get_active(authority.id, session, now)?;
+        if !lease.has_scope(&LeaseScope::ProcessExecutable {
+            executable: git_path.to_owned(),
+            class: ProcessExecutionClass::FixedTool,
+        }) {
+            return Err(OwnerError::GitExecutableNotAuthorized);
+        }
         // No command may outlive either the session grant or its task lease.
         // The native watchdog does not independently observe monotonic lease
         // expiry, so require both lifetimes to cover the finite command horizon.
