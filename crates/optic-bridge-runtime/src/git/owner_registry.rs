@@ -1965,7 +1965,7 @@ mod tests {
         // even when the task lease itself is still active at launch time.
         let long_grant = SessionGrant {
             expires_at: MonotonicTime::from_millis(30_000),
-            ..grant("task-horizon-before-session")
+            ..self::grant("task-horizon-before-session")
         };
         sessions
             .register(long_grant.clone())
