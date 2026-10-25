@@ -197,7 +197,10 @@ impl NativeGitOwners {
             if record.native.is_some() || record.observing.load(Ordering::Acquire) {
                 return Err(OwnerError::ObservationBusy);
             }
-            let record = state.records.remove(&id).expect("unexposed reservation exists");
+            let record = state
+                .records
+                .remove(&id)
+                .expect("unexposed reservation exists");
             state.memory -= record.budget.memory;
             state.output -= record.budget.output;
             state.cpu -= record.budget.cpu;
@@ -464,7 +467,9 @@ mod tests {
             "native invalid-input proof required: {error:?}"
         );
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("failed preparation released"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("failed preparation released"),
             0,
             "trusted pre-spawn failure must not strand a counted admission"
         );
