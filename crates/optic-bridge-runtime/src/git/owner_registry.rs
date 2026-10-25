@@ -635,6 +635,16 @@ mod tests {
         }
     }
 
+    // First observation is within the allowed horizon; subsequent reads
+    // simulate a clock advancing during executable pin/revalidation.
+    struct AdvancingClock(std::sync::atomic::AtomicU64);
+
+    impl Clock for AdvancingClock {
+        fn now(&self) -> MonotonicTime {
+            MonotonicTime::from_millis(self.0.fetch_add(20_000, Ordering::AcqRel))
+        }
+    }
+
     fn grant(name: &str) -> SessionGrant {
         SessionGrant {
             handle: SessionHandle::generate().expect("session entropy"),
@@ -1602,6 +1612,9 @@ mod tests {
         // launcher. Two must be explicitly present in the exact task lease,
         // and counted against an independent aggregate native-process ceiling.
         lease.resource_ceiling.process_count = 2;
+        // Allow task lease slightly longer than session for independent
+        // expiry tests; native reservation's finite horizon still fits both.
+        lease.expires_at = MonotonicTime::from_millis(25_000);
         let lease_id = lease.id.clone();
         let authorized_budget = Budget {
             processes: 2,
@@ -1682,6 +1695,66 @@ mod tests {
             ),
             Err(OwnerError::UnboundGitReadSpec)
         ));
+
+        // Clock is sampled at native START, never reused from reservation.
+        // A lease that expired after owner preparation must deny before spawn,
+        // even though the original owner remains counted and still unstarted.
+        assert!(matches!(
+            owners.start_git_status(
+                owner_id,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &FixedClock(MonotonicTime::from_millis(25_000)),
+                8192,
+            ),
+            Err(OwnerError::Lease(TaskLeaseRegistryError::Expired))
+        ));
+        // The session may expire earlier than its task lease; that also
+        // denies native start while retaining original Job/EOF custody.
+        assert!(matches!(
+            owners.start_git_status(
+                owner_id,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &FixedClock(MonotonicTime::from_millis(20_000)),
+                8192,
+            ),
+            Err(OwnerError::Session(SessionRegistryError::Expired))
+        ));
+        // A deadline crossed DURING authority/file revalidation must also
+        // fail on the final clock check directly before native start.
+        assert!(matches!(
+            owners.start_git_status(
+                owner_id,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &AdvancingClock(std::sync::atomic::AtomicU64::new(1)),
+                8192,
+            ),
+            Err(OwnerError::Session(SessionRegistryError::Expired))
+        ));
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("denied starts remain owned"),
+            1
+        );
 
         // A valid Git service targeting a DIFFERENT canonical repository
         // cannot spend this already-authorized owner reservation.
