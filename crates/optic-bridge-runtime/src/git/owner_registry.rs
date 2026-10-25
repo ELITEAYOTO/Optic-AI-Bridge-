@@ -1579,7 +1579,9 @@ mod tests {
         insufficient.id = TaskLeaseId::generate().expect("insufficient process lease identity");
         insufficient.resource_ceiling.process_count = 1;
         let insufficient_id = insufficient.id.clone();
-        leases.register(insufficient).expect("register one-process lease");
+        leases
+            .register(insufficient)
+            .expect("register one-process lease");
         assert!(matches!(
             owners.reserve_prepared(
                 &sessions,
@@ -1597,11 +1599,15 @@ mod tests {
             Err(OwnerError::InvalidGitReadLease)
         ));
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("denied reservation"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("denied reservation"),
             0
         );
 
-        leases.register(lease).expect("pin real Git executable identity");
+        leases
+            .register(lease)
+            .expect("pin real Git executable identity");
         let owner_id = owners
             .reserve_prepared(
                 &sessions,
