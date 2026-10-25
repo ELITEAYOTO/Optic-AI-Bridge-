@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## Immediate next-agent work order — 25 October 2026
+
+Read [complete canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [new-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md). Verify live refs before coding. Baseline before the docs PR: `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da`, [independent CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) green 4/4; experimental #358 `f431c3ef…` with native evidence green on exact research SHA **not in main**.
+
+1. **P0 #317 — trustworthy live MCP/native authorization seam.** Existing production typed scopes and `PolicyEngine::evaluate_native_git_read_preflight` are prerequisites only; live MCP `authorize_git_read` uses `task_lease: None` and `GitReadService` still calls `HardenedCommandRunner`. Prefer narrow test-first contract and adapter with real ActionEnvelope, sensitive Git authority, active registry-backed TaskLease, session admission, canonical repo, exact opened/hash-verified Git executable, one bound original revocation witness, pre-spawn native Job/owner and final stop check. Do NOT globally alter legacy GitRead permission before adapter is ready; do NOT wholesale merge research #353/#358.
+2. **P0 acceptance #355 and #352.** Re-run existing original tests unmodified after actual candidate wiring: no real Git spawn after published revoke (specialized [#40158288203](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40158288203) RED); true bounded stdout/stderr/**stdin** completion when descendants retain handles (specialized [#40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209) RED). Never inflate timeouts, skip tests, fake EOF, leak pipes or release reservations early.
+3. **P0 lifecycle/release #323.** Require root exit + native Job empty + both real EOFs and stdin writer completion; preserve TerminationUncertain, original Win32 errors, active admissions and quotas; external host-crash/guardian recovery, session close, sensitive reads/provenance #176/#182, #185 AppContainer, #319 first reply, authorized Windows 10/11 and offline installer/update/rollback acceptance. **Windows V1 NO-GO; #317/#323 OPEN.**
+
+---
+
+
 ## Next P0 acceptance after native witness research #366 — 25 October 2026
 
 - The latest **isolated** native owner study lives in [draft PR #358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) at `f431c3efde2e5d9512eb1715ad3475196f18bf1d` after [research #366](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/366) was merged into #358 only. Its independently run CI is green: [general #40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915), [native #40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856), [private #40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916), all first attempt. Production `main=288fa176251ac9038a8c6d1b8df74c6eac724d3c` is unchanged.

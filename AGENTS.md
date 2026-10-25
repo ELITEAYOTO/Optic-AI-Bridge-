@@ -1,5 +1,10 @@
 # Repository entry point for coding agents
 
+## CURRENT ENTRY — Windows V1 / 25 October 2026, complete chat handoff
+
+**Use [the new complete 25 October handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [copy-ready next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md) FIRST.** The immediately preceding verified production `main` was `7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da`, with independent [push/main CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) 4/4 SUCCESS at first attempt. **This documentation PR will advance main**: verify actual live SHA/CI before any change. Draft native #358 is research-only at `f431c3efde2e5d9512eb1715ad3475196f18bf1d` and not live GitRead. Acceptance #352/#355 remains RED, issue #185 separate, #317/#323 OPEN and Windows V1 NO-GO. Never bulk-merge research or access the operator's computer without fresh explicit authorization. Older entries below are dated evidence.
+
+
 ## Current agent entry — 25 October 2026 after #358
 
 **Start with [current STATUS.md](STATUS.md), [Windows V1 canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md)** before historical sections. Last verified `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`, [main CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) success. #356/#357 typed builders merged but no native production GitRead ownership. Research #327/#352/#353/#355/#358 open; #352 and #355 acceptance RED, #353/#358 isolated native proof GREEN (stacked #358 on #353). #317/#323 OPEN, V1 NO-GO. Verify live first, do not close issues with GitHub keywords, respect permanent [Codex recovery](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md), no standing operator PC access, no Optic Desktop/REL modifications.

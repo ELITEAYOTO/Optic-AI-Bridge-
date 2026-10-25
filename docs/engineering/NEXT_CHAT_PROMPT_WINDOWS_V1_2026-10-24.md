@@ -1,5 +1,8 @@
 # PROMPT COMPLET POUR NOUVEAU CHAT — OPTIC AI BRIDGE — 24 OCTOBRE 2026
 
+> **SUPERSEDED FOR LIVE TAKEOVER on 25 October 2026:** use [the new full successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md) and [canonical technical handoff](HANDOFF_WINDOWS_V1_2026-10-25.md). This 24 October prompt remains historical; verify live SHA/CI.
+
+
 ## PROMPT ACTIF POUR NOUVEAU CHAT — 25 OCTOBRE 2026 APRÈS #358
 
 **À copier entièrement entre « DÉBUT PROMPT » et « FIN PROMPT ».** Ce nouveau prompt supplante les anciennes sections sans effacer l'historique.

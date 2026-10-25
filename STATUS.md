@@ -1,5 +1,14 @@
 # Current project status
 
+## Handoff verification — 25 October 2026, before documentation PR
+
+**Active continuation is [HANDOFF_WINDOWS_V1_2026-10-25.md](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md), with [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md).** Immediately before this documentation update, production `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da` passed independent [CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) Windows/Ubuntu/dependency/release **4/4 first attempt**. The documentation merge will change main; check the new SHA and its own independent push CI.
+
+Native research draft [#358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) is at `f431c3efde2e5d9512eb1715ad3475196f18bf1d` (stacked on #353), after [#366](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/366) merged **only into research**. Exact research-head CI: [general #40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915) 4/4, [native #40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856) 2/2, [private #40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916) SUCCESS, first attempt. The verified original-generation TaskLease stop witness does not make native execution live. Five research PRs #327/#352/#353/#355/#358 remain unmerged into main. **#352 actual stdio wall-clock and #355 Git spawned after published revocation are RED** in their dedicated original acceptance. #185 independent AppContainer intermittence remains open. **#317/#323 OPEN; Windows V1 NO-GO.**
+
+---
+
+
 ## Latest research reconciliation — 25 October 2026 after #366 (NOT production)
 
 - **Production remains `main=288fa176251ac9038a8c6d1b8df74c6eac724d3c`**, independently [CI #40185881982](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40185881982) 4/4 first attempt. No native GitRead launcher or release-readiness status changed in main.
