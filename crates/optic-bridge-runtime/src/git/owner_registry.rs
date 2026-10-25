@@ -1558,11 +1558,50 @@ mod tests {
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         lease.scopes.insert(pinned);
+        // One native Job process is insufficient for the Git for Windows
+        // launcher. Two must be explicitly present in the exact task lease,
+        // and counted against an independent aggregate native-process ceiling.
+        lease.resource_ceiling.process_count = 2;
         let lease_id = lease.id.clone();
-        leases
-            .register(lease)
-            .expect("pin real Git executable identity");
-        let owners = ledger();
+        let authorized_budget = Budget {
+            processes: 2,
+            ..budget()
+        };
+        let owners = NativeGitOwners::new(Ceiling {
+            count: 1,
+            memory: authorized_budget.memory,
+            output: authorized_budget.output,
+            cpu: authorized_budget.cpu,
+            processes: 2,
+        })
+        .expect("bounded aggregate native process capacity");
+        let mut insufficient = lease.clone();
+        insufficient.id = TaskLeaseId::generate().expect("insufficient process lease identity");
+        insufficient.resource_ceiling.process_count = 1;
+        let insufficient_id = insufficient.id.clone();
+        leases.register(insufficient).expect("register one-process lease");
+        assert!(matches!(
+            owners.reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &insufficient_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                authorized_budget,
+                8000,
+            ),
+            Err(OwnerError::InvalidGitReadLease)
+        ));
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("denied reservation"),
+            0
+        );
+
+        leases.register(lease).expect("pin real Git executable identity");
         let owner_id = owners
             .reserve_prepared(
                 &sessions,
@@ -1574,7 +1613,7 @@ mod tests {
                 },
                 &grant.handle,
                 MonotonicTime::from_millis(1),
-                budget(),
+                authorized_budget,
                 8000,
             )
             .expect("reserved exact Git executable/root and native Job first");
