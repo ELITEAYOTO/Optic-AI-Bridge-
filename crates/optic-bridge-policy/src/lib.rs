@@ -323,7 +323,12 @@ mod tests {
         );
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &legacy, &grant, None, NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                &legacy,
+                &grant,
+                None,
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now()
             ),
             PolicyDecision::Deny(PolicyReason::LeaseRequired)
         );
@@ -331,19 +336,34 @@ mod tests {
         let authorized = envelope(&grant, Effect::GitRead, Some(&valid));
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &authorized, &grant, Some(&valid), NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                &authorized,
+                &grant,
+                Some(&valid),
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now()
             ),
             PolicyDecision::Allow
         );
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &authorized, &grant, Some(&valid), r"C:\repos\beta", NATIVE_GIT_BINARY, now()
+                &authorized,
+                &grant,
+                Some(&valid),
+                r"C:\repos\beta",
+                NATIVE_GIT_BINARY,
+                now()
             ),
             PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
         );
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &authorized, &grant, Some(&valid), NATIVE_GIT_REPO, r"C:\other\git.exe", now()
+                &authorized,
+                &grant,
+                Some(&valid),
+                NATIVE_GIT_REPO,
+                r"C:\other\git.exe",
+                now()
             ),
             PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
         );
@@ -362,24 +382,32 @@ mod tests {
             assert!(incomplete.scopes.remove(&missing));
             assert_eq!(
                 PolicyEngine.evaluate_native_git_read_preflight(
-                    &authorized, &grant, Some(&incomplete),
-                    NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                    &authorized,
+                    &grant,
+                    Some(&incomplete),
+                    NATIVE_GIT_REPO,
+                    NATIVE_GIT_BINARY,
+                    now()
                 ),
                 PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
             );
         }
         let mut wrong_class = valid.clone();
-        wrong_class.scopes.retain(|scope| {
-            !matches!(scope, LeaseScope::ProcessExecutable { .. })
-        });
+        wrong_class
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         wrong_class.scopes.insert(LeaseScope::ProcessExecutable {
             executable: NATIVE_GIT_BINARY.to_owned(),
             class: ProcessExecutionClass::Interpreter,
         });
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &authorized, &grant, Some(&wrong_class),
-                NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                &authorized,
+                &grant,
+                Some(&wrong_class),
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now()
             ),
             PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized)
         );
@@ -392,7 +420,12 @@ mod tests {
         let action = envelope(&grant, Effect::GitRead, Some(&valid));
         let check = |e: &ActionEnvelope, g: &SessionGrant, l: &TaskLease| {
             PolicyEngine.evaluate_native_git_read_preflight(
-                e, g, Some(l), NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                e,
+                g,
+                Some(l),
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now(),
             )
         };
         let mut wrong_id = action.clone();
@@ -458,7 +491,12 @@ mod tests {
         let action = envelope(&grant, Effect::GitRead, Some(&task));
         let evaluate = |g: &SessionGrant, l: &TaskLease| {
             PolicyEngine.evaluate_native_git_read_preflight(
-                &action, g, Some(l), NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                &action,
+                g,
+                Some(l),
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now(),
             )
         };
         // Both deadlines are individually active, but neither may expire
@@ -480,8 +518,12 @@ mod tests {
         overflow.resources.timeout_ms = u64::MAX;
         assert_eq!(
             PolicyEngine.evaluate_native_git_read_preflight(
-                &overflow, &grant, Some(&task),
-                NATIVE_GIT_REPO, NATIVE_GIT_BINARY, now()
+                &overflow,
+                &grant,
+                Some(&task),
+                NATIVE_GIT_REPO,
+                NATIVE_GIT_BINARY,
+                now()
             ),
             PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded)
         );
