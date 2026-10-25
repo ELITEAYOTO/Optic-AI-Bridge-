@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use crate::{OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError};
-use optic_bridge_core::{MonotonicTime, SessionHandle};
+use optic_bridge_core::{Capability, MonotonicTime, SessionHandle};
 use optic_bridge_windows::{LimitedJobObject, PreparedReadCommand, ReadCommandOutcome};
 use std::{
     collections::BTreeMap,
@@ -52,6 +52,8 @@ enum OwnerError {
     ObservationBusy,
     #[error("prepared native owner does not match session stop signals or was already started")]
     UnboundNativeOwner,
+    #[error("session grant does not include GitRead capability")]
+    MissingGitReadCapability,
     #[error("session was revoked before owner adoption")]
     Revoked,
     #[error(transparent)]
@@ -127,6 +129,12 @@ impl NativeGitOwners {
         let admission = sessions.begin_owned_admission(session, now)?;
         let (revoked, current) = sessions.watch_active(session, now)?;
         let grant = admission.grant();
+        // The owner may eventually spawn a Git process. A FileRead or
+        // ProcessRun grant is never a substitute for explicit GitRead.
+        // Reject before any ledger reservation or native preparation.
+        if !grant.capabilities.contains(&Capability::GitRead) {
+            return Err(OwnerError::MissingGitReadCapability);
+        }
         if current.principal != grant.principal
             || current.project != grant.project
             || current.policy_epoch != grant.policy_epoch
@@ -407,7 +415,7 @@ impl NativeGitOwners {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use optic_bridge_core::{Capability, PrincipalId, ProjectId, SessionGrant};
+    use optic_bridge_core::{PrincipalId, ProjectId, SessionGrant};
     use optic_bridge_windows::LimitedJobObject;
     use std::{
         collections::BTreeSet,
@@ -421,7 +429,7 @@ mod tests {
             handle: SessionHandle::generate().expect("session entropy"),
             principal: PrincipalId::new(name).expect("principal"),
             project: ProjectId::new("native-ledger-test").expect("project"),
-            capabilities: BTreeSet::from([Capability::FileRead]),
+            capabilities: BTreeSet::from([Capability::GitRead]),
             expires_at: MonotonicTime::from_millis(20000),
             policy_epoch: 1,
         }
