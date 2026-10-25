@@ -274,7 +274,10 @@ impl NativeGitOwners {
         {
             return Err(OwnerError::InvalidGitReadLease);
         }
-        let (lease_revoked, current_lease) = authority.registry.watch_active(authority.id, session, now)?;
+        let (lease_revoked, current_lease) =
+            authority
+                .registry
+                .watch_active(authority.id, session, now)?;
         if current_lease.id != lease.id || current_lease.policy_epoch != lease.policy_epoch {
             return Err(OwnerError::InvalidGitReadLease);
         }
@@ -549,11 +552,17 @@ mod tests {
         let lease = task_lease(&grant);
         let id = lease.id.clone();
         leases.register(lease)?;
-        owners.reserve_prepared(sessions,
-                GitReadLeaseRef {
-                    registry: &leases,
-                    id: &id,
-                }, session, now, budget, timeout_ms)
+        owners.reserve_prepared(
+            sessions,
+            GitReadLeaseRef {
+                registry: &leases,
+                id: &id,
+            },
+            session,
+            now,
+            budget,
+            timeout_ms,
+        )
     }
 
     #[test]
@@ -1206,7 +1215,9 @@ mod tests {
         let mut short_session = grant.clone();
         short_session.handle = SessionHandle::generate().expect("short session");
         short_session.expires_at = now.saturating_add_millis(100);
-        sessions.register(short_session.clone()).expect("short grant");
+        sessions
+            .register(short_session.clone())
+            .expect("short grant");
         let short_lease = task_lease(&short_session);
         let short_id = short_lease.id.clone();
         leases.register(short_lease).expect("short task lease");
@@ -1224,8 +1235,17 @@ mod tests {
             ),
             Err(OwnerError::InvalidGitReadLease)
         ));
-        assert_eq!(owners.outstanding(&short_session.handle).expect("no short owner"), 0);
-        assert!(sessions.revoke(&short_session.handle).expect("no short admission"));
+        assert_eq!(
+            owners
+                .outstanding(&short_session.handle)
+                .expect("no short owner"),
+            0
+        );
+        assert!(
+            sessions
+                .revoke(&short_session.handle)
+                .expect("no short admission")
+        );
 
         let valid = task_lease(&grant);
         let revoked_id = valid.id.clone();
