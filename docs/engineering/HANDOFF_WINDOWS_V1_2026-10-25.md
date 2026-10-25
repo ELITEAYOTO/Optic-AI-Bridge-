@@ -1,0 +1,64 @@
+# Optic AI Bridge — Canonical Windows V1 handoff (25 October 2026)
+
+> **Status at verification:** 25 October 2026, Europe/Paris. This is a *snapshot, not an authorization to reset branches*. The documentation PR itself may move `main`; always independently re-fetch the actual head and push/main CI. For the complete new-chat instruction, see [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md).
+
+## 1. Scope, product and constraints
+
+Repository **ONLY**: [ELITEAYOTO/Optic-AI-Bridge-](https://github.com/ELITEAYOTO/Optic-AI-Bridge-), Rust MCP bridge, Windows 10/11-first. Stabilize the V1, do not add new features, and never mix with `ELITEAYOTO/Alpha-Optic-APP` (Optic Desktop) or REL. Main and research PRs are not interchangeable. Work only using authorized GitHub access / hosted CI or an agent-owned isolated environment. **No standing permission** to inspect or run code on the operator's Windows PC; request explicit fresh permission and an exact scoped operation first. No cybersecurity-block or Defender bypass, no self-hosted runner, no arbitrary PID killing or broad policy changes.
+
+Mandatory sequence: `AGENTS.md`, `AI_HANDOFF.md`, current `STATUS.md` and `ROADMAP.md`, this document, [GitHub workflow](GITHUB_HANDOFF.md), [Codex interruption/recovery](CODEX_INTERRUPTION_RECOVERY.md), [security invariants](../security/SECURITY_INVARIANTS.md), and [complete successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md). Older “latest” sections are historical.
+
+## 2. Live verified GitHub baseline (before this docs PR)
+
+- **Production `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da`**. Independent [push/main #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) **COMPLETED/SUCCESS 4/4, attempt 1**, Windows, Ubuntu, dependency policy and release guard. Previous main #40185881982 also green. No native Windows GitRead owner is live.
+- **Exactly five open PRs** at verification: [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) older Win32 research, [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) stdio elapsed-time acceptance **RED**, [#353](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/353) native pre-spawn Job/pipe/ledger research **GREEN on own SHA**, [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) post-revoke Git spawn acceptance **RED**, and [#358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) stacked on #353 research **GREEN on own SHA**. #327 is open (not to be bulk merged); other four research PRs are draft at checkpoint.
+- [Issue #317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) OPEN, [#323 Windows V1 freeze](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN, [#185 Node/AppContainer](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) OPEN. **Windows V1 = NO-GO.**
+- #353 HEAD `b091dc280bfd186694e7c1d1bea743a20f6746c2`; #358 HEAD `f431c3efde2e5d9512eb1715ad3475196f18bf1d` after [research PR #366](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/366) was merged **into #358 only**. #358 is **based on #353, not production main**. Reconcile diverged ancestry; no whole-stack merge.
+
+## 3. Exact evidence — never translate research green into acceptance green
+
+| Gate | Evidence and meaning |
+| --- | --- |
+| Main integrated docs | [push/main #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038), SUCCESS 4/4, first attempt, `7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da` |
+| Native #358 integrated-head general | [#40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915), SUCCESS 4/4 first attempt, `f431c3ef…` |
+| Native #358 integrated-head Windows | [#40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856), SUCCESS 2/2 first attempt |
+| Native #358 integrated-head preparation | [#40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916), SUCCESS first attempt |
+| #352 real elapsed stdio acceptance | [#40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209), **FAILED on Windows and Ubuntu**: elapsed ~1.6 s despite 200 ms runner timeout and test acceptance <900 ms; blocked reader/writer joins |
+| #355 real post-revoke Git start acceptance | [#40158288203](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40158288203), **FAILED on Windows and Ubuntu**: Git spawned after revoke published |
+| Separate #185 | [main #40183165673](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40183165673) Windows Node AppContainer original `TimedOut`, no output ~10.1 s. Later diagnostics green do not negate the original failure. Earlier native/general CI red on #358 was also tracked as #185. |
+
+Do not raise timeout thresholds, weaken AppContainer, ignore a failure, change the acceptance assertion or rerun to cosmetically green. Distinguish CI on a PR head, integrated research head, and post-merge push/main head.
+
+## 4. Production code already merged
+
+- [#356](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/356), [#357](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/357): fixed typed Git status command construction + sanitised args and environment.
+- [#360](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/360): `LeaseScope::GitReadRepository { canonical_root }`, distinct from generic `Repository`; inert typed scope.
+- [#362](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/362): `PolicyEngine::evaluate_native_git_read_preflight` checks `Effect::GitRead`, exact TaskLease/session/policy epoch and GitRead capability, generic plus exact repository root, fixed executable scope/class, nonzero resource budgets and full session+lease watchdog horizon. Policy-only, **not a spawn permit**.
+- [#364](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/364): `TaskLeaseRegistry::get_active_with_revocation_watch` atomically verifies an active lease plus its **original-generation** read-only revocation witness, with executable identity validation and same-ID record-replacement regression. Inert reusable registry prerequisite.
+- Other small runtime safeguards #347 classification, #349 Win32 Job errors, #350 stop-before-drain of already registered jobs exist. None fixes arbitrary pipe join time or unowned pre-spawn child on its own.
+- **Live runtime remains unchanged:** `crates/optic-bridge-mcp/src/git_tools.rs` `authorize_git_read` constructs an `ActionEnvelope` with `task_lease: None`; production `crates/optic-bridge-runtime/src/git/read.rs` `GitReadService::status_with_max_bytes` invokes `HardenedCommandRunner`. In `hardened_command.rs`, stdout/stderr reader joins and stdin writer join can block after a root timeout. Do not unconditionally require a new lease for every legacy GitRead endpoint without designing compatibility and policy.
+
+## 5. Experimental owner: what is actually proven
+
+- #353 native `PreparedReadCommand` creates Job/watches/pipes before child spawn, restricted fixed Git status only, per-session admission/quota native owner, `CREATE_SUSPENDED` + Job assignment before resume, cancellation, root+Job-empty+two real EOF criteria; typed status only. `#![forbid(unsafe_code)]` in runtime; Windows OS unsafe only in platform crate.
+- #358 pins exact canonical repository in TaskLease, checks executable and session/policy generation, expires full watchdog horizon, and now after #366 captures **one atomic verified TaskLease plus original revocation watch**. Owner stores exact stop signal and compares identity again before native status start.
+- Real Windows synthetic test `git_owner_registry::tests::retired_lease_id_reuse_never_retargets_prepared_native_owner_stop` passed on #366 head [CI #40186777340](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40186777340). Even after revoke/remove/reuse of the same opaque lease ID, the old native owner does not start; admission/quota remains counted until the no-spawn Job/EOF terminal receipt. #366 initially failed Rustfmt then Ubuntu Clippy due to native-only method being used only on Windows; both first failures preserved, fixed with `#[cfg(windows)]`. Its final exact head `6d793094e6da5ab2d9cc5b00f66ad3692b18a333` passed general/native/preparation CI; #358 integrated merge head `f431c3ef…` passed again.
+- This is **not** end-to-end MCP authorization; a false revoke bit alone is not approval to spawn. #352/#355 original behavioral gates remain RED, crash/restart/guardian host-loss and actual pipe EOF/stdio bound remain unproven.
+- #358 has **diverged ancestry from production main**, and copies the already-merged #364 helper only to test its old research base. Do not merge wholesale into main, duplicate helper, rewrite branches, or assume green research authorizes release.
+
+## 6. Next action, acceptance and working method
+
+**P0 first narrow seam:** determine how to bind real MCP authorisation (trusted session admission, `ActionEnvelope`, sensitive Git/provenance checks, current TaskLeaseRegistry/epoch/timeout, canonical repository, opened-and-hashed exact FixedTool Git executable, typed fixed arguments and environment) into the native owner **before any child creation**. Gate final native start against revoke and actual authority clock; retain owner's Job/admission/quotas under `TerminationUncertain`. Prefer a focused test-first contract and tiny PR instead of monolithic native rollout. Preserve old legacy GitRead semantics until a fully reviewed adapter exists.
+
+**P0 unchanged gates:** get original #355 post-published-revoke real Git spawn test green on Windows+Ubuntu and #352 actual wall-clock stdout/stderr/**stdin** bounded/EOF test green without altering their assertions. Then prove root exit + native Job empty + both genuine EOF, stdin completion, persistent Win32 errors, service host crash recovery, stale lease/session, stop-before-drain. Sensitive Git #176/#182, first MCP reply #319, #185 Node/AppContainer and Windows 10/11 field acceptance, offline installer/update/rollback #323 still separate.
+
+**Workflow:** inspect live main SHA, PR bases and changed files, review red runs and test logs. Use small branches/PRs, avoid concurrent-writer conflicts (expected head SHA, no force-push); prove expected negative tests RED before fixes, then exact-head CI Windows/Ubuntu/native and independent push/main. Never use PR merge keywords that auto-close #317/#323. Document result + SHA + CI first attempt, limitations and remaining NO-GO; do not manufacture proof or claim local Codex execution. If needing operator-host tests, present a narrowly scoped Codex prompt to the user and request approval before PC access. The user welcomes proactive focused Codex prompts, but local execution is not implicitly authorized.
+
+**Codex recovery:** read [CODEX_INTERRUPTION_RECOVERY.md](CODEX_INTERRUPTION_RECOVERY.md). Use read-only discovery, separate worktrees/snapshots, verify original Git state and SHA-256 manifests, fail closed on mismatch or interruption. Local snapshots accessible only if actually mounted/authorized; do not imply a GitHub-only agent has them. Stop before low quota/excessive sessions; preserve a short checkpoint at every validated slice, with plain next steps. Cybersecurity filters/Defender must not be bypassed.
+
+**Finish condition:** Windows V1 remains **NO-GO** until #317/#323 independently close with actual reproduced native/stdio/security/installer acceptance. No release, tag, broad feature addition, UI work, or unsupported status claims.
+
+## 7. Quick verification links
+
+- [main](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/tree/main), [open pull requests](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pulls), [Actions](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions), [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317), [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323), [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), [#358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358).
+- This documentation-only branch/PR advances `main` if merged: the SHAs above are **pre-doc baseline** unless revalidated at takeover.

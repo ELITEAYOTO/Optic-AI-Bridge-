@@ -1,5 +1,8 @@
 # Optic AI Bridge — Passation canonique Windows V1 (24 octobre 2026)
 
+> **SUPERSEDED FOR LIVE TAKEOVER on 25 October 2026:** read [the new 25 October canonical handoff](HANDOFF_WINDOWS_V1_2026-10-25.md) and [full successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md). This file retains earlier historical snapshots and should not be used for current SHAs or permissions. Verify GitHub live.
+
+
 ## CANONICAL LIVE CHECKPOINT — 25 OCTOBER 2026, AFTER #356/#357 AND RESEARCH #353/#358
 
 > This is the newest dated checkpoint, not permission to overwrite or reset old work. Earlier "latest" sections remain historical. Always verify live GitHub again on takeover.

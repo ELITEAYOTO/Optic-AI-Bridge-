@@ -1,5 +1,8 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+**CURRENT 25 OCTOBER 2026: Read [new canonical Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [complete new-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md) before older snapshots.** Verified pre-doc baseline `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da` has independent [CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) 4/4 success at attempt 1; the docs merge may advance main. #358 research `f431c3ef…` is stacked on #353 and NOT in production; #352/#355 behavior RED; #317/#323 OPEN; Windows V1 NO-GO. Preserve all security invariants, first red evidence, recovery checks and no operator-PC access without explicit request.
+
+
 **Latest 25 October 2026:** [canonical status](STATUS.md), [Windows handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md) take precedence. `main=d7d4d50…` [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) green, #356/#357 typed GitRead spec merged; native GitRead still research. Open PRs #327/#352/#353/#355/#358, #352 elapsed-pipe and #355 revoke-before-spawn acceptance RED; #353/#358 native owner/lease green in research. Issues #317/#323 OPEN; V1 NO-GO. No standing permission to access operator computer or bypass safety controls.
 
 
