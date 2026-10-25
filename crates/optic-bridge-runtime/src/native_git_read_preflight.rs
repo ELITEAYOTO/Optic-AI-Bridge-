@@ -119,7 +119,6 @@ pub fn verify_registered_native_git_read_preflight(
     }
 }
 
-    
 /// Non-cloneable ownership of a real, counted session admission and an
 /// independently registered, policy-checked GitRead lease witness.
 ///
@@ -291,7 +290,9 @@ mod tests {
                 .register(lease.clone())
                 .expect("registered real record");
             let sessions = Arc::new(SessionRegistry::new());
-            sessions.register(grant.clone()).expect("registered session");
+            sessions
+                .register(grant.clone())
+                .expect("registered session");
             assert!(now < grant.expires_at);
             Self {
                 root,
@@ -427,7 +428,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn admitted_native_gitread_binds_real_session_and_lease_without_spawning() {
         let fixture = Fixture::new();
@@ -439,7 +439,12 @@ mod tests {
         assert!(!admitted.is_stop_required_at(now));
         assert!(admitted.is_stop_required_at(fixture.lease.expires_at));
         drop(admitted);
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("admission released"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("admission released")
+        );
     }
 
     #[test]
@@ -472,7 +477,12 @@ mod tests {
             ))
         ));
         // No failed attempt may leave admission capacity counted.
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("no hanging permits"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("no hanging permits")
+        );
         assert!(matches!(
             fixture.admit(&fixture.envelope, &fixture.grant.handle, now),
             Err(NativeGitReadAdmissionError::Session(
@@ -488,20 +498,33 @@ mod tests {
         let admitted = fixture
             .admit(&fixture.envelope, &fixture.grant.handle, now)
             .expect("owned session admission");
-        assert!(fixture.sessions.publish_revocation_before_drain(&fixture.grant.handle)
-            .expect("publish session revoke"));
+        assert!(
+            fixture
+                .sessions
+                .publish_revocation_before_drain(&fixture.grant.handle)
+                .expect("publish session revoke")
+        );
         assert!(admitted.is_stop_required_at(now));
         assert_eq!(
-            fixture.sessions
+            fixture
+                .sessions
                 .remove_quiescent_inactive(&fixture.grant.handle, now)
                 .expect_err("registered owner must block early removal"),
             SessionRegistryError::AdmissionsInFlight
         );
         drop(admitted);
-        assert!(!fixture.sessions.revoke(&fixture.grant.handle).expect("already revoked"));
-        assert!(fixture.sessions
-            .remove_quiescent_inactive(&fixture.grant.handle, now)
-            .expect("terminal owner releases capacity"));
+        assert!(
+            !fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("already revoked")
+        );
+        assert!(
+            fixture
+                .sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, now)
+                .expect("terminal owner releases capacity")
+        );
     }
 
     #[test]
@@ -511,13 +534,34 @@ mod tests {
         let admitted = fixture
             .admit(&fixture.envelope, &fixture.grant.handle, now)
             .expect("original admitted owner");
-        assert!(fixture.registry.revoke(&fixture.lease.id).expect("lease revoke"));
+        assert!(
+            fixture
+                .registry
+                .revoke(&fixture.lease.id)
+                .expect("lease revoke")
+        );
         assert!(admitted.is_stop_required_at(now));
-        assert!(fixture.registry.remove_revoked(&fixture.lease.id).expect("remove old record"));
-        fixture.registry.register(fixture.lease.clone()).expect("replace same ID");
-        assert!(admitted.is_stop_required_at(now), "old owner must not rebind");
+        assert!(
+            fixture
+                .registry
+                .remove_revoked(&fixture.lease.id)
+                .expect("remove old record")
+        );
+        fixture
+            .registry
+            .register(fixture.lease.clone())
+            .expect("replace same ID");
+        assert!(
+            admitted.is_stop_required_at(now),
+            "old owner must not rebind"
+        );
         drop(admitted);
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("finish"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("finish")
+        );
     }
 
     #[test]
@@ -531,7 +575,12 @@ mod tests {
             ))
         ));
         // A failed admission on expiry must not block synchronous revocation.
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("revoke"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("revoke")
+        );
     }
 
     #[test]
