@@ -466,7 +466,9 @@ impl NativeGitOwners {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use optic_bridge_core::{PrincipalId, ProjectId, SessionGrant};
+    use optic_bridge_core::{
+        PrincipalId, ProjectId, ResourceBudget, SessionGrant, TaskLease, WorkloadClass,
+    };
     use optic_bridge_windows::LimitedJobObject;
     use std::{
         collections::BTreeSet,
@@ -505,6 +507,40 @@ mod tests {
         .expect("limits")
     }
 
+    fn task_lease(grant: &SessionGrant) -> TaskLease {
+        TaskLease {
+            id: TaskLeaseId::generate().expect("test lease identity"),
+            session: grant.handle.clone(),
+            capabilities: BTreeSet::from([Capability::GitRead]),
+            scopes: BTreeSet::from([LeaseScope::Repository]),
+            workload_class: WorkloadClass::Standard,
+            resource_ceiling: ResourceBudget {
+                timeout_ms: 10_000,
+                output_bytes: budget().output,
+                memory_bytes: budget().memory,
+                process_count: 1,
+            },
+            expires_at: MonotonicTime::from_millis(10_000),
+            policy_epoch: grant.policy_epoch,
+        }
+    }
+
+    fn prepared_with_fixture_lease(
+        owners: &NativeGitOwners,
+        sessions: &Arc<SessionRegistry>,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        budget: Budget,
+        timeout_ms: u32,
+    ) -> Result<OwnerId, OwnerError> {
+        let grant = sessions.get_active(session, now)?;
+        let leases = TaskLeaseRegistry::new();
+        let lease = task_lease(&grant);
+        let id = lease.id.clone();
+        leases.register(lease)?;
+        owners.reserve_prepared(sessions, &leases, &id, session, now, budget, timeout_ms)
+    }
+
     #[test]
     fn non_git_read_grants_cannot_reserve_native_git_execution_capacity() {
         let sessions = Arc::new(SessionRegistry::new());
@@ -524,7 +560,7 @@ mod tests {
                 .register(attempted.clone())
                 .expect("register limited session");
             assert!(matches!(
-                owners.reserve_prepared(&sessions, &attempted.handle, now, budget(), 3000),
+                prepared_with_fixture_lease(&owners, &sessions, &attempted.handle, now, budget(), 3000),
                 Err(OwnerError::MissingGitReadCapability)
             ));
             assert_eq!(
@@ -546,8 +582,7 @@ mod tests {
         sessions
             .register(permitted.clone())
             .expect("authorized GitRead session");
-        let id = owners
-            .reserve_prepared(&sessions, &permitted.handle, now, budget(), 3000)
+        let id = prepared_with_fixture_lease(&owners, &sessions, &permitted.handle, now, budget(), 3000)
             .expect("GitRead-capable grant may own a prepared native Job");
         assert_eq!(owners.outstanding(&permitted.handle).expect("reserved"), 1);
         assert_eq!(
@@ -577,8 +612,7 @@ mod tests {
         // The 0-ms value is rejected inside the real native prepare path,
         // strictly AFTER the service has reserved admission and budgets.
         // No fixture command, shell or native child is launched.
-        let error = owners
-            .reserve_prepared(&sessions, &grant.handle, now, budget(), 0)
+        let error = prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 0)
             .expect_err("invalid native timeout must fail preparation");
         assert!(
             matches!(error, OwnerError::Native(ref native) if native.kind() == io::ErrorKind::InvalidInput),
@@ -595,8 +629,7 @@ mod tests {
         // Capacity is actually available for a second authorized reservation.
         // A successful preparation remains owned until independently proven
         // no-spawn terminal after explicitly requesting session-scoped stop.
-        let id = owners
-            .reserve_prepared(&sessions, &grant.handle, now, budget(), 3000)
+        let id = prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 3000)
             .expect("fresh preparation after trusted failed no-spawn path");
         assert_eq!(id, OwnerId(2), "reclaimed IDs must not be reused");
         assert_eq!(owners.outstanding(&grant.handle).expect("owned"), 1);
@@ -625,12 +658,11 @@ mod tests {
         let owners = ledger();
         let now = MonotonicTime::from_millis(1);
         assert!(matches!(
-            owners.reserve_prepared(&sessions, &a.handle, now, budget(), 0),
+            prepared_with_fixture_lease(&owners, &sessions, &a.handle, now, budget(), 0),
             Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::InvalidInput
         ));
         assert_eq!(owners.outstanding(&a.handle).expect("A release"), 0);
-        let id = owners
-            .reserve_prepared(&sessions, &b.handle, now, budget(), 3000)
+        let id = prepared_with_fixture_lease(&owners, &sessions, &b.handle, now, budget(), 3000)
             .expect("independent session B uses recovered global capacity");
         assert!(matches!(
             owners.stop_signals(id, &a.handle),
