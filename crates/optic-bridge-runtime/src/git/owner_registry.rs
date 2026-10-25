@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    GitReadError, GitReadService, OwnedSessionAdmissionPermit, SessionRegistry,
+    Clock, GitReadError, GitReadService, OwnedSessionAdmissionPermit, SessionRegistry,
     SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 use optic_bridge_core::{
@@ -510,16 +510,19 @@ impl NativeGitOwners {
         session: &SessionHandle,
         service: &GitReadService,
         authority: GitReadLeaseRef<'_>,
-        now: MonotonicTime,
+        clock: &dyn Clock,
         output_limit: u64,
     ) -> Result<(), OwnerError> {
         let spec = service.status_command_spec(output_limit)?;
+        // A previously captured admission timestamp cannot extend launch
+        // rights. Read the trusted runtime clock AFTER constructing the spec.
+        let now = clock.now();
         let active = authority.registry.get_active(authority.id, session, now)?;
         let (signal, watched) = authority
             .registry
             .watch_active(authority.id, session, now)?;
         let (owner, _observation) = self.claim_owner(id, session)?;
-        {
+        let owner_session_expiry = {
             let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
             let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
             if &record.session != session
@@ -544,7 +547,8 @@ impl NativeGitOwners {
             {
                 return Err(OwnerError::UnboundGitReadSpec);
             }
-        }
+            record.admission.grant().expires_at
+        };
         let mut command = Command::new(&spec.executable);
         command
             .current_dir(&spec.cwd)
@@ -552,6 +556,15 @@ impl NativeGitOwners {
             .env_clear()
             .envs(&spec.env);
         let mut native = owner.lock().map_err(|_| OwnerError::Unavailable)?;
+        // The executable identity check above may be slow. Do not spawn a
+        // prepared process after the lease or original session grant expired.
+        let launch_now = clock.now();
+        if launch_now >= active.expires_at {
+            return Err(OwnerError::Lease(TaskLeaseRegistryError::Expired));
+        }
+        if launch_now >= owner_session_expiry {
+            return Err(OwnerError::Session(SessionRegistryError::Expired));
+        }
         // Includes a final atomic revoke/deadline stop check before creation,
         // and a second check before resuming the Job-assigned root process.
         native.start(&mut command)?;
@@ -613,6 +626,14 @@ mod tests {
         thread,
         time::{Duration, Instant},
     };
+
+    struct FixedClock(MonotonicTime);
+
+    impl Clock for FixedClock {
+        fn now(&self) -> MonotonicTime {
+            self.0
+        }
+    }
 
     fn grant(name: &str) -> SessionGrant {
         SessionGrant {
@@ -1656,7 +1677,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                MonotonicTime::from_millis(1),
+                &FixedClock(MonotonicTime::from_millis(1)),
                 8192,
             ),
             Err(OwnerError::UnboundGitReadSpec)
@@ -1675,7 +1696,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                MonotonicTime::from_millis(1),
+                &FixedClock(MonotonicTime::from_millis(1)),
                 8192,
             ),
             Err(OwnerError::UnboundGitReadSpec)
@@ -1691,7 +1712,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                MonotonicTime::from_millis(1),
+                &FixedClock(MonotonicTime::from_millis(1)),
                 budget().output + 1,
             ),
             Err(OwnerError::UnboundGitReadSpec)
@@ -1712,7 +1733,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                MonotonicTime::from_millis(1),
+                &FixedClock(MonotonicTime::from_millis(1)),
                 8192,
             )
             .expect("native suspended Git status launched through typed service spec");
@@ -1775,7 +1796,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                MonotonicTime::from_millis(1),
+                &FixedClock(MonotonicTime::from_millis(1)),
                 8192,
             ),
             Err(OwnerError::Lease(TaskLeaseRegistryError::Revoked))
