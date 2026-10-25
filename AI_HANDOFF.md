@@ -1,5 +1,9 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+**25 Oct 2026 checkpoint:** see [newest `STATUS.md`](STATUS.md), [current Windows technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). Integrated main `6a645715…` green at [#40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634), open #327/#352/#353; #352 actual wall-clock pipeline acceptance RED, #353 native owner research GREEN but not wired to GitRead. #317/#323 OPEN, V1 NO-GO; refresh GitHub before action. Codex recovery does not authorize device access or safety bypass.
+
+
+
 **Latest session-entry order (24 Oct):** start with [AGENTS.md](AGENTS.md), [Codex interruption recovery procedure](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md) when local checkpoints are actually accessible, [current Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), and [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). GitHub-only environments must not claim local checkpoint verification. This is a documentation/recovery practice, not new authorization to access the user's PC or bypass safety controls; #317/#323 V1 NO-GO remains in force.
 
 Read this file before changing architecture or implementing features.

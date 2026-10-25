@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## Immediate engineering priorities — 25 October 2026
+
+1. **P0 #317 — actual bounded completion:** [#352 dedicated acceptance CI #40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209) is intentionally RED on Windows and Ubuntu; descendant-retained stdout/stderr and stdin still cost ~1.6 s even though deadline is 200 ms and result is now `TimedOut` after #347. A future production fix must satisfy the actual <900ms test *without* weakening it, detached writers/readers, fake EOF, early resource releases or timeout inflation.
+2. **P0 #317 — integrated trusted native owner:** [#353](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/353) has proof-of-concept Windows native Job/pipes/watchdog, admission/ledger/quota, pre-adoption cancellation and `GitRead` capability gate, full [CI #40153942601](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40153942601) and specialized [#40153942636](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40153942636) green. Still no actual `GitReadService` integration or full task lease, exact Git exe/repo provenance, stdin, service restart, persistent OS error.
+3. **P0 #317 — avoid overclaiming:** [#350](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/350) fixes registered-job stop-before-drain only; [#349](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/349) preserves Windows native Job query error codes; [#347](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/347) fixes late-result classification, **not real pipe wait time**. Root exit, Job-empty and actual EOF are separate; retain session generation/admissions/quotas on uncertainty.
+4. **Other independent gates:** GitRead sensitive authority/provenance #176/#182, Node/AppContainer #185 (preserve independent [main red #40084443275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084443275)), first MCP response #319, host crash/recovery, Windows 10/11 field acceptance, installer/offline/release/rollback #323. Windows V1 **NO-GO**.
+
+**Baseline:** `main=6a6457155758df3050e2aad81ee9446952d7eedd`, [push CI #40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634) successful on exact main. At checkpoint, only PRs **#327/#352/#353** open, issues **#317/#323** open. All hashes are dated evidence and must be checked anew. See [latest handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [current successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). Earlier roadmap sections are history.
+
+
+
 ## Next gates — 24 October 2026, after #349/#350
 
 **Engineering code checkpoint:** `main=e0de79147e04daaea75cf59694d0e791b824fedc`. [PR #349](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/349) preserves genuine native Windows Job query errors; [PR #350](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/350) requests cancellation of **registered** session-owned process jobs before the admission-drain barrier, with a second sweep for late registration. Exact corrected-head full CI [#40085443930](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085443930) 4/4 green; independent [push/main CI #40085754973](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40085754973) **completed SUCCESS on `e0de7914` at first attempt, 4/4 jobs**.
