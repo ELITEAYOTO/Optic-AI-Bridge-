@@ -90,3 +90,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pre-adoption revoke no-spawn recovery proof failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::mismatched_native_stop_signals_cannot_be_adopted_or_release_capacity -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'exact session-owner stop-signal validation failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_native_preparation_reclaims_only_unexposed_never_spawned_owner -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'trusted never-spawned preparation failure recovery proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_preparation_does_not_steal_another_sessions_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'cross-session pre-spawn preparation reclamation proof failed' }
