@@ -596,8 +596,8 @@ mod tests {
             GitReadLeaseRef {
                 registry: &leases,
                 id: &id,
-            git_executable: &fixture_git_executable(),
-                },
+                git_executable: &fixture_git_executable(),
+            },
             session,
             now,
             budget,
@@ -1205,7 +1205,7 @@ mod tests {
                 GitReadLeaseRef {
                     registry: &leases,
                     id: &absent,
-                git_executable: &fixture_git_executable(),
+                    git_executable: &fixture_git_executable(),
                 },
                 &grant.handle,
                 now,
@@ -1226,7 +1226,9 @@ mod tests {
                 5 => lease.resource_ceiling.output_bytes = 1,
                 6 => lease.resource_ceiling.timeout_ms = 1,
                 7 => lease.expires_at = now.saturating_add_millis(100),
-                8 => lease.scopes.retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. })),
+                8 => lease
+                    .scopes
+                    .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. })),
                 9 => {
                     let expected = LeaseScope::ProcessExecutable {
                         executable: fixture_git_executable()
@@ -1253,7 +1255,7 @@ mod tests {
                 GitReadLeaseRef {
                     registry: &leases,
                     id: &id,
-                git_executable: &fixture_git_executable(),
+                    git_executable: &fixture_git_executable(),
                 },
                 &grant.handle,
                 now,
@@ -1263,11 +1265,9 @@ mod tests {
             assert!(
                 matches!(
                     attempt,
-                    Err(
-                        OwnerError::InvalidGitReadLease
-                            | OwnerError::Lease(_)
-                            | OwnerError::GitExecutableNotAuthorized
-                    )
+                    Err(OwnerError::InvalidGitReadLease
+                        | OwnerError::Lease(_)
+                        | OwnerError::GitExecutableNotAuthorized)
                 ),
                 "variant {variant} must fail before owner allocation: {attempt:?}"
             );
@@ -1291,7 +1291,7 @@ mod tests {
                 GitReadLeaseRef {
                     registry: &leases,
                     id: &short_id,
-                git_executable: &fixture_git_executable(),
+                    git_executable: &fixture_git_executable(),
                 },
                 &short_session.handle,
                 now,
@@ -1326,7 +1326,7 @@ mod tests {
                 GitReadLeaseRef {
                     registry: &leases,
                     id: &revoked_id,
-                git_executable: &fixture_git_executable(),
+                    git_executable: &fixture_git_executable(),
                 },
                 &grant.handle,
                 now,
@@ -1351,17 +1351,17 @@ mod tests {
         let leases = TaskLeaseRegistry::new();
         let lease = task_lease(&grant);
         let id = lease.id.clone();
-        leases.register(lease).expect("capture exact test executable pin");
+        leases
+            .register(lease)
+            .expect("capture exact test executable pin");
         let owners = ledger();
         let now = MonotonicTime::from_millis(1);
 
         // The registry has captured the real synthetic test binary. A caller
         // cannot point the identical GitRead lease at some different absolute
         // executable, even one backed by a valid regular file.
-        let foreign = std::env::temp_dir().join(format!(
-            "optic317-unpinned-git-{}",
-            std::process::id()
-        ));
+        let foreign =
+            std::env::temp_dir().join(format!("optic317-unpinned-git-{}", std::process::id()));
         std::fs::write(&foreign, b"not a process or credential").expect("synthetic foreign file");
         let foreign = std::fs::canonicalize(&foreign).expect("canonical foreign fixture");
         assert!(matches!(
@@ -1379,7 +1379,10 @@ mod tests {
             ),
             Err(OwnerError::GitExecutableNotAuthorized)
         ));
-        assert_eq!(owners.outstanding(&grant.handle).expect("no foreign owner"), 0);
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("no foreign owner"),
+            0
+        );
         std::fs::remove_file(&foreign).expect("remove synthetic foreign file");
 
         // A relative spelling cannot stand in for the pinned canonical
@@ -1399,7 +1402,12 @@ mod tests {
             ),
             Err(OwnerError::GitExecutableNotAuthorized)
         ));
-        assert_eq!(owners.outstanding(&grant.handle).expect("no relative owner"), 0);
+        assert_eq!(
+            owners
+                .outstanding(&grant.handle)
+                .expect("no relative owner"),
+            0
+        );
         assert!(sessions.revoke(&grant.handle).expect("no admission held"));
     }
 
@@ -1421,7 +1429,7 @@ mod tests {
                 GitReadLeaseRef {
                     registry: &leases,
                     id: &lease_id,
-                git_executable: &fixture_git_executable(),
+                    git_executable: &fixture_git_executable(),
                 },
                 &grant.handle,
                 MonotonicTime::from_millis(1),
