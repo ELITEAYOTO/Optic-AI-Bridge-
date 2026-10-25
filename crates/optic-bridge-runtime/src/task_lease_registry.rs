@@ -403,6 +403,100 @@ mod tests {
     }
 
     #[test]
+    fn verified_lease_watch_binds_original_registry_record() {
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().expect("session");
+        let original = lease(session.clone(), 100);
+        registry.register(original.clone()).expect("register original");
+        let (observed, watch) = registry
+            .get_active_with_revocation_watch(
+                &original.id,
+                &session,
+                MonotonicTime::from_millis(1),
+            )
+            .expect("verified record and watch together");
+        assert_eq!(observed.id, original.id);
+        assert_eq!(observed.policy_epoch, original.policy_epoch);
+        assert!(!watch.is_revoked(), "verified watch begins active");
+
+        assert!(registry.revoke(&original.id).expect("publish revocation"));
+        assert!(watch.is_revoked(), "watch must observe same record revocation");
+        assert!(registry.remove_revoked(&original.id).expect("remove original"));
+
+        // Reusing even the same opaque lease ID cannot retarget an old watch.
+        let mut replacement = lease(session.clone(), 200);
+        replacement.id = original.id.clone();
+        registry.register(replacement.clone()).expect("replacement record");
+        let (current, new_watch) = registry
+            .get_active_with_revocation_watch(
+                &replacement.id,
+                &session,
+                MonotonicTime::from_millis(2),
+            )
+            .expect("new verified record");
+        assert_eq!(current.expires_at, replacement.expires_at);
+        assert!(watch.is_revoked(), "old watch must not observe replacement");
+        assert!(!new_watch.is_revoked(), "new record has own revocation");
+    }
+
+    #[test]
+    fn verified_lease_watch_rejects_untrusted_or_inactive_record() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let stranger = SessionHandle::generate().expect("other session");
+        let owned = lease(owner.clone(), 10);
+        registry.register(owned.clone()).expect("register original");
+
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &stranger,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::WrongSession)
+        ));
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(10),
+            ),
+            Err(TaskLeaseRegistryError::Expired)
+        ));
+        assert_eq!(registry.revoke_session(&owner).expect("publish revoke"), 1);
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn verified_lease_watch_rejects_changed_executable_before_issuing_witness() {
+        let root = workspace("watch-identity-drift");
+        let executable = root.join("tool.bin");
+        fs::write(&executable, b"original-binary").expect("fixture");
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("session");
+        let owned = absolute_process_lease(owner.clone(), &executable, 100);
+        registry.register(owned.clone()).expect("pin executable identity");
+        fs::write(&executable, b"changed-binary").expect("modify fixture");
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::ProcessIdentityChanged)
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn active_process_lease_preserves_execution_class() {
         let root = workspace("class");
         let executable = root.join("tool.bin");
