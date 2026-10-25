@@ -1466,6 +1466,7 @@ mod tests {
                     registry: &leases,
                     id: &id,
                     git_executable: Path::new("."),
+                    repository_root: &fixture_repository_root(),
                 },
                 &grant.handle,
                 now,
