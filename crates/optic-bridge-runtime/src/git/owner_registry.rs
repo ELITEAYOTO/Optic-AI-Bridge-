@@ -29,6 +29,8 @@ struct Budget {
     memory: u64,
     output: u64,
     cpu: u32,
+    // Count root and helper processes before native creation.
+    processes: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -37,6 +39,7 @@ struct Ceiling {
     memory: u64,
     output: u64,
     cpu: u32,
+    processes: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -113,6 +116,7 @@ struct State {
     memory: u64,
     output: u64,
     cpu: u32,
+    processes: u32,
     records: BTreeMap<OwnerId, Record>,
 }
 
@@ -134,6 +138,7 @@ impl NativeGitOwners {
         if ceiling.count == 0
             || ceiling.memory == 0
             || ceiling.output == 0
+            || ceiling.processes == 0
             || !(1..=100).contains(&ceiling.cpu)
         {
             return Err(OwnerError::Capacity);
@@ -145,6 +150,7 @@ impl NativeGitOwners {
                 memory: 0,
                 output: 0,
                 cpu: 0,
+                processes: 0,
                 records: BTreeMap::new(),
             }),
         })
@@ -175,7 +181,11 @@ impl NativeGitOwners {
         {
             return Err(OwnerError::Revoked);
         }
-        if budget.memory == 0 || budget.output == 0 || !(1..=100).contains(&budget.cpu) {
+        if budget.memory == 0
+            || budget.output == 0
+            || budget.processes == 0
+            || !(1..=100).contains(&budget.cpu)
+        {
             return Err(OwnerError::Capacity);
         }
         let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
@@ -194,10 +204,15 @@ impl NativeGitOwners {
             .cpu
             .checked_add(budget.cpu)
             .ok_or(OwnerError::Capacity)?;
+        let processes = state
+            .processes
+            .checked_add(budget.processes)
+            .ok_or(OwnerError::Capacity)?;
         if state.records.len() >= self.ceiling.count
             || memory > self.ceiling.memory
             || output > self.ceiling.output
             || cpu > self.ceiling.cpu
+            || processes > self.ceiling.processes
         {
             return Err(OwnerError::Capacity);
         }
@@ -206,6 +221,7 @@ impl NativeGitOwners {
         state.memory = memory;
         state.output = output;
         state.cpu = cpu;
+        state.processes = processes;
         state.records.insert(
             id,
             Record {
@@ -249,6 +265,7 @@ impl NativeGitOwners {
             state.memory -= record.budget.memory;
             state.output -= record.budget.output;
             state.cpu -= record.budget.cpu;
+            state.processes -= record.budget.processes;
             record
         };
         // Session revoke may be waiting for this counted admission. Keep
@@ -311,7 +328,7 @@ impl NativeGitOwners {
             || !lease.allows(Capability::GitRead)
             || !lease.has_scope(&LeaseScope::Repository)
             || lease.policy_epoch != grant.policy_epoch
-            || lease.resource_ceiling.process_count < 1
+            || lease.resource_ceiling.process_count < budget.processes
             || lease.resource_ceiling.memory_bytes < budget.memory
             || lease.resource_ceiling.output_bytes < budget.output
             || lease.resource_ceiling.timeout_ms < u64::from(timeout_ms)
@@ -342,7 +359,7 @@ impl NativeGitOwners {
         // only establishes Job limits, pipes and watchdog ownership.
         let prepared = (|| -> Result<PreparedReadCommand, OwnerError> {
             let output_limit = usize::try_from(budget.output).map_err(|_| OwnerError::Capacity)?;
-            let limits = LimitedJobObject::new(1, budget.memory, budget.cpu)?;
+            let limits = LimitedJobObject::new(budget.processes, budget.memory, budget.cpu)?;
             Ok(PreparedReadCommand::prepare(
                 limits,
                 output_limit,
@@ -554,6 +571,7 @@ impl NativeGitOwners {
             state.memory -= record.budget.memory;
             state.output -= record.budget.output;
             state.cpu -= record.budget.cpu;
+            state.processes -= record.budget.processes;
             record
         };
         // Releasing the counted session admission follows the kernel receipt,
@@ -593,6 +611,7 @@ mod tests {
             memory: 512 * 1024 * 1024,
             output: 16384,
             cpu: 25,
+            processes: 1,
         }
     }
 
@@ -603,6 +622,7 @@ mod tests {
             memory: b.memory,
             output: b.output,
             cpu: b.cpu,
+            processes: b.processes,
         })
         .expect("limits")
     }
