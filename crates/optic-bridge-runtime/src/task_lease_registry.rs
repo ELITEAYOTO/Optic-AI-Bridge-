@@ -40,6 +40,30 @@ struct LeaseRecord {
     process_authorities: HashMap<String, ProcessAuthority>,
 }
 
+/// Read-only observation bound to one concrete, verified TaskLease record.
+/// This is cancellation evidence, not approval to create or resume a process.
+/// Removal and even reuse of the opaque lease ID cannot retarget this signal.
+#[derive(Clone, Debug)]
+pub(crate) struct TaskLeaseRevocationWatch {
+    signal: Arc<AtomicBool>,
+}
+
+impl TaskLeaseRevocationWatch {
+    // The future native owner will consume this generation-bound stop watch.
+    #[allow(dead_code)]
+    #[must_use]
+    pub(crate) fn is_revoked(&self) -> bool {
+        self.signal.load(Ordering::Acquire)
+    }
+
+    // Native preparation needs the original watched atomic as a stop source.
+    // This is not permission to start an unowned process.
+    #[cfg(windows)]
+    pub(crate) fn signal(&self) -> &Arc<AtomicBool> {
+        &self.signal
+    }
+}
+
 impl TaskLeaseRegistry {
     #[must_use]
     pub fn new() -> Self {
@@ -118,6 +142,21 @@ impl TaskLeaseRegistry {
         session: &SessionHandle,
         now: MonotonicTime,
     ) -> Result<TaskLease, TaskLeaseRegistryError> {
+        self.get_active_with_revocation_watch(id, session, now)
+            .map(|(lease, _watch)| lease)
+    }
+
+    /// Verify the exact registered lease, including the pinned executable
+    /// identity, and capture its original revocation signal under ONE lock.
+    /// Consumers must still enforce session admission, typed policy, the
+    /// native watchdog deadline and final pre-spawn revocation validation.
+    /// No native child or owner is created by this observation.
+    pub(crate) fn get_active_with_revocation_watch(
+        &self,
+        id: &TaskLeaseId,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<(TaskLease, TaskLeaseRevocationWatch), TaskLeaseRegistryError> {
         let leases = self
             .leases
             .lock()
@@ -125,7 +164,12 @@ impl TaskLeaseRegistry {
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
         validate_active_record(record, session, now)?;
         validate_process_authorities(record)?;
-        Ok(record.lease.clone())
+        Ok((
+            record.lease.clone(),
+            TaskLeaseRevocationWatch {
+                signal: Arc::clone(&record.revocation_signal),
+            },
+        ))
     }
 
     pub(crate) fn renew_active_session(
@@ -400,6 +444,109 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture root");
         root
+    }
+
+    #[test]
+    fn verified_lease_watch_binds_original_registry_record() {
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().expect("session");
+        let original = lease(session.clone(), 100);
+        registry
+            .register(original.clone())
+            .expect("register original");
+        let (observed, watch) = registry
+            .get_active_with_revocation_watch(&original.id, &session, MonotonicTime::from_millis(1))
+            .expect("verified record and watch together");
+        assert_eq!(observed.id, original.id);
+        assert_eq!(observed.policy_epoch, original.policy_epoch);
+        assert!(!watch.is_revoked(), "verified watch begins active");
+
+        assert!(registry.revoke(&original.id).expect("publish revocation"));
+        assert!(
+            watch.is_revoked(),
+            "watch must observe same record revocation"
+        );
+        assert!(
+            registry
+                .remove_revoked(&original.id)
+                .expect("remove original")
+        );
+
+        // Reusing even the same opaque lease ID cannot retarget an old watch.
+        let mut replacement = lease(session.clone(), 200);
+        replacement.id = original.id.clone();
+        registry
+            .register(replacement.clone())
+            .expect("replacement record");
+        let (current, new_watch) = registry
+            .get_active_with_revocation_watch(
+                &replacement.id,
+                &session,
+                MonotonicTime::from_millis(2),
+            )
+            .expect("new verified record");
+        assert_eq!(current.expires_at, replacement.expires_at);
+        assert!(watch.is_revoked(), "old watch must not observe replacement");
+        assert!(!new_watch.is_revoked(), "new record has own revocation");
+    }
+
+    #[test]
+    fn verified_lease_watch_rejects_untrusted_or_inactive_record() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let stranger = SessionHandle::generate().expect("other session");
+        let owned = lease(owner.clone(), 10);
+        registry.register(owned.clone()).expect("register original");
+
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &stranger,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::WrongSession)
+        ));
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(10),
+            ),
+            Err(TaskLeaseRegistryError::Expired)
+        ));
+        assert_eq!(registry.revoke_session(&owner).expect("publish revoke"), 1);
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn verified_lease_watch_rejects_changed_executable_before_issuing_witness() {
+        let root = workspace("watch-identity-drift");
+        let executable = root.join("tool.bin");
+        fs::write(&executable, b"original-binary").expect("fixture");
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("session");
+        let owned = absolute_process_lease(owner.clone(), &executable, 100);
+        registry
+            .register(owned.clone())
+            .expect("pin executable identity");
+        fs::write(&executable, b"changed-binary").expect("modify fixture");
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &owned.id,
+                &owner,
+                MonotonicTime::from_millis(1),
+            ),
+            Err(TaskLeaseRegistryError::ProcessIdentityChanged)
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

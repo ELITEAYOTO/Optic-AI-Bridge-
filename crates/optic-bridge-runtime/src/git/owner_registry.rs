@@ -6,6 +6,7 @@
 use crate::{
     Clock, GitReadError, GitReadService, OwnedSessionAdmissionPermit, SessionRegistry,
     SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
+    task_lease_registry::TaskLeaseRevocationWatch,
 };
 use optic_bridge_core::{
     Capability, LeaseScope, MonotonicTime, ProcessExecutionClass, SessionHandle, TaskLeaseId,
@@ -104,7 +105,7 @@ struct Record {
     budget: Budget,
     stop: Arc<AtomicBool>,
     revoked: Arc<AtomicBool>,
-    lease_revoked: Option<Arc<AtomicBool>>,
+    lease_revoked: Option<TaskLeaseRevocationWatch>,
     // Application-owned identities; low-level research reservations lack these.
     git_executable: Option<PathBuf>,
     repository_root: Option<PathBuf>,
@@ -317,7 +318,16 @@ impl NativeGitOwners {
         if canonical_repository != authority.repository_root || !canonical_repository.is_dir() {
             return Err(OwnerError::GitRepositoryNotAuthorized);
         }
-        let lease = authority.registry.get_active(authority.id, session, now)?;
+        let repository_scope = LeaseScope::GitReadRepository {
+            canonical_root: canonical_repository
+                .to_str()
+                .ok_or(OwnerError::GitRepositoryNotAuthorized)?
+                .to_owned(),
+        };
+        let (lease, lease_revoked) =
+            authority
+                .registry
+                .get_active_with_revocation_watch(authority.id, session, now)?;
         if !lease.has_scope(&LeaseScope::ProcessExecutable {
             executable: git_path.to_owned(),
             class: ProcessExecutionClass::FixedTool,
@@ -336,6 +346,7 @@ impl NativeGitOwners {
             || lease.expires_at < until
             || !lease.allows(Capability::GitRead)
             || !lease.has_scope(&LeaseScope::Repository)
+            || !lease.has_scope(&repository_scope)
             || lease.policy_epoch != grant.policy_epoch
             || lease.resource_ceiling.process_count < budget.processes
             || lease.resource_ceiling.memory_bytes < budget.memory
@@ -344,12 +355,10 @@ impl NativeGitOwners {
         {
             return Err(OwnerError::InvalidGitReadLease);
         }
-        let (lease_revoked, current_lease) =
-            authority
-                .registry
-                .watch_active(authority.id, session, now)?;
-        if current_lease.id != lease.id || current_lease.policy_epoch != lease.policy_epoch {
-            return Err(OwnerError::InvalidGitReadLease);
+        // A revoke published after the verified read remains observable in
+        // the original generation's witness, including after same-ID reuse.
+        if lease_revoked.is_revoked() {
+            return Err(OwnerError::Revoked);
         }
         let id = self.reserve(sessions, session, now, budget)?;
         {
@@ -409,7 +418,7 @@ impl NativeGitOwners {
         }
         let mut signals = vec![Arc::clone(&record.stop), Arc::clone(&record.revoked)];
         if let Some(lease_revoked) = &record.lease_revoked {
-            signals.push(Arc::clone(lease_revoked));
+            signals.push(Arc::clone(lease_revoked.signal()));
         }
         Ok(signals)
     }
@@ -437,7 +446,10 @@ impl NativeGitOwners {
         if !native.matches_unstarted_owner_signals(
             &record.stop,
             &record.revoked,
-            record.lease_revoked.as_ref(),
+            record
+                .lease_revoked
+                .as_ref()
+                .map(TaskLeaseRevocationWatch::signal),
         ) {
             return Err(OwnerError::UnboundNativeOwner);
         }
@@ -525,13 +537,25 @@ impl NativeGitOwners {
         output_limit: u64,
     ) -> Result<(), OwnerError> {
         let spec = service.status_command_spec(output_limit)?;
+        let repository_scope = LeaseScope::GitReadRepository {
+            canonical_root: spec
+                .cwd
+                .to_str()
+                .ok_or(OwnerError::GitRepositoryNotAuthorized)?
+                .to_owned(),
+        };
         // A previously captured admission timestamp cannot extend launch
         // rights. Read the trusted runtime clock AFTER constructing the spec.
         let now = clock.now();
-        let active = authority.registry.get_active(authority.id, session, now)?;
-        let (signal, watched) = authority
-            .registry
-            .watch_active(authority.id, session, now)?;
+        let (active, signal) =
+            authority
+                .registry
+                .get_active_with_revocation_watch(authority.id, session, now)?;
+        // The identity check below must still bind this exact witness to the
+        // pre-adopted native owner's stop signal before any start.
+        if signal.is_revoked() {
+            return Err(OwnerError::Revoked);
+        }
         let (owner, _observation) = self.claim_owner(id, session)?;
         let (owner_session_expiry, native_timeout_ms) = {
             let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
@@ -544,12 +568,11 @@ impl NativeGitOwners {
                 || !record
                     .lease_revoked
                     .as_ref()
-                    .is_some_and(|original| Arc::ptr_eq(original, &signal))
-                || active.id != watched.id
-                || active.policy_epoch != watched.policy_epoch
+                    .is_some_and(|original| Arc::ptr_eq(original.signal(), signal.signal()))
                 || active.policy_epoch != record.admission.grant().policy_epoch
                 || !active.allows(Capability::GitRead)
                 || !active.has_scope(&LeaseScope::Repository)
+                || !active.has_scope(&repository_scope)
                 || record.git_executable.as_deref() != Some(spec.executable.as_path())
                 || record.repository_root.as_deref() != Some(spec.cwd.as_path())
                 || authority.git_executable != spec.executable.as_path()
@@ -722,6 +745,12 @@ mod tests {
             capabilities: BTreeSet::from([Capability::GitRead]),
             scopes: BTreeSet::from([
                 LeaseScope::Repository,
+                LeaseScope::GitReadRepository {
+                    canonical_root: fixture_repository_root()
+                        .to_str()
+                        .expect("canonical UTF-8 fixture repository")
+                        .to_owned(),
+                },
                 LeaseScope::ProcessExecutable {
                     executable: fixture_git_executable()
                         .to_str()
@@ -1381,7 +1410,7 @@ mod tests {
             Err(OwnerError::Lease(TaskLeaseRegistryError::UnknownLease))
         ));
 
-        for variant in 0..10 {
+        for variant in 0..13 {
             let mut lease = task_lease(&grant);
             match variant {
                 0 => lease.session = SessionHandle::generate().expect("other session"),
@@ -1411,6 +1440,24 @@ mod tests {
                             .to_owned(),
                         class: ProcessExecutionClass::Interpreter,
                     });
+                }
+                // A generic Repository scope does not pin a GitRead root.
+                10 => lease
+                    .scopes
+                    .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. })),
+                11 => {
+                    lease
+                        .scopes
+                        .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+                    lease.scopes.insert(LeaseScope::GitReadRepository {
+                        canonical_root: fixture_repository_root()
+                            .join("other-repository")
+                            .to_string_lossy()
+                            .into_owned(),
+                    });
+                }
+                12 => {
+                    lease.scopes.remove(&LeaseScope::Repository);
                 }
                 _ => unreachable!(),
             }
@@ -1636,6 +1683,16 @@ mod tests {
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         lease.scopes.insert(pinned.clone());
+        lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+        lease.scopes.insert(LeaseScope::GitReadRepository {
+            canonical_root: service
+                .repository_root()
+                .to_str()
+                .expect("canonical UTF-8 real Git fixture repository")
+                .to_owned(),
+        });
         // One native Job process is insufficient for the Git for Windows
         // launcher. Two must be explicitly present in the exact task lease,
         // and counted against an independent aggregate native-process ceiling.
@@ -1689,6 +1746,31 @@ mod tests {
         leases
             .register(lease)
             .expect("pin real Git executable identity");
+        // Both Git repositories exist and use the SAME executable. The lease
+        // must not authorize the second repository by virtue of Repository
+        // alone: reject before adopting or reserving native capacity.
+        assert!(matches!(
+            owners.reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: other_service.repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                authorized_budget,
+                8000,
+            ),
+            Err(OwnerError::InvalidGitReadLease)
+        ));
+        assert_eq!(
+            owners
+                .outstanding(&grant.handle)
+                .expect("foreign repo denied"),
+            0
+        );
         let owner_id = owners
             .reserve_prepared(
                 &sessions,
@@ -1975,6 +2057,16 @@ mod tests {
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         short_lease.scopes.insert(pinned);
+        short_lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::GitReadRepository { .. }));
+        short_lease.scopes.insert(LeaseScope::GitReadRepository {
+            canonical_root: service
+                .repository_root()
+                .to_str()
+                .expect("canonical UTF-8 real Git fixture repository")
+                .to_owned(),
+        });
         short_lease.resource_ceiling.process_count = 2;
         short_lease.expires_at = MonotonicTime::from_millis(25_000);
         let short_id = short_lease.id.clone();
@@ -2041,6 +2133,72 @@ mod tests {
                 .expect("second session admission drained")
         );
         fs::remove_dir_all(root).expect("remove only synthetic Git repositories");
+    }
+
+    #[test]
+    fn retired_lease_id_reuse_never_retargets_prepared_native_owner_stop() {
+        use std::process::Command;
+
+        let sessions = Arc::new(SessionRegistry::new());
+        let grant = grant("lease-generation-stop");
+        sessions.register(grant.clone()).expect("register session");
+        let leases = TaskLeaseRegistry::new();
+        let original = task_lease(&grant);
+        let id = original.id.clone();
+        leases.register(original).expect("register original lease");
+        let owners = ledger();
+        let owner_id = owners
+            .reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &id,
+                    git_executable: &fixture_git_executable(),
+                    repository_root: &fixture_repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                budget(),
+                3000,
+            )
+            .expect("owner must capture original lease witness");
+
+        assert!(leases.revoke(&id).expect("revoke original lease"));
+        assert!(leases.remove_revoked(&id).expect("remove original record"));
+        let mut replacement = task_lease(&grant);
+        replacement.id = id.clone();
+        leases
+            .register(replacement)
+            .expect("replace same opaque lease id");
+        let (_new_lease, new_watch) = leases
+            .get_active_with_revocation_watch(&id, &grant.handle, MonotonicTime::from_millis(2))
+            .expect("replacement is active");
+        assert!(
+            !new_watch.is_revoked(),
+            "replacement witness is independent"
+        );
+
+        // Even though the same public ID is active again, the original owner
+        // must retain the old revoked stop signal and prove no-spawn terminal
+        // before releasing its session admission and capacity.
+        let mut command = Command::new(std::env::current_exe().expect("fixture binary"));
+        assert!(matches!(
+            owners.with_owner(owner_id, &grant.handle, |native| native.start(&mut command)),
+            Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::Interrupted
+        ));
+        assert_eq!(
+            owners
+                .outstanding(&grant.handle)
+                .expect("retained capacity"),
+            1
+        );
+        let receipt = owners
+            .reap_terminal(owner_id, &grant.handle)
+            .expect("native observation")
+            .expect("never-spawned owner terminal proof");
+        assert!(receipt.status.is_none() && receipt.cancelled);
+        assert_eq!(owners.outstanding(&grant.handle).expect("fully reaped"), 0);
+        assert!(sessions.revoke(&grant.handle).expect("session drained"));
     }
 
     #[test]
