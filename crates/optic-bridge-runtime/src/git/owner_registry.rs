@@ -324,9 +324,10 @@ impl NativeGitOwners {
                 .ok_or(OwnerError::GitRepositoryNotAuthorized)?
                 .to_owned(),
         };
-        let (lease, lease_revoked) = authority
-            .registry
-            .get_active_with_revocation_watch(authority.id, session, now)?;
+        let (lease, lease_revoked) =
+            authority
+                .registry
+                .get_active_with_revocation_watch(authority.id, session, now)?;
         if !lease.has_scope(&LeaseScope::ProcessExecutable {
             executable: git_path.to_owned(),
             class: ProcessExecutionClass::FixedTool,
@@ -445,7 +446,10 @@ impl NativeGitOwners {
         if !native.matches_unstarted_owner_signals(
             &record.stop,
             &record.revoked,
-            record.lease_revoked.as_ref().map(TaskLeaseRevocationWatch::signal),
+            record
+                .lease_revoked
+                .as_ref()
+                .map(TaskLeaseRevocationWatch::signal),
         ) {
             return Err(OwnerError::UnboundNativeOwner);
         }
@@ -543,9 +547,10 @@ impl NativeGitOwners {
         // A previously captured admission timestamp cannot extend launch
         // rights. Read the trusted runtime clock AFTER constructing the spec.
         let now = clock.now();
-        let (active, signal) = authority
-            .registry
-            .get_active_with_revocation_watch(authority.id, session, now)?;
+        let (active, signal) =
+            authority
+                .registry
+                .get_active_with_revocation_watch(authority.id, session, now)?;
         // The identity check below must still bind this exact witness to the
         // pre-adopted native owner's stop signal before any start.
         if signal.is_revoked() {
@@ -2162,15 +2167,16 @@ mod tests {
         assert!(leases.remove_revoked(&id).expect("remove original record"));
         let mut replacement = task_lease(&grant);
         replacement.id = id.clone();
-        leases.register(replacement).expect("replace same opaque lease id");
+        leases
+            .register(replacement)
+            .expect("replace same opaque lease id");
         let (_new_lease, new_watch) = leases
-            .get_active_with_revocation_watch(
-                &id,
-                &grant.handle,
-                MonotonicTime::from_millis(2),
-            )
+            .get_active_with_revocation_watch(&id, &grant.handle, MonotonicTime::from_millis(2))
             .expect("replacement is active");
-        assert!(!new_watch.is_revoked(), "replacement witness is independent");
+        assert!(
+            !new_watch.is_revoked(),
+            "replacement witness is independent"
+        );
 
         // Even though the same public ID is active again, the original owner
         // must retain the old revoked stop signal and prove no-spawn terminal
@@ -2180,7 +2186,12 @@ mod tests {
             owners.with_owner(owner_id, &grant.handle, |native| native.start(&mut command)),
             Err(OwnerError::Native(ref e)) if e.kind() == io::ErrorKind::Interrupted
         ));
-        assert_eq!(owners.outstanding(&grant.handle).expect("retained capacity"), 1);
+        assert_eq!(
+            owners
+                .outstanding(&grant.handle)
+                .expect("retained capacity"),
+            1
+        );
         let receipt = owners
             .reap_terminal(owner_id, &grant.handle)
             .expect("native observation")
