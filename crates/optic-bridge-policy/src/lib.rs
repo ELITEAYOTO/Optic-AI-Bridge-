@@ -36,6 +36,79 @@ pub enum PolicyReason {
 pub struct PolicyEngine;
 
 impl PolicyEngine {
+    /// A *policy-only* prerequisite for a future native GitRead launcher.
+    ///
+    /// The current non-native GitRead policy remains unchanged. A native caller
+    /// must pass a genuine, already admitted GitRead ActionEnvelope with its
+    /// exact live TaskLease and trusted canonical repository/executable paths.
+    /// This check does NOT verify executable content pins, revocation signals,
+    /// OS Job ownership, process termination or path canonicality. Those remain
+    /// mandatory registry/native checks immediately before child creation.
+    /// Never treat this standalone decision as a permission to spawn.
+    #[must_use]
+    pub fn evaluate_native_git_read_preflight(
+        &self,
+        envelope: &ActionEnvelope,
+        session: &SessionGrant,
+        task_lease: Option<&TaskLease>,
+        canonical_repository: &str,
+        git_executable: &str,
+        now: MonotonicTime,
+    ) -> PolicyDecision {
+        if !matches!(envelope.effect, Effect::GitRead) {
+            return PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized);
+        }
+        let normal_decision = self.evaluate(envelope, session, None, now);
+        if normal_decision != PolicyDecision::Allow {
+            return normal_decision;
+        }
+
+        // Legacy GitRead itself does not require a task lease. Native launches
+        // must enforce this extra gate explicitly, without changing legacy.
+        let Some(lease) = task_lease else {
+            return PolicyDecision::Deny(PolicyReason::LeaseRequired);
+        };
+        if envelope.task_lease.as_ref() != Some(&lease.id) || lease.session != session.handle {
+            return PolicyDecision::Deny(PolicyReason::LeaseWrongSession);
+        }
+        if lease.is_expired_at(now) {
+            return PolicyDecision::Deny(PolicyReason::LeaseExpired);
+        }
+        if lease.policy_epoch != session.policy_epoch {
+            return PolicyDecision::Deny(PolicyReason::StalePolicyEpoch);
+        }
+        if !lease.allows(Capability::GitRead) {
+            return PolicyDecision::Deny(PolicyReason::MissingCapability);
+        }
+        if envelope.resources.validate_nonzero().is_err()
+            || !envelope.resources.fits_within(lease.resource_ceiling)
+        {
+            return PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded);
+        }
+        // Admission cannot extend the native watchdog beyond either original
+        // authorization horizon. Checked addition denies wraparound.
+        let Some(until) = now.as_millis().checked_add(envelope.resources.timeout_ms) else {
+            return PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded);
+        };
+        if until > session.expires_at.as_millis() || until > lease.expires_at.as_millis() {
+            return PolicyDecision::Deny(PolicyReason::ResourceBudgetExceeded);
+        }
+        if canonical_repository.is_empty()
+            || git_executable.is_empty()
+            || !lease.has_scope(&LeaseScope::Repository)
+            || !lease.has_scope(&LeaseScope::GitReadRepository {
+                canonical_root: canonical_repository.to_owned(),
+            })
+            || !lease.has_scope(&LeaseScope::ProcessExecutable {
+                executable: git_executable.to_owned(),
+                class: ProcessExecutionClass::FixedTool,
+            })
+        {
+            return PolicyDecision::Deny(PolicyReason::ScopeNotAuthorized);
+        }
+        PolicyDecision::Allow
+    }
+
     #[must_use]
     pub fn evaluate(
         &self,
