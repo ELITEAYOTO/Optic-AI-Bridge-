@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## Next P0 after admitted native GitRead preflight #371 — 25 October 2026
+
+[PR #371](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/371) now binds **genuine owned session admission** to the exact registry-verified TaskLease policy witness, with original session/lease revocation and expiry. See [native preflight contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md). This is an inert Rust service prerequisite, **not live MCP wiring or a spawn permit**.
+
+1. Next narrow slice: wire one *real MCP-admitted* `git status` ActionEnvelope through the trusted server application session, task registry, sensitive filename/provenance checks and canonical root into a **registered, retained native owner and Job before child creation**. Keep legacy GitRead behavior unchanged until the new path satisfies all authorization and behavioral acceptance.
+2. Validate final pre-spawn generation, policy epoch, deadline, exact opened/hashed FixedTool Git identity and original-stop witnesses at a properly synchronized authority boundary. Negative watcher state alone is insufficient; maintain count/Job/pipe ownership under `TerminationUncertain`.
+3. Meet **original unchanged** [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) real Git post-revocation no-spawn and [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) elapsed stdout/stderr/stdin + EOF tests on Windows/Ubuntu. Continue separate #185 AppContainer, #176/#182 sensitive provenance, #319 first MCP response and #323 Windows 10/11 physical/offline install/update/rollback work. Do not bulk-merge #353/#358. **V1 NO-GO, #317/#323 OPEN.**
+
+---
+
 ## P0 next seam — 25 October 2026, after integrated registered-lease witness #369
 
 [PR #369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/369) combined the genuine registry TaskLease and original-generation revocation watch with the existing typed GitRead policy preflight. See [inert contract and limitations](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md). This is **not** a native owner, true MCP admission, or permission to spawn; the legacy `GitReadService` still launches via `HardenedCommandRunner`.
