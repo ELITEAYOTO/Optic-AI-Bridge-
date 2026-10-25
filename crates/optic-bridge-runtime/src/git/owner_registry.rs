@@ -560,7 +560,14 @@ mod tests {
                 .register(attempted.clone())
                 .expect("register limited session");
             assert!(matches!(
-                prepared_with_fixture_lease(&owners, &sessions, &attempted.handle, now, budget(), 3000),
+                prepared_with_fixture_lease(
+                    &owners,
+                    &sessions,
+                    &attempted.handle,
+                    now,
+                    budget(),
+                    3000
+                ),
                 Err(OwnerError::MissingGitReadCapability)
             ));
             assert_eq!(
@@ -582,8 +589,9 @@ mod tests {
         sessions
             .register(permitted.clone())
             .expect("authorized GitRead session");
-        let id = prepared_with_fixture_lease(&owners, &sessions, &permitted.handle, now, budget(), 3000)
-            .expect("GitRead-capable grant may own a prepared native Job");
+        let id =
+            prepared_with_fixture_lease(&owners, &sessions, &permitted.handle, now, budget(), 3000)
+                .expect("GitRead-capable grant may own a prepared native Job");
         assert_eq!(owners.outstanding(&permitted.handle).expect("reserved"), 1);
         assert_eq!(
             owners
@@ -612,8 +620,9 @@ mod tests {
         // The 0-ms value is rejected inside the real native prepare path,
         // strictly AFTER the service has reserved admission and budgets.
         // No fixture command, shell or native child is launched.
-        let error = prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 0)
-            .expect_err("invalid native timeout must fail preparation");
+        let error =
+            prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 0)
+                .expect_err("invalid native timeout must fail preparation");
         assert!(
             matches!(error, OwnerError::Native(ref native) if native.kind() == io::ErrorKind::InvalidInput),
             "native invalid-input proof required: {error:?}"
@@ -629,8 +638,9 @@ mod tests {
         // Capacity is actually available for a second authorized reservation.
         // A successful preparation remains owned until independently proven
         // no-spawn terminal after explicitly requesting session-scoped stop.
-        let id = prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 3000)
-            .expect("fresh preparation after trusted failed no-spawn path");
+        let id =
+            prepared_with_fixture_lease(&owners, &sessions, &grant.handle, now, budget(), 3000)
+                .expect("fresh preparation after trusted failed no-spawn path");
         assert_eq!(id, OwnerId(2), "reclaimed IDs must not be reused");
         assert_eq!(owners.outstanding(&grant.handle).expect("owned"), 1);
         assert_eq!(owners.stop_session(&grant.handle).expect("owned stop"), 1);
@@ -1126,7 +1136,15 @@ mod tests {
 
         let absent = TaskLeaseId::generate().expect("unknown lease");
         assert!(matches!(
-            owners.reserve_prepared(&sessions, &leases, &absent, &grant.handle, now, budget(), 3000),
+            owners.reserve_prepared(
+                &sessions,
+                &leases,
+                &absent,
+                &grant.handle,
+                now,
+                budget(),
+                3000
+            ),
             Err(OwnerError::Lease(TaskLeaseRegistryError::UnknownLease))
         ));
 
@@ -1160,12 +1178,19 @@ mod tests {
                 ),
                 "variant {variant} must fail before owner allocation: {attempt:?}"
             );
-            assert_eq!(owners.outstanding(&grant.handle).expect("no reservation"), 0);
+            assert_eq!(
+                owners.outstanding(&grant.handle).expect("no reservation"),
+                0
+            );
         }
         let valid = task_lease(&grant);
         let revoked_id = valid.id.clone();
         leases.register(valid).expect("revocable lease");
-        assert!(leases.revoke(&revoked_id).expect("revoke before reservation"));
+        assert!(
+            leases
+                .revoke(&revoked_id)
+                .expect("revoke before reservation")
+        );
         assert!(matches!(
             owners.reserve_prepared(
                 &sessions,
@@ -1179,7 +1204,11 @@ mod tests {
             Err(OwnerError::Lease(TaskLeaseRegistryError::Revoked))
         ));
         assert_eq!(owners.outstanding(&grant.handle).expect("still empty"), 0);
-        assert!(sessions.revoke(&grant.handle).expect("no stranded admission"));
+        assert!(
+            sessions
+                .revoke(&grant.handle)
+                .expect("no stranded admission")
+        );
     }
 
     #[test]
@@ -1219,7 +1248,12 @@ mod tests {
             .expect("never spawned child proved terminal");
         assert!(receipt.status.is_none());
         assert!(receipt.cancelled && !receipt.is_success());
-        assert_eq!(owners.outstanding(&grant.handle).expect("capacity released"), 0);
+        assert_eq!(
+            owners
+                .outstanding(&grant.handle)
+                .expect("capacity released"),
+            0
+        );
         assert!(sessions.revoke(&grant.handle).expect("admission drained"));
     }
 }
