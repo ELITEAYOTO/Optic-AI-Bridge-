@@ -990,12 +990,11 @@ mod tests {
         .expect("revoke must publish before admission drainage");
 
         resume_tx.send(()).expect("release bounded barrier");
-        let git_executed = tokio::task::spawn_blocking(move || {
-            executed_rx.recv_timeout(Duration::from_secs(5))
-        })
-        .await
-        .expect("execution observation task")
-        .expect("bounded execution observation");
+        let git_executed =
+            tokio::task::spawn_blocking(move || executed_rx.recv_timeout(Duration::from_secs(5)))
+                .await
+                .expect("execution observation task")
+                .expect("bounded execution observation");
         let _request_outcome = tokio::time::timeout(Duration::from_secs(5), request)
             .await
             .expect("Git worker completion deadline")
@@ -1011,5 +1010,4 @@ mod tests {
             "ISSUE317_POST_REVOKE_GIT_SPAWN: real Git status executed after revocation; pre-spawn native ownership/stop check absent"
         );
     }
-
 }
