@@ -407,26 +407,33 @@ mod tests {
         let registry = TaskLeaseRegistry::new();
         let session = SessionHandle::generate().expect("session");
         let original = lease(session.clone(), 100);
-        registry.register(original.clone()).expect("register original");
+        registry
+            .register(original.clone())
+            .expect("register original");
         let (observed, watch) = registry
-            .get_active_with_revocation_watch(
-                &original.id,
-                &session,
-                MonotonicTime::from_millis(1),
-            )
+            .get_active_with_revocation_watch(&original.id, &session, MonotonicTime::from_millis(1))
             .expect("verified record and watch together");
         assert_eq!(observed.id, original.id);
         assert_eq!(observed.policy_epoch, original.policy_epoch);
         assert!(!watch.is_revoked(), "verified watch begins active");
 
         assert!(registry.revoke(&original.id).expect("publish revocation"));
-        assert!(watch.is_revoked(), "watch must observe same record revocation");
-        assert!(registry.remove_revoked(&original.id).expect("remove original"));
+        assert!(
+            watch.is_revoked(),
+            "watch must observe same record revocation"
+        );
+        assert!(
+            registry
+                .remove_revoked(&original.id)
+                .expect("remove original")
+        );
 
         // Reusing even the same opaque lease ID cannot retarget an old watch.
         let mut replacement = lease(session.clone(), 200);
         replacement.id = original.id.clone();
-        registry.register(replacement.clone()).expect("replacement record");
+        registry
+            .register(replacement.clone())
+            .expect("replacement record");
         let (current, new_watch) = registry
             .get_active_with_revocation_watch(
                 &replacement.id,
@@ -483,7 +490,9 @@ mod tests {
         let registry = TaskLeaseRegistry::new();
         let owner = SessionHandle::generate().expect("session");
         let owned = absolute_process_lease(owner.clone(), &executable, 100);
-        registry.register(owned.clone()).expect("pin executable identity");
+        registry
+            .register(owned.clone())
+            .expect("pin executable identity");
         fs::write(&executable, b"changed-binary").expect("modify fixture");
         assert!(matches!(
             registry.get_active_with_revocation_watch(
