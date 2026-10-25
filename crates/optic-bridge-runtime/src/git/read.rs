@@ -83,8 +83,14 @@ impl GitReadService {
     }
 
     pub fn status_with_max_bytes(&self, max_bytes: u64) -> Result<GitStatusSnapshot, GitReadError> {
-        let limit = self.requested_byte_limit(Some(max_bytes))?;
-        let output = self.run_success(&git_status_args(), limit)?;
+        // Production and staged Windows native ownership must consume the
+        // exact same status-only command identity, options and byte limit.
+        // The legacy runner and nonzero-status behavior remain unchanged.
+        let spec = self.status_command_spec(max_bytes)?;
+        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        if !output.status.success() {
+            return Err(command_failed(output.status, &output.stderr));
+        }
         let head = parse_status_head(&output.stdout)?;
         // Validate the complete NUL-delimited record stream before any MCP
         // response may expose it. Unknown/unrepresentable records fail closed.
