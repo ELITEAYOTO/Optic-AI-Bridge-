@@ -1,5 +1,12 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Latest successor reference — 25 October 2026 after #358
+
+Copy the entire current top section **« PROMPT ACTIF POUR NOUVEAU CHAT — 25 OCTOBRE 2026 APRÈS #358 »** in [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). It supersedes older prompts below. Baseline `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`, [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) all green; five PRs #327/#352/#353/#355/#358 open, #358 stacked on #353 not main; two important acceptance reds #352 actual wall-clock and #355 post-revoke Git spawn; isolated native #353/#358 research green but no production GitRead owner. #317/#323 OPEN, Windows V1 NO-GO. Verify live GitHub, respect Codex recovery and separation from Optic Desktop/REL.
+
+---
+
+
 ## Latest successor — 25 October 2026 after #353
 
 **Copy the entire [active successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md#prompt-actif--reprise-après-353--25-octobre-2026)**, then verify GitHub live. Latest verified `main=6a6457155758df3050e2aad81ee9446952d7eedd` [CI #40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634) green. #327/#352/#353 open; #352 dedicated actual pipe completion CI RED (meaningful bug), #353 exact-head native owner/ledger CI GREEN (unmerged/unwired to GitRead production), #317/#323 OPEN, V1 NO-GO. Prior “latest” sections below are dated history. Codex interruption recovery guide remains canonical; no operator PC by default, no Optic Desktop/REL work.

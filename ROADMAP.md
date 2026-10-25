@@ -1,5 +1,19 @@
 # Delivery roadmap
 
+## P0 sequencing — 25 October 2026 after five research PRs
+
+**Verified production `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`**, independent [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) 4/4 green. Merged #356/#357 typed common GitRead command construction only; native owner is **NOT live**. #317/#323 remain open, V1 NO-GO.
+
+1. **Behavioral acceptance RED:** [#352 dedicated CI #40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209) Windows/Ubuntu wall-clock ~1.6 s on 200 ms timeout for stdout/stderr/stdin; ordinary CI green does not supersede it. [#355 dedicated CI #40158288203](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40158288203) Windows/Ubuntu Git spawned after published revoke; its ordinary Windows CI also red independently under #185 Node/AppContainer. Both must be corrected without suppressing/rerunning-to-green.
+2. **Unmerged owners:** #353 head `b091dc28…` has staged Windows Job/pipes/watchdog/ledger, real typed Git status, counted admission, required GitRead capability+TaskLease/policy/executable and actual watchdog time-horizon revalidation, native terminal/EOF proof; [CI #40177026825](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40177026825) and [native #40177026834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40177026834) green. #358 head `59d1a331…` is **stacked onto #353, not main**; pins exact canonical GitRead repository to TaskLease in addition to generic Repository marker, [CI #40177299174](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40177299174)/[native #40177299159](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40177299159) green on isolated head. #327 remains independent older research. No wholesale merge.
+3. **Next smallest safe production seam:** bind real MCP GitRead policy/action/sensitive-read authorization, nonexpired scoped TaskLease, session/policy epoch, canonical root, exact Git exe, fixed typed builder, owned native admission/Job registered before child creation, and recheck under revocation immediately before spawn. If proof insufficient, first create narrow deterministic test/contract, not monolithic migration. Keep admission/quota/handles under native uncertainty.
+4. **Later P0:** actual bounded EOF and cancellation for stdout/stderr **and stdin**, root+Job-empty receipts and guardian crash/restart reconciliation. Separate #176/#182, #185, #319, Windows 10/11/offline installer/update/rollback #323. Release remains NO-GO.
+
+All earlier "latest" sections below are historical. [Detailed handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).
+
+---
+
+
 ## Immediate engineering priorities — 25 October 2026
 
 1. **P0 #317 — actual bounded completion:** [#352 dedicated acceptance CI #40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209) is intentionally RED on Windows and Ubuntu; descendant-retained stdout/stderr and stdin still cost ~1.6 s even though deadline is 200 ms and result is now `TimedOut` after #347. A future production fix must satisfy the actual <900ms test *without* weakening it, detached writers/readers, fake EOF, early resource releases or timeout inflation.

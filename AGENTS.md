@@ -1,5 +1,11 @@
 # Repository entry point for coding agents
 
+## Current agent entry — 25 October 2026 after #358
+
+**Start with [current STATUS.md](STATUS.md), [Windows V1 canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [full successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md)** before historical sections. Last verified `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`, [main CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) success. #356/#357 typed builders merged but no native production GitRead ownership. Research #327/#352/#353/#355/#358 open; #352 and #355 acceptance RED, #353/#358 isolated native proof GREEN (stacked #358 on #353). #317/#323 OPEN, V1 NO-GO. Verify live first, do not close issues with GitHub keywords, respect permanent [Codex recovery](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md), no standing operator PC access, no Optic Desktop/REL modifications.
+
+
+
 ## Newest handoff — 25 October 2026, following #352/#353
 
 **Start with [current status](STATUS.md#canonical-continuation--25-october-2026-after-347349350-and-research-352353), [Windows V1 technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md) and [complete successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md).** The last verified code baseline `main=6a6457155758df3050e2aad81ee9446952d7eedd` passed [independent main CI #40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634). Research PRs #327/#352/#353 are open, and #317/#323 remain open, V1 NO-GO. #352 specialized wall-clock Windows+Ubuntu gate is intentionally RED while #353 staged native-owner research is GREEN on its own exact SHA, **not wired to production GitRead**. Never treat a green ordinary CI as resolution of #352. New agents must verify live GitHub, preserve [Codex interruption recovery rules](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md), not access operator PC absent specific authorization, and never mix Optic Desktop/REL.
