@@ -4,8 +4,8 @@
 #![allow(dead_code)]
 
 use crate::{
-    GitReadError, GitReadService, OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError,
-    TaskLeaseRegistry, TaskLeaseRegistryError,
+    GitReadError, GitReadService, OwnedSessionAdmissionPermit, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, TaskLeaseRegistryError,
 };
 use optic_bridge_core::{
     Capability, LeaseScope, MonotonicTime, ProcessExecutionClass, SessionHandle, TaskLeaseId,
@@ -500,7 +500,10 @@ impl NativeGitOwners {
             let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
             let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
             if &record.session != session
-                || !record.native.as_ref().is_some_and(|r| Arc::ptr_eq(r, &owner))
+                || !record
+                    .native
+                    .as_ref()
+                    .is_some_and(|r| Arc::ptr_eq(r, &owner))
                 || record.git_executable.as_deref() != Some(spec.executable.as_path())
                 || record.repository_root.as_deref() != Some(spec.cwd.as_path())
                 || spec.output_limit > record.budget.output
@@ -660,7 +663,7 @@ mod tests {
                 registry: &leases,
                 id: &id,
                 git_executable: &fixture_git_executable(),
-                    repository_root: &fixture_repository_root(),
+                repository_root: &fixture_repository_root(),
             },
             session,
             now,
@@ -1517,7 +1520,9 @@ mod tests {
             .expect("second configured Git service");
         let sessions = Arc::new(SessionRegistry::new());
         let grant = grant("real-GitRead-native-service-spec");
-        sessions.register(grant.clone()).expect("register authorized fixture session");
+        sessions
+            .register(grant.clone())
+            .expect("register authorized fixture session");
         let leases = TaskLeaseRegistry::new();
         let mut lease = task_lease(&grant);
         let pinned = LeaseScope::ProcessExecutable {
@@ -1528,10 +1533,14 @@ mod tests {
                 .to_owned(),
             class: ProcessExecutionClass::FixedTool,
         };
-        lease.scopes.retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
+        lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
         lease.scopes.insert(pinned);
         let lease_id = lease.id.clone();
-        leases.register(lease).expect("pin real Git executable identity");
+        leases
+            .register(lease)
+            .expect("pin real Git executable identity");
         let owners = ledger();
         let owner_id = owners
             .reserve_prepared(
@@ -1563,13 +1572,7 @@ mod tests {
         // A valid Git service targeting a DIFFERENT canonical repository
         // cannot spend this already-authorized owner reservation.
         assert!(matches!(
-            owners.start_git_read(
-                owner_id,
-                &grant.handle,
-                &other_service,
-                &args,
-                8192,
-            ),
+            owners.start_git_read(owner_id, &grant.handle, &other_service, &args, 8192,),
             Err(OwnerError::UnboundGitReadSpec)
         ));
         assert!(matches!(
@@ -1606,11 +1609,18 @@ mod tests {
         };
         assert!(receipt.is_success(), "real native Git status: {receipt:?}");
         assert!(
-            receipt.stdout.windows(b"# branch.oid".len()).any(|v| v == b"# branch.oid"),
+            receipt
+                .stdout
+                .windows(b"# branch.oid".len())
+                .any(|v| v == b"# branch.oid"),
             "Git must actually execute status with the exact structured spec"
         );
         assert_eq!(owners.outstanding(&grant.handle).expect("fully reaped"), 0);
-        assert!(sessions.revoke(&grant.handle).expect("session admission drained"));
+        assert!(
+            sessions
+                .revoke(&grant.handle)
+                .expect("session admission drained")
+        );
         fs::remove_dir_all(root).expect("remove only synthetic Git repositories");
     }
 
