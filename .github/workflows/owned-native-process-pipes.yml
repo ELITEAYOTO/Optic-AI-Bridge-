@@ -94,3 +94,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'trusted never-spawned preparation failure recovery proof failed' }
           cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_preparation_does_not_steal_another_sessions_capacity -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'cross-session pre-spawn preparation reclamation proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::non_git_read_grants_cannot_reserve_native_git_execution_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'GitRead capability and denial authority proof failed' }
