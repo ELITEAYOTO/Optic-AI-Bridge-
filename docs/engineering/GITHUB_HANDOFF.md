@@ -1,5 +1,11 @@
 # GitHub-only project handoff
 
+## GitHub live continuation checkpoint — 25 October 2026
+
+**Canonical latest handoff:** [Windows V1 engineering summary](HANDOFF_WINDOWS_V1_2026-10-24.md) and [full successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md). `main=6a6457155758df3050e2aad81ee9446952d7eedd` after docs #351, [push/main CI #40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634) completed SUCCESS, attempt 1, four jobs. Earlier code PRs #347 (late result classification **not** bound joins), #349 (Win32 query errors preserved) and #350 (stop-before-drain for registered jobs) are integrated; older #185 red [main #40084443275](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40084443275) and original `TerminationUncertain` red [#40059745546](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40059745546) remain historical evidence. [Open #352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) dedicated [CI #40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209) is behaviorally RED on Windows/Ubuntu (~1.6s vs 200ms runner timeout; actual <900ms acceptance), though normal CI green. [Open #353](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/353) staged native pre-spawn Job/EOF/session ledger, `GitRead` capability check and no-spawn preparation reclaim: [specialized #40153942636](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40153942636) and [full #40153942601](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40153942601) SUCCESS at head `261e9df9…`, still **NOT** connected to production `GitReadService`. Open research #327 remains separate, issues #317/#323 OPEN, V1 NO-GO. GitHub SHA/status changes are expected: verify anew, do not merge research wholesale. [Recovery protocol](CODEX_INTERRUPTION_RECOVERY.md) still applies.
+
+
+
 ## Newest GitHub-only checkpoint — 24 October 2026 after Codex interruption recovery
 
 **Read first:** [Windows V1 handoff after Codex recovery](HANDOFF_WINDOWS_V1_2026-10-24.md), [updated complete successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md), [agent recovery policy](CODEX_INTERRUPTION_RECOVERY.md) and `AGENTS.md`. This is the latest continuation, superseding earlier “ten crash schedules” history. GitHub can change after this checkpoint: always query it live.

@@ -1,5 +1,11 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## Latest successor — 25 October 2026 after #353
+
+**Copy the entire [active successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md#prompt-actif--reprise-après-353--25-octobre-2026)**, then verify GitHub live. Latest verified `main=6a6457155758df3050e2aad81ee9446952d7eedd` [CI #40086602634](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40086602634) green. #327/#352/#353 open; #352 dedicated actual pipe completion CI RED (meaningful bug), #353 exact-head native owner/ledger CI GREEN (unmerged/unwired to GitRead production), #317/#323 OPEN, V1 NO-GO. Prior “latest” sections below are dated history. Codex interruption recovery guide remains canonical; no operator PC by default, no Optic Desktop/REL work.
+
+
+
 ## Dernière consigne active — 24 octobre 2026 après reprise Codex
 
 **Copier intégralement la nouvelle section `REPRISE PRIORITAIRE`** du [prompt Windows V1 du 24 octobre](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-24.md) ; elle remplace les checkpoints antérieurs décrits ci-dessous. Lire [la passation Windows actualisée](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-24.md), [AGENTS.md](AGENTS.md) et le guide permanent [CODEX_INTERRUPTION_RECOVERY.md](docs/engineering/CODEX_INTERRUPTION_RECOVERY.md).
