@@ -1752,7 +1752,9 @@ mod tests {
             Err(OwnerError::Session(SessionRegistryError::Expired))
         ));
         assert_eq!(
-            owners.outstanding(&grant.handle).expect("denied starts remain owned"),
+            owners
+                .outstanding(&grant.handle)
+                .expect("denied starts remain owned"),
             1
         );
 
