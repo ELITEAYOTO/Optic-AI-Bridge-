@@ -58,6 +58,7 @@ impl TaskLeaseRevocationWatch {
 
     // Native preparation needs the original watched atomic as a stop source.
     // This is not permission to start an unowned process.
+    #[cfg(windows)]
     pub(crate) fn signal(&self) -> &Arc<AtomicBool> {
         &self.signal
     }
