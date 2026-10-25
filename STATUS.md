@@ -1,5 +1,14 @@
 # Current project status
 
+## Latest research reconciliation — 25 October 2026 after #366 (NOT production)
+
+- **Production remains `main=288fa176251ac9038a8c6d1b8df74c6eac724d3c`**, independently [CI #40185881982](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40185881982) 4/4 first attempt. No native GitRead launcher or release-readiness status changed in main.
+- [Research-only PR #366](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/366) was merged **into draft research PR #358, not into main**. #358 exact HEAD `f431c3efde2e5d9512eb1715ad3475196f18bf1d`, still stacked on #353 `b091dc280bfd186694e7c1d1bea743a20f6746c2`. Research-only changes port the production #364 atomic verified TaskLease + original revocation witness to the divergent native owner. The owner now stores and checks original signal identity before Git status start, with a real Windows synthetic `revoke → remove → same lease ID reuse` no-spawn and retained-Job-capacity regression.
+- **Integrated research SHA CI first attempt:** [general #40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915) 4/4 green Windows/Ubuntu/dependencies/release; [native #40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856) 2/2 green; [private preparation #40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916) green. PR #366 head `6d793094…` also green on its original SHA after preserving first Rustfmt and Ubuntu unused-Windows-method errors. First-failure evidence and exact run links are recorded on #366, #358 and [issue #317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317).
+- **Still RED/NO-GO:** #355 original post-revocation real Git-spawn acceptance, #352 true stdin/stdout/stderr wall-clock and EOF acceptance, separate #185 Node/AppContainer intermittence, actual MCP→native owner launch and host-crash recovery, plus Windows 10/11 packaging/update/rollback #323. This research branch contains a *duplicate* of the live #364 helper because ancestry diverges; reconcile surgically before any production promotion. Five experimental PRs #327/#352/#353/#355/#358 remain unmerged into main. **#317/#323 OPEN; Windows V1 NO-GO.** No operator-PC access, no other repositories.
+
+---
+
 ## Latest integrated Windows V1 checkpoint — 25 October 2026, after PR #364
 
 > Re-query GitHub before any action; all older SHA/CI snapshots below are historical, not reset or merge instructions.

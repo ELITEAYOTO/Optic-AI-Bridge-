@@ -1,5 +1,14 @@
 # Delivery roadmap
 
+## Next P0 acceptance after native witness research #366 — 25 October 2026
+
+- The latest **isolated** native owner study lives in [draft PR #358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) at `f431c3efde2e5d9512eb1715ad3475196f18bf1d` after [research #366](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/366) was merged into #358 only. Its independently run CI is green: [general #40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915), [native #40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856), [private #40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916), all first attempt. Production `main=288fa176251ac9038a8c6d1b8df74c6eac724d3c` is unchanged.
+- The newest verified property is atomic registry verification of the *original* TaskLease + revoke witness, retained through native reservation. A later same-ID lease cannot make a revoked native owner spawn, and capacity is only released on its own never-spawned terminal receipt. This is **research evidence**, not MCP authorisation.
+- **Next smallest production slice:** design a real MCP `ActionEnvelope`/sensitive-read/TaskLease authority adapter, with exact current session admission, canonical repository and verified Git executable, the #362 policy preflight, service-owned native Job and a final race-safe check immediately before kernel creation. Do not unconditionally demand a lease on the legacy GitRead runner before the adapter is complete. Reconcile #358 research with production #364 without duplicating native helpers.
+- Run existing independent #355 real Git post-revoke gate and #352 stdout/stderr/stdin elapsed/EOF gate *unchanged*; then host crash/Job-empty/recovery, #185 Node/AppContainer and #323 Win10/11 installer/update/rollback. Green isolated owner tests never turn specialized RED acceptance green. **#317/#323 OPEN, V1 NO-GO.**
+
+---
+
 ## Next P0 boundary — 25 October 2026 after #362
 
 Code [#362](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/362) merged a *policy-only* `evaluate_native_git_read_preflight` on `main=739bdd5de3a86d72eaa251cb4f9f311e69b33e0e` with first-attempt full [PR CI #40182783889](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40182783889) 4/4. This checks GitRead action + exact TaskLease/session/epoch, root scope, FixedTool pin *scope* and finite watchdog envelope; it is **not** native authorization to spawn and is not called from live MCP yet. Independent [push/main #40183165673](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40183165673) retained separate #185 Windows Node/AppContainer RED; Ubuntu/dependency/release passed.
