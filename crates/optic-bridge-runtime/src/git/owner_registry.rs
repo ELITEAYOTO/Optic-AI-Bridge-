@@ -2062,7 +2062,9 @@ mod tests {
         short_lease.resource_ceiling.process_count = 2;
         short_lease.expires_at = MonotonicTime::from_millis(25_000);
         let short_id = short_lease.id.clone();
-        leases.register(short_lease).expect("pin shorter live task lease");
+        leases
+            .register(short_lease)
+            .expect("pin shorter live task lease");
         let short_owner = owners
             .reserve_prepared(
                 &sessions,
@@ -2101,7 +2103,9 @@ mod tests {
             1
         );
         assert_eq!(
-            owners.stop_session(&long_grant.handle).expect("stop unstarted owner"),
+            owners
+                .stop_session(&long_grant.handle)
+                .expect("stop unstarted owner"),
             1
         );
         let receipt = owners
