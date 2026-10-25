@@ -84,6 +84,8 @@ enum OwnerError {
     GitRepositoryNotAuthorized,
     #[error("GitRead command spec identity or budget is not bound to this native owner")]
     UnboundGitReadSpec,
+    #[error("native command timeout would outlive the session or task lease")]
+    InsufficientLaunchLifetime,
     #[error(transparent)]
     GitRead(#[from] GitReadError),
     #[error(transparent)]
@@ -106,6 +108,9 @@ struct Record {
     // Application-owned identities; low-level research reservations lack these.
     git_executable: Option<PathBuf>,
     repository_root: Option<PathBuf>,
+    // The exact watchdog horizon reserved before native creation. No later
+    // launcher may choose a shorter admission check than the actual owner.
+    native_timeout_ms: Option<u32>,
     native: Option<Arc<Mutex<PreparedReadCommand>>>,
     observing: Arc<AtomicBool>,
 }
@@ -232,6 +237,7 @@ impl NativeGitOwners {
                 lease_revoked: None,
                 git_executable: None,
                 repository_root: None,
+                native_timeout_ms: None,
                 native: None,
                 observing: Arc::new(AtomicBool::new(false)),
             },
@@ -321,7 +327,11 @@ impl NativeGitOwners {
         // No command may outlive either the session grant or its task lease.
         // The native watchdog does not independently observe monotonic lease
         // expiry, so require both lifetimes to cover the finite command horizon.
-        let until = now.saturating_add_millis(u64::from(timeout_ms));
+        let until = MonotonicTime::from_millis(
+            now.as_millis()
+                .checked_add(u64::from(timeout_ms))
+                .ok_or(OwnerError::InsufficientLaunchLifetime)?,
+        );
         if grant.expires_at < until
             || lease.expires_at < until
             || !lease.allows(Capability::GitRead)
@@ -352,6 +362,7 @@ impl NativeGitOwners {
             record.lease_revoked = Some(lease_revoked);
             record.git_executable = Some(canonical_git);
             record.repository_root = Some(canonical_repository);
+            record.native_timeout_ms = Some(timeout_ms);
         }
         let signals = self.stop_signals(id, session)?;
         // None of these operations can create a child. Native preparation
@@ -522,7 +533,7 @@ impl NativeGitOwners {
             .registry
             .watch_active(authority.id, session, now)?;
         let (owner, _observation) = self.claim_owner(id, session)?;
-        let owner_session_expiry = {
+        let (owner_session_expiry, native_timeout_ms) = {
             let state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
             let record = state.records.get(&id).ok_or(OwnerError::WrongOwner)?;
             if &record.session != session
@@ -547,7 +558,10 @@ impl NativeGitOwners {
             {
                 return Err(OwnerError::UnboundGitReadSpec);
             }
-            record.admission.grant().expires_at
+            (
+                record.admission.grant().expires_at,
+                record.native_timeout_ms.ok_or(OwnerError::UnboundGitReadSpec)?,
+            )
         };
         let mut command = Command::new(&spec.executable);
         command
@@ -564,6 +578,18 @@ impl NativeGitOwners {
         }
         if launch_now >= owner_session_expiry {
             return Err(OwnerError::Session(SessionRegistryError::Expired));
+        }
+        // Reserving at T0 does not grant the full timeout at a later T1.
+        // The watchdog can run for native_timeout_ms after start, so both
+        // authority horizons must cover that entire interval from T1.
+        let deadline = MonotonicTime::from_millis(
+            launch_now
+                .as_millis()
+                .checked_add(u64::from(native_timeout_ms))
+                .ok_or(OwnerError::InsufficientLaunchLifetime)?,
+        );
+        if deadline > active.expires_at || deadline > owner_session_expiry {
+            return Err(OwnerError::InsufficientLaunchLifetime);
         }
         // Includes a final atomic revoke/deadline stop check before creation,
         // and a second check before resuming the Job-assigned root process.
@@ -1756,6 +1782,36 @@ mod tests {
                 .outstanding(&grant.handle)
                 .expect("denied starts remain owned"),
             1
+        );
+
+        // Reservation happened at t=1, but a launch much later cannot
+        // consume the original 8-second watchdog window beyond the session
+        // deadline, even while the session and task lease remain active.
+        assert!(matches!(
+            owners.start_git_status(
+                owner_id,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &FixedClock(MonotonicTime::from_millis(12_001)),
+                8192,
+            ),
+            Err(OwnerError::InsufficientLaunchLifetime)
+        ));
+        // The exact boundary is inclusive: session expiration at t=20_000
+        // covers a full 8_000-ms command that starts at t=12_000.
+        // Do not launch the process yet; just prove the deadline arithmetic
+        // independently of the start path.
+        assert_eq!(
+            MonotonicTime::from_millis(12_000)
+                .as_millis()
+                .checked_add(8_000),
+            Some(grant.expires_at.as_millis())
         );
 
         // A valid Git service targeting a DIFFERENT canonical repository
