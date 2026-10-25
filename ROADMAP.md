@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## P0 next seam — 25 October 2026, after integrated registered-lease witness #369
+
+[PR #369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/369) combined the genuine registry TaskLease and original-generation revocation watch with the existing typed GitRead policy preflight. See [inert contract and limitations](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md). This is **not** a native owner, true MCP admission, or permission to spawn; the legacy `GitReadService` still launches via `HardenedCommandRunner`.
+
+1. **Next smallest tested integration:** make one real MCP `git status` path pass its *admitted* `ActionEnvelope`, sensitive metadata/provenance decision, exact active session and TaskLease, canonical worktree and opened/hash-verified Git executable into a service-owned native Job/reservation. Do not change all legacy GitRead endpoints as a shortcut.
+2. **Final native boundary:** register all ownership, pipes, stop/watch and quotas before creating the process; revalidate authorization, deadline, execution identity and generation-bound revocation at the last safe pre-spawn point. Preserve uncertain ownership and capacity. A negative `is_revoked` bit from #369 is never sufficient launch authority.
+3. **Unchanged behavioral gates:** original [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) actual post-revocation Git start and [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) bounded real stdout/stderr/stdin/EOF remain **RED**; do not modify their assertions, inflate delays, detach unsupervised pipes or release reservations without proof. Also require root + Job-empty + genuine EOF, crash/restart recovery and #185, #176/#182, #319, authorized Windows 10/11 physical tests and offline update/rollback #323. **WINDOWS V1 NO-GO; #317/#323 remain OPEN.**
+
+---
+
 ## Immediate next-agent work order — 25 October 2026
 
 Read [complete canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [new-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md). Verify live refs before coding. Baseline before the docs PR: `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da`, [independent CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) green 4/4; experimental #358 `f431c3ef…` with native evidence green on exact research SHA **not in main**.

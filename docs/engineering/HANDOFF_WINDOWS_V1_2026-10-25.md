@@ -1,5 +1,7 @@
 # Optic AI Bridge — Canonical Windows V1 handoff (25 October 2026)
 
+> **25 October 2026 addendum after PR #369:** Production has advanced to `main=60da40a1c8ad5109eb5abd30c5daae045a404f9a` through [focused PR #369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/369), which adds the [inert registered native GitRead policy/revocation witness contract](NATIVE_GIT_READ_WITNESS_CONTRACT.md), not the real native launcher. Exact-head [PR CI #40194006038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40194006038) passed 4/4 first attempt after preserving two earlier failures; independent [push/main #40194463604](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40194463604) was still running when this addendum was drafted and requires a separate final check. **Real #355 Git post-revocation start and #352 elapsed stdout/stderr/stdin tests remain RED**; #327/#352/#353/#355/#358 research remains isolated, #185 open, #317/#323 OPEN and **Windows V1 NO-GO**. Next: real trusted MCP admission/sensitive Git authorization into pre-registered native owner, final pre-spawn checks, EOF and host-loss; do not confuse the witness with spawn approval.
+
 > **Status at verification:** 25 October 2026, Europe/Paris. This is a *snapshot, not an authorization to reset branches*. The documentation PR itself may move `main`; always independently re-fetch the actual head and push/main CI. For the complete new-chat instruction, see [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md).
 
 ## 1. Scope, product and constraints
