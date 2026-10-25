@@ -1,5 +1,16 @@
 # Current project status
 
+## Latest integrated Windows V1 checkpoint — 25 October 2026, after PR #364
+
+> Re-query GitHub before any action; all older SHA/CI snapshots below are historical, not reset or merge instructions.
+
+- **Production `main=88593315d84571585df7e5d4639f34fc5491f1b9`**: independent [push/main CI #40185041267](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40185041267) **SUCCESS 4/4 at attempt 1** (Windows, Ubuntu, dependencies, release).
+- **Integrated [PR #364](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/364)**: `TaskLeaseRegistry::get_active_with_revocation_watch` atomically captures a verified, active TaskLease (including configured executable identity check) and read-only original-generation revocation signal under one registry lock. `get_active` retains its old return contract, delegating to this shared verification. Synthetic tests prove the witness cannot retarget after physical removal and even same-ID reuse; wrong session/expiry/revocation and Unix executable-content drift deny. No new Win32 unsafe code or process behavior.
+- **First failures preserved:** test-only `8582d48…` failed Rustfmt; format-only `26ad44d6050a58cd0449a9b1baf025678677292c` demonstrated compiler **E0599** on Windows and Ubuntu ([CI #40184509735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40184509735)). Fix head `16e3605da3d9f59c0b648e234b2c473335ade9ae` passed [full CI #40184694171](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40184694171) 4/4 attempt 1 and [native preparation #40184694195](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40184694195) SUCCESS.
+- **P0 remains unresolved:** Native owner research #353/#358 does not yet consume the new verified watch; GitRead MCP still uses `HardenedCommandRunner` rather than a service-owned native Job. A witness with `is_revoked() == false` is *not* launch approval. #355 post-revoke real Git spawn and #352 actual stdin/stdout/stderr wall-clock acceptance remain RED, separate #185 Node/AppContainer Windows intermittence remains open (including original [main RED #40183165673](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40183165673)). Native root/Job/EOF and host-crash recovery and V1 Win10/Win11 installer/update/rollback are unproved. Five research PRs #327/#352/#353/#355/#358 remain separate, no bulk merge. **#317/#323 OPEN; Windows V1 NO-GO.** No access to operator PC, Optic Desktop or REL.
+
+---
+
 ## Canonical Windows V1 checkpoint — 25 October 2026, after native GitRead policy preflight #362
 
 > Dated verification of production and release evidence. Re-query live GitHub; older checkpoint headings below remain historical, not the present source of truth.
