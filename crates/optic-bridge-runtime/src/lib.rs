@@ -130,8 +130,7 @@ pub use mutation_authority::{
 pub use native_git_read_preflight::{
     NativeGitReadAdmissionError, NativeGitReadAdmittedPreflight, NativeGitReadLeaseError,
     NativeGitReadLeaseWitness, NativeGitReadTrustedContext,
-    begin_admitted_native_git_read_preflight,
-    verify_registered_native_git_read_preflight,
+    begin_admitted_native_git_read_preflight, verify_registered_native_git_read_preflight,
 };
 #[cfg(windows)]
 pub use private_node_task::PrivateNodeTaskStart;
