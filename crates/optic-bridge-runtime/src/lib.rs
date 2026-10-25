@@ -66,6 +66,7 @@ mod session_reusable_approval;
 #[path = "session/worktree.rs"]
 mod session_worktree;
 mod task_lease_registry;
+mod native_git_read_preflight;
 mod tool_profile_registry;
 #[path = "mutation/transactional.rs"]
 mod transactional_file;
@@ -177,6 +178,9 @@ pub use session_worktree::{
     SessionWorktree, SessionWorktreeError, SessionWorktreeManager, SessionWorktreeRecoveryReport,
 };
 pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
+pub use native_git_read_preflight::{
+    NativeGitReadLeaseError, NativeGitReadLeaseWitness, verify_registered_native_git_read_preflight,
+};
 pub use tool_profile_registry::{ToolProfileRegistry, ToolProfileRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};
