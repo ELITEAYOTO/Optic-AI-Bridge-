@@ -536,8 +536,8 @@ impl NativeGitOwners {
                 || !active.has_scope(&LeaseScope::Repository)
                 || record.git_executable.as_deref() != Some(spec.executable.as_path())
                 || record.repository_root.as_deref() != Some(spec.cwd.as_path())
-                || authority.git_executable != spec.executable
-                || authority.repository_root != spec.cwd
+                || authority.git_executable != spec.executable.as_path()
+                || authority.repository_root != spec.cwd.as_path()
                 || spec.output_limit > record.budget.output
             {
                 return Err(OwnerError::UnboundGitReadSpec);
@@ -1640,6 +1640,26 @@ mod tests {
                 8000,
             )
             .expect("reserved exact Git executable/root and native Job first");
+        // The same session and executable pin are not enough: an unrelated
+        // active lease cannot replace the exact revocation signal owned by the
+        // prepared native Job. This denial must leave the owner unstarted.
+        assert!(matches!(
+            owners.start_git_status(
+                owner_id,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &insufficient_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                MonotonicTime::from_millis(1),
+                8192,
+            ),
+            Err(OwnerError::UnboundGitReadSpec)
+        ));
+
         // A valid Git service targeting a DIFFERENT canonical repository
         // cannot spend this already-authorized owner reservation.
         assert!(matches!(
@@ -1717,6 +1737,67 @@ mod tests {
             "Git must actually execute status with the exact structured spec"
         );
         assert_eq!(owners.outstanding(&grant.handle).expect("fully reaped"), 0);
+
+        // The same trusted status-only launch cannot create Git after the
+        // exact task lease was revoked BETWEEN reservation and start. The
+        // prepared owner is still retained until kernel Job-empty and both
+        // pipe EOF receipts; an authorization failure alone frees nothing.
+        let revoked_owner = owners
+            .reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &grant.handle,
+                MonotonicTime::from_millis(1),
+                authorized_budget,
+                8000,
+            )
+            .expect("second real Git status owner prepared before task revoke");
+        assert!(leases.revoke(&lease_id).expect("publish exact lease revocation"));
+        assert!(matches!(
+            owners.start_git_status(
+                revoked_owner,
+                &grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &lease_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                MonotonicTime::from_millis(1),
+                8192,
+            ),
+            Err(OwnerError::Lease(TaskLeaseRegistryError::Revoked))
+        ));
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("revoke retains native owner"),
+            1
+        );
+        let stopped = Instant::now();
+        let receipt = loop {
+            if let Some(receipt) = owners
+                .reap_terminal(revoked_owner, &grant.handle)
+                .expect("kernel Job and two EOF observations on revoked owner")
+            {
+                break receipt;
+            }
+            assert!(
+                stopped.elapsed() < Duration::from_secs(3),
+                "revoked no-spawn owner must provide terminal evidence"
+            );
+            thread::sleep(Duration::from_millis(5));
+        };
+        assert!(receipt.cancelled && receipt.status.is_none());
+        assert!(!receipt.is_success());
+        assert_eq!(
+            owners.outstanding(&grant.handle).expect("revoke cleanup capacity"),
+            0
+        );
         assert!(
             sessions
                 .revoke(&grant.handle)
