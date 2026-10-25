@@ -560,7 +560,9 @@ impl NativeGitOwners {
             }
             (
                 record.admission.grant().expires_at,
-                record.native_timeout_ms.ok_or(OwnerError::UnboundGitReadSpec)?,
+                record
+                    .native_timeout_ms
+                    .ok_or(OwnerError::UnboundGitReadSpec)?,
             )
         };
         let mut command = Command::new(&spec.executable);
@@ -1633,7 +1635,7 @@ mod tests {
         lease
             .scopes
             .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
-        lease.scopes.insert(pinned);
+        lease.scopes.insert(pinned.clone());
         // One native Job process is insufficient for the Git for Windows
         // launcher. Two must be explicitly present in the exact task lease,
         // and counted against an independent aggregate native-process ceiling.
@@ -1803,16 +1805,9 @@ mod tests {
             ),
             Err(OwnerError::InsufficientLaunchLifetime)
         ));
-        // The exact boundary is inclusive: session expiration at t=20_000
-        // covers a full 8_000-ms command that starts at t=12_000.
-        // Do not launch the process yet; just prove the deadline arithmetic
-        // independently of the start path.
-        assert_eq!(
-            MonotonicTime::from_millis(12_000)
-                .as_millis()
-                .checked_add(8_000),
-            Some(grant.expires_at.as_millis())
-        );
+        // The exact boundary must remain valid: a full 8-second watchdog
+        // starting at 12_000 ends exactly when this session expires.
+        // The real positive launch below exercises this inclusive boundary.
 
         // A valid Git service targeting a DIFFERENT canonical repository
         // cannot spend this already-authorized owner reservation.
@@ -1864,7 +1859,7 @@ mod tests {
                     git_executable: service.git_executable(),
                     repository_root: service.repository_root(),
                 },
-                &FixedClock(MonotonicTime::from_millis(1)),
+                &FixedClock(MonotonicTime::from_millis(12_000)),
                 8192,
             )
             .expect("native suspended Git status launched through typed service spec");
@@ -1964,6 +1959,82 @@ mod tests {
             sessions
                 .revoke(&grant.handle)
                 .expect("session admission drained")
+        );
+        // A *different* session whose grant outlives the task lease proves
+        // that task expiry also forbids spending a late 8-second Job horizon,
+        // even when the task lease itself is still active at launch time.
+        let long_grant = SessionGrant {
+            expires_at: MonotonicTime::from_millis(30_000),
+            ..grant("task-horizon-before-session")
+        };
+        sessions
+            .register(long_grant.clone())
+            .expect("independent longer-lived session");
+        let mut short_lease = task_lease(&long_grant);
+        short_lease
+            .scopes
+            .retain(|scope| !matches!(scope, LeaseScope::ProcessExecutable { .. }));
+        short_lease.scopes.insert(pinned);
+        short_lease.resource_ceiling.process_count = 2;
+        short_lease.expires_at = MonotonicTime::from_millis(25_000);
+        let short_id = short_lease.id.clone();
+        leases.register(short_lease).expect("pin shorter live task lease");
+        let short_owner = owners
+            .reserve_prepared(
+                &sessions,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &short_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &long_grant.handle,
+                MonotonicTime::from_millis(1),
+                authorized_budget,
+                8000,
+            )
+            .expect("prepare owner with task expiry before session expiry");
+        assert!(matches!(
+            owners.start_git_status(
+                short_owner,
+                &long_grant.handle,
+                &service,
+                GitReadLeaseRef {
+                    registry: &leases,
+                    id: &short_id,
+                    git_executable: service.git_executable(),
+                    repository_root: service.repository_root(),
+                },
+                &FixedClock(MonotonicTime::from_millis(17_001)),
+                8192,
+            ),
+            Err(OwnerError::InsufficientLaunchLifetime)
+        ));
+        assert_eq!(
+            owners
+                .outstanding(&long_grant.handle)
+                .expect("task-deadline denial keeps native owner"),
+            1
+        );
+        assert_eq!(
+            owners.stop_session(&long_grant.handle).expect("stop unstarted owner"),
+            1
+        );
+        let receipt = owners
+            .reap_terminal(short_owner, &long_grant.handle)
+            .expect("native no-spawn Job/EOF observation")
+            .expect("proof before releasing task-denied owner");
+        assert!(receipt.cancelled && receipt.status.is_none());
+        assert_eq!(
+            owners
+                .outstanding(&long_grant.handle)
+                .expect("capacity returned only after native terminal proof"),
+            0
+        );
+        assert!(
+            sessions
+                .revoke(&long_grant.handle)
+                .expect("second session admission drained")
         );
         fs::remove_dir_all(root).expect("remove only synthetic Git repositories");
     }
