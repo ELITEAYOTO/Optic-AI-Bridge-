@@ -84,15 +84,7 @@ impl GitReadService {
 
     pub fn status_with_max_bytes(&self, max_bytes: u64) -> Result<GitStatusSnapshot, GitReadError> {
         let limit = self.requested_byte_limit(Some(max_bytes))?;
-        let args = os_args([
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--branch",
-            "--untracked-files=all",
-            "--ignore-submodules=all",
-        ]);
-        let output = self.run_success(&args, limit)?;
+        let output = self.run_success(&git_status_args(), limit)?;
         let head = parse_status_head(&output.stdout)?;
         // Validate the complete NUL-delimited record stream before any MCP
         // response may expose it. Unknown/unrepresentable records fail closed.
@@ -295,6 +287,18 @@ impl GitReadService {
     /// native owner must consume this identical structured spec rather than
     /// reconstructing commands or accepting caller-supplied executables.
     /// This builder neither launches Git nor grants authority to launch it.
+    /// Research-stage typed status-only launch specification. The native
+    /// Windows owner receives no arbitrary Git subcommand or argument list:
+    /// fixed status arguments and byte limits originate from this service.
+    /// No native launch permission is granted by constructing this value.
+    pub(crate) fn status_command_spec(
+        &self,
+        max_bytes: u64,
+    ) -> Result<HardenedCommandSpec, GitReadError> {
+        let limit = self.requested_byte_limit(Some(max_bytes))?;
+        self.command_spec(&git_status_args(), limit)
+    }
+
     pub(crate) fn command_spec(
         &self,
         args: &[OsString],
@@ -404,6 +408,17 @@ pub enum GitReadError {
     Io(#[from] io::Error),
     #[error("Git object id is invalid: {0}")]
     ObjectId(#[from] GitObjectIdError),
+}
+
+fn git_status_args() -> Vec<OsString> {
+    os_args([
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--branch",
+        "--untracked-files=all",
+        "--ignore-submodules=all",
+    ])
 }
 
 fn os_args<const N: usize>(values: [&str; N]) -> Vec<OsString> {
@@ -785,6 +800,44 @@ mod tests {
 
     fn path(value: &str) -> WorkspacePath {
         WorkspacePath::parse(value).expect("workspace path")
+    }
+
+    #[test]
+    fn typed_status_command_spec_rejects_limits_and_has_only_fixed_arguments() {
+        let fixture = RepoFixture::new("typed-native-status-spec");
+        let service = fixture.service();
+        let spec = service
+            .status_command_spec(8192)
+            .expect("typed application-owned status spec");
+        assert_eq!(spec.executable, service.git_executable());
+        assert_eq!(spec.cwd, service.repository_root());
+        assert_eq!(
+            spec.args,
+            os_args([
+                "--no-pager",
+                "--literal-pathspecs",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.untrackedCache=false",
+                "status",
+                "--porcelain=v2",
+                "-z",
+                "--branch",
+                "--untracked-files=all",
+                "--ignore-submodules=all",
+            ])
+        );
+        assert_eq!(spec.env, git_read_environment());
+        assert_eq!(spec.output_limit, 8192);
+        assert!(matches!(
+            service.status_command_spec(0),
+            Err(GitReadError::ZeroRequestLimit)
+        ));
+        assert!(matches!(
+            service.status_command_spec(HardLimits::default().max_git_read_bytes + 1),
+            Err(GitReadError::ReadByteLimitExceeded { .. })
+        ));
     }
 
     #[test]
