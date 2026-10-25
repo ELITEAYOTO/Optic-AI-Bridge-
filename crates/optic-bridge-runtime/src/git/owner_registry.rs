@@ -3,8 +3,11 @@
 //! This ledger is not a grant to execute commands or release uncertain children.
 #![allow(dead_code)]
 
-use crate::{OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError};
-use optic_bridge_core::{Capability, MonotonicTime, SessionHandle};
+use crate::{
+    OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
+    TaskLeaseRegistryError,
+};
+use optic_bridge_core::{Capability, LeaseScope, MonotonicTime, SessionHandle, TaskLeaseId};
 use optic_bridge_windows::{LimitedJobObject, PreparedReadCommand, ReadCommandOutcome};
 use std::{
     collections::BTreeMap,
@@ -56,6 +59,10 @@ enum OwnerError {
     MissingGitReadCapability,
     #[error("session was revoked before owner adoption")]
     Revoked,
+    #[error("GitRead task lease has missing capability, repository scope, policy epoch or budget")]
+    InvalidGitReadLease,
+    #[error(transparent)]
+    Lease(#[from] TaskLeaseRegistryError),
     #[error(transparent)]
     Session(#[from] SessionRegistryError),
     #[error(transparent)]
@@ -70,6 +77,7 @@ struct Record {
     budget: Budget,
     stop: Arc<AtomicBool>,
     revoked: Arc<AtomicBool>,
+    lease_revoked: Option<Arc<AtomicBool>>,
     native: Option<Arc<Mutex<PreparedReadCommand>>>,
     observing: Arc<AtomicBool>,
 }
@@ -180,6 +188,7 @@ impl NativeGitOwners {
                 budget,
                 stop: Arc::new(AtomicBool::new(false)),
                 revoked,
+                lease_revoked: None,
                 native: None,
                 observing: Arc::new(AtomicBool::new(false)),
             },
@@ -228,12 +237,46 @@ impl NativeGitOwners {
     fn reserve_prepared(
         &self,
         sessions: &Arc<SessionRegistry>,
+        leases: &TaskLeaseRegistry,
+        lease_id: &TaskLeaseId,
         session: &SessionHandle,
         now: MonotonicTime,
         budget: Budget,
         timeout_ms: u32,
     ) -> Result<OwnerId, OwnerError> {
+        // Necessary research-only preflight, not a complete production GitRead
+        // authorization. Exact repository, executable and typed policy
+        // envelope must still be verified by a future service adapter.
+        let grant = sessions.get_active(session, now)?;
+        if !grant.allows(Capability::GitRead) {
+            return Err(OwnerError::MissingGitReadCapability);
+        }
+        // get_active verifies revoked/expired lease AND registered executable pins.
+        let lease = leases.get_active(lease_id, session, now)?;
+        if !lease.allows(Capability::GitRead)
+            || !lease.has_scope(&LeaseScope::Repository)
+            || lease.policy_epoch != grant.policy_epoch
+            || lease.resource_ceiling.process_count < 1
+            || lease.resource_ceiling.memory_bytes < budget.memory
+            || lease.resource_ceiling.output_bytes < budget.output
+            || lease.resource_ceiling.timeout_ms < u64::from(timeout_ms)
+        {
+            return Err(OwnerError::InvalidGitReadLease);
+        }
+        let (lease_revoked, current_lease) = leases.watch_active(lease_id, session, now)?;
+        if current_lease.id != lease.id || current_lease.policy_epoch != lease.policy_epoch {
+            return Err(OwnerError::InvalidGitReadLease);
+        }
         let id = self.reserve(sessions, session, now, budget)?;
+        {
+            let mut state = self.state.lock().map_err(|_| OwnerError::Unavailable)?;
+            let record = state.records.get_mut(&id).ok_or(OwnerError::WrongOwner)?;
+            if &record.session != session {
+                return Err(OwnerError::WrongOwner);
+            }
+            // Atomic revocation signal remains owned across caller abandonment.
+            record.lease_revoked = Some(lease_revoked);
+        }
         let signals = self.stop_signals(id, session)?;
         // None of these operations can create a child. Native preparation
         // only establishes Job limits, pipes and watchdog ownership.
@@ -265,8 +308,8 @@ impl NativeGitOwners {
         Ok(id)
     }
 
-    // Two independent out-of-band signals for the native watchdog.
-    // Neither signal implies a successful native termination.
+    // Session stop/revoke and optional exact TaskLease revoke are independent
+    // stop requests, none of which is a terminal native receipt.
     fn stop_signals(
         &self,
         id: OwnerId,
@@ -277,7 +320,11 @@ impl NativeGitOwners {
         if &record.session != session {
             return Err(OwnerError::WrongOwner);
         }
-        Ok(vec![Arc::clone(&record.stop), Arc::clone(&record.revoked)])
+        let mut signals = vec![Arc::clone(&record.stop), Arc::clone(&record.revoked)];
+        if let Some(lease_revoked) = &record.lease_revoked {
+            signals.push(Arc::clone(lease_revoked));
+        }
+        Ok(signals)
     }
 
     fn adopt(
@@ -300,7 +347,11 @@ impl NativeGitOwners {
         // counted service admission. Accept ONLY the exact pre-reserved stop
         // atomics so a substituted owner cannot ignore revocation.
         let native = owner.as_ref().ok_or(OwnerError::MissingPayload)?;
-        if !native.matches_unstarted_owner_signals(&record.stop, &record.revoked) {
+        if !native.matches_unstarted_owner_signals(
+            &record.stop,
+            &record.revoked,
+            record.lease_revoked.as_ref(),
+        ) {
             return Err(OwnerError::UnboundNativeOwner);
         }
         if record.revoked.load(Ordering::Acquire) {
