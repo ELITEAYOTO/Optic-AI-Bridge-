@@ -43,6 +43,7 @@ mod journaled_mutation;
 mod mutation;
 #[path = "mutation/authority.rs"]
 mod mutation_authority;
+mod native_git_read_preflight;
 #[cfg(windows)]
 mod private_node_task;
 mod private_project_stage;
@@ -125,6 +126,9 @@ pub use mutation::{
 };
 pub use mutation_authority::{
     MutationAuthorityError, MutationAuthoritySet, MutationAuthoritySpec, mutation_resource_budget,
+};
+pub use native_git_read_preflight::{
+    NativeGitReadLeaseError, NativeGitReadLeaseWitness, verify_registered_native_git_read_preflight,
 };
 #[cfg(windows)]
 pub use private_node_task::PrivateNodeTaskStart;
