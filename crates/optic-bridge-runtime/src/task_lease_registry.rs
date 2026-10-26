@@ -279,7 +279,18 @@ impl TaskLeaseRegistry {
             .lock()
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         let before = leases.len();
-        leases.retain(|_, record| &record.lease.session != session);
+        leases.retain(|_, record| {
+            if &record.lease.session != session {
+                return true;
+            }
+            // Even an isolated physical cleanup must stop an old generation.
+            // Publish while holding this registry lock and before losing the
+            // record; a later lease with the same ID gets its own signal.
+            // This is only a stop observation, never termination evidence.
+            record.revoked = true;
+            record.revocation_signal.store(true, Ordering::Release);
+            false
+        });
         Ok(before - leases.len())
     }
 }
