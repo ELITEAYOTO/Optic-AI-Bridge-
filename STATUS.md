@@ -1,5 +1,14 @@
 # Current project status
 
+## 26 October 2026 — native GitRead admission also owns MCP transport permit (#375)
+
+- Production `main=99c639a0169de72c6bd692ac8493cadef6a1e638` integrates [PR #375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375): inert, noncloneable `NativeGitReadAdmittedPreflight` now consumes the real `RequestPermit`, retaining the transport slot and original monotonic request deadline together with genuine counted session admission and registry-verified TaskLease/policy/stop witnesses. An already-expired permit is refused; failed admission releases the request slot. A future registered native guardian must retain the entire result until *real native terminal proof*. No live MCP `git_status` rewrite, native child, Job/pipes activation or permission change.
+- **Test-first evidence:** initial test-only [format fail #40350852162](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40350852162); formatted test-only `a244941fda821bc2053269fac715b6d6827857e1` [compiler RED #40351046826](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351046826) E0061 x2 and E0599 before implementation. Fixed exact-head `62431d8d34ec56df6d01d93f8c1d9adbbfde8933` [CI #40351438430](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351438430) **SUCCESS 4/4 first attempt** Windows/Ubuntu/dependency/release; [native preparation #40351438537](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351438537) SUCCESS.
+- **Independent integrated** [push/main #40352227922](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40352227922) for the exact `99c639a0169de72c6bd692ac8493cadef6a1e638` **in progress at docs draft**; verify it before docs merge. Previous [main CI #40350315919](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40350315919) succeeded 4/4 at `55bbf35d44a9fc330e009dac23f796a6486683e8`.
+- **Still RED independently:** [#352 real stdout/stderr/stdin wall-clock](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352), [#355 post-published-revoke actual Git spawn](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355). #327/#353/#358 research remains isolated and #185 AppContainer is separately tracked. **#317/#323 OPEN; Windows V1 NO-GO.** No user computer access.
+
+---
+
 ## 26 October 2026 — TaskLease cleanup generation stop, PR #373
 
 - Production `main=621bf4ed977e99a1dd8825f8a2cb28a0e04aab91` includes [PR #373](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/373). `TaskLeaseRegistry::remove_session` now publishes the **original lease generation's** revoke signal *under its registry mutex before physically deleting the record*, even when called without a prior `revoke_session`. Other sessions are untouched and reuse of an opaque lease ID cannot re-enable the old watch. This is fail-closed watch behavior, **not native process termination proof**, not a change to the ordinary lifecycle's ordering and not a new MCP permission.

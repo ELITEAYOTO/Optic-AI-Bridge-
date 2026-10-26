@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — native GitRead preflight retains MCP transport capacity (2026-10-26)
+
+- [PR #375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375) extends inert `NativeGitReadAdmittedPreflight` to own a genuine noncloneable `RequestPermit` alongside counted session admission and typed TaskLease witness; the transport slot stays reserved, the original request deadline adds a stop condition, and expired permits fail closed with RAII capacity release. Synthetic child-free tests; no live MCP change or real native process.
+- Test-only compile-time RED [#40351046826](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351046826) on `a244941fda821bc2053269fac715b6d6827857e1` proves missing permit parameter/error variant; initial format RED [#40350852162](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40350852162) kept. Final SHA `62431d8d34ec56df6d01d93f8c1d9adbbfde8933`: [CI #40351438430](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351438430) SUCCESS 4/4 first attempt, [native preparation #40351438537](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40351438537) SUCCESS. Main squash `99c639a0169de72c6bd692ac8493cadef6a1e638`; independent [push/main #40352227922](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40352227922) pending at docs draft. Original #352/#355 RED, #317/#323 OPEN and Windows V1 NO-GO.
+
 ## Unreleased — TaskLease cleanup publishes generation-bound stop (2026-10-26)
 
 - [PR #373](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/373): when `TaskLeaseRegistry::remove_session` physically drops session-owned leases, it first publishes each original-generation revocation signal under the registry mutex. Retained watchers become stopped even without an earlier explicit revoke, foreign session watches remain valid, and an opaque ID's replacement gets a new signal. **Only one Rust file** changed. This is no termination receipt, native launcher or new permission.
