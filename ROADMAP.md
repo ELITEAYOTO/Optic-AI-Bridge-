@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 26 October 2026 — after registry cleanup witness fix #373
+
+[PR #373](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/373) closes one *registry cleanup* invalidation gap: physical TaskLease removal now publishes original-generation stop, even if the normal session lifecycle's earlier `revoke_session` is bypassed. It does **not** close #317's native-process ownership/race, prove a child has stopped, alter the live MCP GitRead path or change #352/#355.
+
+1. Preserve existing tests and scoped permissions. Next real execution seam remains **one admitted MCP `git status`** with server-owned identity, exact registered scoped TaskLease, sensitive metadata/provenance approval and a pinned executable.
+2. Before any native child exists, register its service-owned Job/root/stdio and cancellation/reservations, then revalidate session/lease policy, identity, expiry and revocation at the final synchronized spawn boundary. Do not mistake a watcher reading `false` for launch authorization.
+3. Prove the **original unmodified** [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) post-revocation real Git no-start and [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) total wall-clock pipe/EOF gates, including root + Job-empty, crash/restart recovery and uncertain native ownership. #185, #319, #176/#182, real Windows 10/11 and #323 installer/offline update/rollback remain independent gates. **V1 NO-GO, #317/#323 OPEN.**
+
+---
+
 ## Next P0 after admitted native GitRead preflight #371 — 25 October 2026
 
 [PR #371](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/371) now binds **genuine owned session admission** to the exact registry-verified TaskLease policy witness, with original session/lease revocation and expiry. See [native preflight contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md). This is an inert Rust service prerequisite, **not live MCP wiring or a spawn permit**.
