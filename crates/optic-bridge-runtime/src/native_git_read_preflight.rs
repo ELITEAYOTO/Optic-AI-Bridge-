@@ -162,6 +162,8 @@ pub enum NativeGitReadAdmissionError {
     StopRequired,
     #[error("native GitRead request transport permit has expired")]
     TransportExpired,
+    #[error("native GitRead admission belongs to a different session registry")]
+    ForeignSessionRegistry,
 }
 
 /// Runtime-owned dependencies; never populate from untrusted MCP parameters.
@@ -171,6 +173,24 @@ pub struct NativeGitReadTrustedContext<'a> {
     pub trusted_session: &'a SessionHandle,
     pub task_leases: &'a TaskLeaseRegistry,
     pub policy: &'a PolicyEngine,
+}
+
+/// The already-admitted MCP worker's **original**, noncloneable resource
+/// reservations, transferred together rather than acquired a second time.
+#[must_use = "owner must retain transport and session capacity through native quiescence"]
+pub struct NativeGitReadOwnedPermits {
+    admission: OwnedSessionAdmissionPermit,
+    request_permit: RequestPermit,
+}
+
+impl NativeGitReadOwnedPermits {
+    #[must_use]
+    pub fn new(admission: OwnedSessionAdmissionPermit, request_permit: RequestPermit) -> Self {
+        Self {
+            admission,
+            request_permit,
+        }
+    }
 }
 
 /// Acquire a real owned session admission from the trusted application handle,
@@ -200,6 +220,48 @@ pub fn begin_admitted_native_git_read_preflight(
     let admission = trusted
         .sessions
         .begin_owned_admission(trusted.trusted_session, now)?;
+    finish_owned_native_git_read_preflight(
+        trusted,
+        NativeGitReadOwnedPermits::new(admission, request_permit),
+        envelope,
+        canonical_repository,
+        git_executable,
+        now,
+    )
+}
+
+/// Verify an **already counted** worker admission and transport reservation.
+///
+/// Never re-admits the session: this allows a future MCP native worker to
+/// transfer its own original capacity to the service-owned OS guardian.
+/// Cross-registry transfers are rejected even if opaque handles match.
+/// This returns a lifetime/stop witness, NOT permission to create a process.
+pub fn finish_owned_native_git_read_preflight(
+    trusted: &NativeGitReadTrustedContext<'_>,
+    owned: NativeGitReadOwnedPermits,
+    envelope: &ActionEnvelope,
+    canonical_repository: &str,
+    git_executable: &str,
+    now: MonotonicTime,
+) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
+    let NativeGitReadOwnedPermits {
+        admission,
+        request_permit,
+    } = owned;
+    if request_permit.is_expired_at(now) {
+        return Err(NativeGitReadAdmissionError::TransportExpired);
+    }
+    if &envelope.session != trusted.trusted_session
+        || &admission.grant().handle != trusted.trusted_session
+    {
+        return Err(NativeGitReadAdmissionError::WrongTrustedSession);
+    }
+    if !admission.belongs_to_registry(trusted.sessions) {
+        return Err(NativeGitReadAdmissionError::ForeignSessionRegistry);
+    }
+    if admission.stop_watch().is_stop_required_at(now) {
+        return Err(NativeGitReadAdmissionError::StopRequired);
+    }
     let lease_witness = verify_registered_native_git_read_preflight(
         trusted.task_leases,
         trusted.policy,
