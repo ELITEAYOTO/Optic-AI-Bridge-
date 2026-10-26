@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — transfer already-counted native GitRead permits (2026-10-26)
+
+- [PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377) adds `NativeGitReadOwnedPermits` and `finish_owned_native_git_read_preflight` to accept existing worker-owned `OwnedSessionAdmissionPermit` + `RequestPermit` instead of a second admission. Enforces **exact Arc session-registry provenance** and trusted handle before any typed TaskLease policy/stop check, preserving RAII on failure and original generation stop/deadlines. The existing begin helper delegates. No native Git start.
+- Test-first [format #40354691682](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40354691682), formatted [compile RED #40354870468](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40354870468) and [Clippy RED #40355329042](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355329042) preserved. Corrected `5692a271a33affa9db73e4d3fcf747419d07cc61`: [CI #40355535498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355535498) 4/4 SUCCESS first attempt and [native prep #40355535687](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355535687) SUCCESS. Integrated `main=a18faaea8bcf8b97f019873b7b6a8d48b6587d57`; independent [push/main CI #40356405717](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40356405717) **pending at docs draft**. #352/#355 remain RED; #317/#323 OPEN, Windows V1 NO-GO.
+
 ## Unreleased — native GitRead preflight retains MCP transport capacity (2026-10-26)
 
 - [PR #375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375) extends inert `NativeGitReadAdmittedPreflight` to own a genuine noncloneable `RequestPermit` alongside counted session admission and typed TaskLease witness; the transport slot stays reserved, the original request deadline adds a stop condition, and expired permits fail closed with RAII capacity release. Synthetic child-free tests; no live MCP change or real native process.
