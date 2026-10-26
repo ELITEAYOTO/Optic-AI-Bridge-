@@ -455,7 +455,9 @@ mod tests {
         let fixture = Fixture::new();
         let guard = transport_guard();
         let now = MonotonicTime::from_millis(10);
-        let permit = guard.begin_execution(now).expect("reserve transport capacity");
+        let permit = guard
+            .begin_execution(now)
+            .expect("reserve transport capacity");
         let trusted = NativeGitReadTrustedContext {
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
@@ -472,7 +474,11 @@ mod tests {
         )
         .expect("session, task lease and transport are all admitted");
 
-        assert_eq!(guard.active_requests(), 1, "native owner keeps the original slot");
+        assert_eq!(
+            guard.active_requests(),
+            1,
+            "native owner keeps the original slot"
+        );
         assert!(!admitted.is_stop_required_at(MonotonicTime::from_millis(29)));
         assert!(
             admitted.is_stop_required_at(MonotonicTime::from_millis(30)),
@@ -480,7 +486,12 @@ mod tests {
         );
         drop(admitted);
         assert_eq!(guard.active_requests(), 0, "owner release returns the slot");
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("owner drained"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("owner drained")
+        );
     }
 
     #[test]
@@ -506,8 +517,17 @@ mod tests {
             ),
             Err(NativeGitReadAdmissionError::TransportExpired)
         ));
-        assert_eq!(guard.active_requests(), 0, "failed admission releases transport");
-        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("no leaked session admission"));
+        assert_eq!(
+            guard.active_requests(),
+            0,
+            "failed admission releases transport"
+        );
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("no leaked session admission")
+        );
     }
 
     #[test]
