@@ -218,6 +218,17 @@ mod tests {
     };
 
     use super::*;
+    use crate::transport::{TransportGuard, TransportLimits};
+
+    fn transport_guard() -> TransportGuard {
+        TransportGuard::new(TransportLimits {
+            max_request_bytes: 1024,
+            max_response_bytes: 1024,
+            max_request_duration_ms: 20,
+            max_concurrent_requests: 1,
+        })
+        .expect("valid bounded transport")
+    }
 
     struct Fixture {
         root: PathBuf,
@@ -437,6 +448,66 @@ mod tests {
             fixture.check(&fixture.envelope, "relative/repo"),
             Err(NativeGitReadLeaseError::NonAbsoluteTarget)
         ));
+    }
+
+    #[test]
+    fn admitted_native_gitread_owns_transport_capacity_and_shorter_deadline() {
+        let fixture = Fixture::new();
+        let guard = transport_guard();
+        let now = MonotonicTime::from_millis(10);
+        let permit = guard.begin_execution(now).expect("reserve transport capacity");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        let admitted = begin_admitted_native_git_read_preflight(
+            &trusted,
+            &fixture.envelope,
+            &fixture.repository,
+            &fixture.executable,
+            permit,
+            now,
+        )
+        .expect("session, task lease and transport are all admitted");
+
+        assert_eq!(guard.active_requests(), 1, "native owner keeps the original slot");
+        assert!(!admitted.is_stop_required_at(MonotonicTime::from_millis(29)));
+        assert!(
+            admitted.is_stop_required_at(MonotonicTime::from_millis(30)),
+            "transport timeout must stop owner before long session/lease expiry"
+        );
+        drop(admitted);
+        assert_eq!(guard.active_requests(), 0, "owner release returns the slot");
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("owner drained"));
+    }
+
+    #[test]
+    fn admitted_native_gitread_rejects_expired_transport_and_releases_slot() {
+        let fixture = Fixture::new();
+        let guard = transport_guard();
+        let start = MonotonicTime::from_millis(10);
+        let permit = guard.begin_execution(start).expect("reserve transport");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        assert!(matches!(
+            begin_admitted_native_git_read_preflight(
+                &trusted,
+                &fixture.envelope,
+                &fixture.repository,
+                &fixture.executable,
+                permit,
+                MonotonicTime::from_millis(30),
+            ),
+            Err(NativeGitReadAdmissionError::TransportExpired)
+        ));
+        assert_eq!(guard.active_requests(), 0, "failed admission releases transport");
+        assert!(fixture.sessions.revoke(&fixture.grant.handle).expect("no leaked session admission"));
     }
 
     #[test]
