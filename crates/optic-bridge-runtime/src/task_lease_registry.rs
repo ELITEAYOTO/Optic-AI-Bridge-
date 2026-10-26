@@ -945,7 +945,10 @@ mod tests {
             old_watch.is_revoked(),
             "physical cleanup must publish original-generation stop"
         );
-        assert!(!foreign_watch.is_revoked(), "other session stays authorized");
+        assert!(
+            !foreign_watch.is_revoked(),
+            "other session stays authorized"
+        );
 
         let mut replacement = lease(owner.clone(), 100);
         replacement.id = owned.id.clone();
@@ -953,7 +956,10 @@ mod tests {
         let (_, replacement_watch) = registry
             .get_active_with_revocation_watch(&owned.id, &owner, MonotonicTime::from_millis(1))
             .expect("new generation");
-        assert!(old_watch.is_revoked(), "old watch may never recover authority");
+        assert!(
+            old_watch.is_revoked(),
+            "old watch may never recover authority"
+        );
         assert!(!replacement_watch.is_revoked());
     }
 
