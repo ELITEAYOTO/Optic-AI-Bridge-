@@ -546,6 +546,95 @@ mod tests {
     }
 
     #[test]
+    fn native_preflight_accepts_transferred_worker_admission_without_double_counting() {
+        let fixture = Fixture::new();
+        let guard = transport_guard();
+        let now = MonotonicTime::from_millis(10);
+        let request = guard.begin_execution(now).expect("worker transport");
+        let admission = fixture
+            .sessions
+            .begin_owned_admission(&fixture.grant.handle, now)
+            .expect("worker admission");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        let admitted = finish_owned_native_git_read_preflight(
+            &trusted,
+            NativeGitReadOwnedPermits::new(admission, request),
+            &fixture.envelope,
+            &fixture.repository,
+            &fixture.executable,
+            now,
+        )
+        .expect("transfer the existing worker permits without readmission");
+        assert_eq!(guard.active_requests(), 1);
+        assert_eq!(admitted.lease_id(), &fixture.lease.id);
+        assert!(
+            fixture
+                .sessions
+                .publish_revocation_before_drain(&fixture.grant.handle)
+                .expect("publish stop")
+        );
+        assert!(admitted.is_stop_required_at(now));
+        assert_eq!(
+            fixture
+                .sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, now)
+                .expect_err("admitted guardian must retain owner capacity"),
+            SessionRegistryError::AdmissionsInFlight
+        );
+        drop(admitted);
+        assert_eq!(guard.active_requests(), 0);
+        assert!(
+            fixture
+                .sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, now)
+                .expect("owner dropped")
+        );
+    }
+
+    #[test]
+    fn native_preflight_rejects_foreign_registry_even_when_session_handle_matches() {
+        let fixture = Fixture::new();
+        let foreign = Arc::new(SessionRegistry::new());
+        foreign.register(fixture.grant.clone()).expect("foreign registration");
+        let guard = transport_guard();
+        let now = MonotonicTime::from_millis(10);
+        let request = guard.begin_execution(now).expect("transport");
+        let admission = foreign
+            .begin_owned_admission(&fixture.grant.handle, now)
+            .expect("foreign owned admission");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        assert!(matches!(
+            finish_owned_native_git_read_preflight(
+                &trusted,
+                NativeGitReadOwnedPermits::new(admission, request),
+                &fixture.envelope,
+                &fixture.repository,
+                &fixture.executable,
+                now,
+            ),
+            Err(NativeGitReadAdmissionError::ForeignSessionRegistry)
+        ));
+        assert_eq!(guard.active_requests(), 0, "failed transfer returns transport");
+        assert!(foreign.revoke(&fixture.grant.handle).expect("foreign drained"));
+        assert!(
+            fixture
+                .sessions
+                .revoke(&fixture.grant.handle)
+                .expect("trusted admission never entered")
+        );
+    }
+
+    #[test]
     fn admitted_native_gitread_binds_real_session_and_lease_without_spawning() {
         let fixture = Fixture::new();
         let now = MonotonicTime::from_millis(10);
