@@ -53,3 +53,22 @@ have not changed. A future native worker must actually transfer its permit to
 this owner and retain the owner through Job-empty/root and real pipe EOF; this
 helper alone does not demonstrate or authorize real process creation.
 Original #352/#355 stay RED. Windows V1 NO-GO.
+
+## 26 October 2026 — transferred MCP worker admissions (research #317)
+
+A future MCP native worker can now transfer **its already counted**, non-cloneable
+`OwnedSessionAdmissionPermit` and `RequestPermit` via `NativeGitReadOwnedPermits`
+to `finish_owned_native_git_read_preflight`, rather than causing a second
+admission. The exact trusted `Arc<SessionRegistry>` identity is checked
+(`Arc::ptr_eq`) before accepting the transferred session; a different
+registry with an identically-valued session handle fails closed, and the
+original transport slot and foreign counted permit are RAII-released.
+Revoked/expired original admission and transport are also refused. The older
+`begin_admitted_native_git_read_preflight` remains compatible by acquiring
+the same owned permit then delegating to this new validation function.
+
+This is **not wired to live `ReadonlyMcpServer::run_admitted_read`**, which
+still uses a borrowed session admission and the legacy GitRead subprocess.
+No child, Windows Job or pipes are created by this transfer primitive.
+There is **no actual OS process termination proof**; the original #352 and
+#355 acceptance stays RED and Windows V1 stays NO-GO.

@@ -522,6 +522,13 @@ impl OwnedSessionAdmissionPermit {
         &self.grant
     }
 
+    /// A transferred native admission must belong to the exact server-owned
+    /// registry, not another registry that reused the same opaque handle.
+    #[must_use]
+    pub(crate) fn belongs_to_registry(&self, registry: &Arc<SessionRegistry>) -> bool {
+        Arc::ptr_eq(&self.registry, registry)
+    }
+
     #[must_use]
     pub fn stop_watch(&self) -> SessionAdmissionStopWatch {
         SessionAdmissionStopWatch {
