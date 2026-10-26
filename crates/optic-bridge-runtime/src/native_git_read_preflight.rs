@@ -184,7 +184,6 @@ pub struct NativeGitReadOwnedPermits {
 }
 
 impl NativeGitReadOwnedPermits {
-    #[must_use]
     pub fn new(admission: OwnedSessionAdmissionPermit, request_permit: RequestPermit) -> Self {
         Self {
             admission,
