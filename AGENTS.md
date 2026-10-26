@@ -1,5 +1,11 @@
 # Repository entry point for coding agents
 
+## POINT D'ENTRÉE PRIORITAIRE — 26 octobre 2026
+
+Lire d'abord [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Les anciennes entrées ci-dessous sont historiques. Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL.
+
+---
+
 ## CURRENT ENTRY — Windows V1 / 25 October 2026, complete chat handoff
 
 **Use [the new complete 25 October handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [copy-ready next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md) FIRST.** The immediately preceding verified production `main` was `7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da`, with independent [push/main CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) 4/4 SUCCESS at first attempt. **This documentation PR will advance main**: verify actual live SHA/CI before any change. Draft native #358 is research-only at `f431c3efde2e5d9512eb1715ad3475196f18bf1d` and not live GitRead. Acceptance #352/#355 remains RED, issue #185 separate, #317/#323 OPEN and Windows V1 NO-GO. Never bulk-merge research or access the operator's computer without fresh explicit authorization. Older entries below are dated evidence.

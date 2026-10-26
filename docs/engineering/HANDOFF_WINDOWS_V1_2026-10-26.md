@@ -1,0 +1,68 @@
+# OPTIC AI BRIDGE — PASSATION CANONIQUE WINDOWS V1
+**26 octobre 2026 — GitHub-only — V1 NO-GO**
+
+> Point d'entrée prioritaire, à lire avant les anciens handoffs. Le [prompt complet du nouveau chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md) est rédigé pour être copié tel quel. Tout SHA, run ou état ci-dessous est un **instantané** : vérifier GitHub live avant mutation. La PR de cette documentation fera évoluer `main`.
+
+## 1. Mission, autorité et séparation impérative des projets
+
+Dépôt officiel UNIQUE : **https://github.com/ELITEAYOTO/Optic-AI-Bridge-** (`ELITEAYOTO/Optic-AI-Bridge-`), MCP Bridge local Rust, stabilisation Windows 10/11 V1 avant toute nouvelle fonction produit. NE PAS travailler sur le dépôt Desktop `Alpha-Optic-APP` (Tauri, autre agent), ni sur REL. Ne toucher à aucun worktree ou dépôt de ces projets.
+
+L'agent est responsable technique/architecte/reviewer et peut prendre les décisions quotidiennes de développement GitHub, ouvrir de petites branches/PR et vérifier la CI. Cela n'autorise **pas** l'accès au PC de l'opérateur ; demander une permission fraîche, précise et volontaire avant toute intervention locale ou Codex sur sa machine. Pas de contournement cybersécurité, de désactivation AppContainer/Defender, de shell arbitraire, de PID kill non possédé, de grant IA auto-accordé, de tests maquillés ou de release non justifiée. `Windows V1 = NO-GO` ; **issues #317 et #323 OPEN**, ainsi que #185, #319 séparées.
+
+## 2. Baseline réellement vérifiée le 26 octobre AVANT la PR documentaire
+
+`main=c058ccf3f9db18c7d67194d117af99cc3e0cea52` après [PR #378 docs](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/378), **MERGED**. [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) : `completed/success`, `run_attempt=1`, exactement **4/4** jobs Windows Rust, Ubuntu Rust, Dependency policy, Release evidence guard, sur ce SHA. Après fusion du présent handoff, inspecter le NOUVEAU SHA de `main` et sa CI `event=push` ; ne pas copier l'ancien SHA comme « actuel ».
+
+Autres intégrations confirmées : [PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377) squash `a18faaea8bcf8b97f019873b7b6a8d48b6587d57`, [push/main #40356405717](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40356405717) 4/4 first attempt ; candidat exact `5692a271a33affa9db73e4d3fcf747419d07cc61`, [CI #40355535498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355535498) 4/4 et [natif #40355535687](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355535687) success. [#375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375) squash `99c639a0169de72c6bd692ac8493cadef6a1e638`, [push/main #40352227922](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40352227922) 4/4 ; [#373](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/373) squash `621bf4ed977e99a1dd8825f8a2cb28a0e04aab91`, [push/main #40342061604](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40342061604) 4/4 ; [#371](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/371) squash `2148281b2960e777a759d39682b4a831e61d47b6`, [push/main #40196515745](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40196515745) 4/4 ; [#369](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/369) squash `60da40a1c8ad5109eb5abd30c5daae045a404f9a`, [push/main #40194463604](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40194463604) 4/4.
+
+PR documentaires #370, #372, #374, #376, #378 déjà MERGED. Une CI verte de PR ≠ une CI indépendante du `main` intégré. Ne pas déclarer GO parce que la CI générale est verte.
+
+## 3. Branches/PR et issues OPEN vérifiées (instantané)
+
+- [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) : recherche propriétaire Win32 historique, base `bootstrap/issue-317-windows-rust-owner`, head `ef3208d787baa0c6433abfa0b4aba687d8bc6bb7` ; ne pas fusionner en bloc.
+- [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) : **test original comportement réel écoulement/stdio ROUGE**, tête `2fa45d6b2d1f3dd39309ca7d18a2209216b7f959`, [CI rouge Windows+Ubuntu #40087176209](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40087176209).
+- [#353](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/353) : owner natif Job/stdio/EOF expérimental, tête `b091dc280bfd186694e7c1d1bea743a20f6746c2` ; CI de recherche ≠ production.
+- [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) : **test original réel de Git lancé après publication révocation ROUGE**, tête `5c104ee67f26b8d7b68132cf05a5f86eb53b580f`, [CI rouge #40158288203](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40158288203).
+- [#358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) : scope dépôt canonique + TaskLease et témoin génération, tête `f431c3efde2e5d9512eb1715ad3475196f18bf1d` ; **STACKÉE SUR LA BRANCHE #353, PAS SUR MAIN**. #366 a été intégré uniquement DANS cette recherche. [CI recherche générale #40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915) 4/4, [native #40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856) 2/2, [prep #40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916) success, sans intégration production.
+- [Issue #317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) : joins stdio et ownership / timeouts ; [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) : freeze/release Windows ; [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185) : AppContainer/Node Windows intermittent ; [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319) : latence initiale MCP. **Toutes OPEN.** #176/#182 Git sensible sont des obligations de confidentialité distinctes.
+
+## 4. Architecture et statut exact des prérequis
+
+Structure : `crates/optic-bridge-core` types/limites, `crates/optic-bridge-policy` décisions, `crates/optic-bridge-runtime` sessions, TaskLease, transport, filesystem/Git, process Windows, `crates/optic-bridge-mcp` endpoints. Règles de [sécurité](../security/SECURITY_INVARIANTS.md) `INV-001` à `INV-032`. Pas d'IA qui autorise ses propres actions. Racine canonique après symlink/reparse, budgets CPU/IO/temps/transport et secrets allowlist, `unsafe` Win32 isolé, aucun PID arbitraire.
+
+Déjà intégrés auparavant : #347/#349/#350 (résultat tardif, provenance des erreurs Win32 Job, ordre de stop des jobs déjà enregistrés), #356/#357 (builder GitRead typé, arguments fixes et environnement propre), #360 (`LeaseScope::GitReadRepository { canonical_root }` distinct), #362 (`PolicyEngine::evaluate_native_git_read_preflight`), #364 (`TaskLeaseRegistry::get_active_with_revocation_watch` génération réelle du record).
+
+Tranches 25–26 octobre **fusionnées mais volontairement INERTES** :
+1. #369 : `verify_registered_native_git_read_preflight` — réelle TaskLease enregistrée, effets/PolicyEngine/session/epoch, racine/exécutable, témoin original irréversible ; PAS un permis spawn.
+2. #371 : `NativeGitReadAdmittedPreflight`, `NativeGitReadTrustedContext`, admission session réellement comptabilisée, watch revocation+deadline session et lease.
+3. #373 : `TaskLeaseRegistry::remove_session` publie le stop sous verrou AVANT suppression ; test d'origine vraiment rouge ([CI #40340672365](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40340672365): 284 OK/1 FAIL), puis corrigé. ID réutilisé ne réactive jamais ancien témoin.
+4. #375 : `RequestPermit` non-clonable et slot transport original conservés avec deadline monotone, fail-closed sur expiry, RAII libération quand owner effectivement détruit.
+5. #377 : `NativeGitReadOwnedPermits` + `finish_owned_native_git_read_preflight` transfèrent session+transport **déjà détenus par un worker** sans deuxième admission ; refus de mauvais `Arc<SessionRegistry>` même avec handle identique, checks de session/TaskLease/policy/expiry. [test-only compile RED #40354870468](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40354870468), [première Clippy RED #40355329042](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355329042), [CI verte finale #40355535498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40355535498) 4/4. Le contrat est documenté dans [NATIVE_GIT_READ_WITNESS_CONTRACT.md](NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+
+**EN PRODUCTION TOUJOURS LEGACY :** dans `crates/optic-bridge-mcp/src/git_tools.rs`, `authorize_git_read` crée encore `ActionEnvelope { task_lease: None }` ; `ReadonlyMcpServer::git_status` emprunte `run_admitted_read` de `server.rs` ; `crates/optic-bridge-runtime/src/git/read.rs` → `GitReadService` lance `HardenedCommandRunner`. Joins stdin/stdout/stderr peuvent attendre un descendant gardant les handles ouverts. AUCUN des nouveaux helpers ne lance Git natif, ne détient un Job, n'enregistre des pipes ni ne prouve un processus terminé. **Ne pas activer TaskLease obligatoire pour tout GitRead legacy sans migration complète et conservation des contrôles de données sensibles.**
+
+## 5. Les RED fondamentaux — ne pas les masquer
+
+**#352 :** timeout runner 200 ms, temps écoulé réel environ 1,6 s, alors que test accepte <900 ms, descendants gardant stdout/stderr/stdin. `TimedOut` rendu après 1,6 s n'est PAS un succès. Ne pas augmenter timeout / seuil, ne pas détacher lecteurs/threads sans custody, ne pas fabriquer EOF.
+
+**#355 :** vrai Git se crée après publication de la révocation pendant fermeture des admissions. Exiger owner Job enregistré AVANT CreateProcess + synchronisation au dernier pré-spawn de l'identité Git ouverte/pin/hash, scope racine, TaskLease et session génération, policy epoch, deadlines, registre, quotas et stop. Un watch `false` seul n'autorise rien.
+
+**Terminaison :** preuve positive **root terminé + Job Object vide + vrais EOF stdout/stderr/stdin appropriés** ; watchdog/host crash/recovery. Sous `TerminationUncertain` conserver owner, quotas, CPU, admission, transport, TaskLease et journal récupérable ; aucune libération anticipée. Tests physiques Win10/Win11 et installateur offline/update/rollback requis pour #323. Issues #185 AppContainer, #319 réponse MCP, #176/#182 Git sensible séparées.
+
+## 6. Premier chantier recommandé à la reprise
+
+P0 : **un seul vrai `git status` MCP correctement admis et transféré à un owner natif Windows**, par petites PR test-first. Inspecter `ReadonlyMcpServer::run_admitted_read` / `git_status` / `authorize_git_read`, `GitReadService` / `HardenedCommandRunner`, `NativeGitReadOwnedPermits`, `TaskLeaseRegistry`, politique/sensitive Git, et code recherche #353/#358. Le worker devra transférer le même `OwnedSessionAdmissionPermit`, `RequestPermit` et lease canonique, sans ré-admission ni release précoce.
+
+N'enclencher création Win32 qu'avec vraie propriété native Job/root/pipes/quotas préenregistrée, Git FixedTool pin/hash vérifié, last-boundary stop/epoch/policy synchronisés. Si cette garde n'est pas prête, ajouter **une micro-tranche d'interface non exécutante + tests négatifs**, pas un lanceur dangereux. Portage ciblé seulement depuis #353/#358, **NE JAMAIS MERGER LA STACK EN BLOC**. Ensuite faire passer les tests originaux non modifiés #355 et #352, puis gates séparés.
+
+## 7. Process professionnel / Codex / interruption
+
+Avant mutation : vérifier GET `branches/main`, `push/main` exact (SHA, tentative, 4 jobs), cinq PR ouvertes et leur base, issues, éventuels edits concurrents. Lire `AGENTS.md`, `AI_HANDOFF.md`, `STATUS.md`, `ROADMAP.md`, [GitHub-only](GITHUB_HANDOFF.md), [workflow](REPOSITORY_WORKFLOW.md), [sécurité](../security/SECURITY_INVARIANTS.md), [recovery](CODEX_INTERRUPTION_RECOVERY.md), ce handoff et le prompt ci-joint. Anciennes passations historiques ne font pas foi pour l'actualité.
+
+Une branche isolée depuis SHA exact ; un objectif cohérent / PR courte ; tests négatifs et **test-first vraiment rouge si pertinent** (un échec format ≠ preuve comportementale, compilation ≠ runtime) ; rustfmt, Clippy -D warnings, Rust Windows+Ubuntu, dependency policy, release guard, préparation native si applicable. Garder les premiers logs rouges et leurs causes. Corriger sur un NOUVEAU SHA, pas rerun cosmétique ni effacement. Attendre chaque job `completed/success` sur le SHA exact du HEAD, reviewer scope et base, merge `squash` avec `expected_head_sha`. Après merge, attendre **CI push/main indépendante** sur le **nouveau** SHA intégré. Mettre l'issue #317 + docs à jour et conserver les historiques, ne pas faire fermer automatiquement #317/#323.
+
+**Codex :** si besoin d'un vrai test PC Windows, envoyer à l'opérateur un prompt précis (SHA, branche, commands, runtime, logs, scénarios, ZIP, empreintes) pour qu'il l'exécute volontairement. AUCUN accès machine sans nouvel accord. Respect budget/quota, arrêter de nouvelles tâches vers 10–5 % pour snapshots/checkpoints. `CODEX_INTERRUPTION_RECOVERY.md` : recovery **hors worktree**, `STATE/ACTIONS/TESTS/RECOVERY`, `SNAPSHOT/CURRENT.json`/`VERIFIED.json`, hashes SHA-256, ne pas reset/tricher/contourner cyber. GitHub-only = « local recovery location inaccessible — not verified » ; ne pas prétendre lire les archives de son PC. Travail GitHub en branch isolée autorisé dans les limites, pas des tâches invisibles en fond.
+
+Principes : « l'IA propose, l'application/policy autorise, isolation contient, native OS fournit la preuve terminale ». Ne pas confondre vert normal CI, recherche verte, release physique et sécurité prouvée.
+
+**V1 WINDOWS NO-GO. #317 / #323 OPEN.**

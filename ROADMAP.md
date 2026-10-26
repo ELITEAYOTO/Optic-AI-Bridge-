@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## REPRISE P0 — 26 octobre 2026
+
+Documents : [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL.
+
+1. Auditer `ReadonlyMcpServer::run_admitted_read`, `authorize_git_read`, `GitReadService` et le contrat `NativeGitReadOwnedPermits` pour UN vrai `git status` MCP, sans double admission ni permission ambiante.
+2. Enregistrer Job/root/stdio/quotas et pin identité Git AVANT la création native, synchroniser stop+epoch+TaskLease+deadline juste avant le spawn et préserver `TerminationUncertain`.
+3. Réussir **originaux inchangés** #355 (aucun Git réel post-revoke) et #352 (vraie fin stdin/stdout/stderr en temps borné), puis #185/#319, données sensibles, Win10/Win11 physiques, installateur offline/update/rollback #323. **V1 NO-GO.**
+
+---
+
 ## 26 October 2026 — after trusted transfer seam #377
 
 [PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377) adds a registry-origin-checked handoff of the worker's existing counted session admission and transport permit into an inert GitRead native-owner contract. This is **not live MCP routing**.

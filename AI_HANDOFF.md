@@ -1,5 +1,9 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+**PASSATION ACTIVE 26 OCTOBRE 2026 :** Lire d'abord [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Anciennes notes ci-dessous historiques. Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL. Appliquer les invariants de sécurité, les règles de tests et le protocole Codex de récupération.
+
+---
+
 **CURRENT 25 OCTOBER 2026: Read [new canonical Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md) and [complete new-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md) before older snapshots.** Verified pre-doc baseline `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da` has independent [CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) 4/4 success at attempt 1; the docs merge may advance main. #358 research `f431c3ef…` is stacked on #353 and NOT in production; #352/#355 behavior RED; #317/#323 OPEN; Windows V1 NO-GO. Preserve all security invariants, first red evidence, recovery checks and no operator-PC access without explicit request.
 
 

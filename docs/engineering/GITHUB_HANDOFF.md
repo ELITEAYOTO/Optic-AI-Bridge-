@@ -1,5 +1,11 @@
 # GitHub-only project handoff
 
+## PASSATION GITHUB-ONLY PRIORITAIRE — 26 octobre 2026
+
+Lire [handoff canonique 26/10](HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet 26/10](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL. Pas de changement de repo, pas de PC opérateur, aucune prétendue preuve native ou locale issue d'une CI générale.
+
+---
+
 ## CURRENT — 25 October 2026 full successor handoff
 
 **Authoritative continuation now lives at [HANDOFF_WINDOWS_V1_2026-10-25.md](HANDOFF_WINDOWS_V1_2026-10-25.md), together with [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-25.md).** Live-check branches and CI before action. Pre-documentation checkpoint: production `main=7c72ecfb8886fb34be2cc7ef9f2e1070f73c08da` [CI #40188090038](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40188090038) 4/4 green first attempt, native research #358 HEAD `f431c3ef…` stacked on #353, integrated research CI [#40187179915](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179915) general 4/4 / [#40187179856](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179856) native 2/2 / [#40187179916](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40187179916) preparation green. This docs PR will advance main; its exact push CI must be confirmed independently. #352/#355 acceptance RED, #185 intermittent, #317/#323 OPEN, V1 NO-GO; no operator PC or other repositories.
