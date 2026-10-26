@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::{
     session_registry::{OwnedSessionAdmissionPermit, SessionRegistry, SessionRegistryError},
     task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError, TaskLeaseRevocationWatch},
+    transport::RequestPermit,
 };
 
 /// A read-only witness to one concrete registry entry, never a spawn permit.
@@ -129,6 +130,7 @@ pub fn verify_registered_native_git_read_preflight(
 pub struct NativeGitReadAdmittedPreflight {
     session_admission: OwnedSessionAdmissionPermit,
     lease_witness: NativeGitReadLeaseWitness,
+    request_permit: RequestPermit,
 }
 
 impl NativeGitReadAdmittedPreflight {
@@ -142,7 +144,8 @@ impl NativeGitReadAdmittedPreflight {
     /// native registration and final pre-spawn checks remain mandatory.
     #[must_use]
     pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
-        self.session_admission.stop_watch().is_stop_required_at(now)
+        self.request_permit.is_expired_at(now)
+            || self.session_admission.stop_watch().is_stop_required_at(now)
             || self.lease_witness.is_stop_required_at(now)
     }
 }
@@ -157,6 +160,8 @@ pub enum NativeGitReadAdmissionError {
     Preflight(#[from] NativeGitReadLeaseError),
     #[error("native GitRead revoked or expired during admission preflight")]
     StopRequired,
+    #[error("native GitRead request transport permit has expired")]
+    TransportExpired,
 }
 
 /// Runtime-owned dependencies; never populate from untrusted MCP parameters.
@@ -175,14 +180,20 @@ pub struct NativeGitReadTrustedContext<'a> {
 /// executable, never identities originating from untrusted MCP arguments.
 /// Admission automatically releases on any failure. On success, the future
 /// service-owned native Job guardian must retain it until actual terminal
-/// evidence, not just a timeout/result code. This function never spawns.
+/// evidence, not just a timeout/result code. The consumed `RequestPermit`
+/// keeps transport capacity and its original deadline through that lifetime.
+/// This function never spawns.
 pub fn begin_admitted_native_git_read_preflight(
     trusted: &NativeGitReadTrustedContext<'_>,
     envelope: &ActionEnvelope,
     canonical_repository: &str,
     git_executable: &str,
+    request_permit: RequestPermit,
     now: MonotonicTime,
 ) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
+    if request_permit.is_expired_at(now) {
+        return Err(NativeGitReadAdmissionError::TransportExpired);
+    }
     if &envelope.session != trusted.trusted_session {
         return Err(NativeGitReadAdmissionError::WrongTrustedSession);
     }
@@ -201,6 +212,7 @@ pub fn begin_admitted_native_git_read_preflight(
     let result = NativeGitReadAdmittedPreflight {
         session_admission: admission,
         lease_witness,
+        request_permit,
     };
     if result.is_stop_required_at(now) {
         return Err(NativeGitReadAdmissionError::StopRequired);
@@ -347,6 +359,8 @@ mod tests {
             trusted_session: &SessionHandle,
             now: MonotonicTime,
         ) -> Result<NativeGitReadAdmittedPreflight, NativeGitReadAdmissionError> {
+            let guard = transport_guard();
+            let request_permit = guard.begin_execution(now).expect("bounded test request");
             let trusted = NativeGitReadTrustedContext {
                 sessions: &self.sessions,
                 trusted_session,
@@ -358,6 +372,7 @@ mod tests {
                 action,
                 &self.repository,
                 &self.executable,
+                request_permit,
                 now,
             )
         }

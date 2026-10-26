@@ -34,3 +34,22 @@ pre-spawn authority. It does NOT satisfy either original behavioral acceptance
 No legacy GitRead permission change, no unsafe additions, no release.
 
 The admitted helper now takes a `NativeGitReadTrustedContext` grouping the server-owned session handle, registries and policy engine, rather than a long unstructured parameter list. The `ActionEnvelope` and the trusted session are still compared independently before any counted admission.
+
+## 26 October 2026 — owned transport permit boundary (#317)
+
+The admitted native GitRead preflight additionally **consumes the real
+`RequestPermit`** supplied by a future MCP worker. The non-cloneable owner
+retains its transport concurrency reservation alongside the counted session
+admission and original-generation TaskLease witness until that owner is
+dropped **after real native termination proof**. The preflight rejects an
+already-expired transport permit, and `is_stop_required_at(now)` includes its
+captured monotonic deadline even when the session and TaskLease last longer.
+Failed admission automatically drops the request permit and counted admission;
+tests assert that the transport slot is not released while the owner exists.
+
+This is intentionally **inert**: live `ReadonlyMcpServer::git_status`, the
+legacy `HardenedCommandRunner`, the process/Job lifecycle and tool permissions
+have not changed. A future native worker must actually transfer its permit to
+this owner and retain the owner through Job-empty/root and real pipe EOF; this
+helper alone does not demonstrate or authorize real process creation.
+Original #352/#355 stay RED. Windows V1 NO-GO.
