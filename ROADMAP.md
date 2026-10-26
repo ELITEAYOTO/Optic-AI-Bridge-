@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 26 October 2026 — after three-resource native admission contract #375
+
+[PR #375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375) now packages an owned session admission, *real owned request transport permit* and exact TaskLease/revocation witness into one inert Rust contract. All three retain their original per-operation deadlines. No Git process is launched by the helper.
+
+1. **P0 real single-tool integration:** route one genuinely admitted MCP `git_status` envelope and sensitive metadata/provenance checks into a service-owned native Windows Job/pipe guardian, transferring the current worker's owned transport permit + counted admission + lease without double-dropping reservations or altering unrelated GitRead legacy behavior.
+2. **P0 true pre-spawn authority:** pin/hash the fixed Git executable and canonical repository from operator-owned state, register root/Job/pipes and quotas before child creation, and revalidate policy/epoch/revocation/expiry immediately at the last synchronized spawn boundary. Watcher `false` never licenses launch. Preserve TerminationUncertain capacity.
+3. **P0 behavioral acceptance unchanged:** prove original [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) no real Git start after revoke, original [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) actual elapsed stdin/stdout/stderr/EOF, root + Job empty and host-loss recovery. Separate #185 AppContainer, #319 first MCP response, #176/#182 sensitive provenance, #323 installer/offline updates/rollback and real authorized Windows 10/11 tests remain required. **Windows V1 NO-GO; #317/#323 OPEN.**
+
+---
+
 ## 26 October 2026 — after registry cleanup witness fix #373
 
 [PR #373](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/373) closes one *registry cleanup* invalidation gap: physical TaskLease removal now publishes original-generation stop, even if the normal session lifecycle's earlier `revoke_session` is bypassed. It does **not** close #317's native-process ownership/race, prove a child has stopped, alter the live MCP GitRead path or change #352/#355.
