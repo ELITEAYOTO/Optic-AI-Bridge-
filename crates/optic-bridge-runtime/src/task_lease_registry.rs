@@ -920,6 +920,44 @@ mod tests {
     }
 
     #[test]
+    fn removed_session_revokes_original_lease_watch_without_affecting_other_sessions() {
+        let registry = TaskLeaseRegistry::new();
+        let owner = SessionHandle::generate().expect("owner");
+        let other = SessionHandle::generate().expect("other");
+        let owned = lease(owner.clone(), 100);
+        let foreign = lease(other.clone(), 100);
+        registry.register(owned.clone()).expect("owned lease");
+        registry.register(foreign.clone()).expect("foreign lease");
+
+        let (_, old_watch) = registry
+            .get_active_with_revocation_watch(&owned.id, &owner, MonotonicTime::from_millis(1))
+            .expect("original owned witness");
+        let (_, foreign_watch) = registry
+            .get_active_with_revocation_watch(&foreign.id, &other, MonotonicTime::from_millis(1))
+            .expect("foreign witness");
+        assert!(!old_watch.is_revoked());
+        assert!(!foreign_watch.is_revoked());
+
+        // Exercise isolated cleanup, without an earlier revoke_session call.
+        // Any still-observed old generation must stop as it is removed.
+        assert_eq!(registry.remove_session(&owner).expect("remove owner"), 1);
+        assert!(
+            old_watch.is_revoked(),
+            "physical cleanup must publish original-generation stop"
+        );
+        assert!(!foreign_watch.is_revoked(), "other session stays authorized");
+
+        let mut replacement = lease(owner.clone(), 100);
+        replacement.id = owned.id.clone();
+        registry.register(replacement).expect("reuse opaque ID");
+        let (_, replacement_watch) = registry
+            .get_active_with_revocation_watch(&owned.id, &owner, MonotonicTime::from_millis(1))
+            .expect("new generation");
+        assert!(old_watch.is_revoked(), "old watch may never recover authority");
+        assert!(!replacement_watch.is_revoked());
+    }
+
+    #[test]
     fn revoke_session_invalidates_its_leases() {
         let registry = TaskLeaseRegistry::new();
         let owner = SessionHandle::generate().expect("test entropy");
