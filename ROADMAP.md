@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 26 October 2026 — after trusted transfer seam #377
+
+[PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377) adds a registry-origin-checked handoff of the worker's existing counted session admission and transport permit into an inert GitRead native-owner contract. This is **not live MCP routing**.
+
+1. **Next P0 single-handler wiring:** redesign a tightly scoped MCP `git_status` worker to hold transferable **owned**, not borrowed, session admission and the original request permit. Keep the legacy GitRead path unchanged until a service-owned native Job/root/pipes guardian can take custody of the same admission/lease trio without double-counting or premature drop. Preserve sensitive staged/untracked metadata protections.
+2. **Next P0 actual native launch authority:** exact canonical repository and fixed opened/pinned/hashed Git executable, registered Job/guardian and quota reservations **before** process creation, immutable generation-bound session/lease/transport stop witnesses, synchronized last pre-spawn policy/epoch/revoke/deadline checks; `is_stop_required_at == false` is never independent spawn permission. Keep capacity on `TerminationUncertain`.
+3. **Acceptance unmodified:** original #355 real post-revoke no Git spawn and #352 true total elapsed stdin/stdout/stderr EOF, root + Job-empty and host-loss. Research #327/#353/#358 stays isolated until integrated honestly; independent #185 AppContainer, #319 MCP first response, #176/#182 sensitive authorization and #323 actual Windows 10/11 install/update/rollback remain required. **#317/#323 OPEN, V1 NO-GO.**
+
+---
+
 ## 26 October 2026 — after three-resource native admission contract #375
 
 [PR #375](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/375) now packages an owned session admission, *real owned request transport permit* and exact TaskLease/revocation witness into one inert Rust contract. All three retain their original per-operation deadlines. No Git process is launched by the helper.
