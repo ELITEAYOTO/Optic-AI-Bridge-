@@ -600,7 +600,9 @@ mod tests {
     fn native_preflight_rejects_foreign_registry_even_when_session_handle_matches() {
         let fixture = Fixture::new();
         let foreign = Arc::new(SessionRegistry::new());
-        foreign.register(fixture.grant.clone()).expect("foreign registration");
+        foreign
+            .register(fixture.grant.clone())
+            .expect("foreign registration");
         let guard = transport_guard();
         let now = MonotonicTime::from_millis(10);
         let request = guard.begin_execution(now).expect("transport");
@@ -624,8 +626,16 @@ mod tests {
             ),
             Err(NativeGitReadAdmissionError::ForeignSessionRegistry)
         ));
-        assert_eq!(guard.active_requests(), 0, "failed transfer returns transport");
-        assert!(foreign.revoke(&fixture.grant.handle).expect("foreign drained"));
+        assert_eq!(
+            guard.active_requests(),
+            0,
+            "failed transfer returns transport"
+        );
+        assert!(
+            foreign
+                .revoke(&fixture.grant.handle)
+                .expect("foreign drained")
+        );
         assert!(
             fixture
                 .sessions
