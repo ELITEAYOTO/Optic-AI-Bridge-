@@ -1,5 +1,11 @@
 # Current project status
 
+## PASSATION INTER-CHAT CANONIQUE — 26 octobre 2026
+
+**Documents actifs :** [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL. Prochaine priorité réelle : transférer la vraie admission du worker MCP + RequestPermit + TaskLease dans un propriétaire natif Job/stdio préenregistré ; ensuite réussir les tests d'acceptation #355 et #352 sans modifier leurs seuils, et les critères V1 #323.
+
+---
+
 ## 26 October 2026 — transferred native GitRead admission is registry-bound (#377)
 
 - `main=a18faaea8bcf8b97f019873b7b6a8d48b6587d57` integrates [PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377), a **non-executing** future native GitRead ownership seam. `NativeGitReadOwnedPermits` consumes a genuine **already-counted** `OwnedSessionAdmissionPermit` and real `RequestPermit` from the worker; `finish_owned_native_git_read_preflight` refuses an admission belonging to a foreign `Arc<SessionRegistry>` despite an identical opaque session handle and retains all original-generation stop/deadline/TaskLease policy checks. Existing `begin_admitted_native_git_read_preflight` delegates through the same checks. No production Git launch, native Job, pipes or new permissions.

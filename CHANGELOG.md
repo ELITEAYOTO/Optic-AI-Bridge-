@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — passation inter-chat complète (26 octobre 2026)
+
+- Ajouter les références actives [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md) à AGENTS/AI_HANDOFF/PROJECT_CONTINUITY/GITHUB_HANDOFF/STATUS/ROADMAP. **Docs seulement** : aucun Rust, aucune politique, aucun workflow ni release.
+- Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL.
+
 ## Unreleased — transfer already-counted native GitRead permits (2026-10-26)
 
 - [PR #377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/377) adds `NativeGitReadOwnedPermits` and `finish_owned_native_git_read_preflight` to accept existing worker-owned `OwnedSessionAdmissionPermit` + `RequestPermit` instead of a second admission. Enforces **exact Arc session-registry provenance** and trusted handle before any typed TaskLease policy/stop check, preserving RAII on failure and original generation stop/deadlines. The existing begin helper delegates. No native Git start.
