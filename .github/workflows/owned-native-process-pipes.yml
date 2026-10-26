@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'crates/optic-bridge-windows/**'
+      - 'crates/optic-bridge-runtime/src/git/owner_registry.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/owned-native-process-pipes.yml'
@@ -47,6 +48,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'owned native tree proof failed' }
           & $Probe --exact output_pipe::tests::bounded_pipe_distinguishes_idle_data_and_confirmed_eof --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'bounded native pipe proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::prepared_owner_proves_root_job_empty_and_both_pipe_eofs --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'prepared native Job/EOF proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::native_terminal_receipt_after_descendant_start_marker --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native owned descendant-pipe termination proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::pre_spawn_revocation_prevents_native_child_creation --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native pre-spawn revoked-owner proof failed' }
+          & $Probe --exact job::prepared_read_command::tests::external_stop_signal_terminates_registered_native_child_and_pipes --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'native independent stop and pipe-EOF proof failed' }
           & $Probe --exact file::tests::exclusive_state_file_never_truncates_and_rejects_aliases --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'exclusive native state file proof failed' }
           & $Probe --exact appcontainer::tests::ephemeral_plan_is_fresh_and_can_be_recorded_before_creation --nocapture
@@ -55,3 +64,43 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'independent owned watchdog proof failed' }
           & $Probe appcontainer::tests::explicit_environment_ --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'explicit environment proof failed' }
+
+  session-owned-native-ledger:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact source before native ledger test
+        shell: pwsh
+        run: |
+          $Actual = git rev-parse HEAD
+          if ($Actual -ne '${{ github.event.pull_request.head.sha }}') { throw 'unexpected native ledger test SHA' }
+          "OPTIC317_LEDGER_SOURCE_SHA=$Actual"
+      - name: Prove session-owned live child revoke and kernel/pipe receipt
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'pinned toolchain install failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::live_native_owner_survives_revoke_until_job_empty_and_pipe_eof -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'session-owned native ledger proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::revoked_before_adoption_is_owned_and_proven_no_spawn_before_releasing_admission -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'pre-adoption revoke no-spawn recovery proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::mismatched_native_stop_signals_cannot_be_adopted_or_release_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'exact session-owner stop-signal validation failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_native_preparation_reclaims_only_unexposed_never_spawned_owner -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'trusted never-spawned preparation failure recovery proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::failed_preparation_does_not_steal_another_sessions_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'cross-session pre-spawn preparation reclamation proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::real_gitread_spec_runs_under_native_owner_with_exact_repo_and_budget -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'real GitRead service command spec under native owner / repo and budget proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::git_read_native_rejects_noncanonical_or_unpinned_executable -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'canonical pinned Git executable before native reservation proof failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::git_read_native_reservation_denies_invalid_task_lease_before_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'scoped GitRead lease rejection before native reservation failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::revoking_exact_task_lease_stops_prepared_native_owner_before_spawn -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'exact GitRead TaskLease pre-spawn revoke failed' }
+          cargo +1.99.0 test --locked --all-features -p optic-bridge-runtime --lib git_owner_registry::tests::non_git_read_grants_cannot_reserve_native_git_execution_capacity -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'GitRead capability and denial authority proof failed' }
