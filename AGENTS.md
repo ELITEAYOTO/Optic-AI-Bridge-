@@ -1,5 +1,11 @@
 # Repository entry point for coding agents
 
+## ACTIVE CANONICAL ENTRY — 27 OCTOBER 2026, POST #391
+
+Read [full Windows V1 handoff](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md) and the **new consolidated [copy-ready prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md)** first. The entries below this banner describe older dates and are historical evidence, **not the current SHA**. Last main observed before this documentation: `c208348f0b63d4810db97f9a5284b325c5b64271` after merged #391 (regression test only). Exact-head #391 CI #40526579598 passed 4/4 and three specialized native workflows passed; independent push/main #40553879389 must be checked in real time, and a later documentation merge changes main again. #390 original-generation TaskLease snapshot was integrated earlier, but no synchronized native CreateProcess, actual terminal Job/root/EOF, or live MCP GitRead switch exists. #352/#355 acceptance remains RED, #317/#323/#185/#319 OPEN, Windows V1 NO-GO, no release. GitHub-only; no user-PC access, Work/Codex task, self-hosted runners or modifications to Optic Desktop/REL.
+
+
+
 ## REPRISE ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
 Lire la [passation Windows V1 pour Chat classique](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)
