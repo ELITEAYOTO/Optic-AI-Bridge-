@@ -1362,7 +1362,12 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
 #[cfg(windows)]
 #[test]
 fn native_reservation_uncertainty_does_not_publish_unobserved_eof() {
-    for mode in ["uncertain", "running", "dropped-after-creation"] {
+    for mode in [
+        "uncertain",
+        "running",
+        "dropped-after-creation",
+        "uncertain-one-observed",
+    ] {
         let root = workspace("native-reservation-uncertain-eof");
         let limits = HardLimits::default();
         let manager = manager_with_host_memory(
@@ -1389,8 +1394,13 @@ fn native_reservation_uncertainty_does_not_publish_unobserved_eof() {
             .as_ref()
             .unwrap()
             .append(ProcessStream::Stdout, b"captured prefix");
+        if mode == "uncertain-one-observed" {
+            // Model one recorded stream closure, without claiming native EOF.
+            let record = &reservation.as_ref().unwrap().record;
+            mark_stream_closed(record, ProcessStream::Stdout);
+        }
         match mode {
-            "uncertain" => reservation
+            "uncertain" | "uncertain-one-observed" => reservation
                 .as_mut()
                 .unwrap()
                 .finish(ProcessStatus::TerminationUncertain, None),
@@ -1415,9 +1425,10 @@ fn native_reservation_uncertainty_does_not_publish_unobserved_eof() {
             let chunk = manager
                 .read(&owner, &job, stream, 0, 1024)
                 .expect("owner-scoped captured output");
-            assert!(
-                !chunk.eof,
-                "uncertain reservation must not synthesize unobserved EOF: {mode:?} {stream:?}"
+            let observed = mode == "uncertain-one-observed" && stream == ProcessStream::Stdout;
+            assert_eq!(
+                chunk.eof, observed,
+                "uncertain reservation must preserve only observed EOF: {mode:?} {stream:?}"
             );
         }
         assert_eq!(manager.active_session_job_count(&owner).unwrap(), 1);

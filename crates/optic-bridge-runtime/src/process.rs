@@ -1196,15 +1196,20 @@ impl NativeProcessReservation {
         append_output(&self.record, stream, bytes);
     }
     pub(crate) fn finish(&mut self, status: ProcessStatus, code: Option<i32>) {
-        mark_stream_closed(&self.record, ProcessStream::Stdout);
-        mark_stream_closed(&self.record, ProcessStream::Stderr);
+        let status = if status == ProcessStatus::Running {
+            ProcessStatus::TerminationUncertain
+        } else {
+            status
+        };
+        // Uncertainty is not a stream-closure observation. Preserve any real
+        // per-stream closure already recorded, without inventing either EOF.
+        if !status_holds_process_ownership(status) {
+            mark_stream_closed(&self.record, ProcessStream::Stdout);
+            mark_stream_closed(&self.record, ProcessStream::Stderr);
+        }
         if let Ok(mut state) = self.record.state.lock() {
             *state = JobState {
-                status: if status == ProcessStatus::Running {
-                    ProcessStatus::TerminationUncertain
-                } else {
-                    status
-                },
+                status,
                 exit_code: code,
             };
             self.finished = true;

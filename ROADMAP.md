@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 27 October 2026 — after native reservation EOF correction (#383)
+
+Before reusing private-worker reservations, preserve stream evidence and all
+uncertain ownership; #383 fixes a reproduced synthetic-EOF state transition.
+Next remains registered Windows guardian custody of #382's exact prepared value,
+native budgets/Job/root/pipes before creation and synchronized final authority.
+Then original #355/#352 unchanged and independent V1 gates.
+[Evidence and limits](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+#317/#323 OPEN; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — after service-bound status preparation (#382)
 
 Next P0: register a service-owned Windows guardian taking the exact prepared

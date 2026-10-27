@@ -1,5 +1,21 @@
 # Current project status
 
+## 27 October 2026 — uncertain native reservation EOF correction (#383)
+
+Native private-worker reservations preserve original stream observations under
+`TerminationUncertain` instead of synthesizing stdout/stderr EOF. The Windows
+test-first [#40476042507](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40476042507)
+failed the exact reservation-state assertion (366 pass / 1 fail / 11 ignored)
+after format/Clippy passed. This is a simulated state test using the real store,
+not native process/pipe fault injection.
+[Contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md);
+final-head and independent-main receipts: [#383](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/383).
+Baseline `main=d9d004b2bbd65c4f7cc520abfde3beb7963f0095`,
+[independent #40474172602](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40474172602)
+SUCCESS 4/4 attempt 1. Native Git guardian/routing remains unimplemented.
+#352/#355 RED; #317/#323 OPEN; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — service-owned native status preparation (#382)
 
 The status preparation boundary now derives repository, executable, fixed
