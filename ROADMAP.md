@@ -1,5 +1,22 @@
 # Delivery roadmap
 
+## Next P0 after no-spawn Win32 Job/pipes preparation (#387, 27 October 2026)
+
+A real **unstarted** Windows kernel Job plus stdout/stderr pipes and closed
+stdin can now be held with the original admitted Git status registration.
+The next micro-increment must pin the exact Git executable and canonical
+repository directory and provide synchronized, fail-closed final
+session/TaskLease/policy/epoch/deadline authorization **at process creation**,
+with native custody pre-established; do not expose a public spawn method
+until that is proven. Then add root/Job-empty/real EOF and host-loss/
+uncertain-retention proofs and only afterwards route one admitted MCP
+`git_status` through the guardian, preserving sensitive path checks.
+
+Original #352 and #355 real acceptance remains RED, #317/#323 OPEN and
+Windows V1 NO-GO. No release, PC access, or bulk research merge.
+
+
+
 ## P0 after integrated registered native status accounting (#385, 27 October 2026)
 
 The service can now **prepare** an exact lease-bound Git status and, on

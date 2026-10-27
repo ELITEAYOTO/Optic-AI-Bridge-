@@ -1,5 +1,51 @@
 # Current project status
 
+## 27 October 2026 — real, unstarted native Git status Job custody (#387)
+
+[Draft PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387) adds a **no-spawn**
+step after the integrated #385 registered native status. On Windows, the
+original `RegisteredNativeGitStatus` consumes its already counted MCP session
+admission, transport permit, registered TaskLease witness, action horizon and
+process-store reservation into `PrecreatedNativeGitStatusCustody`. The
+platform `PrecreatedNativeReadCustody` constructs a **real kernel Job Object**
+with the existing process/memory/CPU ceilings and kill-on-final-handle-close,
+two owned stdout/stderr anonymous pipes with parent writers still open, and an
+opened `NUL` stdin. A second original-generation stop check occurs after
+precreation. An expired/revoked admission fails closed without a child; only
+the **known-unstarted** owner may use ordinary RAII cleanup.
+
+This is **not** the native process owner or the live MCP Git status path:
+there is no CreateProcess method, no root, assignment, resume, pinned Git
+identity, synchronous final policy/revocation/epoch gate, positive post-run
+Job-empty/root-exit/EOF evidence, or host-loss recovery. A zero process count
+on a never-started Job and idle pipe with no EOF prove only precreation.
+Live MCP `git_status` still uses `HardenedCommandRunner` and `task_lease: None`.
+The original real behavioral acceptance #352/#355 stays RED. #317/#323
+OPEN, Windows V1 NO-GO; #353/#358 remain separate research.
+
+**Test-first** `35223758a95a9d6874b8bae42e8a0e789cd6aa2d`,
+[CI #40506640216](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40506640216):
+Windows compiler E0433/E0599 absent interface and Ubuntu rustfmt, **not**
+native runtime failures. The first implementation `cce80c41998a75d7b2172a33875c2cde63d71daf`
+has [format RED #40506898619](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40506898619)
+while its native lifecycle, private Rust compilation and native preparation
+checks passed. Formatter correction at
+`9f2c9600ad9ad7e85b045a94261fa9fa566bc042` triggers
+[CI #40507126521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507126521)
+and separate native workflows. [CI #40507126521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507126521)
+passed Ubuntu, dependency and release gates, but was **Windows Test RED**:
+a platform unit-test incorrectly called filesystem `File::metadata()` on
+the `NUL` device (38 passed, 1 failed, 4 ignored in that test binary).
+The real Job/pipes and admitted-session revoke tests passed. This was
+a **test observation failure**, not #352/#355 native-run acceptance.
+Commit `88dc28a8c9c13dbdff74359f02372d6665e3603e` removes only
+the unsupported metadata check. [CI #40507901498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507901498)
+and the later **final PR HEAD** must be checked independently, including
+each native workflow, before merging. The independent post-merge
+`push/main` is also required and not implied by a PR check.
+
+
+
 ## 27 October 2026 — integrated registered native Git status accounting (#385)
 
 [Merged PR #385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385) adds a Windows-only, **non-executing** handoff from the exact

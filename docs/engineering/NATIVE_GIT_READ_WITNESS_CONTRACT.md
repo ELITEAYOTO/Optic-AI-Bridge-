@@ -1,5 +1,30 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
+## 27 October 2026 — genuine pre-created Windows Job and stdio, still no spawn (#387)
+
+With the existing `RegisteredNativeGitStatus` holding original counted
+session/transport permits, TaskLease generation watch and process capacity,
+`precreate_native_custody` adds a real Win32 Job Object, configured from its
+existing limits, two open-parent-writer anonymous output pipes and a `NUL`
+stdin handle. The underlying kernel Job starts empty (actual Job accounting),
+and tests distinguish idle pipe from observed EOF. Revocation after
+registration blocks preparation; revocation after precreation triggers stop
+while original capacity remains held. No client controls argv or targets.
+
+**No native spawn exists** in this interface: no opened pinned Git executable,
+root, assignment/resume, final synchronized policy and epoch check, watchdog,
+positive terminal Job-empty+root+EOF after execution, or restart recovery.
+No process was ever created in the tests, so a zero Job count is not evidence
+of real termination. A later guardian must retain every original permission
+and OS ownership handle until physical terminal proof; do not use RAII
+no-child cleanup once an actual process may have been created.
+
+This change does not connect MCP GitRead. Original #352/#355 remain RED;
+#317/#323 OPEN, Windows V1 NO-GO. The [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387)
+tracks initial compiler RED and exact-head CI.
+
+
+
 ## 27 October 2026 — registered process capacity, no native launch (#385)
 
 Windows-only `ProcessManager::reserve_prepared_native_status` consumes the

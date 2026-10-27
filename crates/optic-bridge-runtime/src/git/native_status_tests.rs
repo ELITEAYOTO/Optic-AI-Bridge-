@@ -443,3 +443,116 @@ fn native_status_registration_rejects_foreign_process_root_and_expired_action() 
         );
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn precreated_native_git_status_custody_holds_job_pipes_and_original_permits() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic process manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("counted original worker admission");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("private process capacity");
+    let id = registered.job_id();
+    let custody = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("open actual unstarted Windows Job and pipes");
+    assert_eq!(
+        custody
+            .native_active_processes()
+            .expect("real kernel Job observation"),
+        0,
+        "precreation must not launch a root process"
+    );
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .expect("real process registry capacity"),
+        1
+    );
+    fixture
+        .sessions
+        .publish_revocation_before_drain(&fixture.envelope.session)
+        .expect("revoke original session generation");
+    assert!(custody.is_stop_required_at(MonotonicTime::from_millis(11)));
+    assert_eq!(
+        fixture
+            .sessions
+            .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+            .expect_err("counted permit still owned despite revocation"),
+        SessionRegistryError::AdmissionsInFlight
+    );
+    drop(custody); // No spawn interface exists: synthetic no-child teardown only.
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &id)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+    assert!(
+        fixture
+            .sessions
+            .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+            .expect("precreated but unstarted reservation fully released")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn revoked_native_status_cannot_precreate_kernel_custody() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic process manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original valid preparation");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("counted registration");
+    let job = registered.job_id();
+    fixture
+        .sessions
+        .publish_revocation_before_drain(&fixture.envelope.session)
+        .expect("revoke after reservation");
+    assert!(matches!(
+        registered.precreate_native_custody(MonotonicTime::from_millis(11)),
+        Err(crate::NativeGitStatusCustodyError::StopRequired)
+    ));
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed,
+        "no process was created on rejected custody"
+    );
+}
