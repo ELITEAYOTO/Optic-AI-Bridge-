@@ -1,5 +1,30 @@
 # OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
 
+## MISE À JOUR DE REPRISE — après PR #385 fusionnée
+
+Dernier checkpoint intégré vérifié avant une éventuelle nouvelle PR
+documentaire : `main=e5017c48de5d4d6433f92e3117d63f1677aecb59`,
+CI indépendante [push/main #40503510236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40503510236)
+SUCCESS **4/4**, tentative 1 ; vérifier à nouveau live. PR #385 a ajouté
+seulement une réservation **non exécutante** du futur status Git natif dans
+le registre processus, en conservant quota CPU/mémoire/sortie, permis session
+et transport d'origine, TaskLease et horizon de l'action. Aucun vrai Job
+Win32/root/pipes/EOF, aucun CreateProcess, aucun raccord MCP. Le chemin
+`git_status` actif reste legacy. Les acceptances #352/#355 restent rouges.
+#317 a été automatiquement close par la fusion puis **rouverte et commentée**
+[ici](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6441832785).
+#317/#323 OPEN, Windows V1 NO-GO. Évite les titres de squash du type
+`fix(#317)` avant résolution complète.
+
+Continue P0 sur le **véritable propriétaire natif Windows** qui doit
+consommer la même réservation, créer préalablement des handles Job/pipe et
+garantir l'autorité synchronisée à la dernière frontière de lancement, puis
+les preuves natives root/Job-empty/EOF et les contrôles sensibles MCP. Ne
+fusionne pas #353/#358 en bloc. Réévalue main, push/main et chaque job après
+tout nouveau commit, même documentaire. Pas d'accès PC/Codex/Work/automation.
+
+
+
 Tu reprends le projet comme responsable technique principal, architecte Rust/Windows, développeur principal, auditeur sécurité, reviewer et responsable des validations CI.
 
 1. MODE DE TRAVAIL ET AUTORITÉ

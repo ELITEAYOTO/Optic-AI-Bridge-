@@ -8,6 +8,29 @@
 > méthodes restent applicables. Cette mise à jour documentaire fera elle-même
 > avancer main : toujours vérifier les références en direct.
 
+## ADDENDUM — après l'intégration #385 (27 octobre 2026)
+
+Le `main` effectivement vérifié après [PR #385 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385)
+est `e5017c48de5d4d6433f92e3117d63f1677aecb59`. Sa CI indépendante
+[push/main #40503510236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40503510236)
+est **SUCCESS 4/4**, tentative 1, sur ce SHA exact. Le code retenu effectue
+une **réservation comptable non exécutante** de processus, CPU, mémoire et
+sorties pour `PreparedNativeGitStatus`, sous les permis originaux de la
+session/du transport et le témoin de la TaskLease. Il n'ouvre PAS de véritable
+Job Win32, ne crée ni processus ni pipes, ne fournit ni EOF ni preuve de
+terminaison, ne raccorde PAS le MCP `git_status`. Les recherches #353/#358
+restent isolées. Les acceptances originales #352 et #355 restent rouges.
+
+**Incident :** le squash #385 a automatiquement clos #317, qui a été
+[explicitement rouverte](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6441832785)
+et revérifiée ; éviter à l'avenir les intitulés `fix(#317)` tant que les
+critères ne sont pas prouvés. #317/#323 OPEN et Windows V1 NO-GO.
+Priorité : propriétaire natif Windows réel avec Job/root/pipes enregistrés
+et autorisation synchronisée de lancement, puis preuve Job vide/root/EOF et
+rebranchement MCP avec filtres sensibles inchangés. Aucun accès PC/Work/Codex,
+aucune release. Le présent addendum est aussi une PR documentaire et son
+propre nouveau `main`/CI indépendant doit être revérifié après fusion.
+
 ## 1. Périmètre et mode de collaboration
 
 Dépôt unique autorisé : **https://github.com/ELITEAYOTO/Optic-AI-Bridge-**.
