@@ -1,5 +1,17 @@
 # Delivery roadmap
 
+## 27 October 2026 — after service-bound status preparation (#382)
+
+Next P0: register a service-owned Windows guardian taking the exact prepared
+status value and its original worker permits/TaskLease, with Job/root/pipes and
+native quotas before creation. Revalidate current identity/policy/revocation
+and original absolute deadlines at a synchronized launch boundary.
+Then prove original #355 and #352 unchanged, including real terminal/EOF and
+crash recovery; separate #185/#319, sensitive-data and Win10/11 release gates
+remain. [Preparation contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+#317/#323 OPEN, Windows V1 NO-GO.
+
+
 ## 27 October 2026 — native action deadline correction (#381)
 
 Before native activation, preserve the original action horizon alongside

@@ -134,3 +134,39 @@ SUCCESS 4/4 at attempt 1. No native launch activation. Next remains registered
 service-owned Windows Job/root/pipes custody, canonical TaskLease and final
 synchronized launch authorization. Original #352/#355 remain RED;
 #317/#323 OPEN, Windows V1 NO-GO.
+
+## 27 October 2026 — service-owned status preparation (#382)
+
+`GitReadService::prepare_native_status` consumes the original worker's
+`NativeGitReadOwnedPermits`, derives the fixed status command from the service's
+configured canonical repository/executable, and verifies the registered TaskLease
+against those same targets. There are no caller-selected target strings,
+arguments or independent output-limit inputs. The action's output budget must
+fit the service ceiling; the actual spec uses that exact budget.
+
+The noncloneable `PreparedNativeGitStatus` retains that command, an immutable
+copy of the original ActionEnvelope and the admitted preflight. Its absolute
+deadline is the minimum of captured action/transport/session/lease horizons;
+preparation never restarts a relative timeout. Native command/admission/envelope
+fields stay crate-private for the future guardian. Read-only metadata does not
+grant spawn or sensitive-result publication authority.
+
+Four non-executing tests cover fixed command/environment and immutable action
+budget/epoch, missing lease and wrong service repository/executable/session/epoch,
+zero/excess output, original deadline and retained session/transport capacity.
+They use canonical synthetic directories and pinned **inert, non-executable
+bytes**, directly constructing a unit-only service fixture; they do not validate
+a real repository through the constructor or execute Git/native children.
+Test-first `b895bea86490448fca3d5a328852885e58f1c542` /
+[CI #40472797939](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40472797939)
+failed compilation on Windows/Ubuntu (E0432 + four E0599: absent interface),
+not runtime behavior. Initial formatting RED
+[#40472675779](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40472675779)
+is preserved separately. Final-head/integrated receipts belong to
+[PR #382](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/382).
+
+This method is **not wired to live MCP GitRead**, creates no native Job/root/pipes,
+reserves no native CPU/memory/process quota and grants no launch authority.
+Next is registered Windows guardian custody of this same prepared value before
+creation, final synchronized policy/identity/revoke/deadline validation and real
+root/Job/EOF/crash proof. Original #352/#355 stay RED; #317/#323 OPEN, V1 NO-GO.

@@ -1,5 +1,21 @@
 # Current project status
 
+## 27 October 2026 — service-owned native status preparation (#382)
+
+The status preparation boundary now derives repository, executable, fixed
+arguments/environment and exact output budget from GitReadService and the
+original ActionEnvelope. It consumes #380's existing owned permits via the
+registered preflight and retains an immutable envelope plus original deadlines.
+Four non-executing tests cover identity/budget denials and resource custody;
+[contract and test-first compiler evidence](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+Final-head/post-merge receipts: [#382](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/382).
+Baseline main `588f50f0a3fee4e2f6b1c08c21db4950888d6d77` integrates #381,
+[independent CI #40471474314](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40471474314)
+SUCCESS 4/4 attempt 1. This change does not route live MCP to native execution.
+Next: registered Windows guardian custody before creation and synchronized final
+launch authority. #352/#355 RED; #317/#323 OPEN; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — preserve the native GitRead action horizon (#381)
 
 The admitted native GitRead preflight captures the original absolute monotonic
