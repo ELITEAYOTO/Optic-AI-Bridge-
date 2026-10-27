@@ -1,6 +1,13 @@
 # GitHub-only project handoff
 
-## 27 October 2026 — candidate #388 GitRead target pin checkpoint
+## Verified GitHub integration after #388 — 27 October 2026
+
+**Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.
+
+**Scope remains pre-spawn only:** original Git executable and repository root opened and pinned by verified Windows handles, with the already counted admissions, TaskLease witness, unstarted Job and stdio. No child, final synchronized `CreateProcess` authority, native terminal/EOF proof, MCP GitRead switch, physical Windows 10/11 acceptance or release. Keep #317/#323 OPEN, #352/#355 original acceptance RED, and Windows V1 NO-GO. This documentary commit itself changes the HEAD; revalidate live `main`/`push/main` separately after any merge.
+
+
+## 27 October 2026 — integrated #388 GitRead target pin checkpoint
 
 [PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388) extends #387 non-executing real native Job custody with path-handle pins for the **original** trusted Git executable and canonical repository. GitRead uses a stronger READ/LIST directory-root handle, because [test-first #40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) was Windows behaviorally red (2 missing protections) and [first pin #40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) still red (root rename permitted). Code SHA `382857c0269b7173c24bef8eb948d08ad0e558ae` [CI #40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) success first attempt; 3 native workflows success. Verify later PR/doc HEAD and independent push/main afresh. No Git child nor MCP switch, no sync CreateProcess authority or terminal receipts. #317/#323 OPEN; #352/#355 RED; Windows V1 NO-GO; no operator PC, Work, Codex or release.
 

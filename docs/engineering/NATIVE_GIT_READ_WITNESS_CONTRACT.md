@@ -1,6 +1,13 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
-## 27 October 2026 — original-target pins are now owned before native spawn (#388 candidate)
+## Integration proof for original-target pins (#388)
+
+**Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.
+
+**Scope remains pre-spawn only:** original Git executable and repository root opened and pinned by verified Windows handles, with the already counted admissions, TaskLease witness, unstarted Job and stdio. No child, final synchronized `CreateProcess` authority, native terminal/EOF proof, MCP GitRead switch, physical Windows 10/11 acceptance or release. Keep #317/#323 OPEN, #352/#355 original acceptance RED, and Windows V1 NO-GO. This documentary commit itself changes the HEAD; revalidate live `main`/`push/main` separately after any merge.
+
+
+## 27 October 2026 — original-target pins are now owned before native spawn (#388 integrated)
 
 After the exact admitted and registered `PreparedNativeGitStatus` has retained the original session and transport permits and the true unstarted Job/pipes, `precreate_native_custody` also opens two noncloneable Windows target pins: `PinnedExecutableFile` (read sharing, denies writes/deletes) and `pin_native_git_read_repository_root` (true directory READ/LIST desired access, no delete sharing). The expected executable and repository are taken **only** from the original service command; their actual handle-resolved final paths must match the command's canonical paths. A moved repository fails before native Job adoption and releases the known-no-child reservation. Pins remain held with the empty Job, not independently public or usable for spawn.
 
