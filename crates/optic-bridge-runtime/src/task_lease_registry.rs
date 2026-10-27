@@ -49,6 +49,14 @@ pub(crate) struct TaskLeaseRevocationWatch {
 }
 
 impl TaskLeaseRevocationWatch {
+    /// Compare the actual retained registry generation, not an opaque lease ID
+    /// that could be reused by a new or foreign registry entry. This is a
+    /// same-record *observation*, never process-creation authority.
+    #[cfg(windows)]
+    pub(crate) fn same_registration(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.signal, &other.signal)
+    }
+
     // The future native owner will consume this generation-bound stop watch.
     #[allow(dead_code)]
     #[must_use]

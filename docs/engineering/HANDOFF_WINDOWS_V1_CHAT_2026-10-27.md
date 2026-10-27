@@ -1,4 +1,11 @@
 # OPTIC AI BRIDGE — PASSATION WINDOWS V1 POUR CHAT CLASSIQUE
+
+## 27 octobre — instantané de contrôle TaskLease original, PR #390 draft
+
+Après [PR #389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/389), le `main=2702e8f9de9982a7654bb09559e18865b8ebe763` est validé par [CI indépendante #40516482577](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40516482577), 4/4 tentative 1. La nouvelle [PR draft #390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) ajoute une observation non exécutante : relecture de la politique TaskLease/empreinte exécutable et comparaison du témoin de génération de l'admission initiale, refus d'un autre registre avec le même ID et d'un registre session étranger. Toutes les ressources originelles restent détenues avec le Job Windows vide.
+
+Test-first [CI #40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327) ROUGE pour API manquante (E0433/E0599), plus rustfmt indépendant ; pas une reproduction physique #352/#355. Contrôler le HEAD final et ses 4 jobs avant toute fusion, puis indépendamment le nouveau push/main. Ce snapshot N'EST PAS un verrou atomique CreateProcess. Aucun processus Git ni MCP switch. #317/#323 OPEN, V1 NO-GO ; ne touche ni aux autres dépôts ni au PC.
+
 **27 octobre 2026 — GitHub uniquement — Windows V1 NO-GO**
 
 > Document actif pour la reprise demandée en **Chat classique**. Copier le

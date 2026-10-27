@@ -1,5 +1,10 @@
 # Delivery roadmap
 
+## P0 after the candidate original-generation GitRead prelaunch snapshot (#390)
+
+After original session/transport admission, counted private process reservation, genuine *unstarted* Win32 Job, stdio and target pins, the native custodian may now observe current typed GitRead policy plus original TaskLease registry *generation*. Next design and prove a **single synchronized final native launch authority** across lease/session/policy/epoch/deadline/revocation, pinned image, `CreateProcessW` and Job assignment-before-resume. Preserve the original owner and all resources through root exit + real Job-empty + actual EOF, including uncertain termination and host-loss recovery. Only after full native tests switch MCP `git_status` without reducing sensitive path filtering. #352/#355 RED, #317/#323 OPEN, V1 NO-GO.
+
+
 ## P0 after integrated native GitRead target pin custody (#388, 27 October 2026)
 
 Already-admitted status can now keep **original-path handles** for the Git binary and readable canonical repository, together with its unstarted Job/pipes, session/transport admission and budgeted process record. Next: independent current TaskLease executable hash/policy/epoch/session/deadline revalidation **synchronized at the Win32 CreateProcess boundary**, with root Job assignment before resume. Then keep Job/stdio/executable/directory pins and all permits across uncertain termination until root, genuine Job-empty and actual EOF receipts, including host interruption and crash. Only after these proofs enable one MCP `git_status` path with original sensitive-name filtering. Do not assume #352/#355 accepted or Windows V1 releasable.

@@ -1,5 +1,10 @@
 # OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
 
+## Reprise prioritaire — PR #390 instantané génération TaskLease (27 octobre 2026)
+
+Avant toute action revérifier `main` et CI indépendante. Dernière base prouvée : `2702e8f9de9982a7654bb09559e18865b8ebe763`, CI push/main [#40516482577](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40516482577) 4/4 success tentative 1. [PR draft #390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) introduit une observation non exécutante du même registre/génération TaskLease original, de la politique et de l'identité Git ; compiler RED test-first [#40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327) conservé. Lire son HEAD actuel et ses CI avant fusion. Ensuite priorité au propriétaire natif avec gate atomique CreateProcess, vrai Job/root/EOF/terminaison, sécurité sensible MCP. Ne jamais interpréter un snapshot comme droit de lancer ; #352/#355 RED, #317/#323 OPEN, V1 NO-GO. Aucun accès PC, Work/Codex, aucune release ni fusion en bloc #353/#358.
+
+
 ## Dernier checkpoint vérifié après intégration #388
 
 **Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.

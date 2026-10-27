@@ -20,6 +20,8 @@ struct Fixture {
     root: PathBuf,
     repository: PathBuf,
     executable: PathBuf,
+    #[cfg(windows)]
+    lease: TaskLease,
     sessions: Arc<SessionRegistry>,
     leases: TaskLeaseRegistry,
     envelope: ActionEnvelope,
@@ -84,11 +86,13 @@ impl Fixture {
         let sessions = Arc::new(SessionRegistry::new());
         sessions.register(grant).expect("session registry");
         let leases = TaskLeaseRegistry::new();
-        leases.register(lease).expect("pinned scoped lease");
+        leases.register(lease.clone()).expect("pinned scoped lease");
         Self {
             root,
             repository,
             executable,
+            #[cfg(windows)]
+            lease,
             sessions,
             leases,
             envelope,
@@ -642,4 +646,119 @@ fn moved_repository_before_native_custody_is_denied_with_no_child_or_capacity_le
         crate::ProcessStatus::Failed
     );
     fs::rename(&target, &fixture.repository).expect("restore fixture for cleanup");
+}
+
+#[cfg(windows)]
+#[test]
+fn prelaunch_snapshot_rejects_foreign_same_id_task_lease_and_retain_original_admission() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original admission and lease generation");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("private capacity");
+    let custody = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("unstarted OS Job/pipes and pinned GitRead targets");
+
+    let foreign = TaskLeaseRegistry::new();
+    foreign
+        .register(fixture.lease.clone())
+        .expect("independently pinned lease with identical opaque ID");
+    let foreign_context = NativeGitReadTrustedContext {
+        sessions: &fixture.sessions,
+        trusted_session: &fixture.envelope.session,
+        task_leases: &foreign,
+        policy: &PolicyEngine,
+    };
+    assert!(matches!(
+        custody
+            .observe_original_prelaunch_snapshot(&foreign_context, MonotonicTime::from_millis(12)),
+        Err(crate::NativeGitStatusSnapshotError::LeaseGenerationMismatch)
+    ));
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        custody
+            .native_active_processes()
+            .expect("no child launched"),
+        0
+    );
+
+    custody
+        .observe_original_prelaunch_snapshot(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("same original registered lease may be observed");
+    fixture
+        .leases
+        .revoke(fixture.envelope.task_lease.as_ref().unwrap())
+        .expect("original generation revoke");
+    assert!(matches!(
+        custody.observe_original_prelaunch_snapshot(
+            &fixture.trusted(),
+            MonotonicTime::from_millis(12)
+        ),
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+    ));
+    assert_eq!(
+        transport.active_requests(),
+        1,
+        "snapshot rejection never releases the original permits prematurely"
+    );
+    drop(custody);
+    assert_eq!(transport.active_requests(), 0);
+}
+
+#[cfg(windows)]
+#[test]
+fn prelaunch_snapshot_rejects_foreign_session_registry_before_relooking_up_lease() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original admitted native read");
+    let custody = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("private process reservation")
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("unstarted native custody");
+    let foreign_sessions = Arc::new(SessionRegistry::new());
+    let forged_context = NativeGitReadTrustedContext {
+        sessions: &foreign_sessions,
+        trusted_session: &fixture.envelope.session,
+        task_leases: &fixture.leases,
+        policy: &PolicyEngine,
+    };
+    assert!(matches!(
+        custody
+            .observe_original_prelaunch_snapshot(&forged_context, MonotonicTime::from_millis(12)),
+        Err(crate::NativeGitStatusSnapshotError::ForeignSessionRegistry)
+    ));
+    assert_eq!(transport.active_requests(), 1);
+    drop(custody);
+    assert_eq!(transport.active_requests(), 0);
 }

@@ -109,7 +109,7 @@ pub use git_merge_commit::{SessionMergeCommit, SessionMergeCommitError};
 pub use git_merge_plan::{SessionMergePlan, SessionMergePlanError};
 #[cfg(windows)]
 pub use git_native_status::{
-    NativeGitStatusCustodyError, NativeGitStatusRegistrationError,
+    NativeGitStatusCustodyError, NativeGitStatusRegistrationError, NativeGitStatusSnapshotError,
     PrecreatedNativeGitStatusCustody, RegisteredNativeGitStatus,
 };
 pub use git_native_status::{NativeGitStatusPreparationError, PreparedNativeGitStatus};

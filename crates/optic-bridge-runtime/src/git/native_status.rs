@@ -5,6 +5,9 @@ use std::path::Path;
 use optic_bridge_core::{ActionEnvelope, ActionId, MonotonicTime, ResourceBudget, TaskLeaseId};
 use thiserror::Error;
 
+#[cfg(windows)]
+use crate::{NativeGitReadLeaseError, verify_registered_native_git_read_preflight};
+
 use crate::{
     GitReadError, GitReadService, HardenedCommandSpec, NativeGitReadAdmissionError,
     NativeGitReadAdmittedPreflight, NativeGitReadOwnedPermits, NativeGitReadTrustedContext,
@@ -243,6 +246,80 @@ impl PrecreatedNativeGitStatusCustody {
     pub fn native_active_processes(&self) -> std::io::Result<u32> {
         self.native.active_processes()
     }
+
+    /// Observe current policy, captured Git executable identity and the
+    /// *same original* TaskLease registry record while holding the original
+    /// session/transport permits and unopened Job. An independent registry or
+    /// a different generation with a reused opaque lease ID is rejected.
+    ///
+    /// This is a **snapshot**, not a synchronized CreateProcessW gate and
+    /// never a permission to launch, resume, publish or release resources.
+    /// A later native owner must recheck under a final synchronized boundary.
+    pub fn observe_original_prelaunch_snapshot(
+        &self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        now: MonotonicTime,
+    ) -> Result<(), NativeGitStatusSnapshotError> {
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        let prepared = &self.registered.prepared;
+        if &prepared.envelope.session != trusted.trusted_session {
+            return Err(NativeGitStatusSnapshotError::WrongTrustedSession);
+        }
+        if !prepared
+            .admission
+            .belongs_to_session_registry(trusted.sessions)
+        {
+            return Err(NativeGitStatusSnapshotError::ForeignSessionRegistry);
+        }
+        let repository = prepared
+            .repository_root()
+            .to_str()
+            .ok_or(NativeGitStatusSnapshotError::NonUtf8Target)?;
+        let executable = prepared
+            .git_executable()
+            .to_str()
+            .ok_or(NativeGitStatusSnapshotError::NonUtf8Target)?;
+        let observed = verify_registered_native_git_read_preflight(
+            trusted.task_leases,
+            trusted.policy,
+            &prepared.envelope,
+            prepared.admission.original_session_grant(),
+            repository,
+            executable,
+            now,
+        )?;
+        if !prepared
+            .admission
+            .matches_original_lease_registration(&observed)
+        {
+            return Err(NativeGitStatusSnapshotError::LeaseGenerationMismatch);
+        }
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        Ok(())
+    }
+}
+
+/// Fail-closed read-only authority observations; none of these variants is a
+/// native termination receipt, spawn permit or reason to release live owners.
+#[cfg(windows)]
+#[derive(Debug, Error)]
+pub enum NativeGitStatusSnapshotError {
+    #[error("original native Git status admission is revoked or expired")]
+    StopRequired,
+    #[error("prelaunch snapshot requires original trusted session")]
+    WrongTrustedSession,
+    #[error("prelaunch snapshot must use original session registry")]
+    ForeignSessionRegistry,
+    #[error("task lease lookup returned a different registration generation")]
+    LeaseGenerationMismatch,
+    #[error("original service-owned GitRead target is not UTF-8")]
+    NonUtf8Target,
+    #[error(transparent)]
+    Lease(#[from] NativeGitReadLeaseError),
 }
 
 #[cfg(windows)]
