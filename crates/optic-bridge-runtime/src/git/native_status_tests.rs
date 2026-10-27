@@ -122,7 +122,9 @@ impl Fixture {
             self.sessions
                 .begin_owned_admission(&self.envelope.session, now)
                 .expect("original worker admission"),
-            guard.begin_execution(now).expect("original worker transport"),
+            guard
+                .begin_execution(now)
+                .expect("original worker transport"),
         )
     }
 }
@@ -165,7 +167,10 @@ fn prepared_native_status_binds_service_command_budget_and_original_worker_capac
     assert_eq!(prepared.command.env, expected.env);
     assert_eq!(prepared.command.output_limit, 512);
     assert_eq!(prepared.resources(), fixture.envelope.resources);
-    assert_eq!(prepared.lease_id(), fixture.envelope.task_lease.as_ref().unwrap());
+    assert_eq!(
+        prepared.lease_id(),
+        fixture.envelope.task_lease.as_ref().unwrap()
+    );
     assert_eq!(prepared.deadline(), MonotonicTime::from_millis(110));
     assert!(!prepared.is_stop_required_at(MonotonicTime::from_millis(109)));
     assert!(prepared.is_stop_required_at(MonotonicTime::from_millis(110)));
@@ -207,7 +212,8 @@ fn prepared_native_status_rejects_missing_lease_and_wrong_service_identity() {
                     fs::canonicalize(fixture.root.join("other")).expect("canonical other");
             }
             "executable" => {
-                fs::write(fixture.root.join("other.bin"), b"other inert bytes").expect("other tool");
+                fs::write(fixture.root.join("other.bin"), b"other inert bytes")
+                    .expect("other tool");
                 service.git_executable =
                     fs::canonicalize(fixture.root.join("other.bin")).expect("canonical other");
             }
@@ -223,7 +229,9 @@ fn prepared_native_status_rejects_missing_lease_and_wrong_service_identity() {
         );
         let error = result.err().expect("identity mismatch denied");
         let expected = match case {
-            "lease" => NativeGitReadAdmissionError::Preflight(NativeGitReadLeaseError::LeaseRequired),
+            "lease" => {
+                NativeGitReadAdmissionError::Preflight(NativeGitReadLeaseError::LeaseRequired)
+            }
             "session" => NativeGitReadAdmissionError::WrongTrustedSession,
             "epoch" => NativeGitReadAdmissionError::Preflight(NativeGitReadLeaseError::Policy(
                 PolicyReason::StalePolicyEpoch,
