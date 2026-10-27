@@ -72,3 +72,33 @@ still uses a borrowed session admission and the legacy GitRead subprocess.
 No child, Windows Job or pipes are created by this transfer primitive.
 There is **no actual OS process termination proof**; the original #352 and
 #355 acceptance stays RED and Windows V1 stays NO-GO.
+
+## 27 October 2026 — live MCP owned read worker (#380)
+
+The MCP worker now obtains one `OwnedSessionAdmissionPermit` and passes it
+with the original `RequestPermit` by value to `run_owned_admitted_read`.
+The existing borrowed read interface delegates to that same worker without
+readmission. Git reads use the owned interface and retain both reservations
+through execution and sensitive-output verification. Legacy GitRead policy and
+the hardened runner remain unchanged; no native launcher is activated.
+
+Non-executing MCP tests transfer the actual worker permits beyond worker
+completion, prove that synchronous revoke still drains that admission and the
+transport slot remains held, then reject a revoked session. A second test feeds
+those original permits into native preflight and verifies that legacy GitRead
+with no TaskLease cannot gain native authority. Existing Git sensitive-path and
+cancel/drain tests remain applicable. A synthetic no-process fixture may drop
+its permits; a future native guardian must retain them through real OS proof.
+
+Test-first SHA `5e6c35ca33592373d033af38bc44788f1479e282`,
+[CI #40466543183](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466543183):
+Windows and Ubuntu fail compilation with three E0599 errors for the absent
+owned worker interface. This is **compiler evidence**, not runtime reproduction.
+Initial [#40466491881](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466491881)
+failed formatting; retained separately. Candidate validation is pending.
+
+Next: registered service-owned Windows guardian consuming these same permits
+and the canonical TaskLease, resource/Job/pipes pre-registration and synchronized
+final launch authorization. No Job-empty, root-exit, EOF or crash-recovery proof
+is supplied by this worker change. Original #352/#355 remain RED;
+#317/#323 OPEN, Windows V1 NO-GO.

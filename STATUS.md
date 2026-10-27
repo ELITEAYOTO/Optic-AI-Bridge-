@@ -1,5 +1,22 @@
 # Current project status
 
+## 27 October 2026 — MCP owned read worker candidate #380
+
+Candidate #380 adds a live owned worker admission seam and routes Git reads
+through it without second admission or changes to sensitive-output checks.
+Two non-executing regressions cover transferred capacity beyond worker completion
+and denial of native authority without a TaskLease. Test-first
+[CI #40466543183](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466543183)
+failed compilation (E0599, absent interface); initial formatting failure
+[#40466491881](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466491881)
+is preserved. Exact-head validation pending.
+Baseline main `ebe753ee0ee3f8bead396170e272873dcaa35538` has independent
+[push CI #40365242899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40365242899)
+SUCCESS 4/4, attempt 1. No native launcher or termination proof; legacy runner
+and policy remain. #352/#355 RED; #317/#323 OPEN, Windows V1 NO-GO.
+[Owning contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+
+
 ## PASSATION INTER-CHAT CANONIQUE — 26 octobre 2026
 
 **Documents actifs :** [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL. Prochaine priorité réelle : transférer la vraie admission du worker MCP + RequestPermit + TaskLease dans un propriétaire natif Job/stdio préenregistré ; ensuite réussir les tests d'acceptation #355 et #352 sans modifier leurs seuils, et les critères V1 #323.

@@ -161,14 +161,15 @@ impl ReadonlyMcpServer {
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
         V: FnOnce(&Self, &SessionGrant, &T) -> Result<(), ErrorData> + Send + 'static,
     {
-        self.run_admitted_read(move |server, grant, permit| {
-            server.ensure_read_deadline(permit)?;
+        self.run_owned_admitted_read(move |server, admission, permit| {
+            let grant = admission.grant();
+            server.ensure_read_deadline(&permit)?;
             server.authorize_git_read(grant, server.clock.now())?;
             let service = server.git_service.as_ref().cloned().ok_or_else(|| {
                 ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
             })?;
             let output = operation(service).map_err(map_git_read_error)?;
-            server.ensure_read_deadline(permit)?;
+            server.ensure_read_deadline(&permit)?;
             verify(server, grant, &output)?;
             Ok(output)
         })

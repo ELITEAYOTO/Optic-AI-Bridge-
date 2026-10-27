@@ -9,9 +9,10 @@ use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
     BlockingIoError, BlockingIoGovernor, BoundedFileSystem, Clock, EntryKind, FileSystemError,
-    GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, ProcessError, ProcessManager,
-    ReadAuthoritySet, RequestPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
-    ToolProfileRegistry, TransportError, TransportGuard, TransportLimits,
+    GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, OwnedSessionAdmissionPermit,
+    ProcessError, ProcessManager, ReadAuthoritySet, RequestPermit, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError, TransportGuard,
+    TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -532,6 +533,22 @@ impl ReadonlyMcpServer {
         T: Send + 'static,
         F: FnOnce(&Self, &SessionGrant, &RequestPermit) -> Result<T, ErrorData> + Send + 'static,
     {
+        self.run_owned_admitted_read(move |server, admission, permit| {
+            operation(server, admission.grant(), &permit)
+        })
+        .await
+    }
+
+    /// Transfer the worker's original counted admission and transport permit.
+    /// A future native service must retain both through positive OS terminal
+    /// proof; this interface alone never authorizes or creates a process.
+    pub(crate) async fn run_owned_admitted_read<T, F>(&self, operation: F) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Self, OwnedSessionAdmissionPermit, RequestPermit) -> Result<T, ErrorData>
+            + Send
+            + 'static,
+    {
         let now = self.clock.now();
         let permit = self
             .transport_guard
@@ -550,9 +567,9 @@ impl ReadonlyMcpServer {
                 server.ensure_read_deadline(&permit)?;
                 let admission = server
                     .sessions
-                    .begin_admission(&server.session, server.clock.now())
+                    .begin_owned_admission(&server.session, server.clock.now())
                     .map_err(map_session_error)?;
-                operation(&server, admission.grant(), &permit)
+                operation(&server, admission, permit)
             }),
         )
         .await

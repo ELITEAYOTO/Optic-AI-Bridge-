@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 27 October 2026 — owned MCP worker candidate #380
+
+Candidate #380 routes Git reads through a transferable owned session/transport
+worker while preserving legacy authorization and sensitive metadata checks.
+Next: service-owned registered native Job/root/pipes guardian consuming those
+same permits plus canonical TaskLease; synchronized final spawn authority.
+[Contract and test-first compiler evidence](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+Exact-head validation pending; no native activation. #352/#355 RED,
+#317/#323 OPEN, Windows V1 NO-GO.
+
+
 ## REPRISE P0 — 26 octobre 2026
 
 Documents : [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL.
