@@ -1,5 +1,14 @@
 # Current project status
 
+## 27 October 2026 — unstarted native GitRead original-lease generation snapshot (#390 draft)
+
+[PR #390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) adds a **read-only, non-launching observation** to already-precreated Windows GitRead custody. It rechecks current TaskLease policy and pinned executable content identity through the registry, compares the **same underlying revocation record** against the original admitted TaskLease witness (`Arc::ptr_eq`, not merely the reusable opaque ID), confirms the original session registry, and rechecks the captured monotonic stop predicate before and after. The true empty Job, pinned executable/repository, stdio and original session/transport/process permits stay owned throughout. A foreign registry with the same lease ID, wrong session registry, and revoked original generation must fail closed, leaving permits held until the known-no-child custody is explicitly dropped.
+
+**RED evidence:** test-first SHA `589388e1caae7213eb96ddb70f7e7ebd5f4def56`, [CI #40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327), showed Windows compiler E0433/E0599 (missing `NativeGitStatusSnapshotError` and method) plus independent Ubuntu rustfmt differences. This is *not* original runtime behavior #352/#355. Implementation `968d279326e33cc27626c4352fd7b17ef0ef7a00`; follow-up rustfmt `f4a7eb5b4d72926fea612c07d2143a734ac1f2ed`, [CI #40518650462](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40518650462), must be verified before the new documentation HEAD can be accepted.
+
+**Still absent:** the snapshot is NOT synchronized with `CreateProcessW`; it is NOT approval to spawn. No root creation/Job assignment/resume, real EOF/Job-empty-after-run, watchdog/restart recovery, live MCP `git_status` switch, original #352/#355 acceptance or Windows 10/11 freeze proof. Keep #317/#323 OPEN and Windows V1 **NO-GO**; no release.
+
+
 ## Integration receipt — 27 October 2026, post #388
 
 **Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.

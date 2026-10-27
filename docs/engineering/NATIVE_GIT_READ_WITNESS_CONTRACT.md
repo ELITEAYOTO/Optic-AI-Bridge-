@@ -1,5 +1,12 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
+## 27 October 2026 — preserve the *original* TaskLease generation on prelaunch observation (#390)
+
+Precreated native Git status custody may now ask for a **read-only original-generation authority snapshot**, never a spawn permit. It holds the exact admitted TaskLease witness and compares its revocation `Arc` record identity with the new registry-backed observation. Even identical opaque TaskLease IDs from another registry are denied; a new session registry cannot replace the original owner. The current registry observation revalidates executable authority and typed policy under the unchanged service-owned action envelope/targets. Original session/transport permits, process capacity and the empty Job/pipes/target handles are not released by a failed snapshot. The original monotonic admission stop check is evaluated before and after.
+
+Do not infer synchronization with `CreateProcessW` from this snapshot, or allow it to launch/resume. Subsequent policy revocation can still race a later CreateProcess; the native owner must establish that final gate and retain ownership for terminal OS/EOF proof. The synthetic fixture tests never run Git. Preserve compiler-red [#40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327) separately from the still-unmet #352/#355 real runtime acceptance. #317/#323 OPEN, Windows V1 NO-GO.
+
+
 ## Integration proof for original-target pins (#388)
 
 **Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.

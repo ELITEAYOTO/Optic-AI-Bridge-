@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — original-generation native GitRead snapshot (#390 draft)
+
+- Add a non-executing post-custody observation of current registered TaskLease GitRead policy and pinned executable identity; compare original revocation record identity rather than an opaque lease ID that could be reused. Explicitly reject foreign session-registry and foreign same-ID lease while retaining original permits.
+- Preserve test-first [CI #40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327): expected E0433/E0599 absent API and separate rustfmt failure. Do not claim it reproduces #352/#355 actual process behavior. Subsequent code and documentary HEADs require their own green CI.
+- Snapshot is not a CreateProcess gate. No child/MCP change or native terminal proof; Windows V1 NO-GO.
+
+
 ## Unreleased — GitRead original-target handle custody (#388, 27 October 2026)
 
 - Extend non-spawning Windows `PrecreatedNativeGitStatusCustody` with an opened/verified executable handle and READ/LIST-access repository-root pin held alongside Job/pipes and original counted admissions. The GitRead-specific root pin denies root rename; existing zero-access general directory-chain semantics remain untouched. Observed handle paths must match the trusted canonical service command.

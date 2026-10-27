@@ -1,5 +1,10 @@
 # GitHub-only project handoff
 
+## 27 October 2026 — draft #390 original-generation prelaunch snapshot
+
+Baseline verified after [#389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/389): `main=2702e8f9de9982a7654bb09559e18865b8ebe763`, independent [push/main #40516482577](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40516482577) SUCCESS 4/4, attempt 1. [Draft #390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) introduces a no-spawn snapshot verifying that the refreshed policy/identity TaskLease is the same original revocation registration; an independent same-ID replacement or foreign session registry is rejected. Test-first [CI #40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327) is compiler/format red only. Inspect exact final PR HEAD CI and native workflows before merge; after merge verify separate independent push/main, never assume prior SHA results transfer. Native process/Job-root/EOF and MCP integration remain unproven. #317/#323 OPEN, #352/#355 acceptance RED, Windows V1 NO-GO.
+
+
 ## Verified GitHub integration after #388 — 27 October 2026
 
 **Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.
