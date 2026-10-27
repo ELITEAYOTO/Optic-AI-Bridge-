@@ -1,5 +1,19 @@
 # Current project status
 
+## PASSATION ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
+
+[Passation technique actuelle](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)
+et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md).
+Avant cette documentation : main `75947c9b4fb72fab2f3d45f34f5b750f09bc31b2`,
+[push/main #40477277322](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40477277322)
+SUCCESS 4/4, tentative 1. Vérifier le nouveau SHA et sa CI après cette PR.
+#380 admission worker possédée, #381 échéance d'action, #382 préparation
+service-bound et #383 correction EOF incertain intégrées. Le handler GitRead
+reste legacy : aucun propriétaire Git natif enregistré/actif, pas de preuve
+root/Job/EOF/crash. Reprise en Chat via GitHub, sans lancement Codex/Work ni
+accès machine implicite. #352/#355 ROUGES ; #317/#323 OPEN ; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — uncertain native reservation EOF correction (#383)
 
 Native private-worker reservations preserve original stream observations under

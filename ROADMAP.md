@@ -1,5 +1,18 @@
 # Delivery roadmap
 
+## REPRISE EN CHAT — 27 octobre 2026
+
+[Prompt de reprise](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md)
+et [passation/préconditions/preuves](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md).
+Après #380–#383 : prendre en charge le PreparedNativeGitStatus exact dans un
+propriétaire Windows enregistré, avec les mêmes permis/TaskLease, quotas et
+Job/root/pipes avant création, puis autorité finale synchronisée. Ne pas activer
+le lanceur ni accumuler des helpers sans consommation réelle. Faire passer
+ensuite originaux #355/#352 inchangés et les gates indépendants de V1.
+Chat GitHub-only ; aucun accès PC ni tâche Codex/Work implicite.
+#317/#323 ouvertes ; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — after native reservation EOF correction (#383)
 
 Before reusing private-worker reservations, preserve stream evidence and all
