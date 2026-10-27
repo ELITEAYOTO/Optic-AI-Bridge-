@@ -527,6 +527,47 @@ mod tests {
     }
 
     #[test]
+    fn admitted_native_gitread_preserves_shorter_action_timeout() {
+        let fixture = Fixture::new();
+        let guard = TransportGuard::new(TransportLimits {
+            max_request_duration_ms: 1_000,
+            ..TransportLimits {
+                max_request_bytes: 1024,
+                max_response_bytes: 1024,
+                max_request_duration_ms: 20,
+                max_concurrent_requests: 1,
+            }
+        })
+        .expect("longer transport horizon");
+        let now = MonotonicTime::from_millis(10);
+        let permit = guard.begin_execution(now).expect("worker transport");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        let admitted = begin_admitted_native_git_read_preflight(
+            &trusted,
+            &fixture.envelope,
+            &fixture.repository,
+            &fixture.executable,
+            permit,
+            now,
+        )
+        .expect("action fits session, lease and transport");
+        assert_eq!(fixture.envelope.resources.timeout_ms, 100);
+        assert!(!admitted.is_stop_required_at(MonotonicTime::from_millis(109)));
+        assert!(
+            admitted.is_stop_required_at(MonotonicTime::from_millis(110)),
+            "the action's original 100ms budget must stop an admitted owner"
+        );
+        assert_eq!(guard.active_requests(), 1, "stop is not terminal proof");
+        drop(admitted);
+        assert_eq!(guard.active_requests(), 0);
+    }
+
+    #[test]
     fn admitted_native_gitread_owns_transport_capacity_and_shorter_deadline() {
         let fixture = Fixture::new();
         let guard = transport_guard();
