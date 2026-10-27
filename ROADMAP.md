@@ -1,5 +1,10 @@
 # Delivery roadmap
 
+## PRIORITÉ P0 ACTUELLE — après #390/#391, 27 octobre 2026
+
+Le contrôle de **génération originale** TaskLease #390 et le test de renommage de parent de dépôt #391 sont intégrés. Les protections préparatoires ont maintenant un vrai Job Windows **non exécutant**, des pipes, pins cible, quotas et permis originaux, et un snapshot d’autorité qui ne crée **aucune permission de lancement**. Ne pas dupliquer #391 : la garde parent est déjà prouvée par Windows CI. Prochain axe : démontrer une autorité **synchronisée à la frontière Win32 `CreateProcessW`**, avec révocation, policy epoch, délais monotones et identité Git, puis root suspendu/Job attaché avant exécution, vraie terminaison root, Job vide **après enfant** et EOF des deux pipes, descendants, watchdog, crash/reprise. Ne pas raccorder MCP tant que les acceptances #352/#355 restent RED et les restrictions de chemins sensibles ne sont pas vérifiées. #317/#323 OPEN ; V1 NO-GO. Checkpoint `main=c208348f0b63d4810db97f9a5284b325c5b64271` [push/main #40553879389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40553879389) SUCCESS 4/4, à revalider après cette PR documentaire.
+
+
 ## P0 after the candidate original-generation GitRead prelaunch snapshot (#390)
 
 After original session/transport admission, counted private process reservation, genuine *unstarted* Win32 Job, stdio and target pins, the native custodian may now observe current typed GitRead policy plus original TaskLease registry *generation*. Next design and prove a **single synchronized final native launch authority** across lease/session/policy/epoch/deadline/revocation, pinned image, `CreateProcessW` and Job assignment-before-resume. Preserve the original owner and all resources through root exit + real Job-empty + actual EOF, including uncertain termination and host-loss recovery. Only after full native tests switch MCP `git_status` without reducing sensitive path filtering. #352/#355 RED, #317/#323 OPEN, V1 NO-GO.

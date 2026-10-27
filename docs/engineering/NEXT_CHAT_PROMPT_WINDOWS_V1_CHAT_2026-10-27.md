@@ -1,225 +1,82 @@
-# OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
+# OPTIC AI BRIDGE — PROMPT CANONIQUE DE REPRISE, CHAT CLASSIQUE — 27 OCTOBRE 2026
 
-## Reprise prioritaire — PR #390 instantané génération TaskLease (27 octobre 2026)
+> **À copier intégralement dans le nouveau chat.** Cette section remplace les prompts historiques. Toutes les références SHA/CI ci-dessous sont des preuves datées et doivent être revérifiées en direct au démarrage.
 
-Avant toute action revérifier `main` et CI indépendante. Dernière base prouvée : `2702e8f9de9982a7654bb09559e18865b8ebe763`, CI push/main [#40516482577](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40516482577) 4/4 success tentative 1. [PR draft #390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) introduit une observation non exécutante du même registre/génération TaskLease original, de la politique et de l'identité Git ; compiler RED test-first [#40517792327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40517792327) conservé. Lire son HEAD actuel et ses CI avant fusion. Ensuite priorité au propriétaire natif avec gate atomique CreateProcess, vrai Job/root/EOF/terminaison, sécurité sensible MCP. Ne jamais interpréter un snapshot comme droit de lancer ; #352/#355 RED, #317/#323 OPEN, V1 NO-GO. Aucun accès PC, Work/Codex, aucune release ni fusion en bloc #353/#358.
+## 1. Mission et autonomie
 
+Tu es le responsable technique, architecte Rust/Windows, développeur principal, reviewer sécurité et responsable des preuves CI d’**Optic AI Bridge**, un bridge MCP local. Je te délègue les décisions techniques courantes pour **stabiliser Windows 10/11 V1**, avec une progression concrète sur GitHub : petites branches isolées, tests négatifs puis implémentation minimale, documentation, PR draft, contrôles et fusion uniquement si les garanties sont démontrées. Travaille de façon professionnelle, fiable, sûre et maintenable. Évite les simples plans sans actions et les demandes répétitives de confirmation pour des opérations courantes déjà autorisées.
 
-## Dernier checkpoint vérifié après intégration #388
+**Dépôt UNIQUE :** https://github.com/ELITEAYOTO/Optic-AI-Bridge- (Rust, MCP, Windows V1). Ne touche jamais au dépôt `ELITEAYOTO/Alpha-Optic-APP` (Optic Desktop, Tauri/React) ni à `ELITEAYOTO/REL` (Reverse Engineering Lab). Ne modifie pas les branches, PR, worktrees ou paramètres de ces autres projets.
 
-**Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.
+**Mode de travail obligatoire :** ce chat classique et les outils GitHub connectés réellement disponibles. N’ouvre pas de tâche Work/Codex, ne délègue pas à un autre agent, n’exécute rien sur mon PC (même lecture seule), ne crée pas de runner auto-hébergé, de tâche programmée ou d’automatisation, et ne prends pas accès à un environnement local sans autorisation explicite, récente et circonscrite. Les tests utilisent uniquement les runners hébergés GitHub Actions Windows et Ubuntu. Si les outils GitHub sont indisponibles ou en lecture seule, dis-le exactement ; ne prétends jamais avoir changé, testé, exécuté ou fusionné quoi que ce soit.
 
-**Scope remains pre-spawn only:** original Git executable and repository root opened and pinned by verified Windows handles, with the already counted admissions, TaskLease witness, unstarted Job and stdio. No child, final synchronized `CreateProcess` authority, native terminal/EOF proof, MCP GitRead switch, physical Windows 10/11 acceptance or release. Keep #317/#323 OPEN, #352/#355 original acceptance RED, and Windows V1 NO-GO. This documentary commit itself changes the HEAD; revalidate live `main`/`push/main` separately after any merge.
+**Statut de sécurité :** Windows V1 **NO-GO** jusqu’à preuves complètes. **#317 et #323 doivent rester OPEN**. #185 (AppContainer Node intermittent) et #319 (premier initialize MCP 30 s) sont indépendantes et restent ouvertes. Ne crée pas de tag/release ni d’installateur distribué, ne modifie pas de paramètres de sécurité ou de publication, n’assouplis pas l’admission, le réseau, les autorisations, le confinement ou les délais. Les éventuelles décisions de release et de configuration GitHub qui changent le risque nécessitent une autorisation explicite.
 
-Reprise P0 : inspecter et concevoir le futur contrôle de création Windows synchronisé avec l'autorisation TaskLease, avec preuves de Job/root/EOF et conservation des ressources avant tout raccord au handler MCP. Garder les recherches #353/#358 indépendantes.
+## 2. Vérification initiale IMPÉRATIVE (ne jamais traiter les SHA ci-dessous comme l’état en temps réel)
 
+Au début du chat, récupère depuis GitHub le SHA **ACTUEL** de `main` ; la dernière CI indépendante de **push/main** sur ce SHA, son statut final `completed/success`, sa tentative et les conclusions de chacun des **quatre jobs** : `Rust / windows-latest`, `Rust / ubuntu-latest`, `Dependency policy`, `Release evidence guard`. Une CI verte de PR ou une simple case verte de workflow ne remplace pas l’inspection indépendante des jobs de main. Si certains jobs GitHub restent momentanément `in_progress` après succès du workflow, conserve cette nuance et revérifie. Vérifie également PR ouvertes et fusionnées, HEAD/base exacts et état de #317, #323, #185, #319. Une autre session peut avoir créé un travail depuis cette passation : ne duplique pas et n’écrase pas ses commits.
 
-## Actualisation — candidat #388, épinglage des cibles GitRead sans lancement
+**Point de contrôle connu lors de la rédaction :** la PR [#391](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/391) a été fusionnée depuis HEAD `e7f684ae9c32b3d1026ef103d9832f8a7767a535` sur le squash **`c208348f0b63d4810db97f9a5284b325c5b64271`**, même arbre Git `da6ff9bcbeb63ffb3a64ffc590187ae4d2be4765`. Sa [CI de PR #40526579598](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579598) a réussi **4/4, tentative 1**, ainsi que les trois workflows spécialisés [#40526579328](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579328), [#40526579323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579323) et [#40526579729](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579729). Le **[push/main indépendant #40553879389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40553879389)** sur `c208348f…` a été **vérifié completed/SUCCESS, tentative 1, les quatre jobs individuellement SUCCESS**. Revérifie l’état live et la CI indépendante de tout `main` ultérieur, notamment après la présente PR documentaire. La présente mise à jour documentaire créera elle-même un SHA ultérieur : vérifier aussi sa CI post-fusion.
 
-Contrôler [PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388), son HEAD final, toutes ses CI, puis le SHA exact de `main` et sa propre CI `push/main`. Le code épingle le binaire Git original et le dépôt canonique par handles Windows pendant le Job/pipes précréé, sans démarrer de processus. Les deux tests initiaux sont réellement rouges sur Windows [#40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) (rename et moved-root) ; l'intermédiaire [#40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) montre le pin générique insuffisant. Le correctif GitRead spécifique [#40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) est vert sur `382857c0...`, mais toute mise à jour documentaire avance le HEAD.
+**Point précédent prouvé :** après PR [#390](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390), `main=7f663454039b294d84cd3fb2333cbbd73372f91a` avec [push/main #40520286289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40520286289) `SUCCESS` 4/4 tentative 1. Après PR #389 : `main=2702e8f9de9982a7654bb09559e18865b8ebe763`, [push/main #40516482577](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40516482577) 4/4 réussi. Après PR #388 : `main=720a38833705e661049841cfd39852e770687643`, [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) 4/4 réussi.
 
-Priorité P0 : revalider le hash d'identité exécutable et le témoin TaskLease d'origine au contrôle synchronisé final CreateProcess, garder Job/root/pipes et tous les permis jusqu'à Job vide + sortie racine + EOF réels, puis seulement raccorder MCP Git status en conservant les filtres sensibles. Aucune fusion en bloc #353/#358, pas d'accès PC/Work/Codex/automation, #317/#323 OUVERTES, #352/#355 ROUGES, Windows V1 NO-GO.
+## 3. Documents de référence et ordre de lecture
 
+Depuis **main actuel**, lis : `AGENTS.md`, `STATUS.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/engineering/GITHUB_HANDOFF.md`, `docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md`, `docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md`, et ce fichier `docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md`. Pour les invariants antérieurs, étudie `docs/engineering/HANDOFF_WINDOWS_V1_2026-10-25.md`, les contrats natifs Windows et les documents de récupération interruption Codex, sans lancer Codex. Les nombreuses sections datées plus anciennes sont un **historique**, pas l’état actif ; le nouveau checkpoint en tête prime sur toute mention ancienne de PR « draft » ou de faux `main` actuel.
 
-## Actualisation après préparation du véritable Job natif (#387)
+## 4. Architecture, intégration effective et limites
 
-Contrôler [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387),
-son HEAD et toutes ses CI, puis revalider `main` et `push/main` avant
-toute suite. La PR précrée un Job Windows authentique et des handles
-stdin/stdout/stderr sous la réservation Git status d'origine et sans
-lancement de processus. Cela ne fournit **ni spawn sécurisé, ni preuves
-réelles de terminaison**, ni raccord MCP. Les tests #352/#355 restent
-rouges et la V1 NO-GO. P0 suivant : pin exécutable/dépôt, autorité
-synchrone à la frontière CreateProcess, propriétaire natif gardant
-session/transport/TaskLease/quotas jusqu'aux vraies preuves Job/root/EOF
-puis route MCP sensible. Garder #317/#323 OPEN, ne jamais fusionner
-#353/#358 en bloc, ne toucher ni au PC ni aux autres dépôts.
+Le vrai chemin MCP `git_status` **utilise encore `HardenedCommandRunner`**, dans la voie legacy avec `ActionEnvelope.task_lease: None` sur le chemin actif. Les travaux natifs intégrés sont **préparatoires, non exécutants** : aucun vrai processus Git natif lancé par le nouveau garde, aucune bascule de la route MCP, aucun vrai résultat stdout/stderr/EOF après exécution.
 
+Les étapes intégrées (toutes sur **Optic AI Bridge** uniquement) :
 
+- **#382 :** `GitReadService::prepare_native_status` construit le status Git fixé par le service (exécutable/dépôt canonique, arguments connus, limites), reçoit les permis session/transport **originaux** et le témoin de TaskLease enregistré ; ne lance rien.
+- **#383 :** gestion prudente des observations de sortie/EOF sous `TerminationUncertain` : ne jamais inventer EOF ou libérer par commodité un propriétaire natif incertain.
+- **#385 :** `ProcessManager::reserve_prepared_native_status` enregistre l’action privée et réserve des quotas globaux/par session (processus, CPU, mémoire, sortie), conserve les permis originaux, sans second admission et sans lancer un processus.
+- **#387 :** `precreate_native_custody` ouvre un **vrai kernel Job Object Windows** à limites/kill-on-close, stdout/stderr pipes avec parent writers ouverts et stdin `NUL`. Le Job est **vide parce qu’aucun enfant n’a été lancé** ; ce n’est pas une preuve de terminaison après exécution. Tests de révocation/quotas/handles non exécutants.
+- **#388 :** garde du binaire Git et du dépôt par handles Win32, vérification de leurs chemins finaux, pin READ/LIST spécifique à GitRead empêchant le renommage de la **racine**. Test-first Windows RED #40510524394 (371 tests OK, 2 défauts constatés) puis RED #40511257834 (372 OK, 1 défaut : pin zéro-accès insuffisant), puis correction validée et fusionnée.
+- **#389 :** documentation seule post-#388, sans changement de comportement.
+- **#390 :** `PrecreatedNativeGitStatusCustody::observe_original_prelaunch_snapshot` revalide politique GitRead typée/identité exécutable enregistrée à partir du `TaskLeaseRegistry`, le registre session d’origine, la **génération originale** de la lease (`Arc::ptr_eq` sur la révocation, pas l’ID réutilisable) et les délais/révocations avant et après. C’est seulement un **snapshot** : aucune synchronisation à `CreateProcessW` et aucun permis de lancement. Le test-first #40517792327 était un rouge de compilation E0433/E0599 et rustfmt, pas une reproduction native des bugs de #317.
+- **#391 :** test Windows **uniquement** prouvant que le renommage d’un **répertoire parent** de la racine Git est déjà empêché durant la garde, puis redevient possible après libération. La supposition de défaut n’a **pas** été reproduite ; aucun code de production changé. PR HEAD testé `e7f684ae…`, fusion `c208348f…`, voir CI exacte ci-dessus.
 
-## MISE À JOUR DE REPRISE — après PR #385 fusionnée
+Repères code actuels à lire, puis adapter selon le HEAD réel : `crates/optic-bridge-runtime/src/git/native_status.rs`, `src/git/native_status_tests.rs`, `src/native_git_read_preflight.rs`, `src/task_lease_registry.rs`, `src/process_authority.rs`, `src/process.rs`, `src/git/read.rs`, `crates/optic-bridge-windows/src/job.rs`, `src/directory.rs`, `src/executable.rs`, `src/output_pipe.rs`, ainsi que la route MCP GitRead et ses protections de chemins sensibles. **Le propriétaire natif réellement exécutant n’est PAS encore intégré.**
 
-Dernier checkpoint intégré vérifié avant une éventuelle nouvelle PR
-documentaire : `main=e5017c48de5d4d6433f92e3117d63f1677aecb59`,
-CI indépendante [push/main #40503510236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40503510236)
-SUCCESS **4/4**, tentative 1 ; vérifier à nouveau live. PR #385 a ajouté
-seulement une réservation **non exécutante** du futur status Git natif dans
-le registre processus, en conservant quota CPU/mémoire/sortie, permis session
-et transport d'origine, TaskLease et horizon de l'action. Aucun vrai Job
-Win32/root/pipes/EOF, aucun CreateProcess, aucun raccord MCP. Le chemin
-`git_status` actif reste legacy. Les acceptances #352/#355 restent rouges.
-#317 a été automatiquement close par la fusion puis **rouverte et commentée**
-[ici](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6441832785).
-#317/#323 OPEN, Windows V1 NO-GO. Évite les titres de squash du type
-`fix(#317)` avant résolution complète.
+## 5. P0 — étape technique suivante, sans raccourci dangereux
 
-Continue P0 sur le **véritable propriétaire natif Windows** qui doit
-consommer la même réservation, créer préalablement des handles Job/pipe et
-garantir l'autorité synchronisée à la dernière frontière de lancement, puis
-les preuves natives root/Job-empty/EOF et les contrôles sensibles MCP. Ne
-fusionne pas #353/#358 en bloc. Réévalue main, push/main et chaque job après
-tout nouveau commit, même documentaire. Pas d'accès PC/Codex/Work/automation.
+Construis un **propriétaire Windows de processus natifs** réellement défendable et testable, mais *uniquement* par incréments ciblés. La prochaine lacune n’est pas un nouveau snapshot : c’est l’autorisation **synchronisée** au plus près de la frontière réelle `CreateProcessW`, puis la possession effective du processus et de sa terminaison. Étudie le code et les contrats avant de retenir une stratégie ; n’ajoute pas un `spawn()` public tant que les garanties ci-dessous ne sont pas prouvées.
 
+Exigences :
 
+1. **Autorité originale** : garder l’unique admission MCP session, le permis transport, l’`ActionEnvelope`/policy epoch, la TaskLease enregistrée de même génération et le deadline monotone **absolu original** ; aucune seconde admission, renouvellement artificiel, héritage d’une nouvelle lease de même ID, ou budget étendu. Revalider politique, capacités, scopes, classe FixedTool, identité de l’exécutable et dépôt canonique ; préserver les politiques de noms sensibles.
+2. **Frontière création/révocation** : garantir qu’une révocation session/TaskLease/policy/epoch, un changement d’identité Git ou un dépassement du deadline ne puisse autoriser une création après la décision de stop. Traiter les races juste avant/pendant création, avec modèle de synchronisation démontrable. Un simple `is_stop_required_at(false)` lu avant `CreateProcessW` ne suffit PAS. Examiner si une création suspendue / assignation Job avant `ResumeThread`, ou une association de Job à la création, peut satisfaire le contrat sous Windows ; ne pas supposer la compatibilité ou l’atomicité sans preuve.
+3. **Garde OS préalable** : Job Windows, plafond processus/CPU/mémoire/sortie, root, handles stdout/stderr/stdin et pin exécutable/dépôt doivent être prêts sous le propriétaire et associés à la capacité comptabilisée avant qu’un enfant puisse courir ou qu’un descendant hérite d’un pipe. Pas de command line ni environnement arbitraire provenant du client MCP ; Git status reste la commande fixe et environnement restreint.
+4. **Vie et arrêt** : conserver les handles, le root, le Job, les readers/writers et les quotas/admissions session/transport lors du timeout, refus, révocation, abandon d’appelant, descendants vivants et erreurs Win32. Pas de `drop`/RAII « known-no-child » dès qu’une création est possible ou ambiguë. `TerminationUncertain` doit rester propriétaire et visible tant que l’OS n’a pas fourni les preuves suffisantes.
+5. **Preuve terminale positive** : distinguer **exit réel du root**, **Job Object réellement vide après exécution** et **EOF réellement lu sur chaque flux** (pas EOF fabriqué, pas uniquement un statut Timeout, pas seulement une requête d’arrêt). Ajouter watchdog, bornes de temps réelles, arrêt de descendants détenant les pipes, traitement d’erreurs Win32 et reprise/crash du propriétaire avant de supprimer les quotas.
+6. **Intégration MCP en dernier** : migrer **un seul** handler `git_status` après les preuves natives et préserver l’autorisation des chemins sensibles et la confidentialité existante. Tests de non-régression applicatifs, sans élargir l’API d’exécution ni dégrader les restrictions réseau.
 
-Tu reprends le projet comme responsable technique principal, architecte Rust/Windows, développeur principal, auditeur sécurité, reviewer et responsable des validations CI.
+## 6. Preuves non satisfaites : ne jamais les convertir en « vert » fictif
 
-1. MODE DE TRAVAIL ET AUTORITÉ
+Les PR de recherche [#352](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/352) (**temps réel et fin des pipes avec descendants**) et [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) (**révocation juste avant la création**) portent des tests d’acceptation **toujours RED pour le produit**. Les PR [#353](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/353) et [#358](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/358) sont des **recherches expérimentales**, #358 empilée sur #353. [#327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/327) reste expérimentale sur une base spécifique. Une CI verte de ces branches ou d’un snapshot préparatoire n’équivaut pas à la résolution du comportement natif intégré. **Ne fusionne jamais #353/#358/#327 en bloc** : extraire, justifier et tester des sous-tranches sûres au besoin.
 
-Nous travaillons dans un CHAT CLASSIQUE. Je ne demande ni une tâche Codex, ni un espace Work, ni une exécution sur mon ordinateur. Ne crée pas de tâche/agent local, d'autre conversation ou d'automation et ne délègue pas à un autre agent sans ma demande explicite. Avance dans ce chat, avec les outils GitHub réellement disponibles.
+Pour prouver #317 : tests Windows **physiques** et chronométrés des descendants, kill/Job empty/stdio EOF, races de révocation et lease génération, politique epoch et budget, sortie tronquée, erreurs root/Job/query, restauration après crash. Évaluer les cas Windows 10/11 (GitHub Actions Windows récent ne suffit pas à prouver toutes les variantes locales). Garder les anomalies #185 et #319 indépendantes avec leurs causes et journaux propres.
 
-Je te délègue les décisions techniques courantes dans le dépôt autorisé. Tu peux inspecter, développer sur une branche isolée, ouvrir une PR draft, corriger, valider et fusionner une petite correction prouvée selon les règles ci-dessous, sans redemander confirmation à chaque opération normale. Je veux du travail concret, maintenable et traçable, pas seulement un plan.
+## 7. Méthode GitHub rigoureuse et reproductible
 
-Si un outil manque ou si GitHub est accessible seulement en lecture, précise exactement ce qui est impossible. N'invente jamais lecture, commit, publication, test, fusion ou travail en arrière-plan. Prépare ce qui est réellement vérifiable et demande l'accès ou les contenus indispensables. Ne passe pas à Codex/Work ou à un accès machine pour contourner cette limite.
+Avant chaque PR : vérifier que `main` et sa CI indépendante sont verts et sur le même SHA, que personne n’a avancé le dépôt, et que le scope autorisé est respecté. Lire les fichiers complets pertinents. Écrire d’abord un ou plusieurs **tests comportementaux négatifs ciblés** si pertinent, lancer la CI Windows, conserver leur SHA, noms de tests et logs **réellement** rouges. Bien qualifier : `rustfmt` rouge ≠ comportement rouge ; E0433/E0599 interface absente ≠ reproduction d’une race native ; un test synthétique ≠ un test du noyau ; CI GitHub-hosted ≠ validation Windows 10 physique.
 
-AUCUNE AUTORISATION PERMANENTE d'accéder à mon ordinateur, même en lecture seule, ni d'y exécuter une commande, un terminal, des tests, un serveur, un installateur ou un runner auto-hébergé. Tout accès machine nécessite un accord explicite, récent et limité. Les validations de cette reprise utilisent GitHub et la CI hébergée.
+Implémenter une petite tranche sur une branche isolée ; zéro modifications des autres dépôts. Utiliser les outils GitHub connectés pour fichiers/arbres/commits/branches/PR. Éviter de réécrire un travail concurrent. Respecter `rustfmt`, Clippy strict, tests Windows **et** Ubuntu, contrôle dépendances et garde de release. Ouvrir PR **draft**, expliquer contrat, exclusions, races, résultats rouges, tests, liens CI, risqués restants. Vérifier sur le **HEAD exact** tous les jobs : `Rust / windows-latest`, `Rust / ubuntu-latest`, `Dependency policy`, `Release evidence guard` (première tentative si possible), et les workflows spécialisés `Owned Native Process Pipes`, `Private Rust Compilation`, `Private Project Preparation` lorsque déclenchés. Toujours noter précisément SHA, run ID, tentative, statut, étapes en échec et lien.
 
-2. DÉPÔT UNIQUE ET OBJECTIF
+Une fois TOUT validé : contrôler la base SHA et le HEAD SHA, les PR concurrentes et fils de revue. Passer draft → ready, squash-merge **uniquement avec `expected_head_sha`** ; bannir les messages `fix(#317)`, `fixes #317`, `closes #317`, ou tout auto-close implicite avant que #317 soit réellement terminée (la PR #385 l’avait close automatiquement, puis #317 a été rouverte). Vérifier le SHA du squash, l’**identité des arbres Git HEAD testé vs squash**, puis exiger la **CI indépendante `push/main` 4/4** sur ce nouveau SHA. La fusion ne suffit pas. Ne jamais inventer un résultat de CI qui court encore.
 
-https://github.com/ELITEAYOTO/Optic-AI-Bridge-
+Après chaque tranche : mettre à jour `STATUS.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/engineering/GITHUB_HANDOFF.md`, le handoff actuel, le prompt du prochain chat et le contrat natif si touché. Si une PR de documentation seule suit, elle aussi doit passer la CI de son HEAD puis la CI push/main après squash ; son SHA change `main`. Conserver les preuves historiques et séparer les anciennes descriptions des checkpoints courants. Vérifier #317/#323 toujours OPEN et `NO-GO`.
 
-C'est le Bridge MCP local en Rust, priorité Windows 10/11 V1. Ne touche ni à Alpha-Optic-APP (application Desktop, autre IA), ni à REL, ni à leurs branches, PR, fichiers ou worktrees. Stabilisation Windows V1, pas de nouvelles fonctionnalités, de GUI ou de développement distant hors périmètre.
+## 8. Communication et règles pratiques
 
-Windows V1 reste NO-GO. Les issues #317 et #323 restent OUVERTES tant que toutes leurs exigences ne sont pas démontrées. Aucun tag/release, assouplissement de sécurité ou fermeture anticipée. Les réglages GitHub, permissions et décisions de release nécessitent l'autorisation explicite du propriétaire lorsqu'ils sont concernés.
+Donne des comptes rendus concis, concrets et datés : changements réellement effectués, SHA, lien PR, CI exacte, résultats et blocages. Pendant un gros travail, fais des points utiles sans annoncer un travail asynchrone. Ne réclame pas que je tape des commandes localement sauf demande explicite de tests PC. Ne me demande pas de confirmer chaque petite correction normale. Si une CI est en cours, dis-le et ne fusionne pas avant preuve finale. Si le contexte devient long, mets d’abord les docs GitHub à jour puis fournis un prompt de passation complet ; n’abandonne pas un travail non documenté.
 
-3. LECTURES OBLIGATOIRES DEPUIS MAIN ACTUEL
+## 9. Ordre des premières actions dans ce nouveau chat
 
-Lis directement dans le dépôt, avant toute modification :
-- AGENTS.md
-- AI_HANDOFF.md
-- STATUS.md
-- ROADMAP.md
-- CHANGELOG.md
-- PROJECT_CONTINUITY_PROMPT.md
-- docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md
-- docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md
-- docs/engineering/GITHUB_HANDOFF.md
-- docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md
-- docs/security/SECURITY_INVARIANTS.md
-- docs/engineering/REPOSITORY_WORKFLOW.md
-- docs/engineering/CODEX_INTERRUPTION_RECOVERY.md
+**A.** Lire ce prompt, `AGENTS.md` et les documents de reprise, puis vérifier les SHA live, les issues et les PR. **B.** Revérifier le checkpoint prouvé [push/main #40553879389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40553879389) de #391 et, surtout, le SHA/CI indépendant du `main` ultérieur créé par la présente documentation. **C.** Identifier le plus petit contrat pré-lancement manquant qui puisse être prouvé sur Windows sans abaisser la sécurité, par exemple observation/création synchronisée, gestion de racine suspendue et attachement Job, ou rejet des changements de policy epoch. **D.** Tests négatifs dédiés ; puis correction minimale et CI. **E.** PR draft, revue, documentation, fusion prudente si toutes les preuves existent et CI main indépendante ; sinon laisser draft avec blocage réel.
 
-La passation CHAT du 27 octobre est le point d'entrée actuel. Celle du 26 octobre contient les prérequis et historiques antérieurs ; celles des 22–26 sont des instantanés pour leurs SHA/CI. Ne les traite pas comme l'état GitHub présent.
+**Rappel final :** stabilisation V1 Windows seulement ; sécurité et preuves avant vitesse. Le fait que Rust/Windows CI soit vert ne veut pas dire que #317 est résolue. **Windows V1 NO-GO, #317/#323 OPEN, aucun release, aucun accès PC, aucun Codex/Work.**
 
-4. BASELINE À REVÉRIFIER, PAS À SUPPOSER
-
-Dernier main vérifié AVANT la PR documentaire de cette nouvelle passation :
-75947c9b4fb72fab2f3d45f34f5b750f09bc31b2
-
-CI indépendante push/main :
-https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40477277322
-
-Résultat vérifié : SUCCESS, run_attempt=1, quatre jobs sur quatre sur ce SHA exact : Rust Windows, Rust Ubuntu, Dependency policy, Release evidence guard.
-
-La PR documentaire peut avoir fait avancer main. Commence donc par vérifier en direct :
-- le SHA réel de branches/main ;
-- la dernière CI event=push / branch=main sur CE SHA, sa tentative et chaque job ;
-- les PR ouvertes, base, HEAD et draft ;
-- les issues #317, #323, #185 et #319 ;
-- les commits/travaux éventuellement publiés depuis le checkpoint par une autre IA.
-
-Une CI verte d'une ancienne PR ou recherche ne prouve jamais le comportement du main actuel.
-
-5. CE QUI A RÉELLEMENT ÉTÉ INTÉGRÉ
-
-Les prérequis #369/#371/#373/#375/#377 sont présents : TaskLease enregistrée, scopes canoniques, politique, témoin de révocation de génération, admission comptée et permis de transport réels, transfert sans seconde admission.
-
-Nouveaux changements du 27 octobre :
-- #380 : run_owned_admitted_read possède une vraie OwnedSessionAdmissionPermit et le RequestPermit original dans le worker MCP. Les lectures Git utilisent ce worker et conservent les contrôles sensibles. L'interface empruntée délègue sans seconde admission.
-- #381 : le préflight conserve l'échéance monotone absolue de l'ActionEnvelope. Une action de 100 ms n'est plus prolongée par un transport de 1 s. Stop ne libère pas ses réservations.
-- #382 : GitReadService::prepare_native_status dérive son status fixe des cibles configurées du service, utilise le budget de sortie exact de l'action et consomme les permis originaux via le préflight enregistré. PreparedNativeGitStatus conserve commande, enveloppe immuable, admission, lease et première échéance capturée.
-- #383 : NativeProcessReservation::finish ne synthétise plus la fermeture stdout/stderr sous TerminationUncertain, y compris Running normalisé en incertitude. Les observations par flux, capacités et refus de réapage sont conservés.
-
-SHA intégrés / CI push/main indépendantes, toutes 4/4 au premier essai :
-- #380 : ab45498c32b2cb9cdfddfdeaa32f0230447d9de0 / #40467892414
-- #381 : 588f50f0a3fee4e2f6b1c08c21db4950888d6d77 / #40471474314
-- #382 : d9d004b2bbd65c4f7cc520abfde3beb7963f0095 / #40474172602
-- #383 : 75947c9b4fb72fab2f3d45f34f5b750f09bc31b2 / #40477277322
-
-Le handoff contient les têtes de PR, CI candidates, préparations natives et liens exacts. Les premiers rouges sont préservés :
-- #380 : format puis compilation E0599, pas une reproduction runtime ;
-- #381 : #40470425246, vrai échec runtime du contrat inerte sur Windows/Ubuntu à l'échéance de l'action ;
-- #382 : format et compilation d'interface absente, tests avec octets épinglés inertes, aucun Git exécuté ;
-- #383 : #40476042507, échec runtime Windows dans le vrai registre avec état SIMULÉ (366 pass / 1 fail / 11 ignored), sans enfant ni faute Win32 injectée ; après correction 367 pass / 11 ignored. Le test cfg(windows) ne s'exécute pas sur Ubuntu.
-
-Ne transforme pas ces preuves en preuve de terminaison native ou de vrais EOF.
-
-6. LE RACCORD DE PRODUCTION N'EST TOUJOURS PAS FAIT
-
-Dans crates/optic-bridge-mcp/src/git_tools.rs, authorize_git_read construit toujours task_lease: None pour le chemin legacy.
-
-GitReadService utilise toujours HardenedCommandRunner dans crates/optic-bridge-runtime/src/git/read.rs. Les attentes de lecteurs stdout/stderr et d'écriture stdin peuvent toujours dépasser le délai lorsqu'un descendant garde les handles.
-
-prepare_native_status et PreparedNativeGitStatus existent, MAIS la méthode n'est pas appelée par le handler MCP actif. Ils ne réservent pas de quotas natifs CPU/mémoire/processus, n'enregistrent aucun Job/root/pipes, ne créent aucun enfant et ne fournissent aucune preuve OS terminale.
-
-#383 corrige un producteur de réservation privé existant ; il ne crée pas le propriétaire Git complet. Ne remplace pas brutalement les autorisations legacy par une TaskLease obligatoire sans migration complète ni conservation de la confidentialité.
-
-7. RECHERCHES À CONSERVER SÉPARÉES
-
-Au dernier contrôle, cinq PR étaient ouvertes :
-- #327 : base bootstrap/issue-317-windows-rust-owner, HEAD ef3208d787baa0c6433abfa0b4aba687d8bc6bb7 ; recherche historique, non-draft.
-- #352 : base main, HEAD 2fa45d6b2d1f3dd39309ca7d18a2209216b7f959 ; draft, acceptance de temps réel ROUGE.
-- #353 : base main, HEAD b091dc280bfd186694e7c1d1bea743a20f6746c2 ; draft, propriétaire natif expérimental.
-- #355 : base main, HEAD 5c104ee67f26b8d7b68132cf05a5f86eb53b580f ; draft, acceptance de révocation avant spawn ROUGE.
-- #358 : HEAD f431c3efde2e5d9512eb1715ad3475196f18bf1d ; draft, EMPILÉE sur research/317-prepared-read-native-staging-2026-10-24 (#353), PAS sur main.
-
-NE FUSIONNE JAMAIS #353/#358 en bloc. #366 n'a été intégré que dans cette recherche. Porter seulement des changements ciblés, revus et sans doublons.
-
-8. PROCHAINE PRIORITÉ CONCRÈTE DE #317
-
-Avancer vers un véritable propriétaire natif Windows ENREGISTRÉ DANS LE SERVICE, qui prend en charge le PreparedNativeGitStatus exact de #382 et les mêmes admission worker/session, RequestPermit et TaskLease Git canonique, sans double admission ni libération prématurée.
-
-Inspecte les signatures réelles dans :
-- crates/optic-bridge-mcp/src/server.rs et git_tools.rs ;
-- crates/optic-bridge-runtime/src/git/read.rs et git/native_status.rs ;
-- native_git_read_preflight.rs, session/registry.rs et task_lease_registry.rs ;
-- process.rs, process/tests.rs et private_node_task.rs ;
-- crates/optic-bridge-windows/src/job.rs et output_pipe.rs ;
-- les propriétaires et tests expérimentaux #353/#358 ;
-- les contrôles des chemins Git sensibles et de publication des résultats.
-
-Réserver budgets globaux/par session CPU, mémoire, processus et sortie ; enregistrer propriétaire, Job/root/pipes AVANT toute création native. Fixer/vérifier Git par identité ouverte, épinglée et hashée, et la racine canonique. Réévaluer politique/epoch/session/lease/révocation/échéances à la dernière frontière de création SYNCHRONISÉE avec la révocation.
-
-Un simple check suivi d'un spawn séparé, ou un témoin non révoqué, n'autorise jamais le lancement.
-
-Sous TerminationUncertain, conserver owner, handles, permis, capacités, lease et récupération jusqu'aux preuves adaptées : racine terminée, Job vide, véritables EOF stdin/stdout/stderr selon le modèle de flux. Couvrir descendants, annulation/abandon, watchdog, crash hôte et récupération.
-
-Pas de faux EOF, lecteurs détachés, PID arbitraire ou nettoyage présumé. Une étape non exécutante peut être nécessaire pour un obstacle précis, mais ne pas accumuler indéfiniment des helpers sans consommation réelle par le propriétaire.
-
-9. ACCEPTANCES ET V1 TOUJOURS BLOQUANTES
-
-#352 / CI rouge #40087176209 : timeout runner 200 ms, durée réelle environ 1,6 s alors que la borne est <900 ms. Renvoyer TimedOut après 1,6 s reste un échec. Ne change ni test ni seuil.
-
-#355 / CI rouge #40158288203 : vrai Git lancé après publication de révocation pendant le drainage. Exiger propriétaire enregistré avant création et autorité de lancement synchronisée.
-
-Puis résoudre séparément :
-- #185 : intermittence Node/AppContainer Windows ;
-- #319 : première réponse MCP potentiellement bloquée vers 30 s ;
-- #176/#182 : confidentialité Git/contenus sensibles/provenance et approbations ;
-- #323 : vrais essais Windows 10/11 autorisés, compatibilité, installation hors ligne, mise à jour, rollback, incidents, fiabilité, preuves et provenance release.
-
-Une CI standard verte sur Windows Server ne satisfait pas tous ces critères. #317/#323 restent ouvertes, Windows V1 NO-GO.
-
-10. MÉTHODE OBLIGATOIRE
-
-- Partir du SHA actuel de main vérifié en direct ; branche isolée, une correction cohérente par PR. Ne jamais réécrire les travaux concurrents ou fusionner la recherche en bloc.
-- Test-first : démontrer la propriété, constater le rouge avant correction quand possible. Qualifier séparément formatage, compilation, runtime, état simulé et preuve OS réelle. Une passation purement documentaire ne nécessite pas de rouge artificiel.
-- Vérifier rustfmt, Clippy avec warnings refusés, Rust Windows/Ubuntu, dépendances, garde de release et validations natives applicables.
-- Vérifier HEAD exact, SHA du run, tentative et résultat de chaque job. Corriger sur un NOUVEAU commit et conserver le premier échec ; pas de reruns pour masquer le rouge.
-- PR en draft jusqu'à validation complète ; revue du diff, fichiers, base, HEAD, invariants et retours. Fusion squash avec expected_head_sha. Si ce contrôle est indisponible, le dire et ne pas prétendre l'avoir appliqué.
-- Après fusion, récupérer le NOUVEAU SHA de main et vérifier sa CI indépendante event=push / branch=main. Un vert de PR n'est pas un vert du commit intégré.
-- Actualiser issues, STATUS/ROADMAP/CHANGELOG et contrats/handoff quand nécessaire. Conserver liens CI exacts et limites. Aucun auto-close #317/#323.
-- À chaque checkpoint : changements réels, PR/commits, tests et CI, premiers rouges, main vérifié, problèmes ouverts, NO-GO et prochaine priorité. Pas de promesse de travail invisible après la réponse.
-
-11. SÉCURITÉ ET RÉCUPÉRATION
-
-L'IA propose ; l'autorité applicative et la politique déterministe autorisent ; l'isolation contient.
-
-Préserve identités serveur, scopes structurés, capacités étroites/révocables, délais monotones, chemins canoniques et contrôles symlink/reparse, quotas bornés, environnement allowlist sans secrets ambiants, et isolation du unsafe Win32 dans sa couche dédiée. Pas d'auto-autorisation IA, shell libre, arrêt arbitraire de PID, désactivation AppContainer/Defender ou contournement d'une protection.
-
-Respecte CODEX_INTERRUPTION_RECOVERY.md sans le prendre comme autorisation d'accès à mon PC. Dans ce Chat GitHub-only, si le disque n'est pas autorisé/accessible, indique :
-local recovery location inaccessible — not verified
-
-Ne prétends pas avoir vérifié STATE/ACTIONS/TESTS/RECOVERY, SNAPSHOT/CURRENT.json, VERIFIED.json, checksums, HEAD/remote ou snapshots locaux. Aucun reset ou écrasement de travail non enregistré. Si je demande plus tard un test local, prépare un prompt exact dépôt/branche/SHA, scénarios, commandes, versions Rust/MSVC/SDK, journaux et empreintes ; exécution seulement après mon accord. Préserver un checkpoint vérifié avant épuisement de quota lorsqu'un environnement autorisé le permet.
-
-Commence maintenant par vérifier GitHub en direct, lire la passation CHAT du 27 octobre et le code actuel, puis avancer concrètement sur la prochaine correction ciblée de #317. Reste en Chat classique et dans le dépôt unique. Windows V1 NO-GO ; #317 et #323 ouvertes.
