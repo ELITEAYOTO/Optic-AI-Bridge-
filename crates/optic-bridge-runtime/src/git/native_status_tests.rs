@@ -309,3 +309,115 @@ fn prepared_native_status_preserves_shorter_original_transport_horizon() {
     drop(prepared);
     assert_eq!(guard.active_requests(), 0);
 }
+
+
+#[cfg(windows)]
+#[test]
+fn registered_native_status_retains_original_permits_and_process_quota_without_spawn() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic repository process manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("admitted, but no native process");
+    let reserved = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("register counted reservation without creating a child");
+    let job = reserved.job_id();
+    assert_eq!(
+        manager
+            .find_recorded_private_action(&fixture.envelope.session, &fixture.envelope.action_id)
+            .unwrap(),
+        Some(job.clone()),
+        "process registration must be visible before any future native launch"
+    );
+    assert_eq!(
+        manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+        1
+    );
+    assert_eq!(transport.active_requests(), 1);
+    fixture
+        .sessions
+        .publish_revocation_before_drain(&fixture.envelope.session)
+        .expect("stop generation before admission drain");
+    assert!(reserved.is_stop_required_at(MonotonicTime::from_millis(11)));
+    assert_eq!(
+        fixture
+            .sessions
+            .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+            .expect_err("native reservation retains original admission"),
+        SessionRegistryError::AdmissionsInFlight
+    );
+    assert_eq!(manager.cancel_session(&fixture.envelope.session).unwrap(), 1);
+    drop(reserved); // Safe synthetic no-child cleanup, NOT terminal Job/EOF proof.
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        crate::ProcessStatus::Failed
+    );
+    assert_eq!(manager.active_session_job_count(&fixture.envelope.session).unwrap(), 0);
+    assert!(fixture
+        .sessions
+        .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+        .unwrap());
+}
+
+#[cfg(windows)]
+#[test]
+fn native_status_registration_rejects_foreign_process_root_and_expired_action() {
+    for mode in ["foreign-root", "expired"] {
+        let fixture = Fixture::new();
+        let transport = guard(1_000);
+        let process_root = if mode == "foreign-root" {
+            &fixture.root
+        } else {
+            &fixture.repository
+        };
+        let manager = crate::ProcessManager::new(
+            process_root,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .expect("synthetic process manager");
+        let prepared = fixture
+            .service()
+            .prepare_native_status(
+                &fixture.trusted(),
+                fixture.owned(&transport),
+                &fixture.envelope,
+                MonotonicTime::from_millis(10),
+            )
+            .expect("valid prepared status");
+        let now = if mode == "expired" { 110 } else { 11 };
+        let error = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(now))
+            .err()
+            .expect("deny before recording native capacity");
+        assert!(
+            matches!(
+                (mode, error),
+                ("foreign-root", crate::NativeGitStatusRegistrationError::WrongProcessRoot)
+                    | ("expired", crate::NativeGitStatusRegistrationError::StopRequired)
+            ),
+            "no foreign-root or expired status may reserve a process slot"
+        );
+        assert_eq!(transport.active_requests(), 0);
+        assert_eq!(
+            manager
+                .find_recorded_private_action(&fixture.envelope.session, &fixture.envelope.action_id)
+                .unwrap(),
+            None
+        );
+    }
+}
