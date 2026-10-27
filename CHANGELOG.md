@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — vérification GitRead de la garde des répertoires parents (#391) et passation (27 octobre 2026)
+
+- [PR #391 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/391) ajoute un **test Windows uniquement** : lorsqu’un pin GitRead tient la racine, le renommage de son répertoire parent est déjà refusé ; après `drop`, il redevient possible. Aucun changement de code de production, aucun Git lancé, aucune nouvelle autorité.
+- CI exacte de PR [#40526579598](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579598) **SUCCESS 4/4 tentative 1**, workflows natifs [#40526579328](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579328), [#40526579323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579323), [#40526579729](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40526579729) SUCCESS ; squash `c208348f0b63d4810db97f9a5284b325c5b64271`, arbre identique au HEAD testé, [indépendante push/main #40553879389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40553879389) **SUCCESS 4/4 tentative 1**.
+- [PR #390 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/390) : observation originale de génération TaskLease (pas un droit de lancement), `main=7f663454039b294d84cd3fb2333cbbd73372f91a`, [CI indépendante #40520286289](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40520286289) SUCCESS 4/4 tentative 1. Les anciens termes « #390 draft » ci-dessous sont des preuves datées et ne doivent pas être lus comme la situation présente.
+- Nouvelle passation canonique et nouveau prompt de reprise consolidé. Cette modification documentaire requiert **sa propre CI** et la CI push/main post-fusion. #317/#323 OPEN, tests natifs d’acceptation #352/#355 RED, Windows V1 NO-GO, aucune release.
+
+
 ## Unreleased — original-generation native GitRead snapshot (#390 draft)
 
 - Add a non-executing post-custody observation of current registered TaskLease GitRead policy and pinned executable identity; compare original revocation record identity rather than an opaque lease ID that could be reused. Explicitly reject foreign session-registry and foreign same-ID lease while retaining original permits.
