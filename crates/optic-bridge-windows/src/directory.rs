@@ -167,6 +167,26 @@ mod tests {
     }
 
     #[test]
+    fn native_git_read_root_pin_denies_parent_rename_until_release() {
+        let workspace = workspace("native-git-parent");
+        let parent = workspace.join("parent");
+        let repository = parent.join("repo");
+        fs::create_dir_all(&repository).expect("nested repository");
+        let canonical = fs::canonicalize(&repository).expect("canonical repository");
+        let pin = pin_native_git_read_repository_root(&canonical)
+            .expect("open original repository root pin");
+        assert_eq!(pin.final_path(), canonical);
+        let moved = workspace.join("parent-renamed");
+        assert!(
+            fs::rename(&parent, &moved).is_err(),
+            "an ancestor rename must not change the original GitRead root path while custody lives"
+        );
+        drop(pin);
+        fs::rename(&parent, &moved).expect("ancestor rename after final pin closes");
+        fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    #[test]
     fn parent_components_are_rejected() {
         let root = workspace("parent");
         assert!(matches!(
