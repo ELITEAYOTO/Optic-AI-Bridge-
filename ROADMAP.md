@@ -1,5 +1,18 @@
 # Delivery roadmap
 
+## 27 October 2026 — native action deadline correction (#381)
+
+Before native activation, preserve the original action horizon alongside
+transport/session/TaskLease stop conditions; #381 corrects this concrete
+preflight gap after a real Windows+Ubuntu test-first failure.
+[Contract and red evidence](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+Next: registered service-owned guardian taking #380's same worker permits,
+canonical Git TaskLease, Job/root/pipes/quotas before creation and synchronized
+final launch authority. Then original unchanged #355 and #352.
+#185/#319, sensitive metadata and actual authorized Win10/11/installer gates
+remain separate. #317/#323 OPEN, Windows V1 NO-GO.
+
+
 ## 27 October 2026 — owned MCP worker candidate #380
 
 Candidate #380 routes Git reads through a transferable owned session/transport
