@@ -292,8 +292,8 @@ mod precreated_native_read_tests {
 
     #[test]
     fn unstarted_native_job_and_both_pipes_are_real_and_idle() {
-        let limits = LimitedJobObject::new(1, 64 * 1024 * 1024, 10)
-            .expect("positive kernel limits");
+        let limits =
+            LimitedJobObject::new(1, 64 * 1024 * 1024, 10).expect("positive kernel limits");
         let mut owned = PrecreatedNativeReadCustody::new(limits)
             .expect("open actual Job and 3 stdin/out/err resources");
         assert_eq!(owned.active_processes().expect("real kernel accounting"), 0);

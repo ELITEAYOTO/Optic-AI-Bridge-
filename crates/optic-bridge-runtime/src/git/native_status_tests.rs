@@ -472,7 +472,9 @@ fn precreated_native_git_status_custody_holds_job_pipes_and_original_permits() {
         .precreate_native_custody(MonotonicTime::from_millis(11))
         .expect("open actual unstarted Windows Job and pipes");
     assert_eq!(
-        custody.native_active_processes().expect("real kernel Job observation"),
+        custody
+            .native_active_processes()
+            .expect("real kernel Job observation"),
         0,
         "precreation must not launch a root process"
     );
@@ -498,13 +500,18 @@ fn precreated_native_git_status_custody_holds_job_pipes_and_original_permits() {
     drop(custody); // No spawn interface exists: synthetic no-child teardown only.
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &id).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &id)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed
     );
-    assert!(fixture
-        .sessions
-        .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
-        .expect("precreated but unstarted reservation fully released"));
+    assert!(
+        fixture
+            .sessions
+            .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+            .expect("precreated but unstarted reservation fully released")
+    );
 }
 
 #[cfg(windows)]
@@ -541,7 +548,10 @@ fn revoked_native_status_cannot_precreate_kernel_custody() {
     ));
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed,
         "no process was created on rejected custody"
     );

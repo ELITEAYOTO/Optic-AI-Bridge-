@@ -107,12 +107,12 @@ pub use git_integration_authority::{
 };
 pub use git_merge_commit::{SessionMergeCommit, SessionMergeCommitError};
 pub use git_merge_plan::{SessionMergePlan, SessionMergePlanError};
-pub use git_native_status::{NativeGitStatusPreparationError, PreparedNativeGitStatus};
 #[cfg(windows)]
 pub use git_native_status::{
     NativeGitStatusCustodyError, NativeGitStatusRegistrationError,
     PrecreatedNativeGitStatusCustody, RegisteredNativeGitStatus,
 };
+pub use git_native_status::{NativeGitStatusPreparationError, PreparedNativeGitStatus};
 pub use git_read::{
     GitDiffSnapshot, GitLogCursor, GitLogEntry, GitLogPage, GitReadError, GitReadService,
     GitStatusSnapshot,
