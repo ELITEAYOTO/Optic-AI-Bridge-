@@ -598,8 +598,7 @@ fn unstarted_native_custody_pins_repository_rename_until_original_permits_releas
     assert_eq!(guard.active_requests(), 0);
     fs::rename(&fixture.repository, &target)
         .expect("after last custody handle closes, repository can be renamed");
-    fs::rename(&target, &fixture.repository)
-        .expect("restore fixture directory for cleanup");
+    fs::rename(&target, &fixture.repository).expect("restore fixture directory for cleanup");
 }
 
 #[cfg(windows)]
@@ -642,6 +641,5 @@ fn moved_repository_before_native_custody_is_denied_with_no_child_or_capacity_le
             .status,
         crate::ProcessStatus::Failed
     );
-    fs::rename(&target, &fixture.repository)
-        .expect("restore fixture for cleanup");
+    fs::rename(&target, &fixture.repository).expect("restore fixture for cleanup");
 }

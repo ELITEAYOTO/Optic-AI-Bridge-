@@ -220,6 +220,9 @@ impl crate::ProcessManager {
 pub struct PrecreatedNativeGitStatusCustody {
     // Drop the real unstarted Job/pipes before the original counted permits.
     native: optic_bridge_windows::PrecreatedNativeReadCustody,
+    // Target handles outlive the Job; prevent service identity/path substitution.
+    _executable_pin: optic_bridge_windows::PinnedExecutableFile,
+    _repository_pin: optic_bridge_windows::PinnedDirectoryChain,
     registered: RegisteredNativeGitStatus,
 }
 
@@ -247,23 +250,47 @@ impl PrecreatedNativeGitStatusCustody {
 pub enum NativeGitStatusCustodyError {
     #[error("native Git status admission stopped before Job precreation")]
     StopRequired,
+    #[error("native Git repository pin failed: {0}")]
+    RepositoryPin(#[from] optic_bridge_windows::PinnedDirectoryError),
+    #[error("native Git targets differ from the original canonical service identity")]
+    TargetIdentityChanged,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 
 #[cfg(windows)]
 impl RegisteredNativeGitStatus {
-    /// Opens a real bounded Win32 Job, stdout/stderr pipes and closed stdin
-    /// under the already reserved, counted action. On any failure no child can
-    /// exist, and RAII releases the unstarted resources and original permits.
+    /// Pins the *original* service-owned executable and repository by opened
+    /// Windows handles, verifies their kernel-resolved canonical paths, and
+    /// opens a real bounded Job, stdout/stderr pipes and closed stdin under
+    /// the already counted admission. Any error has no child and releases
+    /// the unstarted resources and original permits.
     ///
-    /// No executable pin, launch gate, subprocess, Job assignment or native
-    /// terminal/EOF proof is provided. This must NOT be wired into MCP as a
-    /// successful GitRead invocation.
+    /// This is path pin custody, NOT an independently revalidated original
+    /// TaskLease content hash, synchronized launch gate, native execution,
+    /// terminal/EOF proof or permission to wire MCP GitRead.
     pub fn precreate_native_custody(
         self,
         now: MonotonicTime,
     ) -> Result<PrecreatedNativeGitStatusCustody, NativeGitStatusCustodyError> {
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusCustodyError::StopRequired);
+        }
+        let repository = self.prepared.repository_root();
+        let executable = self.prepared.git_executable();
+        // Open handles that deny directory replacement and executable write/
+        // delete sharing. A real post-open final path must match the trusted
+        // canonical service spec, not just the original lexical path.
+        let repository_pin = optic_bridge_windows::pin_directory_chain(repository, None)?;
+        if repository_pin.final_path() != repository {
+            return Err(NativeGitStatusCustodyError::TargetIdentityChanged);
+        }
+        let executable_pin = optic_bridge_windows::open_pinned_executable(executable)?;
+        if executable_pin.final_path() != executable {
+            return Err(NativeGitStatusCustodyError::TargetIdentityChanged);
+        }
+        // Do not allocate another resource or establish any future custody
+        // after already-observed revocation, even though no spawn exists.
         if self.is_stop_required_at(now) {
             return Err(NativeGitStatusCustodyError::StopRequired);
         }
@@ -275,6 +302,8 @@ impl RegisteredNativeGitStatus {
         }
         Ok(PrecreatedNativeGitStatusCustody {
             native,
+            _executable_pin: executable_pin,
+            _repository_pin: repository_pin,
             registered: self,
         })
     }
