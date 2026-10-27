@@ -301,7 +301,8 @@ mod precreated_native_read_tests {
         let stderr = owned._stderr.try_read(64).expect("real stderr pipe");
         assert!(stdout.bytes.is_empty() && !stdout.eof);
         assert!(stderr.bytes.is_empty() && !stderr.eof);
-        assert!(owned._stdin.metadata().is_ok());
+        // File::open("NUL") in the constructor proved stdin opened; device
+        // handles need not support ordinary filesystem metadata queries.
         // No root existed; no EOF or OS termination receipt is claimed.
     }
 }
