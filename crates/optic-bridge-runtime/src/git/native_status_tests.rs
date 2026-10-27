@@ -310,7 +310,6 @@ fn prepared_native_status_preserves_shorter_original_transport_horizon() {
     assert_eq!(guard.active_requests(), 0);
 }
 
-
 #[cfg(windows)]
 #[test]
 fn registered_native_status_retains_original_permits_and_process_quota_without_spawn() {
@@ -343,7 +342,9 @@ fn registered_native_status_retains_original_permits_and_process_quota_without_s
         "process registration must be visible before any future native launch"
     );
     assert_eq!(
-        manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
         1
     );
     assert_eq!(transport.active_requests(), 1);
@@ -359,18 +360,31 @@ fn registered_native_status_retains_original_permits_and_process_quota_without_s
             .expect_err("native reservation retains original admission"),
         SessionRegistryError::AdmissionsInFlight
     );
-    assert_eq!(manager.cancel_session(&fixture.envelope.session).unwrap(), 1);
+    assert_eq!(
+        manager.cancel_session(&fixture.envelope.session).unwrap(),
+        1
+    );
     drop(reserved); // Safe synthetic no-child cleanup, NOT terminal Job/EOF proof.
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed
     );
-    assert_eq!(manager.active_session_job_count(&fixture.envelope.session).unwrap(), 0);
-    assert!(fixture
-        .sessions
-        .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
-        .unwrap());
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
+    assert!(
+        fixture
+            .sessions
+            .remove_quiescent_inactive(&fixture.envelope.session, MonotonicTime::from_millis(110))
+            .unwrap()
+    );
 }
 
 #[cfg(windows)]
@@ -407,15 +421,23 @@ fn native_status_registration_rejects_foreign_process_root_and_expired_action() 
         assert!(
             matches!(
                 (mode, error),
-                ("foreign-root", crate::NativeGitStatusRegistrationError::WrongProcessRoot)
-                    | ("expired", crate::NativeGitStatusRegistrationError::StopRequired)
+                (
+                    "foreign-root",
+                    crate::NativeGitStatusRegistrationError::WrongProcessRoot
+                ) | (
+                    "expired",
+                    crate::NativeGitStatusRegistrationError::StopRequired
+                )
             ),
             "no foreign-root or expired status may reserve a process slot"
         );
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(
             manager
-                .find_recorded_private_action(&fixture.envelope.session, &fixture.envelope.action_id)
+                .find_recorded_private_action(
+                    &fixture.envelope.session,
+                    &fixture.envelope.action_id
+                )
                 .unwrap(),
             None
         );

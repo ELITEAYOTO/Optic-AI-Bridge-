@@ -110,7 +110,6 @@ impl GitReadService {
     }
 }
 
-
 /// Windows-only accounting stage between admitted status preparation and a
 /// future OS-native Git guardian. This is NOT a Win32 Job handle or spawn permit:
 /// NativeProcessReservation records capacity and configures limits, but does
