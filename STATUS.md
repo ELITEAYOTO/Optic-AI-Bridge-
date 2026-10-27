@@ -9,7 +9,10 @@ and denial of native authority without a TaskLease. Test-first
 [CI #40466543183](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466543183)
 failed compilation (E0599, absent interface); initial formatting failure
 [#40466491881](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466491881)
-is preserved. Exact-head validation pending.
+is preserved. Implementation candidate `ba05382e353f401198dcb979f48701b8d442e05b` passed
+[CI #40466899740](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466899740)
+SUCCESS 4/4 at attempt 1. Final-head and post-merge CI receipts are tracked in
+[PR #380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/380).
 Baseline main `ebe753ee0ee3f8bead396170e272873dcaa35538` has independent
 [push CI #40365242899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40365242899)
 SUCCESS 4/4, attempt 1. No native launcher or termination proof; legacy runner

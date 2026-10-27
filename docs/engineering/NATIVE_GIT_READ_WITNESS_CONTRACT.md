@@ -95,7 +95,12 @@ Test-first SHA `5e6c35ca33592373d033af38bc44788f1479e282`,
 Windows and Ubuntu fail compilation with three E0599 errors for the absent
 owned worker interface. This is **compiler evidence**, not runtime reproduction.
 Initial [#40466491881](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466491881)
-failed formatting; retained separately. Candidate validation is pending.
+failed formatting; retained separately. Implementation candidate `ba05382e353f401198dcb979f48701b8d442e05b` passed
+[CI #40466899740](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466899740)
+4/4 at attempt 1 (Windows/Ubuntu, strict Clippy, format, dependencies and release
+guard). Final PR-head and independent post-merge CI are tracked in
+[PR #380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/380); this receipt
+alone is not evidence for a later SHA.
 
 Next: registered service-owned Windows guardian consuming these same permits
 and the canonical TaskLease, resource/Job/pipes pre-registration and synchronized

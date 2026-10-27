@@ -7,7 +7,10 @@ worker while preserving legacy authorization and sensitive metadata checks.
 Next: service-owned registered native Job/root/pipes guardian consuming those
 same permits plus canonical TaskLease; synchronized final spawn authority.
 [Contract and test-first compiler evidence](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
-Exact-head validation pending; no native activation. #352/#355 RED,
+Implementation `ba05382e353f401198dcb979f48701b8d442e05b` passed
+[CI #40466899740](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466899740)
+4/4 at attempt 1; final-head/integrated receipts belong to
+[PR #380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/380). No native activation. #352/#355 RED,
 #317/#323 OPEN, Windows V1 NO-GO.
 
 
