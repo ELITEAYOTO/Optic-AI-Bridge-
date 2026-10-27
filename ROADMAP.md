@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-## P0 after candidate native GitRead target pin custody (#388, 27 October 2026)
+## P0 after integrated native GitRead target pin custody (#388, 27 October 2026)
 
 Already-admitted status can now keep **original-path handles** for the Git binary and readable canonical repository, together with its unstarted Job/pipes, session/transport admission and budgeted process record. Next: independent current TaskLease executable hash/policy/epoch/session/deadline revalidation **synchronized at the Win32 CreateProcess boundary**, with root Job assignment before resume. Then keep Job/stdio/executable/directory pins and all permits across uncertain termination until root, genuine Job-empty and actual EOF receipts, including host interruption and crash. Only after these proofs enable one MCP `git_status` path with original sensitive-name filtering. Do not assume #352/#355 accepted or Windows V1 releasable.
 

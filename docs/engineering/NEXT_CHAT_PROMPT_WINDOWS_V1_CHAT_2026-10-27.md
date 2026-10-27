@@ -1,5 +1,14 @@
 # OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
 
+## Dernier checkpoint vérifié après intégration #388
+
+**Confirmed integration after PR #388 (27 October 2026):** `main=720a38833705e661049841cfd39852e770687643`. PR HEAD `0b29e833a53195f199b5d3b53f808091d020bdc5` passed [CI #40513121389](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40513121389), first attempt, four jobs individually SUCCESS and all three native-specialized workflows successful. The reviewed HEAD and squash tree are identical (`1d79045f8ac60db9dd2dc2ffe6e23b72af0811f9`). Independent [push/main #40514100157](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40514100157) on that exact integrated SHA completed SUCCESS, attempt 1, all four Windows/Ubuntu/dependencies/release jobs successful.
+
+**Scope remains pre-spawn only:** original Git executable and repository root opened and pinned by verified Windows handles, with the already counted admissions, TaskLease witness, unstarted Job and stdio. No child, final synchronized `CreateProcess` authority, native terminal/EOF proof, MCP GitRead switch, physical Windows 10/11 acceptance or release. Keep #317/#323 OPEN, #352/#355 original acceptance RED, and Windows V1 NO-GO. This documentary commit itself changes the HEAD; revalidate live `main`/`push/main` separately after any merge.
+
+Reprise P0 : inspecter et concevoir le futur contrôle de création Windows synchronisé avec l'autorisation TaskLease, avec preuves de Job/root/EOF et conservation des ressources avant tout raccord au handler MCP. Garder les recherches #353/#358 indépendantes.
+
+
 ## Actualisation — candidat #388, épinglage des cibles GitRead sans lancement
 
 Contrôler [PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388), son HEAD final, toutes ses CI, puis le SHA exact de `main` et sa propre CI `push/main`. Le code épingle le binaire Git original et le dépôt canonique par handles Windows pendant le Job/pipes précréé, sans démarrer de processus. Les deux tests initiaux sont réellement rouges sur Windows [#40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) (rename et moved-root) ; l'intermédiaire [#40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) montre le pin générique insuffisant. Le correctif GitRead spécifique [#40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) est vert sur `382857c0...`, mais toute mise à jour documentaire avance le HEAD.
