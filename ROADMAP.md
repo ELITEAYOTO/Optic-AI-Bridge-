@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-## P0 after registered native status accounting candidate (#385, 27 October 2026)
+## P0 after integrated registered native status accounting (#385, 27 October 2026)
 
 The service can now **prepare** an exact lease-bound Git status and, on
 Windows, **register process-store CPU/memory/output/process capacity** without

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — native Git status process reservation candidate (#385, 27 October 2026)
+## Unreleased — integrated native Git status process reservation (#385, 27 October 2026)
 
 - Add Windows-only `ProcessManager::reserve_prepared_native_status` for an
   already authorized `PreparedNativeGitStatus`, using the original lease

@@ -1,5 +1,44 @@
 # GitHub-only project handoff
 
+## POST-#385 INTEGRATION CHECKPOINT — 27 October 2026
+
+Most recent **independently verified** `main=e5017c48de5d4d6433f92e3117d63f1677aecb59`
+after [merged PR #385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385):
+[push/main #40503510236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40503510236)
+completed SUCCESS, first attempt, all 4 jobs (Windows Rust, Ubuntu Rust,
+dependency policy and release evidence guard). Verified PR HEAD
+`b8c0db14c966979170dbb8e26fd620964fcc68fa` passed [PR CI #40502910932](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40502910932)
+4/4 plus [native-preparation #40502910914](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40502910914).
+Initial test-first interface compilation RED
+[#40501489580](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501489580)
+was E0433/E0599 and rustfmt, **not native runtime acceptance**.
+
+What changed: exact lease-bound prepared `git status` can now be registered
+**without execution** against shared process/CPU/memory/output capacity,
+retaining the original MCP session and transport reservations, action horizon
+and TaskLease generation watch. The registered `LimitedJobObject` is a
+**configuration**, NOT an opened Windows kernel Job. There is **no live
+native GitRead MCP route**, no true Job/root/pipes/EOF, no synchronous final
+launch gate, no physical crash-proof termination. Live `git_status` continues
+to use the legacy runner and `task_lease: None`. No bulk merge #353/#358.
+Original behavioral acceptance #352/#355 remains RED; #185/#319 remain
+separate blockers. #317 was briefly auto-closed by the squash at 12:24:27 UTC,
+**reopened at 12:25:27 UTC** and documented in
+[issue #317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6441832785).
+#317/#323 OPEN; Windows V1 **NO-GO**.
+
+P0 next: real service-owned Windows guardian must adopt the same registered
+value, pre-create and own Win32 Job/root/stdout/stderr/stdin, verify pinned Git
+identity/canonical repo and synchronize revocation/policy/epoch/monotonic
+deadline against CreateProcess. Retain admission, transport and quota under
+uncertain termination until positive root, Job-empty and true EOF. Only then
+wire one MCP Git status with original sensitive-path guards. Original #352
+and #355 must pass unchanged, plus host loss and physical Win10/11 acceptance.
+Use GitHub-hosted CI only; no operator PC access/Work/Codex/automation and
+no release. **Always verify the live main SHA and independent push CI anew,
+as a later documentation merge will itself advance main.**
+
+
 ## REPRISE ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
 Lire la [passation Windows V1 pour Chat classique](HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)

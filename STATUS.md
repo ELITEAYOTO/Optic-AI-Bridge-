@@ -1,8 +1,8 @@
 # Current project status
 
-## 27 October 2026 — registered native Git status accounting candidate (#385)
+## 27 October 2026 — integrated registered native Git status accounting (#385)
 
-[Draft PR #385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385) adds a Windows-only, **non-executing** handoff from the exact
+[Merged PR #385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385) adds a Windows-only, **non-executing** handoff from the exact
 `PreparedNativeGitStatus` of #382 to the existing native private process
 registry. The registry reserves the process count, global/session output,
 memory and CPU capacity under the **original TaskLease workload class**, and
@@ -32,6 +32,16 @@ rustfmt head `9a66557d29cfe66da7f06a68ca80e68be0576a02` passed
 4/4 and [native preparation #40501987334](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987334).
 These receipts prove only their exact candidate SHA, not any later HEAD or
 independent integrated-main result.
+
+**Post-merge verification:** `main=e5017c48de5d4d6433f92e3117d63f1677aecb59`;
+independent [push/main CI #40503510236](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40503510236)
+`completed/success`, attempt 1, all four Windows/Ubuntu/dependency/release jobs
+on that SHA. The integrated tree `cb7889cfc4f9f2de995d27c0d1765cbc2fd30a5f`
+matches the reviewed PR head tree exactly. A squash auto-close inadvertently
+closed #317 at 12:24:27 UTC; it was explicitly reopened at 12:25:27 UTC and
+the [reason recorded](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317#issuecomment-6441832785).
+#317/#323 OPEN, V1 Windows NO-GO. Avoid `fix(#317)`-style merge titles
+before all acceptance gates are satisfied.
 
 
 ## PASSATION ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
