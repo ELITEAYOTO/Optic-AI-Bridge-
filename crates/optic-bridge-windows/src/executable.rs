@@ -2,7 +2,7 @@ use std::{
     fs::{File, OpenOptions},
     io,
     os::windows::fs::OpenOptionsExt,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
@@ -15,9 +15,18 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 #[derive(Debug)]
 pub struct PinnedExecutableFile {
     file: File,
+    final_path: PathBuf,
 }
 
 impl PinnedExecutableFile {
+    /// Actual kernel-observed final target of this pinned executable handle.
+    /// This is path custody only; full lease hash and launch identity must
+    /// still be validated against the registered TaskLease before creation.
+    #[must_use]
+    pub fn final_path(&self) -> &Path {
+        &self.final_path
+    }
+
     #[must_use]
     pub fn file_mut(&mut self) -> &mut File {
         &mut self.file
@@ -28,7 +37,11 @@ pub fn open_pinned_executable(path: &Path) -> io::Result<PinnedExecutableFile> {
     let mut options = OpenOptions::new();
     options.read(true).share_mode(FILE_SHARE_READ.0);
     let file = options.open(path)?;
-    Ok(PinnedExecutableFile { file })
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::other("pinned executable must be a regular file"));
+    }
+    let final_path = crate::file::query_final_path(&file).map_err(io::Error::other)?;
+    Ok(PinnedExecutableFile { file, final_path })
 }
 
 #[cfg(test)]
@@ -49,6 +62,7 @@ mod tests {
         fs::write(&path, b"pinned-tool").expect("write fixture");
 
         let pin = open_pinned_executable(&path).expect("pin executable");
+        assert_eq!(pin.final_path(), fs::canonicalize(&path).unwrap());
         assert!(
             OpenOptions::new().write(true).open(&path).is_err(),
             "write-capable open must be denied while executable identity is pinned"

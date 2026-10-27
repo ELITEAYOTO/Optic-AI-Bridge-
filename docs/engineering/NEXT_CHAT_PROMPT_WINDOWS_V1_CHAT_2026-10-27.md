@@ -1,5 +1,12 @@
 # OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
 
+## Actualisation — candidat #388, épinglage des cibles GitRead sans lancement
+
+Contrôler [PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388), son HEAD final, toutes ses CI, puis le SHA exact de `main` et sa propre CI `push/main`. Le code épingle le binaire Git original et le dépôt canonique par handles Windows pendant le Job/pipes précréé, sans démarrer de processus. Les deux tests initiaux sont réellement rouges sur Windows [#40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) (rename et moved-root) ; l'intermédiaire [#40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) montre le pin générique insuffisant. Le correctif GitRead spécifique [#40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) est vert sur `382857c0...`, mais toute mise à jour documentaire avance le HEAD.
+
+Priorité P0 : revalider le hash d'identité exécutable et le témoin TaskLease d'origine au contrôle synchronisé final CreateProcess, garder Job/root/pipes et tous les permis jusqu'à Job vide + sortie racine + EOF réels, puis seulement raccorder MCP Git status en conservant les filtres sensibles. Aucune fusion en bloc #353/#358, pas d'accès PC/Work/Codex/automation, #317/#323 OUVERTES, #352/#355 ROUGES, Windows V1 NO-GO.
+
+
 ## Actualisation après préparation du véritable Job natif (#387)
 
 Contrôler [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387),

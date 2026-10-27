@@ -1,5 +1,14 @@
 # Current project status
 
+## 27 October 2026 — candidate original-target pins for Windows native Git status (#388)
+
+[Draft PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388) extends the already **unstarted** and counted #387 native status custody with a pinned canonical executable handle and a special READ/LIST-access root-directory handle that denies Windows DELETE-sharing rename of the repository root itself. Both opened-handle final paths must match the original service command's canonical executable/root; no caller-supplied path, argv or renewed TaskLease is accepted. The original session/transport permits and process quotas remain retained with the empty Job and its stdio handles. Existing zero-access directory-chain callers are unchanged.
+
+**Behavioral red, preserved:** [CI #40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) test-first SHA `968adc2f58a5b8c012a6455fdef2b8f053a6873c`: Windows **371 passed / 2 failed / 11 ignored** (repository renamed during unstarted custody; already-moved repository admitted); Ubuntu rustfmt separately RED. [CI #40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) first pin implementation SHA `132f988131b202ad1ed5cf9122ba0c3f26945648`: Windows **372 passed / 1 failed / 11 ignored**, showing that the general zero-access directory pin did not block root rename. That finding led to the GitRead-specific READ/LIST pin on `382857c0269b7173c24bef8eb948d08ad0e558ae`: [CI #40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) completed SUCCESS, attempt 1; [native lifecycle #40512075880](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075880), [native Rust IR #40512075887](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075887), [native preparation #40512075891](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075891) all SUCCESS on this SHA. A later documentation HEAD still requires its own CI.
+
+**Explicit limits:** no new verified content hash at the CreateProcess boundary, no synchronized final session/TaskLease/policy/epoch/deadline check, no child/root assignment/resume, no watchdog/real EOF/Job-empty-after-child, and no live MCP Git status switch. Original #352/#355 acceptance stays RED; #317/#323 OPEN, Windows V1 **NO-GO**. No release.
+
+
 ## 27 October 2026 — real, unstarted native Git status Job custody (#387)
 
 [Draft PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387) adds a **no-spawn**

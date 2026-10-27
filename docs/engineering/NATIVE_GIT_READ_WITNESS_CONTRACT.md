@@ -1,5 +1,14 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
+## 27 October 2026 — original-target pins are now owned before native spawn (#388 candidate)
+
+After the exact admitted and registered `PreparedNativeGitStatus` has retained the original session and transport permits and the true unstarted Job/pipes, `precreate_native_custody` also opens two noncloneable Windows target pins: `PinnedExecutableFile` (read sharing, denies writes/deletes) and `pin_native_git_read_repository_root` (true directory READ/LIST desired access, no delete sharing). The expected executable and repository are taken **only** from the original service command; their actual handle-resolved final paths must match the command's canonical paths. A moved repository fails before native Job adoption and releases the known-no-child reservation. Pins remain held with the empty Job, not independently public or usable for spawn.
+
+Why special directory pin: the ordinary `pin_directory_chain` uses zero desired access for unrelated callers. [Windows test-first RED #40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) observed two missing protections, and [intermediate Windows RED #40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) proved its zero-access root handle still permitted renaming the root. The new GitRead-specific read handle has a dedicated real Win32 test and avoids changing generic callers.
+
+These pins are **not** an independent re-verification of the TaskLease's original cryptographic executable content version at the final launch boundary, nor a synchronized revocation permit. No process exists, no root exit/Job-empty-after-run/stdio EOF has been proven and MCP `git_status` still uses the legacy runner. Always preserve original #352/#355 red evidence and #317/#323 OPEN; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — genuine pre-created Windows Job and stdio, still no spawn (#387)
 
 With the existing `RegisteredNativeGitStatus` holding original counted

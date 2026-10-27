@@ -556,3 +556,90 @@ fn revoked_native_status_cannot_precreate_kernel_custody() {
         "no process was created on rejected custody"
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn unstarted_native_custody_pins_repository_rename_until_original_permits_release() {
+    let fixture = Fixture::new();
+    let guard = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("manager for exact repository root");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&guard),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original authorized native status");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("counted private reservation");
+    let custody = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("unstarted kernel Job/pipes and pinned targets");
+    let target = fixture.root.join("repo-renamed");
+    assert!(
+        fs::rename(&fixture.repository, &target).is_err(),
+        "a pinned canonical GitRead directory must deny rename while native custody lives"
+    );
+    assert_eq!(guard.active_requests(), 1);
+    assert_eq!(
+        custody.native_active_processes().expect("kernel Job query"),
+        0,
+        "this test must never spawn Git"
+    );
+    drop(custody);
+    assert_eq!(guard.active_requests(), 0);
+    fs::rename(&fixture.repository, &target)
+        .expect("after last custody handle closes, repository can be renamed");
+    fs::rename(&target, &fixture.repository).expect("restore fixture directory for cleanup");
+}
+
+#[cfg(windows)]
+#[test]
+fn moved_repository_before_native_custody_is_denied_with_no_child_or_capacity_leak() {
+    let fixture = Fixture::new();
+    let guard = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("canonical manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&guard),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("authorize original canonical path");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("record exact private action");
+    let job_id = registered.job_id();
+    let target = fixture.root.join("repo-moved-before-pin");
+    fs::rename(&fixture.repository, &target)
+        .expect("without custody, repository is not yet pinned");
+    let outcome = registered.precreate_native_custody(MonotonicTime::from_millis(11));
+    assert!(
+        outcome.is_err(),
+        "fail closed instead of opening an unbound native Job when the repository moved"
+    );
+    assert_eq!(guard.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job_id)
+            .expect("failed no-child private record")
+            .status,
+        crate::ProcessStatus::Failed
+    );
+    fs::rename(&target, &fixture.repository).expect("restore fixture for cleanup");
+}

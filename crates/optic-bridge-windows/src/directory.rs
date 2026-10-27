@@ -35,7 +35,7 @@ pub fn pin_directory_chain(
 
     let mut handles = Vec::new();
     let mut current = root.to_path_buf();
-    let root_handle = open_pinned_directory(&current)?;
+    let root_handle = open_pinned_directory(&current, false)?;
     let mut final_path = query_final_path(&root_handle)?;
     handles.push(root_handle);
 
@@ -48,7 +48,7 @@ pub fn pin_directory_chain(
                 return Err(PinnedDirectoryError::InvalidRelativePath);
             };
             current.push(segment);
-            let handle = open_pinned_directory(&current)?;
+            let handle = open_pinned_directory(&current, false)?;
             final_path = query_final_path(&handle)?;
             handles.push(handle);
         }
@@ -60,10 +60,37 @@ pub fn pin_directory_chain(
     })
 }
 
-fn open_pinned_directory(path: &Path) -> Result<File, PinnedDirectoryError> {
+/// Open one canonical GitRead repository root with an actual list/read right.
+/// Unlike the general zero-access chain anchor, this kernel handle rejects a
+/// DELETE-sharing rename of the *root itself* for the whole owner lifetime.
+/// No descendant process or Git invocation is authorized by holding it.
+pub fn pin_native_git_read_repository_root(
+    root: &Path,
+) -> Result<PinnedDirectoryChain, PinnedDirectoryError> {
+    if !root.is_absolute() {
+        return Err(PinnedDirectoryError::RootMustBeAbsolute);
+    }
+    let handle = open_pinned_directory(root, true)?;
+    let final_path = query_final_path(&handle)?;
+    Ok(PinnedDirectoryChain {
+        _handles: vec![handle],
+        final_path,
+    })
+}
+
+fn open_pinned_directory(path: &Path, must_list: bool) -> Result<File, PinnedDirectoryError> {
     let mut options = OpenOptions::new();
+    if must_list {
+        // Zero-access directory opens do not reliably prevent renaming the
+        // opened root itself. GitRead requires LIST access: request a real
+        // read handle while continuing to deny FILE_SHARE_DELETE.
+        options.read(true);
+    } else {
+        // Preserve the established no-listing-access behavior for existing
+        // non-Git pin_directory_chain consumers.
+        options.access_mode(0);
+    }
     options
-        .access_mode(0)
         .share_mode(FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0 | FILE_FLAG_BACKUP_SEMANTICS.0);
     let file = options.open(path)?;
@@ -121,6 +148,22 @@ mod tests {
         drop(pin);
         fs::rename(root.join("nested"), &renamed).expect("rename after pin drop");
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn native_git_read_root_pin_denies_rename_of_root_itself() {
+        let root = workspace("native-git-root");
+        let canonical = fs::canonicalize(&root).expect("canonical fixture root");
+        let pin = pin_native_git_read_repository_root(&canonical).expect("readable root pin");
+        assert_eq!(pin.final_path(), canonical);
+        let moved = root.with_extension("moved");
+        assert!(
+            fs::rename(&root, &moved).is_err(),
+            "the root itself must resist rename, not only nested descendants"
+        );
+        drop(pin);
+        fs::rename(&root, &moved).expect("last kernel pin closed");
+        fs::remove_dir_all(&moved).expect("cleanup");
     }
 
     #[test]
