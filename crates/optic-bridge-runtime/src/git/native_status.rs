@@ -212,3 +212,70 @@ impl crate::ProcessManager {
         Ok(RegisteredNativeGitStatus { record, prepared })
     }
 }
+
+/// Inert, unstarted Windows kernel Job and stdio custody tied to a single
+/// registered private action. Never exposes CreateProcess or child ownership.
+#[cfg(windows)]
+#[must_use = "hold original MCP permits and OS handles through native ownership"]
+pub struct PrecreatedNativeGitStatusCustody {
+    // Drop the real unstarted Job/pipes before the original counted permits.
+    native: optic_bridge_windows::PrecreatedNativeReadCustody,
+    registered: RegisteredNativeGitStatus,
+}
+
+#[cfg(windows)]
+impl PrecreatedNativeGitStatusCustody {
+    #[must_use]
+    pub fn job_id(&self) -> optic_bridge_core::JobId {
+        self.registered.job_id()
+    }
+
+    #[must_use]
+    pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.registered.is_stop_required_at(now)
+    }
+
+    /// This queries a real kernel Job with no process started by this type.
+    /// An empty Job during precreation is NOT terminal proof for a future run.
+    pub fn native_active_processes(&self) -> std::io::Result<u32> {
+        self.native.active_processes()
+    }
+}
+
+#[cfg(windows)]
+#[derive(Debug, Error)]
+pub enum NativeGitStatusCustodyError {
+    #[error("native Git status admission stopped before Job precreation")]
+    StopRequired,
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+#[cfg(windows)]
+impl RegisteredNativeGitStatus {
+    /// Opens a real bounded Win32 Job, stdout/stderr pipes and closed stdin
+    /// under the already reserved, counted action. On any failure no child can
+    /// exist, and RAII releases the unstarted resources and original permits.
+    ///
+    /// No executable pin, launch gate, subprocess, Job assignment or native
+    /// terminal/EOF proof is provided. This must NOT be wired into MCP as a
+    /// successful GitRead invocation.
+    pub fn precreate_native_custody(
+        self,
+        now: MonotonicTime,
+    ) -> Result<PrecreatedNativeGitStatusCustody, NativeGitStatusCustodyError> {
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusCustodyError::StopRequired);
+        }
+        let native = optic_bridge_windows::PrecreatedNativeReadCustody::new(self.record.limits)?;
+        // A revocation racing OS handle creation still cannot turn this
+        // unstarted owner into spawn authority or fresh deadline.
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusCustodyError::StopRequired);
+        }
+        Ok(PrecreatedNativeGitStatusCustody {
+            native,
+            registered: self,
+        })
+    }
+}

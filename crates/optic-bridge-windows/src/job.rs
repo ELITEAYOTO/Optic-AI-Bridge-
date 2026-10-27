@@ -1,5 +1,6 @@
 use std::{
     ffi::c_void,
+    fs::File,
     future::Future,
     io::{Error, ErrorKind, Result},
     mem::size_of,
@@ -14,6 +15,7 @@ use std::{
     time::Duration,
 };
 
+use crate::output_pipe::CapturedOutputPipe;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper};
 use tokio::process::Command;
 use windows::{
@@ -241,6 +243,66 @@ impl Drop for OwnedJob {
         // SAFETY: this value owns the handle and Drop runs once. KILL_ON_JOB_CLOSE makes
         // closing the final Job Object handle the containment backstop for descendants.
         let _ = unsafe { CloseHandle(self.0) };
+    }
+}
+
+/// Inert Windows GitRead custody: real kernel Job, bounded anonymous pipes and
+/// a nulled stdin are opened *before* any root could exist. This type has no
+/// create/spawn/resume method and is never proof of a completed child.
+#[must_use = "retain native handles until unstarted cleanup or later terminal proof"]
+pub struct PrecreatedNativeReadCustody {
+    // The Job uses KILL_ON_JOB_CLOSE. No process can be added through this API.
+    job: OwnedJob,
+    _stdin: File,
+    _stdout: CapturedOutputPipe,
+    _stderr: CapturedOutputPipe,
+}
+
+impl PrecreatedNativeReadCustody {
+    /// Pre-create exact Win32 ownership under an already configured resource
+    /// ceiling. If an intermediate open fails, RAII closes all prior handles.
+    /// No child or Job assignment occurs on this path.
+    pub fn new(limits: LimitedJobObject) -> Result<Self> {
+        let job = OwnedJob::create(
+            limits.active_process_limit,
+            limits.job_memory_limit,
+            limits.cpu_percent,
+        )?;
+        let stdout = CapturedOutputPipe::new()?;
+        let stderr = CapturedOutputPipe::new()?;
+        let stdin = File::open("NUL")?;
+        Ok(Self {
+            job,
+            _stdin: stdin,
+            _stdout: stdout,
+            _stderr: stderr,
+        })
+    }
+
+    /// Read the actual kernel Job's active-process count. Zero here is only
+    /// a no-child precreation observation, not root-exit/EOF terminal evidence.
+    pub fn active_processes(&self) -> Result<u32> {
+        self.job.active_processes()
+    }
+}
+
+#[cfg(test)]
+mod precreated_native_read_tests {
+    use super::*;
+
+    #[test]
+    fn unstarted_native_job_and_both_pipes_are_real_and_idle() {
+        let limits = LimitedJobObject::new(1, 64 * 1024 * 1024, 10)
+            .expect("positive kernel limits");
+        let mut owned = PrecreatedNativeReadCustody::new(limits)
+            .expect("open actual Job and 3 stdin/out/err resources");
+        assert_eq!(owned.active_processes().expect("real kernel accounting"), 0);
+        let stdout = owned._stdout.try_read(64).expect("real stdout pipe");
+        let stderr = owned._stderr.try_read(64).expect("real stderr pipe");
+        assert!(stdout.bytes.is_empty() && !stdout.eof);
+        assert!(stderr.bytes.is_empty() && !stderr.eof);
+        assert!(owned._stdin.metadata().is_ok());
+        // No root existed; no EOF or OS termination receipt is claimed.
     }
 }
 
