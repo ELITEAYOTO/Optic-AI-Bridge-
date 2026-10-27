@@ -131,6 +131,7 @@ pub struct NativeGitReadAdmittedPreflight {
     session_admission: OwnedSessionAdmissionPermit,
     lease_witness: NativeGitReadLeaseWitness,
     request_permit: RequestPermit,
+    action_deadline: MonotonicTime,
 }
 
 impl NativeGitReadAdmittedPreflight {
@@ -139,12 +140,14 @@ impl NativeGitReadAdmittedPreflight {
         self.lease_witness.lease_id()
     }
 
-    /// Combines original session and TaskLease generation stop conditions.
+    /// Combines the original action deadline, transport horizon and session
+    /// and TaskLease generation stop conditions.
     /// A false result is NOT authority to spawn: policy, executable pins,
     /// native registration and final pre-spawn checks remain mandatory.
     #[must_use]
     pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
-        self.request_permit.is_expired_at(now)
+        now >= self.action_deadline
+            || self.request_permit.is_expired_at(now)
             || self.session_admission.stop_watch().is_stop_required_at(now)
             || self.lease_witness.is_stop_required_at(now)
     }
@@ -270,10 +273,20 @@ pub fn finish_owned_native_git_read_preflight(
         git_executable,
         now,
     )?;
+    // Capture the action's own absolute horizon once. A longer transport or
+    // later observation must never restart or extend this authorized budget.
+    let action_deadline = now
+        .as_millis()
+        .checked_add(envelope.resources.timeout_ms)
+        .map(MonotonicTime::from_millis)
+        .ok_or(NativeGitReadLeaseError::Policy(
+            PolicyReason::ResourceBudgetExceeded,
+        ))?;
     let result = NativeGitReadAdmittedPreflight {
         session_admission: admission,
         lease_witness,
         request_permit,
+        action_deadline,
     };
     if result.is_stop_required_at(now) {
         return Err(NativeGitReadAdmissionError::StopRequired);
@@ -524,6 +537,62 @@ mod tests {
             fixture.check(&fixture.envelope, "relative/repo"),
             Err(NativeGitReadLeaseError::NonAbsoluteTarget)
         ));
+    }
+
+    #[test]
+    fn admitted_native_gitread_preserves_shorter_action_timeout() {
+        let fixture = Fixture::new();
+        let guard = TransportGuard::new(TransportLimits {
+            max_request_bytes: 1024,
+            max_response_bytes: 1024,
+            max_request_duration_ms: 1_000,
+            max_concurrent_requests: 1,
+        })
+        .expect("longer transport horizon");
+        let now = MonotonicTime::from_millis(10);
+        let permit = guard.begin_execution(now).expect("worker transport");
+        let trusted = NativeGitReadTrustedContext {
+            sessions: &fixture.sessions,
+            trusted_session: &fixture.grant.handle,
+            task_leases: &fixture.registry,
+            policy: &PolicyEngine,
+        };
+        let admitted = begin_admitted_native_git_read_preflight(
+            &trusted,
+            &fixture.envelope,
+            &fixture.repository,
+            &fixture.executable,
+            permit,
+            now,
+        )
+        .expect("action fits session, lease and transport");
+        assert_eq!(fixture.envelope.resources.timeout_ms, 100);
+        assert!(!admitted.is_stop_required_at(MonotonicTime::from_millis(109)));
+        assert!(
+            admitted.is_stop_required_at(MonotonicTime::from_millis(110)),
+            "the action's original 100ms budget must stop an admitted owner"
+        );
+        assert_eq!(guard.active_requests(), 1, "stop is not terminal proof");
+        let stopped_at = MonotonicTime::from_millis(110);
+        fixture
+            .sessions
+            .publish_revocation_before_drain(&fixture.grant.handle)
+            .expect("publish stop without draining");
+        assert_eq!(
+            fixture
+                .sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, stopped_at)
+                .expect_err("action timeout cannot release session capacity"),
+            SessionRegistryError::AdmissionsInFlight
+        );
+        drop(admitted);
+        assert_eq!(guard.active_requests(), 0);
+        assert!(
+            fixture
+                .sessions
+                .remove_quiescent_inactive(&fixture.grant.handle, stopped_at)
+                .expect("no process exists in this synthetic fixture")
+        );
     }
 
     #[test]

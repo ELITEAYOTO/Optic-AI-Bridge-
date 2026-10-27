@@ -107,3 +107,30 @@ and the canonical TaskLease, resource/Job/pipes pre-registration and synchronize
 final launch authorization. No Job-empty, root-exit, EOF or crash-recovery proof
 is supplied by this worker change. Original #352/#355 remain RED;
 #317/#323 OPEN, Windows V1 NO-GO.
+
+## 27 October 2026 — preserve the native GitRead action horizon (#381)
+
+The admitted native GitRead preflight captures the original absolute monotonic
+`ActionEnvelope.resources.timeout_ms` deadline with checked addition. Its stop
+predicate now also stops at that boundary when transport/session/lease outlive
+the action. Expiry requests stop; it does not drop either counted reservation
+or prove native termination. Both fresh and transferred worker admissions use
+the same corrected finish path. Legacy GitRead policy/runner is unchanged.
+
+**Behavioral test-first:** `ff2ad7d472663a182e2b241d2afc8345adfc6d70`,
+[CI #40470425246](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40470425246),
+attempt 1, passed formatting and strict Clippy, then failed the exact 100ms
+action-boundary assertion on Ubuntu (289 passed / 1 failed) and Windows
+(361 passed / 1 failed / 11 ignored). This is runtime evidence for the inert
+contract, not real Git/Job/EOF acceptance. The regression also checks that an
+expired action retains transport/session capacity until explicit no-process
+fixture cleanup. Final-head and independent-main receipts are maintained in
+[PR #381](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/381).
+
+Baseline `main=ab45498c32b2cb9cdfddfdeaa32f0230447d9de0` already integrates
+[owned MCP worker #380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/380),
+with independent [push/main #40467892414](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40467892414)
+SUCCESS 4/4 at attempt 1. No native launch activation. Next remains registered
+service-owned Windows Job/root/pipes custody, canonical TaskLease and final
+synchronized launch authorization. Original #352/#355 remain RED;
+#317/#323 OPEN, Windows V1 NO-GO.
