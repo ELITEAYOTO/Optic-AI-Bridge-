@@ -1,5 +1,39 @@
 # Current project status
 
+## 27 October 2026 — registered native Git status accounting candidate (#385)
+
+[Draft PR #385](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385) adds a Windows-only, **non-executing** handoff from the exact
+`PreparedNativeGitStatus` of #382 to the existing native private process
+registry. The registry reserves the process count, global/session output,
+memory and CPU capacity under the **original TaskLease workload class**, and
+keeps the actual original counted MCP session admission, transport permit,
+revocation watch and monotonic deadline with the registered action. The process
+manager root must equal the canonical service GitRead root. A revoked/expired
+preparation or foreign root is denied before reservation.
+
+The new registered value holds an existing `NativeProcessReservation`, whose
+`LimitedJobObject` only **configures future limits**; this stage does **not**
+create a kernel Job, root process, pipes or stdin/EOF observation, and does not
+grant a synchronized launch permit. Only synthetic no-child cleanup is tested.
+No `git_status` MCP handler or legacy `HardenedCommandRunner` path changes.
+Do not treat this stage as production native Git execution or termination
+proof. Next P0 is a service-owned Windows Job/root/pipe guardian and final
+revocation-synchronized creation gate, before enabling an actual MCP status
+route. #352/#355 remain RED; #317/#323 OPEN; Windows V1 NO-GO.
+
+Test-first commit `ab474c0b228e7f42cba2848db12360d0895108c3`:
+[CI #40501489580](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501489580)
+failed on Windows E0433/E0599 (absent interface) and Ubuntu rustfmt; this is
+**compilation/formatting**, not a runtime reproduction. Intermediate
+`fbb610e89e855fed6322134910c57491451dfcb9` failed formatting; its
+other long jobs were cancelled after the next commit. Implementation and
+rustfmt head `9a66557d29cfe66da7f06a68ca80e68be0576a02` passed
+[CI #40501987327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987327)
+4/4 and [native preparation #40501987334](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987334).
+These receipts prove only their exact candidate SHA, not any later HEAD or
+independent integrated-main result.
+
+
 ## PASSATION ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
 [Passation technique actuelle](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)

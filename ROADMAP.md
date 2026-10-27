@@ -1,5 +1,24 @@
 # Delivery roadmap
 
+## P0 after registered native status accounting candidate (#385, 27 October 2026)
+
+The service can now **prepare** an exact lease-bound Git status and, on
+Windows, **register process-store CPU/memory/output/process capacity** without
+spawning. This is the last non-executing accounting boundary, not the Windows
+owner itself. Next increment must create and register real kernel Job/root/
+stdout/stderr/stdin custody and pinned executable/repository evidence **before**
+any process creation; synchronize the final policy, session/TaskLease epoch,
+revocation and monotonic deadline decision with the Win32 creation boundary.
+Preserve owner and all counted permits under uncertain termination until true
+Job-empty, root termination and appropriate actual EOF observations, including
+caller abandonment and host interruption. Then connect the authorized MCP
+`git_status` worker without second admission and retain sensitive-name denial.
+
+Do not claim #352 real wall-clock or #355 real revoke-before-spawn success from
+#385. Existing acceptance reds, #185, #319, confidentiality #176/#182 and
+physical Win10/11 #323 remain independently blocking; no V1 release.
+
+
 ## REPRISE EN CHAT — 27 octobre 2026
 
 [Prompt de reprise](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md)

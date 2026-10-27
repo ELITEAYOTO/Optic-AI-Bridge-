@@ -807,6 +807,13 @@ impl ProcessManager {
         self.limits
     }
 
+    /// Canonical manager root for non-executing native GitRead registration.
+    /// The actual cwd must still be pinned and revalidated by a future guardian.
+    #[cfg(windows)]
+    pub(crate) fn native_registration_root(&self) -> &Path {
+        &self.root
+    }
+
     fn validate_request_shape(&self, spec: &ProcessStartSpec) -> Result<(), ProcessError> {
         let mut bytes = u64::try_from(spec.executable.len()).unwrap_or(u64::MAX);
         for arg in &spec.args {

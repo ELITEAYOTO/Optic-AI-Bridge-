@@ -7,7 +7,9 @@
 
 use std::{path::Path, sync::Arc};
 
-use optic_bridge_core::{ActionEnvelope, MonotonicTime, SessionGrant, SessionHandle, TaskLeaseId};
+use optic_bridge_core::{
+    ActionEnvelope, MonotonicTime, SessionGrant, SessionHandle, TaskLeaseId, WorkloadClass,
+};
 use optic_bridge_policy::{PolicyDecision, PolicyEngine, PolicyReason};
 use thiserror::Error;
 
@@ -26,6 +28,7 @@ use crate::{
 pub struct NativeGitReadLeaseWitness {
     lease_id: TaskLeaseId,
     lease_expires_at: MonotonicTime,
+    workload_class: WorkloadClass,
     revocation: TaskLeaseRevocationWatch,
 }
 
@@ -33,6 +36,12 @@ impl NativeGitReadLeaseWitness {
     #[must_use]
     pub fn lease_id(&self) -> &TaskLeaseId {
         &self.lease_id
+    }
+
+    /// The original lease workload category is authoritative for reservation limits.
+    #[must_use]
+    pub fn workload_class(&self) -> WorkloadClass {
+        self.workload_class
     }
 
     /// Must be checked again at the native launch boundary. False alone is
@@ -111,6 +120,7 @@ pub fn verify_registered_native_git_read_preflight(
             Ok(NativeGitReadLeaseWitness {
                 lease_id: lease.id,
                 lease_expires_at: lease.expires_at,
+                workload_class: lease.workload_class,
                 revocation,
             })
         }
@@ -138,6 +148,11 @@ impl NativeGitReadAdmittedPreflight {
     #[must_use]
     pub fn lease_id(&self) -> &TaskLeaseId {
         self.lease_witness.lease_id()
+    }
+
+    #[must_use]
+    pub fn workload_class(&self) -> WorkloadClass {
+        self.lease_witness.workload_class()
     }
 
     /// Earliest captured monotonic horizon. A native watchdog must consume

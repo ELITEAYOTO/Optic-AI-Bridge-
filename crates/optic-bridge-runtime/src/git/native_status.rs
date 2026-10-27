@@ -109,3 +109,106 @@ impl GitReadService {
         })
     }
 }
+
+/// Windows-only accounting stage between admitted status preparation and a
+/// future OS-native Git guardian. This is NOT a Win32 Job handle or spawn permit:
+/// NativeProcessReservation records capacity and configures limits, but does
+/// not create a kernel Job, process, or pipes. Only later owner code may do so.
+#[cfg(windows)]
+#[must_use = "keep the original permits and process accounting until safe disposal"]
+pub struct RegisteredNativeGitStatus {
+    // Drop the no-child record before the original session/transport permits.
+    record: crate::process::NativeProcessReservation,
+    prepared: PreparedNativeGitStatus,
+}
+
+#[cfg(windows)]
+impl RegisteredNativeGitStatus {
+    #[must_use]
+    pub fn job_id(&self) -> optic_bridge_core::JobId {
+        self.record.id()
+    }
+
+    #[must_use]
+    pub fn deadline(&self) -> MonotonicTime {
+        self.prepared.deadline()
+    }
+
+    /// A stop request, not approval to create a process or proof of cleanup.
+    #[must_use]
+    pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.prepared.is_stop_required_at(now) || self.record.stop_requested()
+    }
+}
+
+#[cfg(windows)]
+#[derive(Debug, Error)]
+pub enum NativeGitStatusRegistrationError {
+    #[error("the original native GitRead admission has expired or been revoked")]
+    StopRequired,
+    #[error("GitRead service repository differs from the configured process manager root")]
+    WrongProcessRoot,
+    #[error("native GitRead requires UTF-8 executable and fixed arguments")]
+    NonUtf8Command,
+    #[error("native GitRead preparation and action output budgets differ")]
+    OutputBudgetMismatch,
+    #[error(transparent)]
+    Process(#[from] crate::ProcessError),
+}
+
+#[cfg(windows)]
+impl crate::ProcessManager {
+    /// Register a private, owner-scoped action and reserve actual shared
+    /// global/session process, CPU, memory and output capacity before any
+    /// potential native creation. The original owned admission, transport
+    /// permit, task lease witness and action horizon remain inside the result.
+    ///
+    /// No child, OS Job handle or pipe is created by this method. In
+    /// particular, successful registration grants NO CreateProcess authority:
+    /// an owner must add true native Job/pipe custody, pinned Git identity and
+    /// synchronous last-boundary revocation/policy checks before any launch.
+    pub fn reserve_prepared_native_status(
+        &self,
+        prepared: PreparedNativeGitStatus,
+        now: MonotonicTime,
+    ) -> Result<RegisteredNativeGitStatus, NativeGitStatusRegistrationError> {
+        if prepared.is_stop_required_at(now) {
+            return Err(NativeGitStatusRegistrationError::StopRequired);
+        }
+        if self.native_registration_root() != prepared.repository_root() {
+            return Err(NativeGitStatusRegistrationError::WrongProcessRoot);
+        }
+        if prepared.command.output_limit != prepared.envelope.resources.output_bytes {
+            return Err(NativeGitStatusRegistrationError::OutputBudgetMismatch);
+        }
+        let executable = prepared
+            .git_executable()
+            .to_str()
+            .ok_or(NativeGitStatusRegistrationError::NonUtf8Command)?
+            .to_owned();
+        let args = prepared
+            .command
+            .args
+            .iter()
+            .map(|arg| {
+                arg.to_str()
+                    .map(str::to_owned)
+                    .ok_or(NativeGitStatusRegistrationError::NonUtf8Command)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let spec = crate::ProcessStartSpec {
+            session: prepared.envelope.session.clone(),
+            class: optic_bridge_core::ProcessExecutionClass::FixedTool,
+            workload_class: prepared.admission.workload_class(),
+            network: optic_bridge_core::NetworkAccess::Denied,
+            executable,
+            args,
+            cwd: None,
+            workspace_read_files: Vec::new(),
+            env_allowlist: Vec::new(),
+            resources: prepared.envelope.resources,
+        };
+        let record = self.reserve_native_private(&spec, prepared.action_id())?;
+        Ok(RegisteredNativeGitStatus { record, prepared })
+    }
+}
