@@ -1,8 +1,21 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
-## PROMPT ACTIF — 26 octobre 2026
+## REPRISE ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
-Pour le nouveau chat, copier **en entier** le [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md). Avant cette PR documentaire : `main=c058ccf3f9db18c7d67194d117af99cc3e0cea52`, [CI indépendante push/main #40358111878](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40358111878) **SUCCESS 4/4 au premier essai**. Cette PR fera avancer `main` : vérifier le nouveau SHA et la CI `push/main` après fusion. #369/#371/#373/#375/#377 sont des contrats GitRead **inertes** ; production MCP GitRead toujours legacy ; #327/#353/#358 recherches isolées, originaux #352/#355 **ROUGES** ; issues #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO, aucun accès PC/Optic Desktop/REL. Les prompts anciens sont conservés comme historiques.
+Lire la [passation Windows V1 pour Chat classique](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)
+et le [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md).
+Reprise demandée dans un **Chat classique, GitHub uniquement** ; ne pas créer de
+tâche Codex/Work ou accéder au PC sans demande explicite. Les entrées datées
+ci-dessous sont historiques pour leurs références ; les invariants restent
+obligatoires.
+
+Avant cette PR documentaire : `main=75947c9b4fb72fab2f3d45f34f5b750f09bc31b2`,
+[CI indépendante #40477277322](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40477277322)
+SUCCESS 4/4, tentative 1. #380–#383 sont intégrées, mais GitRead utilise encore
+le runner legacy, `task_lease: None` et aucun propriétaire Git natif actif.
+Vérifier le nouveau main et sa CI push après fusion de cette documentation.
+#352/#355 ROUGES ; #317/#323/#185/#319 ouvertes ; Windows V1 NO-GO.
+Aucun accès PC, Optic Desktop ou REL.
 
 ---
 

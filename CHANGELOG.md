@@ -1,5 +1,15 @@
 # Changelog
 
+## 27 octobre 2026 — passation pour Chat classique
+
+- Ajoute la passation technique et le prompt complet de reprise après #380–#383,
+  avec SHA/CI, premiers rouges qualifiés, limites et prochaine priorité #317.
+- Actualise les points d'entrée vers la reprise en Chat classique via GitHub,
+  sans tâche Codex/Work ou accès PC implicite. Aucun changement de runtime.
+  [Passation et preuves](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md).
+  #317/#323 restent ouvertes ; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — uncertain native reservation streams (#383)
 
 - Preserve stream observations under termination uncertainty; do not publish
