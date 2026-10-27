@@ -162,7 +162,9 @@ Test-first `b895bea86490448fca3d5a328852885e58f1c542` /
 failed compilation on Windows/Ubuntu (E0432 + four E0599: absent interface),
 not runtime behavior. Initial formatting RED
 [#40472675779](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40472675779)
-is preserved separately. Final-head/integrated receipts belong to
+is preserved separately; first implementation
+[#40473274272](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40473274272)
+also failed formatting only and remains recorded. Final-head/integrated receipts belong to
 [PR #382](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/382).
 
 This method is **not wired to live MCP GitRead**, creates no native Job/root/pipes,

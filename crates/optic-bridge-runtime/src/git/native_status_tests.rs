@@ -172,7 +172,10 @@ fn prepared_native_status_binds_service_command_budget_and_original_worker_capac
     assert_eq!(prepared.action_id(), &fixture.envelope.action_id);
     assert_eq!(prepared.resources(), fixture.envelope.resources);
     assert_ne!(prepared.resources(), action.resources);
-    assert_eq!(prepared.envelope.policy_epoch, fixture.envelope.policy_epoch);
+    assert_eq!(
+        prepared.envelope.policy_epoch,
+        fixture.envelope.policy_epoch
+    );
     assert_ne!(prepared.envelope.policy_epoch, action.policy_epoch);
     assert_eq!(
         prepared.lease_id(),

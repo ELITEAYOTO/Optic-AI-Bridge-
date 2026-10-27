@@ -100,12 +100,7 @@ impl GitReadService {
             .to_str()
             .ok_or(NativeGitStatusPreparationError::NonUtf8Target)?;
         let admission = finish_owned_native_git_read_preflight(
-            trusted,
-            owned,
-            envelope,
-            repository,
-            executable,
-            now,
+            trusted, owned, envelope, repository, executable, now,
         )?;
         Ok(PreparedNativeGitStatus {
             command,
