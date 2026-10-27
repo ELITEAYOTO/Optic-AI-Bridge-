@@ -686,23 +686,20 @@ fn prelaunch_snapshot_rejects_foreign_same_id_task_lease_and_retain_original_adm
         policy: &PolicyEngine,
     };
     assert!(matches!(
-        custody.observe_original_prelaunch_snapshot(
-            &foreign_context,
-            MonotonicTime::from_millis(12)
-        ),
+        custody
+            .observe_original_prelaunch_snapshot(&foreign_context, MonotonicTime::from_millis(12)),
         Err(crate::NativeGitStatusSnapshotError::LeaseGenerationMismatch)
     ));
     assert_eq!(transport.active_requests(), 1);
     assert_eq!(
-        custody.native_active_processes().expect("no child launched"),
+        custody
+            .native_active_processes()
+            .expect("no child launched"),
         0
     );
 
     custody
-        .observe_original_prelaunch_snapshot(
-            &fixture.trusted(),
-            MonotonicTime::from_millis(12),
-        )
+        .observe_original_prelaunch_snapshot(&fixture.trusted(), MonotonicTime::from_millis(12))
         .expect("same original registered lease may be observed");
     fixture
         .leases
@@ -757,10 +754,8 @@ fn prelaunch_snapshot_rejects_foreign_session_registry_before_relooking_up_lease
         policy: &PolicyEngine,
     };
     assert!(matches!(
-        custody.observe_original_prelaunch_snapshot(
-            &forged_context,
-            MonotonicTime::from_millis(12)
-        ),
+        custody
+            .observe_original_prelaunch_snapshot(&forged_context, MonotonicTime::from_millis(12)),
         Err(crate::NativeGitStatusSnapshotError::ForeignSessionRegistry)
     ));
     assert_eq!(transport.active_requests(), 1);

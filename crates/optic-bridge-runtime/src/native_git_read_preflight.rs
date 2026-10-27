@@ -38,6 +38,14 @@ impl NativeGitReadLeaseWitness {
         &self.lease_id
     }
 
+    /// A refreshed lookup cannot substitute a different registration with the
+    /// same public lease ID or an independent lease registry. No launch authority.
+    #[cfg(windows)]
+    pub(crate) fn same_registration(&self, observed: &Self) -> bool {
+        self.lease_id == observed.lease_id
+            && self.revocation.same_registration(&observed.revocation)
+    }
+
     /// The original lease workload category is authoritative for reservation limits.
     #[must_use]
     pub fn workload_class(&self) -> WorkloadClass {
@@ -145,6 +153,26 @@ pub struct NativeGitReadAdmittedPreflight {
 }
 
 impl NativeGitReadAdmittedPreflight {
+    /// Revalidate against the captured *original* grant, not a newly looked
+    /// up session that happens to reuse the same handle.
+    #[cfg(windows)]
+    pub(crate) fn original_session_grant(&self) -> &SessionGrant {
+        self.session_admission.grant()
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn belongs_to_session_registry(&self, registry: &Arc<SessionRegistry>) -> bool {
+        self.session_admission.belongs_to_registry(registry)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn matches_original_lease_registration(
+        &self,
+        observed: &NativeGitReadLeaseWitness,
+    ) -> bool {
+        self.lease_witness.same_registration(observed)
+    }
+
     #[must_use]
     pub fn lease_id(&self) -> &TaskLeaseId {
         self.lease_witness.lease_id()
