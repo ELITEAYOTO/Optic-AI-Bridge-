@@ -1301,3 +1301,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_status_tests.rs"]
+mod native_status_tests;
