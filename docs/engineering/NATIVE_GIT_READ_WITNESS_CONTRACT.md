@@ -1,5 +1,35 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
+## 27 October 2026 — registered process capacity, no native launch (#385)
+
+Windows-only \`ProcessManager::reserve_prepared_native_status\` consumes the
+noncloneable, original \`PreparedNativeGitStatus\` without readmission. It
+requires the process-manager canonical root to match the configured GitRead
+service root, verifies the original stop horizon, and registers an
+owner-scoped private action using the existing process-store reservation.
+The original verified TaskLease's **WorkloadClass** is carried into the
+accounted record. The associated \`RegisteredNativeGitStatus\` retains the
+transport and session permits and original lease witness, action and stop
+predicate. It has no launch method. A synthetic no-child dropped reservation
+becomes Failed and releases the permits; this is **not** a native terminal
+proof and must never be generalized to a possibly created process.
+
+Important: the existing \`LimitedJobObject\` type is a *limits
+configuration*, not an opened or registered kernel Job. At this stage there
+are **no OS Job/root/pipes, no executable pin or identity recheck at
+CreateProcessW, no synced revoke-before-spawn authority, no child**. This
+helper is not wired into the live MCP \`git_status\` handler; that path still
+uses the legacy \`HardenedCommandRunner\`. Before any future child is enabled
+the registered owner must hold real OS handles and the identity/revocation/
+policy/epoch/monotonic deadline checks atomically with launch, and keep all
+capacities until positive root/Job-empty/EOF proof even on failure.
+Test-first compiler red [#40501489580](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501489580)
+was not runtime behavior; green [#40501987327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987327)
+and [native preparation #40501987334](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987334)
+refer only to candidate \`9a66557d29cfe66da7f06a68ca80e68be0576a02\`.
+Original #352/#355 remain red; #317/#323 open; Windows V1 NO-GO.
+
+
 **Status: inert runtime prerequisite, not a production native process launcher. Windows V1 NO-GO.**
 
 The `verify_registered_native_git_read_preflight` helper combines two controls which were previously only independent prerequisites on `main`:

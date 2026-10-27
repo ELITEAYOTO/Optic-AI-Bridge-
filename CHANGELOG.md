@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — native Git status process reservation candidate (#385, 27 October 2026)
+
+- Add Windows-only \`ProcessManager::reserve_prepared_native_status\` for an
+  already authorized \`PreparedNativeGitStatus\`, using the original lease
+  workload class and the existing per-session/global process, CPU, memory and
+  output accounting. Foreign manager root or expired preparation fails closed;
+  original MCP session/transport permits and revocation witness remain owned.
+- Add negative and no-child accounting tests. This does **not** create a real
+  Win32 Job, root, pipes or native process, nor activate native MCP GitRead or
+  solve #352/#355. Windows V1 remains NO-GO; #317/#323 stay open.
+- Preserve the initial test-first compiler red
+  [#40501489580](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501489580)
+  (E0433/E0599) separately from formatting errors; candidate
+  \`9a66557d29cfe66da7f06a68ca80e68be0576a02\` passes
+  [CI #40501987327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987327)
+  4/4 and [native preparation #40501987334](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987334)
+  on that exact SHA. No claim for any later commit or integrated-main run.
+
+
 ## 27 octobre 2026 — passation pour Chat classique
 
 - Ajoute la passation technique et le prompt complet de reprise après #380–#383,
