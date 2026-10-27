@@ -281,7 +281,7 @@ impl RegisteredNativeGitStatus {
         // Open handles that deny directory replacement and executable write/
         // delete sharing. A real post-open final path must match the trusted
         // canonical service spec, not just the original lexical path.
-        let repository_pin = optic_bridge_windows::pin_directory_chain(repository, None)?;
+        let repository_pin = optic_bridge_windows::pin_native_git_read_repository_root(repository)?;
         if repository_pin.final_path() != repository {
             return Err(NativeGitStatusCustodyError::TargetIdentityChanged);
         }

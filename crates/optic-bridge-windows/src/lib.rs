@@ -34,7 +34,10 @@ pub use appcontainer::{
     spawn_appcontainer_with_environment_suspended,
 };
 #[cfg(windows)]
-pub use directory::{PinnedDirectoryChain, PinnedDirectoryError, pin_directory_chain};
+pub use directory::{
+    PinnedDirectoryChain, PinnedDirectoryError, pin_directory_chain,
+    pin_native_git_read_repository_root,
+};
 #[cfg(windows)]
 pub use executable::{PinnedExecutableFile, open_pinned_executable};
 #[cfg(windows)]
