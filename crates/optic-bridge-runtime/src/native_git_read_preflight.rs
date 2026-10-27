@@ -140,6 +140,17 @@ impl NativeGitReadAdmittedPreflight {
         self.lease_witness.lease_id()
     }
 
+    /// Earliest captured monotonic horizon. A native watchdog must consume
+    /// this absolute time rather than restart an action or transport timeout.
+    /// The returned deadline is not authorization to create a process.
+    #[must_use]
+    pub fn deadline(&self) -> MonotonicTime {
+        self.action_deadline
+            .min(self.request_permit.deadline())
+            .min(self.session_admission.grant().expires_at)
+            .min(self.lease_witness.lease_expires_at)
+    }
+
     /// Combines the original action deadline, transport horizon and session
     /// and TaskLease generation stop conditions.
     /// A false result is NOT authority to spawn: policy, executable pins,

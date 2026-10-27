@@ -1,5 +1,14 @@
 # Changelog
 
+## 27 October 2026 — native status service boundary (#382)
+
+- Prepare the service's fixed status command with original worker-owned permits,
+  registered canonical TaskLease, immutable ActionEnvelope and original horizons.
+- Deny service identity/output mismatches; retain session/transport reservations.
+  [Contract and evidence](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+  No live native routing or launch. #317/#323 OPEN; Windows V1 NO-GO.
+
+
 ## 27 October 2026 — preserve the native GitRead action horizon (#381)
 
 The admitted native GitRead preflight captures the original absolute monotonic
