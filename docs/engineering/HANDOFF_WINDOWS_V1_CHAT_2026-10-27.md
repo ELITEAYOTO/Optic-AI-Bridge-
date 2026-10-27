@@ -8,6 +8,14 @@
 > méthodes restent applicables. Cette mise à jour documentaire fera elle-même
 > avancer main : toujours vérifier les références en direct.
 
+## 27 octobre — ciblage GitRead par handles épinglés (PR #388 candidate)
+
+La [PR #388](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/388) complète **sans lancement** le Job Windows précréé de #387 : ouverture du binaire Git original et du répertoire canonique avec des handles conservés, comparaison des chemins finaux retournés par Windows, aucun argv arbitraire. La garde GitRead demande une vraie lecture de répertoire pour empêcher son renommage (les autres usages du pin générique restent inchangés). Les permis session/transport et quotas restent détenus.
+
+Rouges préservés : [#40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394), Windows 371 réussis/2 échecs de garde, Ubuntu rustfmt ; [#40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834), Windows 372 réussis/1 échec de renommage de racine. Correctif code `382857c0269b7173c24bef8eb948d08ad0e558ae`, [CI #40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) success 4/4 tentative 1, trois CI natives vertes. Vérifier la CI du HEAD final documentaire puis, après fusion éventuelle, CI push/main indépendante.
+
+NON prouvé : hash Git réévalué à la frontière CreateProcess, décision synchronisée session/policy/lease/révocation, création/assignation root, terminaison Job et EOF après un vrai enfant, crash-recovery, route MCP. #352/#355 RED, #317/#323 OPEN, Windows V1 NO-GO, aucune release.
+
 ## 27 octobre — reprise technique après précréation du Job natif (#387)
 
 La [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387)

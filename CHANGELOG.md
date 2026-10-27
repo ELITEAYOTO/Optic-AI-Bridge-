@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — GitRead original-target handle custody (#388, 27 October 2026)
+
+- Extend non-spawning Windows `PrecreatedNativeGitStatusCustody` with an opened/verified executable handle and READ/LIST-access repository-root pin held alongside Job/pipes and original counted admissions. The GitRead-specific root pin denies root rename; existing zero-access general directory-chain semantics remain untouched. Observed handle paths must match the trusted canonical service command.
+- Preserve [test-first Windows runtime RED #40510524394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40510524394) (371 pass / 2 fail) and [first pin Windows runtime RED #40511257834](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40511257834) (372 pass / 1 fail: root rename). The earlier test-first Ubuntu rustfmt failure is classified separately.
+- [Pin correction CI #40512075888](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40512075888) success, attempt 1, and native preparation/lifecycle/Rust IR workflows successful on code SHA `382857c0269b7173c24bef8eb948d08ad0e558ae`. A later documentary SHA and integrated push/main need separate checks.
+- No CreateProcess, MCP route switch, real process termination evidence or closure of #317/#323. Windows V1 NO-GO.
+
+
 ## Unreleased — precreate unstarted native Git status Job and pipes (#387, 27 October 2026)
 
 - Under existing, already-counted Git status registration, precreate a real
