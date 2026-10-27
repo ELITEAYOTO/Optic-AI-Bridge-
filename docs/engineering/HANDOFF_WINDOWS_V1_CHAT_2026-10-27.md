@@ -8,6 +8,24 @@
 > méthodes restent applicables. Cette mise à jour documentaire fera elle-même
 > avancer main : toujours vérifier les références en direct.
 
+## 27 octobre — reprise technique après précréation du Job natif (#387)
+
+La [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387)
+contient une tranche **non exécutante** : Job Win32 véritable précréé avec
+limites CPU/mémoire/processus, pipes stdout/stderr ouverts et stdin `NUL`,
+le tout attaché aux réservations d'origine session/transport/TaskLease et
+au registre des processus. Aucun Git, aucune création de processus ou
+raccord MCP. Tests Windows : Job réellement vide, pipes non EOF tant que les
+writers parent sont ouverts, révocation et maintien des admissions.
+Vérifier le HEAD, ses quatre jobs CI et les workflows natifs avant fusion ;
+après fusion revérifier séparément `push/main`.
+
+P0 suivant : pin de l'identité exécutable/racine, synchronisation au
+dernier contrôle avant CreateProcess, détention Job/root/pipes/quotas et
+vraies preuves root-terminé + Job-vide + EOF. Les originaux #352/#355
+restent RED. #317/#323 OPEN ; Windows V1 NO-GO ; aucun release.
+
+
 ## ADDENDUM — après l'intégration #385 (27 octobre 2026)
 
 Le `main` effectivement vérifié après [PR #385 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/385)

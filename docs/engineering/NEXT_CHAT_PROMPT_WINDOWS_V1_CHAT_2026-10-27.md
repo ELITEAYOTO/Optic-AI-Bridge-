@@ -1,5 +1,21 @@
 # OPTIC AI BRIDGE — REPRISE EN CHAT CLASSIQUE — 27 OCTOBRE 2026
 
+## Actualisation après préparation du véritable Job natif (#387)
+
+Contrôler [PR #387](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/387),
+son HEAD et toutes ses CI, puis revalider `main` et `push/main` avant
+toute suite. La PR précrée un Job Windows authentique et des handles
+stdin/stdout/stderr sous la réservation Git status d'origine et sans
+lancement de processus. Cela ne fournit **ni spawn sécurisé, ni preuves
+réelles de terminaison**, ni raccord MCP. Les tests #352/#355 restent
+rouges et la V1 NO-GO. P0 suivant : pin exécutable/dépôt, autorité
+synchrone à la frontière CreateProcess, propriétaire natif gardant
+session/transport/TaskLease/quotas jusqu'aux vraies preuves Job/root/EOF
+puis route MCP sensible. Garder #317/#323 OPEN, ne jamais fusionner
+#353/#358 en bloc, ne toucher ni au PC ni aux autres dépôts.
+
+
+
 ## MISE À JOUR DE REPRISE — après PR #385 fusionnée
 
 Dernier checkpoint intégré vérifié avant une éventuelle nouvelle PR

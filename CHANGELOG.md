@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — precreate unstarted native Git status Job and pipes (#387, 27 October 2026)
+
+- Under existing, already-counted Git status registration, precreate a real
+  Windows Job Object with the original resource limits and kill-on-close,
+  owned stdout/stderr pipes and `NUL` stdin, retaining original MCP session,
+  transport, TaskLease generation and process capacity. The new type has no
+  launch/resume API and checks for stop again after resource creation.
+- Windows tests observe the **actual empty kernel Job**, idle pipes without
+  false EOF, permit retention through revocation and rejection after revoke.
+  No child/Git is started; no terminal native proof is claimed.
+- Test-first [CI #40506640216](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40506640216)
+  reports E0433/E0599 missing-interface compiler errors and format failure;
+  not original #352/#355 physical runtime behavior. The first implementation
+  also had format-only red [#40506898619](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40506898619).
+  Exact-head independent Windows/Ubuntu/dependency/release validations still
+  govern the final PR and `push/main`. Windows V1 NO-GO.
+
+
+
 ## Unreleased — integrated native Git status process reservation (#385, 27 October 2026)
 
 - Add Windows-only `ProcessManager::reserve_prepared_native_status` for an
