@@ -12,7 +12,7 @@ revocation and monotonic deadline decision with the Win32 creation boundary.
 Preserve owner and all counted permits under uncertain termination until true
 Job-empty, root termination and appropriate actual EOF observations, including
 caller abandonment and host interruption. Then connect the authorized MCP
-\`git_status\` worker without second admission and retain sensitive-name denial.
+`git_status` worker without second admission and retain sensitive-name denial.
 
 Do not claim #352 real wall-clock or #355 real revoke-before-spawn success from
 #385. Existing acceptance reds, #185, #319, confidentiality #176/#182 and

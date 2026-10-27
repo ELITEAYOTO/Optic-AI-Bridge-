@@ -2,8 +2,8 @@
 
 ## Unreleased — native Git status process reservation candidate (#385, 27 October 2026)
 
-- Add Windows-only \`ProcessManager::reserve_prepared_native_status\` for an
-  already authorized \`PreparedNativeGitStatus\`, using the original lease
+- Add Windows-only `ProcessManager::reserve_prepared_native_status` for an
+  already authorized `PreparedNativeGitStatus`, using the original lease
   workload class and the existing per-session/global process, CPU, memory and
   output accounting. Foreign manager root or expired preparation fails closed;
   original MCP session/transport permits and revocation witness remain owned.
@@ -13,7 +13,7 @@
 - Preserve the initial test-first compiler red
   [#40501489580](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501489580)
   (E0433/E0599) separately from formatting errors; candidate
-  \`9a66557d29cfe66da7f06a68ca80e68be0576a02\` passes
+  `9a66557d29cfe66da7f06a68ca80e68be0576a02` passes
   [CI #40501987327](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987327)
   4/4 and [native preparation #40501987334](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40501987334)
   on that exact SHA. No claim for any later commit or integrated-main run.
