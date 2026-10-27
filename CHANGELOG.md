@@ -1,5 +1,13 @@
 # Changelog
 
+## 27 October 2026 — uncertain native reservation streams (#383)
+
+- Preserve stream observations under termination uncertainty; do not publish
+  unobserved EOF from native private-worker reservation completion.
+- Retain uncertain capacity/reaping behavior. [Test-first evidence and limits](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+  No native Git activation; #317/#323 OPEN, Windows V1 NO-GO.
+
+
 ## 27 October 2026 — native status service boundary (#382)
 
 - Prepare the service's fixed status command with original worker-owned permits,

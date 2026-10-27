@@ -172,3 +172,26 @@ reserves no native CPU/memory/process quota and grants no launch authority.
 Next is registered Windows guardian custody of this same prepared value before
 creation, final synchronized policy/identity/revoke/deadline validation and real
 root/Job/EOF/crash proof. Original #352/#355 stay RED; #317/#323 OPEN, V1 NO-GO.
+
+## 27 October 2026 — uncertain native reservations preserve stream observations (#383)
+
+`NativeProcessReservation::finish` no longer marks stdout/stderr closed when
+the effective state retains process ownership (`TerminationUncertain`, including
+defensive normalization of `Running`). Existing per-stream observations are
+preserved; active/memory/CPU/output reservations remain held and the record
+cannot be reaped as terminal. Ordinary terminal completion behavior is unchanged.
+
+This corrects an existing private-worker producer before it can be reused by
+the native Git guardian. It does not establish root/Job/EOF evidence or make
+generic captured-output flags a native termination receipt. The Windows-only
+regression uses the real process-store reservation with **simulated** uncertain,
+Running, post-creation-drop and one-stream-observed transitions; no child is
+created and host-memory telemetry is synthetic.
+
+Test-first `7da5c15299ca012ffcb216771da2121298c3e833` /
+[CI #40476042507](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40476042507),
+attempt 1: format and strict Clippy passed, Windows runtime failed the exact
+unobserved-EOF assertion (366 pass / 1 fail / 11 ignored); Ubuntu passed because
+this producer is Windows-only. Final-head/integrated receipts are tracked in
+[PR #383](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/383).
+Original #352/#355 remain RED; #317/#323 OPEN, Windows V1 NO-GO.

@@ -1358,3 +1358,95 @@ fn cancellation_signals_uncertain_owner_without_discarding_proof_or_other_sessio
     drop(manager);
     fs::remove_dir_all(root).expect("remove workspace");
 }
+
+#[cfg(windows)]
+#[test]
+fn native_reservation_uncertainty_does_not_publish_unobserved_eof() {
+    for mode in [
+        "uncertain",
+        "running",
+        "dropped-after-creation",
+        "uncertain-one-observed",
+    ] {
+        let root = workspace("native-reservation-uncertain-eof");
+        let limits = HardLimits::default();
+        let manager = manager_with_host_memory(
+            &root,
+            limits,
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 64 * 1024 * 1024 * 1024,
+                available_physical_bytes: 32 * 1024 * 1024 * 1024,
+            }),
+        );
+        let owner = SessionHandle::generate().expect("session");
+        let resources = budget(100, 1024);
+        let mut request = spec(&root, owner.clone(), resources);
+        request.network = NetworkAccess::Denied;
+        request.args.clear();
+        let action = ActionId::generate().expect("action");
+        let mut reservation = Some(
+            manager
+                .reserve_native_private(&request, &action)
+                .expect("real process-store reservation; no child is created"),
+        );
+        let job = reservation.as_ref().unwrap().id();
+        reservation
+            .as_ref()
+            .unwrap()
+            .append(ProcessStream::Stdout, b"captured prefix");
+        if mode == "uncertain-one-observed" {
+            // Model one recorded stream closure, without claiming native EOF.
+            let record = &reservation.as_ref().unwrap().record;
+            mark_stream_closed(record, ProcessStream::Stdout);
+        }
+        match mode {
+            "uncertain" | "uncertain-one-observed" => reservation
+                .as_mut()
+                .unwrap()
+                .finish(ProcessStatus::TerminationUncertain, None),
+            "running" => reservation
+                .as_mut()
+                .unwrap()
+                .finish(ProcessStatus::Running, None),
+            "dropped-after-creation" => {
+                // Simulate the reservation's irreversible creation boundary.
+                // No Windows process, native fault or actual pipe EOF is claimed.
+                let mut created = reservation.take().unwrap();
+                created.mark_native_created();
+                drop(created);
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            manager.result(&owner, &job).expect("result").status,
+            ProcessStatus::TerminationUncertain
+        );
+        for stream in [ProcessStream::Stdout, ProcessStream::Stderr] {
+            let chunk = manager
+                .read(&owner, &job, stream, 0, 1024)
+                .expect("owner-scoped captured output");
+            let observed = mode == "uncertain-one-observed" && stream == ProcessStream::Stdout;
+            assert_eq!(
+                chunk.eof, observed,
+                "uncertain reservation must preserve only observed EOF: {mode:?} {stream:?}"
+            );
+        }
+        assert_eq!(manager.active_session_job_count(&owner).unwrap(), 1);
+        assert_eq!(manager.remove_terminal_session_records(&owner).unwrap(), 0);
+        {
+            let store = manager.jobs.lock().unwrap();
+            assert_eq!(
+                reserved_process_memory_bytes(&store).unwrap(),
+                resources.memory_bytes
+            );
+            assert_eq!(
+                reserved_cpu_percent(&store).unwrap(),
+                limits.max_process_cpu_percent_per_job
+            );
+            assert_eq!(reserved_output_bytes(&store), resources.output_bytes);
+        }
+        drop(reservation);
+        drop(manager);
+        fs::remove_dir_all(root).expect("cleanup no-process fixture");
+    }
+}
