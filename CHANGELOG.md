@@ -14,6 +14,12 @@
   reports E0433/E0599 missing-interface compiler errors and format failure;
   not original #352/#355 physical runtime behavior. The first implementation
   also had format-only red [#40506898619](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40506898619).
+- [CI #40507126521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507126521)
+  failed one new native Windows unit test because it asked `File::metadata()`
+  of the `NUL` device; this is a test observation issue, not physical
+  #352/#355 reproduction. Only that assertion was removed in
+  `88dc28a8c9c13dbdff74359f02372d6665e3603e` and the original
+  Windows log remains preserved.
   Exact-head independent Windows/Ubuntu/dependency/release validations still
   govern the final PR and `push/main`. Windows V1 NO-GO.
 

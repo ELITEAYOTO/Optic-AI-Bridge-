@@ -32,8 +32,16 @@ while its native lifecycle, private Rust compilation and native preparation
 checks passed. Formatter correction at
 `9f2c9600ad9ad7e85b045a94261fa9fa566bc042` triggers
 [CI #40507126521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507126521)
-and separate native workflows. These runs and the **later final PR HEAD**
-must be checked independently before merging. The independent post-merge
+and separate native workflows. [CI #40507126521](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507126521)
+passed Ubuntu, dependency and release gates, but was **Windows Test RED**:
+a platform unit-test incorrectly called filesystem `File::metadata()` on
+the `NUL` device (38 passed, 1 failed, 4 ignored in that test binary).
+The real Job/pipes and admitted-session revoke tests passed. This was
+a **test observation failure**, not #352/#355 native-run acceptance.
+Commit `88dc28a8c9c13dbdff74359f02372d6665e3603e` removes only
+the unsupported metadata check. [CI #40507901498](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40507901498)
+and the later **final PR HEAD** must be checked independently, including
+each native workflow, before merging. The independent post-merge
 `push/main` is also required and not implied by a PR check.
 
 
