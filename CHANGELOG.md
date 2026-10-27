@@ -1,5 +1,25 @@
 # Changelog
 
+## 27 October 2026 — MCP owned read worker candidate #380
+
+Candidate #380 adds a live owned worker admission seam and routes Git reads
+through it without second admission or changes to sensitive-output checks.
+Two non-executing regressions cover transferred capacity beyond worker completion
+and denial of native authority without a TaskLease. Test-first
+[CI #40466543183](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466543183)
+failed compilation (E0599, absent interface); initial formatting failure
+[#40466491881](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466491881)
+is preserved. Implementation candidate `ba05382e353f401198dcb979f48701b8d442e05b` passed
+[CI #40466899740](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40466899740)
+SUCCESS 4/4 at attempt 1. Final-head and post-merge CI receipts are tracked in
+[PR #380](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/380).
+Baseline main `ebe753ee0ee3f8bead396170e272873dcaa35538` has independent
+[push CI #40365242899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40365242899)
+SUCCESS 4/4, attempt 1. No native launcher or termination proof; legacy runner
+and policy remain. #352/#355 RED; #317/#323 OPEN, Windows V1 NO-GO.
+[Owning contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md).
+
+
 ## Unreleased — passation inter-chat complète (26 octobre 2026)
 
 - Ajouter les références actives [Passation canonique Windows V1 du 26 octobre](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-26.md) et [prompt complet à copier](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-26.md) à AGENTS/AI_HANDOFF/PROJECT_CONTINUITY/GITHUB_HANDOFF/STATUS/ROADMAP. **Docs seulement** : aucun Rust, aucune politique, aucun workflow ni release.

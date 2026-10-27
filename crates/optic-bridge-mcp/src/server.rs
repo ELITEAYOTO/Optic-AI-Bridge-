@@ -9,9 +9,10 @@ use optic_bridge_policy::{PolicyDecision, PolicyEngine};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService,
     BlockingIoError, BlockingIoGovernor, BoundedFileSystem, Clock, EntryKind, FileSystemError,
-    GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, ProcessError, ProcessManager,
-    ReadAuthoritySet, RequestPermit, SessionRegistry, SessionRegistryError, TaskLeaseRegistry,
-    ToolProfileRegistry, TransportError, TransportGuard, TransportLimits,
+    GitIntegrationAuthoritySet, GitReadService, MutationAuthoritySet, OwnedSessionAdmissionPermit,
+    ProcessError, ProcessManager, ReadAuthoritySet, RequestPermit, SessionRegistry,
+    SessionRegistryError, TaskLeaseRegistry, ToolProfileRegistry, TransportError, TransportGuard,
+    TransportLimits,
 };
 use rmcp::{
     ErrorData, Json,
@@ -532,6 +533,22 @@ impl ReadonlyMcpServer {
         T: Send + 'static,
         F: FnOnce(&Self, &SessionGrant, &RequestPermit) -> Result<T, ErrorData> + Send + 'static,
     {
+        self.run_owned_admitted_read(move |server, admission, permit| {
+            operation(server, admission.grant(), &permit)
+        })
+        .await
+    }
+
+    /// Transfer the worker's original counted admission and transport permit.
+    /// A future native service must retain both through positive OS terminal
+    /// proof; this interface alone never authorizes or creates a process.
+    pub(crate) async fn run_owned_admitted_read<T, F>(&self, operation: F) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Self, OwnedSessionAdmissionPermit, RequestPermit) -> Result<T, ErrorData>
+            + Send
+            + 'static,
+    {
         let now = self.clock.now();
         let permit = self
             .transport_guard
@@ -550,9 +567,9 @@ impl ReadonlyMcpServer {
                 server.ensure_read_deadline(&permit)?;
                 let admission = server
                     .sessions
-                    .begin_admission(&server.session, server.clock.now())
+                    .begin_owned_admission(&server.session, server.clock.now())
                     .map_err(map_session_error)?;
-                operation(&server, admission.grant(), &permit)
+                operation(&server, admission, permit)
             }),
         )
         .await
@@ -1493,6 +1510,110 @@ mod tests {
                 fs::remove_dir_all(root).expect("cleanup");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn owned_read_worker_transfers_original_capacity_beyond_worker_completion() {
+        use optic_bridge_runtime::NativeGitReadOwnedPermits;
+
+        let root = workspace("owned-read-transfer");
+        let server = server(&root, &[Capability::GitRead]);
+        let owned = server
+            .run_owned_admitted_read(|_, admission, permit| {
+                Ok(NativeGitReadOwnedPermits::new(admission, permit))
+            })
+            .await
+            .expect("transfer without a second admission");
+        assert_eq!(server.transport_guard.active_requests(), 1);
+        let sessions = Arc::clone(&server.sessions);
+        let session = server.session.clone();
+        let revoke = tokio::task::spawn_blocking(move || sessions.revoke(&session));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server
+                .sessions
+                .get_active(&server.session, server.clock.now())
+                .is_ok()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("revoke published");
+        assert!(!revoke.is_finished(), "transferred admission still counted");
+        assert_eq!(server.transport_guard.active_requests(), 1);
+        // No native process exists in this fixture: dropping is safe here.
+        drop(owned);
+        tokio::time::timeout(Duration::from_secs(5), revoke)
+            .await
+            .expect("drain deadline")
+            .expect("revoke task")
+            .expect("revoke");
+        assert_eq!(server.transport_guard.active_requests(), 0);
+        assert_eq!(
+            server
+                .run_owned_admitted_read(|_, _, _| Ok(()))
+                .await
+                .expect_err("revoked session cannot reach operation")
+                .message,
+            "optic.session_inactive"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn owned_read_worker_cannot_upgrade_legacy_git_authority_to_native() {
+        use optic_bridge_runtime::{
+            NativeGitReadAdmissionError, NativeGitReadLeaseError, NativeGitReadOwnedPermits,
+            NativeGitReadTrustedContext, finish_owned_native_git_read_preflight,
+        };
+
+        let root = workspace("owned-read-deny-native");
+        let server = server(&root, &[Capability::GitRead]);
+        server
+            .run_owned_admitted_read(|server, admission, permit| {
+                let envelope = ActionEnvelope {
+                    action_id: ActionId::generate().expect("entropy"),
+                    session: server.session.clone(),
+                    task_lease: None,
+                    effect: Effect::GitRead,
+                    resources: ResourceBudget {
+                        timeout_ms: 100,
+                        output_bytes: 1024,
+                        memory_bytes: 4096,
+                        process_count: 1,
+                    },
+                    policy_epoch: admission.grant().policy_epoch,
+                };
+                let trusted = NativeGitReadTrustedContext {
+                    sessions: &server.sessions,
+                    trusted_session: &server.session,
+                    task_leases: &server.task_leases,
+                    policy: &server.policy,
+                };
+                let result = finish_owned_native_git_read_preflight(
+                    &trusted,
+                    NativeGitReadOwnedPermits::new(admission, permit),
+                    &envelope,
+                    "unused-no-lease",
+                    "unused-no-lease",
+                    server.clock.now(),
+                );
+                assert!(matches!(
+                    result,
+                    Err(NativeGitReadAdmissionError::Preflight(
+                        NativeGitReadLeaseError::LeaseRequired
+                    ))
+                ));
+                Ok(())
+            })
+            .await
+            .expect("negative preflight fixture");
+        assert_eq!(server.transport_guard.active_requests(), 0);
+        server
+            .sessions
+            .revoke(&server.session)
+            .expect("no leaked admission");
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
