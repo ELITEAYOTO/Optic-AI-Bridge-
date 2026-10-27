@@ -1495,7 +1495,6 @@ mod tests {
         }
     }
 
-
     #[tokio::test]
     async fn owned_read_worker_transfers_original_capacity_beyond_worker_completion() {
         use optic_bridge_runtime::NativeGitReadOwnedPermits;
@@ -1593,7 +1592,10 @@ mod tests {
             .await
             .expect("negative preflight fixture");
         assert_eq!(server.transport_guard.active_requests(), 0);
-        server.sessions.revoke(&server.session).expect("no leaked admission");
+        server
+            .sessions
+            .revoke(&server.session)
+            .expect("no leaked admission");
         fs::remove_dir_all(root).expect("cleanup");
     }
 
