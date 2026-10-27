@@ -267,7 +267,10 @@ impl PrecreatedNativeGitStatusCustody {
         if &prepared.envelope.session != trusted.trusted_session {
             return Err(NativeGitStatusSnapshotError::WrongTrustedSession);
         }
-        if !prepared.admission.belongs_to_session_registry(trusted.sessions) {
+        if !prepared
+            .admission
+            .belongs_to_session_registry(trusted.sessions)
+        {
             return Err(NativeGitStatusSnapshotError::ForeignSessionRegistry);
         }
         let repository = prepared
@@ -287,7 +290,10 @@ impl PrecreatedNativeGitStatusCustody {
             executable,
             now,
         )?;
-        if !prepared.admission.matches_original_lease_registration(&observed) {
+        if !prepared
+            .admission
+            .matches_original_lease_registration(&observed)
+        {
             return Err(NativeGitStatusSnapshotError::LeaseGenerationMismatch);
         }
         if self.is_stop_required_at(now) {
