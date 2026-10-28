@@ -994,10 +994,10 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
         let mut direct_closer = None;
         if lifecycle_close {
             assert!(
-            registry
-                .publish_revocation_before_drain(&handle)
-                .expect("lifecycle close publishes original stop")
-        );
+                registry
+                    .publish_revocation_before_drain(&handle)
+                    .expect("lifecycle close publishes original stop")
+            );
         } else {
             let (done_tx, done_rx) = mpsc::sync_channel(1);
             let closer = thread::spawn(move || {
@@ -1032,7 +1032,10 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
         ));
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(
-            manager.result(&fixture.envelope.session, &job).unwrap().status,
+            manager
+                .result(&fixture.envelope.session, &job)
+                .unwrap()
+                .status,
             crate::ProcessStatus::Failed
         );
         if let Some((closer, done_rx)) = direct_closer {
