@@ -596,7 +596,9 @@ fn descendant_keeps_both_pipes_open_after_root_exit_until_job_termination() -> R
         .join("v1.0")
         .join("powershell.exe");
     if !executable.is_file() || !descendant.is_file() {
-        return Err(Error::other("required fixed Windows system image unavailable"));
+        return Err(Error::other(
+            "required fixed Windows system image unavailable",
+        ));
     }
     let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
     let working_directory: Vec<u16> = system_directory
@@ -714,8 +716,7 @@ fn descendant_keeps_both_pipes_open_after_root_exit_until_job_termination() -> R
     );
     let mut exit_code = u32::MAX;
     // SAFETY: the root handle is signaled, live and the output is writable.
-    unsafe { GetExitCodeProcess(process.0.hProcess, &mut exit_code) }
-        .map_err(Error::other)?;
+    unsafe { GetExitCodeProcess(process.0.hProcess, &mut exit_code) }.map_err(Error::other)?;
     assert_eq!(exit_code, 0, "the fixed START root must exit successfully");
 
     // Demonstrate the bug's essential distinction: a successful, signaled
