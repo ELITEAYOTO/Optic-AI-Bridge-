@@ -15,11 +15,10 @@ use windows::{
     Win32::{
         Foundation::{BOOL, HANDLE, WAIT_OBJECT_0},
         System::Threading::{
-            CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW,
-            DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-            InitializeProcThreadAttributeList, IsProcessInJob, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_JOB_LIST, STARTUPINFOEXW,
-            TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
+            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList, IsProcessInJob,
+            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+            STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
         },
     },
     core::{PCWSTR, PWSTR},
@@ -42,7 +41,9 @@ impl AttributeList {
         // SAFETY: aligned owned storage has the size requested by Windows.
         unsafe {
             InitializeProcThreadAttributeList(
-                Some(LPPROC_THREAD_ATTRIBUTE_LIST(storage.as_mut_ptr().cast::<c_void>())),
+                Some(LPPROC_THREAD_ATTRIBUTE_LIST(
+                    storage.as_mut_ptr().cast::<c_void>(),
+                )),
                 1,
                 None,
                 &mut bytes,
@@ -142,7 +143,10 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
     // SAFETY: the suspended root and the owning Job remain open.
     unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
         .map_err(Error::other)?;
-    assert!(belongs.as_bool(), "root must already belong to the kernel Job");
+    assert!(
+        belongs.as_bool(),
+        "root must already belong to the kernel Job"
+    );
     assert_eq!(job.active_processes()?, 1);
 
     // The test never resumes the root. A failed or delayed kernel termination
@@ -159,7 +163,9 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
             break;
         }
         if Instant::now() >= deadline {
-            return Err(Error::other("kernel Job remained nonempty after termination"));
+            return Err(Error::other(
+                "kernel Job remained nonempty after termination",
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
