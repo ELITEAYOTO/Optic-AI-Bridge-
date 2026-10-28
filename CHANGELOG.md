@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 28 octobre 2026 : recherche native Windows #393 (test uniquement)
+
+- [PR #393 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/393) : nouveau test Windows de l'association d'un processus système suspendu au Job Object **au moment de `CreateProcessW`** via `PROC_THREAD_ATTRIBUTE_JOB_LIST`. Il valide l'appartenance noyau immédiatement après création puis root terminé et Job vide après arrêt ; aucun lancement GitRead réel, aucune activation MCP ni modification des politiques.
+- HEAD testé `14e73802b853c57b67c0b00bf169af6fd5a47793` ; squash `c81c1f5caf937695b3bbd9439f508ff9cb28f6f4`, arbres égaux `12c27901f8ec3f6dd4b8f6abfbfae44aaa16f987`. [CI PR #40649262906](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649262906) 4/4 SUCCESS tentative 1 ; [native lifecycle #40649262958](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649262958), [compilation Rust #40649262919](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649262919), [préparation #40649262961](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649262961) SUCCESS. CI indépendante [#40649847690](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649847690) en cours lors de la préparation de cette entrée ; confirmer 4/4 avant fusion documentaire.
+- Échecs antérieurs distincts : `cargo fmt` [#40648989661](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40648989661) puis import `windows-rs` E0432 [#40649081510](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649081510), corrigés avant validation ; pas des reproductions comportementales de #317.
+- #317/#323 restent ouvertes, #352/#355 exigences d'acceptation non remplies, Windows V1 NO-GO.
+
 ## Unreleased — vérification GitRead de la garde des répertoires parents (#391) et passation (27 octobre 2026)
 
 - [PR #391 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/391) ajoute un **test Windows uniquement** : lorsqu’un pin GitRead tient la racine, le renommage de son répertoire parent est déjà refusé ; après `drop`, il redevient possible. Aucun changement de code de production, aucun Git lancé, aucune nouvelle autorité.
