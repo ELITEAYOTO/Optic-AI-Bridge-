@@ -319,7 +319,10 @@ fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<
     // SAFETY: both OS handles remain valid for the lifetime of this check.
     unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
         .map_err(Error::other)?;
-    assert!(belongs.as_bool(), "the root must be in the Job before resume");
+    assert!(
+        belongs.as_bool(),
+        "the root must be in the Job before resume"
+    );
     assert_eq!(job.active_processes()?, 1);
 
     // SAFETY: a live primary thread handle is owned by this fixture; resume
@@ -328,7 +331,10 @@ fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<
     if previous == u32::MAX {
         return Err(Error::last_os_error());
     }
-    assert!(previous > 0, "the test must actually resume a suspended root");
+    assert!(
+        previous > 0,
+        "the test must actually resume a suspended root"
+    );
 
     // A timeout is a test failure, not a fabricated exit or empty-Job proof.
     // SuspendedFixtureProcess::drop still requests a bounded root termination.
@@ -350,7 +356,9 @@ fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<
             break;
         }
         if Instant::now() >= deadline {
-            return Err(Error::other("Job remained nonempty after resumed root exit"));
+            return Err(Error::other(
+                "Job remained nonempty after resumed root exit",
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
