@@ -1051,3 +1051,136 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn lease_only_commit_preserves_original_stop_after_tasklease_id_reuse() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original admission and lease");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("real registered private capacity");
+    let job = registered.job_id();
+    let ownership = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("real empty Job, pinned executable and repository");
+    let session_only = ownership
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("session-only authority receipt");
+    let both = session_only
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("separate original TaskLease receipt");
+    assert_eq!(both.job_id(), job);
+    assert!(!both.is_stop_required_at(MonotonicTime::from_millis(12)));
+    assert_eq!(both.native_active_processes().expect("empty kernel Job"), 0);
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .expect("registered quota"),
+        1
+    );
+
+    // Lease revocation is independent from the active session. Its original
+    // stop must stay visible even after the same ID is physically reused.
+    assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+    assert!(both.is_stop_required_at(MonotonicTime::from_millis(12)));
+    assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+    fixture
+        .leases
+        .register(fixture.lease.clone())
+        .expect("new registration reuses the same opaque ID");
+    assert!(fixture
+        .sessions
+        .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12))
+        .is_ok());
+    let stays_stopped = both.is_stop_required_at(MonotonicTime::from_millis(12));
+    let still_empty = both.native_active_processes().expect("kernel Job") == 0;
+    let still_owned = transport.active_requests() == 1;
+    drop(both);
+    assert!(stays_stopped, "replacement lease must not revive old owner");
+    assert!(still_empty, "no process may be created by lease receipts");
+    assert!(still_owned, "original admission survives TaskLease removal");
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        crate::ProcessStatus::Failed,
+        "no child ever existed, so no native completion is claimed"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn lease_only_commit_rejects_revoke_after_session_commit_without_spawn() {
+    for revoke_session in [false, true] {
+        let fixture = Fixture::new();
+        let transport = guard(1_000);
+        let manager = crate::ProcessManager::new(
+            &fixture.repository,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .expect("synthetic manager");
+        let prepared = fixture
+            .service()
+            .prepare_native_status(
+                &fixture.trusted(),
+                fixture.owned(&transport),
+                &fixture.envelope,
+                MonotonicTime::from_millis(10),
+            )
+            .expect("original valid session and TaskLease");
+        let registered = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+            .expect("registered private capacity");
+        let job = registered.job_id();
+        let session_only = registered
+            .precreate_native_custody(MonotonicTime::from_millis(11))
+            .expect("kernel native custody")
+            .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .expect("original session commitment");
+        assert_eq!(session_only.native_active_processes().unwrap(), 0);
+        if revoke_session {
+            assert_eq!(
+                fixture
+                    .leases
+                    .revoke_session(&fixture.envelope.session)
+                    .unwrap(),
+                1
+            );
+        } else {
+            assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+        }
+        assert!(session_only.is_stop_required_at(MonotonicTime::from_millis(12)));
+        assert!(matches!(
+            session_only.commit_original_lease(
+                &fixture.trusted(),
+                MonotonicTime::from_millis(12)
+            ),
+            Err(crate::NativeGitStatusSnapshotError::StopRequired)
+                | Err(crate::NativeGitStatusSnapshotError::Lease(_))
+                | Err(crate::NativeGitStatusSnapshotError::LeaseRecord(_))
+        ));
+        assert_eq!(transport.active_requests(), 0);
+        assert_eq!(
+            manager.result(&fixture.envelope.session, &job).unwrap().status,
+            crate::ProcessStatus::Failed,
+            "rejected no-child owner cleans up original capacity"
+        );
+    }
+}
