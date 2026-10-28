@@ -56,7 +56,8 @@ impl NativeGitReadLeaseWitness {
         registry: &TaskLeaseRegistry,
         session: &SessionHandle,
         now: MonotonicTime,
-    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError>
+    {
         registry.commit_original_native_read_lease(
             &self.lease_id,
             &self.revocation,
@@ -228,7 +229,8 @@ impl NativeGitReadAdmittedPreflight {
         registry: &TaskLeaseRegistry,
         session: &SessionHandle,
         now: MonotonicTime,
-    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError>
+    {
         self.lease_witness
             .commit_original_lease_under_revoke_lock(registry, session, now)
     }
