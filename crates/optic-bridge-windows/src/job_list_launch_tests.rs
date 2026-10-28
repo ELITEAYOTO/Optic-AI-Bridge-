@@ -172,3 +172,81 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn invalid_target_with_job_list_leaves_no_native_process() -> Result<()> {
+    // Parent directory is an existing Windows system directory; only the
+    // deliberately nonexistent executable is invalid. If somebody created it,
+    // fail before attempting to launch anything.
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::other("SystemRoot unavailable to hosted Windows test"))?;
+    let missing = PathBuf::from(system_root)
+        .join("System32")
+        .join("__optic_issue317_missing_createprocess_probe_2026__.exe");
+    if missing.exists() {
+        return Err(Error::other("negative fixture unexpectedly exists"));
+    }
+    let application: Vec<u16> = missing.as_os_str().encode_wide().chain([0]).collect();
+    let mut command_line = application.clone();
+
+    let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
+    assert_eq!(job.active_processes()?, 0);
+    let handles = [job.raw()];
+    let mut attributes = AttributeList::new()?;
+    // SAFETY: the live Job HANDLE array and aligned attribute list remain
+    // valid throughout CreateProcessW, including all failure paths.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(handles.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.lpAttributeList = attributes.raw();
+    let mut info = PROCESS_INFORMATION::default();
+
+    // SAFETY: the wide strings and STARTUPINFOEX backing storage remain live.
+    // This test never requests handle inheritance or a resumed process.
+    let attempted = unsafe {
+        CreateProcessW(
+            PCWSTR(application.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            false,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+            None,
+            PCWSTR::null(),
+            &startup.StartupInfo,
+            &mut info,
+        )
+    };
+    if attempted.is_ok() {
+        // Unexpected success must never leave a suspended synthetic child
+        // behind, even when this regression fails.
+        let _unexpected = SuspendedFixtureProcess(info);
+        return Err(Error::other(
+            "nonexistent executable unexpectedly created a child",
+        ));
+    }
+    let failure = attempted.expect_err("invalid target must fail");
+    assert_eq!(
+        failure.code().0 as u32,
+        0x8007_0002,
+        "expected Win32 ERROR_FILE_NOT_FOUND, not an attribute, Job or access error: {failure}"
+    );
+    assert_eq!(
+        job.active_processes()?,
+        0,
+        "failed CreateProcessW must not leave any process in the native Job"
+    );
+    Ok(())
+}
