@@ -1189,3 +1189,192 @@ fn lease_only_commit_rejects_revoke_after_session_commit_without_spawn() {
         );
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn session_close_between_original_session_and_lease_receipts_denies_native_custody() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("real original session admission and lease");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("counted private Job");
+    let job = registered.job_id();
+    let session_only = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("real empty Job and pinned targets")
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("original session receipt");
+
+    assert_eq!(session_only.native_active_processes().unwrap(), 0);
+    assert_eq!(transport.active_requests(), 1);
+    // Lifecycle close must publish session stop immediately, even though
+    // original admission and private Job ownership remain counted.
+    assert!(
+        fixture
+            .sessions
+            .publish_revocation_before_drain(&fixture.envelope.session)
+            .expect("lifecycle publishes original stop")
+    );
+    assert!(session_only.is_stop_required_at(MonotonicTime::from_millis(12)));
+    // The independent TaskLease registry is still active. Its availability
+    // cannot override the earlier original session close.
+    assert!(
+        fixture
+            .leases
+            .get_active(
+                &fixture.lease.id,
+                &fixture.envelope.session,
+                MonotonicTime::from_millis(12),
+            )
+            .is_ok()
+    );
+    let stopped =
+        session_only.commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12));
+    assert!(matches!(
+        stopped,
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+            | Err(crate::NativeGitStatusSnapshotError::Session(
+                SessionRegistryError::Revoked
+            ))
+    ));
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed,
+        "aborted no-child owner cannot report process termination"
+    );
+    assert!(!fixture.sessions.revoke(&fixture.envelope.session).unwrap());
+}
+
+#[cfg(windows)]
+#[test]
+fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
+    use std::{sync::mpsc, thread, time::Instant};
+
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original session and lease");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("original private Job capacity");
+    let job = registered.job_id();
+    let dual = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("real empty kernel Job")
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("original session commitment")
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("independent original lease commitment");
+    assert_eq!(dual.job_id(), job);
+    assert!(!dual.is_stop_required_at(MonotonicTime::from_millis(12)));
+    assert_eq!(dual.native_active_processes().unwrap(), 0);
+    assert_eq!(transport.active_requests(), 1);
+
+    let registry = Arc::clone(&fixture.sessions);
+    let handle = fixture.envelope.session.clone();
+    let (tx, rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        tx.send(registry.revoke(&handle))
+            .expect("deliver direct revoke outcome");
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let observation = fixture
+            .sessions
+            .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12));
+        if matches!(observation, Err(SessionRegistryError::Revoked)) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "direct session close never published"
+        );
+        thread::yield_now();
+    }
+
+    let stopped = dual.is_stop_required_at(MonotonicTime::from_millis(12));
+    let job_empty = dual.native_active_processes().expect("real empty Job") == 0;
+    let permit_counted = transport.active_requests() == 1;
+    let job_counted = manager
+        .active_session_job_count(&fixture.envelope.session)
+        .expect("original registered job count")
+        == 1;
+    let revoke_draining = matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+    // The second receipt is NOT a global permission: the independent TaskLease
+    // can still be active while the original session has been closed.
+    let lease_still_active = fixture
+        .leases
+        .get_active(
+            &fixture.lease.id,
+            &fixture.envelope.session,
+            MonotonicTime::from_millis(12),
+        )
+        .is_ok();
+
+    // Always release the owner BEFORE assertions: the synchronous revocation
+    // is required to drain its original permit and must not hang on a panic.
+    drop(dual);
+    let revoked = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("session close completes after owner drop")
+        .expect("direct session revoke");
+    closer.join().expect("join direct revoker");
+
+    assert!(revoked);
+    assert!(
+        stopped,
+        "first-generation stop remains visible after both commits"
+    );
+    assert!(job_empty, "receipts never create a child");
+    assert!(
+        permit_counted,
+        "original transport admission retained to drop"
+    );
+    assert!(job_counted, "registered Job capacity retained to drop");
+    assert!(revoke_draining, "close is not native process quiescence");
+    assert!(
+        lease_still_active,
+        "lease authority cannot revive closed session"
+    );
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed,
+        "no-child cleanup is not proof of termination of a real GitRead"
+    );
+}
