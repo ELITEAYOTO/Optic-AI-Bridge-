@@ -167,6 +167,41 @@ impl SessionRegistry {
         Ok((grant, revocation_watch))
     }
 
+    /// Read the exact owner-held session generation under the same mutex as
+    /// direct `revoke` and lifecycle `publish_revocation_before_drain`.
+    ///
+    /// This is an *inert* observation: the guard is released on return. An
+    /// affirmative result is NOT a commit ticket or CreateProcess permission.
+    /// TaskLease revocation, policy epochs and native stop remain independent.
+    #[cfg(windows)]
+    pub(crate) fn observe_original_owned_admission_under_close_lock(
+        &self,
+        admitted: &OwnedSessionAdmissionPermit,
+        now: MonotonicTime,
+    ) -> Result<(), SessionRegistryError> {
+        if !std::ptr::eq(self, admitted.registry.as_ref()) {
+            return Err(SessionRegistryError::ForeignAdmissionRegistry);
+        }
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&admitted.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        if !Arc::ptr_eq(&record.revocation_signal, &admitted.revocation_watch.signal) {
+            return Err(SessionRegistryError::AdmissionGenerationMismatch);
+        }
+        if record.revoked {
+            return Err(SessionRegistryError::Revoked);
+        }
+        // Renewal must not extend an already-admitted owner's time horizon.
+        if record.grant.is_expired_at(now) || admitted.grant.is_expired_at(now) {
+            return Err(SessionRegistryError::Expired);
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_renewal(
         &self,
         handle: &SessionHandle,
@@ -408,6 +443,12 @@ pub enum SessionRegistryError {
     Revoked,
     #[error("session has expired")]
     Expired,
+    #[cfg(windows)]
+    #[error("owned admission originated in another session registry")]
+    ForeignAdmissionRegistry,
+    #[cfg(windows)]
+    #[error("owned admission generation differs from the current session record")]
+    AdmissionGenerationMismatch,
     #[error("session admission counter reached its representable limit")]
     AdmissionCounterOverflow,
     #[error("session still has admitted effects in flight")]

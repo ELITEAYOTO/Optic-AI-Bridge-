@@ -592,3 +592,111 @@ fn owned_admission_rejects_expired_revoked_and_unknown_sessions() {
             .unwrap()
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn original_owner_observation_orders_with_direct_and_lifecycle_close() {
+    for lifecycle in [false, true] {
+        let registry = Arc::new(SessionRegistry::new());
+        let original = grant();
+        let other = grant();
+        registry.register(original.clone()).unwrap();
+        registry.register(other.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let owner = registry
+            .begin_owned_admission(&original.handle, now)
+            .unwrap();
+        let other_owner = registry.begin_owned_admission(&other.handle, now).unwrap();
+        assert!(
+            registry
+                .observe_original_owned_admission_under_close_lock(&owner, now)
+                .is_ok()
+        );
+
+        let closer_registry = Arc::clone(&registry);
+        let handle = original.handle.clone();
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let closer = thread::spawn(move || {
+            let result = if lifecycle {
+                let published = closer_registry
+                    .publish_revocation_before_drain(&handle)
+                    .unwrap();
+                let drained = closer_registry.revoke(&handle).unwrap();
+                (published, drained)
+            } else {
+                let published_and_drained = closer_registry.revoke(&handle).unwrap();
+                (published_and_drained, false)
+            };
+            done_tx.send(result).unwrap();
+        });
+
+        observe_closed(&registry, &original.handle);
+        let closed = registry.observe_original_owned_admission_under_close_lock(&owner, now);
+        let other_still_valid =
+            registry.observe_original_owned_admission_under_close_lock(&other_owner, now);
+        let waiting_for_original_owner =
+            matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let original_watch_stopped = owner.stop_watch().is_stop_required_at(now);
+        // Release the genuine admission BEFORE any assertion to avoid leaving
+        // the synchronous revoker blocked if a regression is found.
+        drop(owner);
+        let result = done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        closer.join().unwrap();
+
+        assert_eq!(closed, Err(SessionRegistryError::Revoked));
+        assert!(
+            other_still_valid.is_ok(),
+            "another session remains independent"
+        );
+        assert!(
+            original_watch_stopped,
+            "close must reach the old generation"
+        );
+        assert!(
+            waiting_for_original_owner,
+            "close is not admission drainage"
+        );
+        assert_eq!(result, (true, false));
+        drop(other_owner);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn original_owner_observation_rejects_foreign_registry_and_renewed_deadline() {
+    let registry = Arc::new(SessionRegistry::new());
+    let foreign = Arc::new(SessionRegistry::new());
+    let original = grant(); // Original deadline: 100.
+    registry.register(original.clone()).unwrap();
+    foreign.register(original.clone()).unwrap();
+    let now = MonotonicTime::from_millis(1);
+    let owner = registry
+        .begin_owned_admission(&original.handle, now)
+        .unwrap();
+
+    assert_eq!(
+        foreign.observe_original_owned_admission_under_close_lock(&owner, now),
+        Err(SessionRegistryError::ForeignAdmissionRegistry),
+        "identical opaque session handle does not authorize a foreign registry"
+    );
+    registry
+        .renew_active(&original.handle, now, MonotonicTime::from_millis(200))
+        .unwrap();
+    assert!(
+        registry
+            .observe_original_owned_admission_under_close_lock(
+                &owner,
+                MonotonicTime::from_millis(99),
+            )
+            .is_ok()
+    );
+    assert_eq!(
+        registry.observe_original_owned_admission_under_close_lock(
+            &owner,
+            MonotonicTime::from_millis(100),
+        ),
+        Err(SessionRegistryError::Expired),
+        "session renewal must never extend the original owner's deadline"
+    );
+    drop(owner);
+}
