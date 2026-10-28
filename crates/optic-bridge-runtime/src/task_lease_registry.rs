@@ -65,6 +65,24 @@ impl TaskLeaseRevocationWatch {
     }
 }
 
+/// Non-cloneable observation of the *original* TaskLease revocation order,
+/// with its immutable admitted deadline. No process launch authority.
+#[cfg(windows)]
+#[must_use = "retain the original TaskLease stop watch through owner cleanup"]
+#[allow(dead_code)] // Used only by the inert native owner stage.
+pub(crate) struct TaskLeaseNativeOwnerCommit {
+    original_stop: TaskLeaseRevocationWatch,
+    original_expires_at: MonotonicTime,
+}
+
+#[cfg(windows)]
+#[allow(dead_code)] // No production native guardian consumes the receipt yet.
+impl TaskLeaseNativeOwnerCommit {
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.original_stop.is_revoked() || now >= self.original_expires_at
+    }
+}
+
 impl TaskLeaseRegistry {
     #[must_use]
     pub fn new() -> Self {
@@ -245,6 +263,51 @@ impl TaskLeaseRegistry {
         Ok(changed)
     }
 
+    /// Mint a *lease-only* commit observation for a previously registered,
+    /// non-executing native owner, ordered under the SAME mutex as direct
+    /// `revoke`, `revoke_session` and `remove_session`.
+    ///
+    /// The original witness's Arc identity is mandatory. An opaque TaskLeaseId
+    /// can be reused after revocation and removal, but may never revive an
+    /// older owner. This critical section does NO file IO, native calls,
+    /// session locking or policy callbacks.
+    ///
+    /// The result is NOT a launch permission: session close and policy
+    /// authorities are independent; their observations are not atomic.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Inert research stage; no live native launch consumes it.
+    pub(crate) fn commit_original_native_read_lease(
+        &self,
+        id: &TaskLeaseId,
+        original: &TaskLeaseRevocationWatch,
+        original_expires_at: MonotonicTime,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+        let leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
+        if !Arc::ptr_eq(&record.revocation_signal, &original.signal) {
+            return Err(TaskLeaseRegistryError::RegistrationGenerationMismatch);
+        }
+        if record.revoked {
+            return Err(TaskLeaseRegistryError::Revoked);
+        }
+        if &record.lease.session != session {
+            return Err(TaskLeaseRegistryError::WrongSession);
+        }
+        // Renewal can extend a registry entry, never the retained owner.
+        if record.lease.is_expired_at(now) || now >= original_expires_at {
+            return Err(TaskLeaseRegistryError::Expired);
+        }
+        Ok(TaskLeaseNativeOwnerCommit {
+            original_stop: original.clone(),
+            original_expires_at,
+        })
+    }
+
     /// Cheap lifetime observation only. Callers must already have verified and
     /// pinned executable authority before launch; this never replaces admission.
     #[cfg(windows)]
@@ -386,6 +449,9 @@ pub enum TaskLeaseRegistryError {
     WrongSession,
     #[error("task lease has expired")]
     Expired,
+    #[cfg(windows)]
+    #[error("native owner task lease generation differs from the registered original")]
+    RegistrationGenerationMismatch,
     #[error("process executable identity changed since authorization")]
     ProcessIdentityChanged,
     #[error("process executable identity is unavailable for this lease")]
