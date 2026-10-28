@@ -1378,3 +1378,164 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
         "no-child cleanup is not proof of termination of a real GitRead"
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn original_watchdog_observes_session_lease_generation_and_job_stops_without_child() {
+    for source in ["session", "lease-reused-id", "job"] {
+        let mut fixture = Fixture::new();
+        // Keep explicit revocation distinct from deadline expiry in this test.
+        fixture.envelope.resources.timeout_ms = 5_000;
+        fixture.lease.resource_ceiling.timeout_ms = 5_000;
+        assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+        assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+        fixture.leases.register(fixture.lease.clone()).unwrap();
+        let transport = guard(10_000);
+        let manager = crate::ProcessManager::new(
+            &fixture.repository,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .unwrap();
+        let prepared = fixture
+            .service()
+            .prepare_native_status(
+                &fixture.trusted(),
+                fixture.owned(&transport),
+                &fixture.envelope,
+                MonotonicTime::from_millis(10),
+            )
+            .unwrap();
+        let registered = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+            .unwrap();
+        let job = registered.job_id();
+        let mut owner = registered
+            .precreate_native_custody(MonotonicTime::from_millis(11))
+            .unwrap()
+            .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap()
+            .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap();
+        owner
+            .arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap();
+        assert!(matches!(
+            owner.arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12)),
+            Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
+        ));
+        match source {
+            "session" => {
+                fixture
+                    .sessions
+                    .publish_revocation_before_drain(&fixture.envelope.session)
+                    .unwrap();
+            }
+            "lease-reused-id" => {
+                assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+                assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+                fixture.leases.register(fixture.lease.clone()).unwrap();
+                assert!(
+                    fixture
+                        .leases
+                        .get_active(
+                            &fixture.lease.id,
+                            &fixture.envelope.session,
+                            MonotonicTime::from_millis(12),
+                        )
+                        .is_ok()
+                );
+            }
+            "job" => {
+                assert!(manager.stop(&fixture.envelope.session, &job).unwrap());
+            }
+            _ => unreachable!(),
+        }
+        let bound = std::time::Instant::now() + Duration::from_secs(2);
+        while !owner.watchdog_stop_observed() && std::time::Instant::now() < bound {
+            std::thread::yield_now();
+        }
+        let observed = owner.watchdog_stop_observed();
+        let expired = owner.watchdog_deadline_expired();
+        let empty = owner.native_active_processes().unwrap() == 0;
+        assert_eq!(transport.active_requests(), 1);
+        assert_eq!(
+            manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+            1
+        );
+        drop(owner);
+        assert!(observed, "independent worker must observe original {source}");
+        assert!(
+            !expired,
+            "revocation proof must precede the five-second deadline"
+        );
+        assert!(empty, "no child is created by watchdog wiring");
+        assert_eq!(transport.active_requests(), 0);
+        assert_eq!(
+            manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+            0
+        );
+        assert_eq!(
+            manager.result(&fixture.envelope.session, &job).unwrap().status,
+            crate::ProcessStatus::Failed
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizon() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .unwrap();
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap();
+    let job = registered.job_id();
+    let mut owner = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    fixture
+        .sessions
+        .renew_active(
+            &fixture.envelope.session,
+            MonotonicTime::from_millis(12),
+            MonotonicTime::from_millis(20_000),
+        )
+        .unwrap();
+    // Session renewal and a stale logical observation cannot restart the horizon.
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(matches!(
+        owner.arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12)),
+        Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
+    ));
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+        0
+    );
+    assert_eq!(
+        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        crate::ProcessStatus::Failed
+    );
+}

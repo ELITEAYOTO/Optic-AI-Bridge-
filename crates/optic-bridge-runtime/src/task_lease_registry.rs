@@ -49,6 +49,12 @@ pub(crate) struct TaskLeaseRevocationWatch {
 }
 
 impl TaskLeaseRevocationWatch {
+    /// Retain the exact original registration; no lookup by reusable public ID.
+    #[cfg(windows)]
+    pub(crate) fn native_stop_signal(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.signal)
+    }
+
     /// Compare the actual retained registry generation, not an opaque lease ID
     /// that could be reused by a new or foreign registry entry. This is a
     /// same-record *observation*, never process-creation authority.

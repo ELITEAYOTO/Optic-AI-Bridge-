@@ -19,6 +19,10 @@ use crate::{
 /// registered guardian must retain it through real terminal OS/pipe proof.
 #[must_use = "native preparation must remain owned until proven terminal"]
 pub struct PreparedNativeGitStatus {
+    // Conservative wall-clock anchor captured BEFORE preparation work. Never
+    // recompute it at Job creation, commitment, renewal or watchdog arm.
+    #[cfg(windows)]
+    watchdog_until: std::time::Instant,
     pub(crate) command: HardenedCommandSpec,
     pub(crate) admission: NativeGitReadAdmittedPreflight,
     pub(crate) envelope: ActionEnvelope,
@@ -93,6 +97,8 @@ impl GitReadService {
         envelope: &ActionEnvelope,
         now: MonotonicTime,
     ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
+        #[cfg(windows)]
+        let preparation_started = std::time::Instant::now();
         let command = self.status_command_spec(envelope.resources.output_bytes)?;
         let repository = command
             .cwd
@@ -105,7 +111,18 @@ impl GitReadService {
         let admission = finish_owned_native_git_read_preflight(
             trusted, owned, envelope, repository, executable, now,
         )?;
+        #[cfg(windows)]
+        let watchdog_until = preparation_started
+            .checked_add(std::time::Duration::from_millis(
+                admission
+                    .deadline()
+                    .as_millis()
+                    .saturating_sub(now.as_millis()),
+            ))
+            .ok_or(NativeGitReadAdmissionError::StopRequired)?;
         Ok(PreparedNativeGitStatus {
+            #[cfg(windows)]
+            watchdog_until,
             command,
             admission,
             envelope: envelope.clone(),
@@ -427,6 +444,42 @@ impl LeaseObservedNativeGitStatusCustody {
         self.session_owner.job_id()
     }
 
+    /// Arm once using ONLY retained original authorities and the original
+    /// absolute horizon. These independent receipts are not a launch fence.
+    /// No registry lock is held while the kernel watchdog is created.
+    pub(crate) fn arm_original_watchdog(
+        &mut self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        now: MonotonicTime,
+    ) -> Result<(), NativeGitStatusSnapshotError> {
+        self.session_owner
+            .unstarted
+            .observe_original_prelaunch_snapshot(trusted, now)?;
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        let unstarted = &mut self.session_owner.unstarted;
+        let until = unstarted.registered.prepared.watchdog_until;
+        let mut stops = unstarted.registered.prepared.admission.native_stop_signals();
+        stops.push(unstarted.registered.record.stop_signal());
+        unstarted.native.arm_watchdog_until(until, stops)?;
+        // Revocation racing arm remains attached to the independent worker.
+        // Failure is still no-child custody; callers must dispose it.
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn watchdog_stop_observed(&self) -> bool {
+        self.session_owner.unstarted.native.watchdog_stop_observed()
+    }
+
+    pub(crate) fn watchdog_deadline_expired(&self) -> bool {
+        self.session_owner.unstarted.native.watchdog_deadline_expired()
+    }
+
+
     pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
         self.session_owner.is_stop_required_at(now) || self.lease_commit.is_stop_required_at(now)
     }
@@ -441,6 +494,8 @@ impl LeaseObservedNativeGitStatusCustody {
 #[cfg(windows)]
 #[derive(Debug, Error)]
 pub enum NativeGitStatusSnapshotError {
+    #[error("native watchdog could not be armed: {0}")]
+    Watchdog(#[from] std::io::Error),
     #[error("original native Git status admission is revoked or expired")]
     StopRequired,
     #[error("prelaunch snapshot requires original trusted session")]

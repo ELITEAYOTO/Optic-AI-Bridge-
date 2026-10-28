@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## 28 October 2026 — original-authority watchdog wiring (candidate)
+
+Based on verified main `2b96a31ff4a5dc5368e88dad380795af76b529e2`, independent CI [#40685801858](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40685801858) completed/success, four jobs checked individually. The new non-executing owner stage arms #412 from retained original session, TaskLease-generation and Job stop signals only. No MCP-supplied flags or renewed registry lookup selects these authorities. An absolute Instant horizon is conservatively anchored **before** service preparation from the earliest captured action/transport/session/lease deadline and is never recomputed at arm; expired and repeated arms fail closed.
+
+Hosted validation is pending for this candidate. New Windows tests cover independent original session/lease-ID-reuse/Job cancellation, expiry before arm after session renewal, retained quota/transport ownership and no-child cleanup. No root exists: worker-stop observation is **not** successful termination, Job-empty/pipe EOF receipt or a launch fence. No host/policy stop issuer has been added; these and the cross-registry create/resume authority remain mandatory future work. Live MCP GitRead still uses HardenedCommandRunner. **#323 OPEN, Windows V1 NO-GO; no release.**
+
+Local recovery disk: outside this GitHub-only task scope — not inspected or verified. No local project build/test, installer, server, user-project access, Desktop/REL or self-hosted runner is used.
+
+
 ## 28 octobre 2026 — jalon #412 : watchdog natif précréé, V1 toujours NO-GO
 
 **État vérifié de `main` avant la présente PR documentaire :** `f773ab0860f12bdaa7c48baa1f358d64ad219d1c`. La PR technique [#412](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/412), HEAD exact `4a1a3f1aa7bf50ab0388c1f3e17935e894930400`, est fusionnée. Sa [CI de PR #40682603293](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40682603293) et la [CI indépendante de `main` #40683212714](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40683212714) ont chacune fini **SUCCESS, 4/4 jobs** au SHA correspondant. Le runner Windows de PR (job `122796825413`) affiche `test job::precreated_native_read_tests::unstarted_native_read_watchdog_is_nonrenewable_and_deadline_bounded ... ok`. Les trois workflows spécialisés sur ce HEAD sont verts : [Owned Native Process Pipes #40682603185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40682603185), [Private Rust Compilation #40682603354](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40682603354), [Private Project Preparation #40682603219](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40682603219).

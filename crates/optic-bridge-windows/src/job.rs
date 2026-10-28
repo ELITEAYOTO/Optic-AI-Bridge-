@@ -297,14 +297,37 @@ impl PrecreatedNativeReadCustody {
         timeout_ms: u32,
         stop_flags: Vec<Arc<AtomicBool>>,
     ) -> Result<()> {
-        if timeout_ms == 0 || stop_flags.len() > 4 || self.deadline.is_some() {
+        let until = std::time::Instant::now()
+            .checked_add(Duration::from_millis(u64::from(timeout_ms)))
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "watchdog horizon overflow"))?;
+        self.arm_watchdog_until(until, stop_flags)
+    }
+
+    /// Preserve a service-owned absolute horizon through handle duplication and
+    /// worker startup. An expired deadline cannot be restarted at arm time.
+    pub fn arm_watchdog_until(
+        &mut self,
+        until: std::time::Instant,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<()> {
+        if until <= std::time::Instant::now() || stop_flags.len() > 4 || self.deadline.is_some() {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
-                "native read watchdog requires one positive, nonrenewable budget and at most four original stop flags",
+                "native read watchdog requires one future horizon and at most four original stop flags",
             ));
         }
-        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms, stop_flags)?);
+        self.deadline = Some(NativeJobDeadline::new_until(&self.job, until, stop_flags)?);
         Ok(())
+    }
+
+    /// Worker observed stop/deadline and returned. This is NOT proof of
+    /// successful Job termination, Job-empty, root exit or either pipe EOF.
+    #[must_use]
+    pub fn watchdog_stop_observed(&self) -> bool {
+        self.deadline
+            .as_ref()
+            .and_then(|deadline| deadline.worker.as_ref())
+            .is_some_and(std::thread::JoinHandle::is_finished)
     }
 
     /// The watchdog's deadline flag is a timeout observation, not a Job-empty,
@@ -479,7 +502,6 @@ impl ContainedAppContainerProcess {
         // Even a failed termination request can race natural exit. Only the
         // owned kernel accounting below establishes an empty process tree.
         let _ = self.job.terminate(1);
-        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
         loop {
             if self.job.active_processes()? == 0 && self.child.try_wait_exit()?.is_some() {
                 return Ok(());
@@ -501,6 +523,17 @@ struct NativeJobDeadline {
 }
 impl NativeJobDeadline {
     fn new(job: &OwnedJob, timeout_ms: u32, stop_flags: Vec<Arc<AtomicBool>>) -> Result<Self> {
+        let until = std::time::Instant::now()
+            .checked_add(Duration::from_millis(u64::from(timeout_ms)))
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "watchdog horizon overflow"))?;
+        Self::new_until(job, until, stop_flags)
+    }
+
+    fn new_until(
+        job: &OwnedJob,
+        until: std::time::Instant,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<Self> {
         let mut duplicate = HANDLE::default();
         // SAFETY: duplicate a live owned job into this process only. It is never
         // inheritable or exposed; OwnedHandle provides thread-safe ownership.

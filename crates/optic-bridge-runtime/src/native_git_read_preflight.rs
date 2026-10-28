@@ -174,6 +174,16 @@ pub struct NativeGitReadAdmittedPreflight {
 }
 
 impl NativeGitReadAdmittedPreflight {
+    /// Service-internal cancellation sources from the already owned generations.
+    /// Deadlines are separate and must not be renewed when cloning these flags.
+    #[cfg(windows)]
+    pub(crate) fn native_stop_signals(&self) -> Vec<Arc<std::sync::atomic::AtomicBool>> {
+        vec![
+            self.session_admission.native_stop_signal(),
+            self.lease_witness.revocation.native_stop_signal(),
+        ]
+    }
+
     /// Revalidate against the captured *original* grant, not a newly looked
     /// up session that happens to reuse the same handle.
     #[cfg(windows)]
