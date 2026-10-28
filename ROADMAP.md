@@ -1,5 +1,11 @@
 # Delivery roadmap
 
+## CURRENT P0 PRIORITY — after independently verified #396 (28 October 2026)
+
+Merged [#395](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/395) protects the **original** TaskLease witness against same-ID re-registration in a non-executing native owner; merged [#396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/396) proves a genuine empty Windows Job stays empty when a valid Job-list `CreateProcessW` fails with `ERROR_FILE_NOT_FOUND`. Both are test-only. Exact independently verified `main=8ee1ad0b2c135af3d639ab753703c3f911dc4941` ([CI #40653860272](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40653860272), 4/4 SUCCESS). See [handoff](docs/engineering/GITHUB_HANDOFF.md) for all test/workflow receipts.
+
+**Next actual engineering gate:** shared, short, original-generation owner commit serialized against direct and lifecycle session revoke, with separate TaskLease/policy epoch revocation fences; then owned Windows native process startup, out-of-band watchdog/stop, root/Job/descendant+stdio EOF proof and uncertain/crash lifetime retention. Only after real #352/#355 acceptance may the MCP GitRead pathway migrate. #317/#323/#185/#319 remain OPEN, V1 NO-GO.
+
 ## 28 octobre 2026 — jalon Windows natif expérimental #393
 
 La [PR #393](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/393) ajoute à `main=c81c1f5caf937695b3bbd9439f508ff9cb28f6f4` **uniquement** un test Windows effectif du Job attaché **pendant** `CreateProcessW` via `PROC_THREAD_ATTRIBUTE_JOB_LIST`. Le root système `cmd.exe` reste suspendu ; le test observe `IsProcessInJob`, un Job comptant un processus et ensuite sa terminaison réelle et le Job vide. CI PR [#40649262906](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649262906) 4/4 SUCCESS + trois workflows natifs verts ; [CI indépendante push/main #40649847690](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40649847690) **completed/SUCCESS 4/4, tentative 1 sur le SHA intégré exact**.

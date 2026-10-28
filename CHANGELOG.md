@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 28 October 2026, independently verified native research checkpoints
+
+- [#394](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/394): documentation checkpoint, exact-head [CI #40650458632](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40650458632) and independent main #40651002381, 4/4 SUCCESS each.
+- [#395](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/395): Windows-only test that revoking/removing/re-registering a TaskLease under the **same ID** cannot revive the original non-executing native owner. [PR CI #40651259497](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40651259497) and independent main #40651850790 SUCCESS 4/4, native preparation SUCCESS. Original format-only RED #40651188973 preserved.
+- [#396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/396): Windows-only kernel negative test of Job-list `CreateProcessW` missing-image failure, exact `ERROR_FILE_NOT_FOUND`, empty Job, no resumed child. [PR CI #40653261422](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40653261422) SUCCESS 4/4 and three specialized workflows SUCCESS, independently verified `main=8ee1ad0b2c135af3d639ab753703c3f911dc4941` ([push/main #40653860272](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40653860272), 4/4 SUCCESS, attempt 1).
+- Neither test changes production, opens a native GitRead launch or proves commit/revoke, terminal Job/stdio or #352/#355 acceptance. #317/#323 OPEN, **Windows V1 NO-GO**. Complete receipts in [handoff](docs/engineering/GITHUB_HANDOFF.md).
+
 ## Unreleased — 28 octobre 2026 : recherche native Windows #393 (test uniquement)
 
 - [PR #393 fusionnée](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/393) : nouveau test Windows de l'association d'un processus système suspendu au Job Object **au moment de `CreateProcessW`** via `PROC_THREAD_ATTRIBUTE_JOB_LIST`. Il valide l'appartenance noyau immédiatement après création puis root terminé et Job vide après arrêt ; aucun lancement GitRead réel, aucune activation MCP ni modification des politiques.
