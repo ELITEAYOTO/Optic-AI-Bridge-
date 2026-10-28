@@ -180,6 +180,7 @@ impl NativeGitReadAdmittedPreflight {
     /// Session-only commit for the already registered, Job-owned native
     /// candidate. Its receipt is generation-bound, not an effect/launch grant.
     #[cfg(windows)]
+    #[allow(dead_code)] // No live native guardian consumes this research receipt yet.
     pub(crate) fn commit_original_session_for_registered_owner(
         &self,
         registry: &Arc<SessionRegistry>,
