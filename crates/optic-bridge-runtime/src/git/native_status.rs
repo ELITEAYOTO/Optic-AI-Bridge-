@@ -6,7 +6,7 @@ use optic_bridge_core::{ActionEnvelope, ActionId, MonotonicTime, ResourceBudget,
 use thiserror::Error;
 
 #[cfg(windows)]
-use crate::{NativeGitReadLeaseError, verify_registered_native_git_read_preflight};
+use crate::{Clock, NativeGitReadLeaseError, verify_registered_native_git_read_preflight};
 
 use crate::{
     GitReadError, GitReadService, HardenedCommandSpec, NativeGitReadAdmissionError,
@@ -19,10 +19,10 @@ use crate::{
 /// registered guardian must retain it through real terminal OS/pipe proof.
 #[must_use = "native preparation must remain owned until proven terminal"]
 pub struct PreparedNativeGitStatus {
-    // Conservative wall-clock anchor captured BEFORE preparation work. Never
-    // recompute it at Job creation, commitment, renewal or watchdog arm.
+    // Only the service-clock constructor can establish this immutable binding.
+    // The legacy logical-time preparation remains inert and cannot arm.
     #[cfg(windows)]
-    watchdog_until: std::time::Instant,
+    watchdog_clock: Option<(crate::StdClock, std::time::Instant)>,
     pub(crate) command: HardenedCommandSpec,
     pub(crate) admission: NativeGitReadAdmittedPreflight,
     pub(crate) envelope: ActionEnvelope,
@@ -83,6 +83,27 @@ pub enum NativeGitStatusPreparationError {
 }
 
 impl GitReadService {
+    /// Prepare with the actual service clock used for the original worker
+    /// permits. No caller-supplied logical now or arm-time clock is accepted.
+    /// This retains the clock origin, but is still not launch authority.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Non-executing until the native guardian is accepted.
+    pub(crate) fn prepare_native_status_on_clock(
+        &self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        owned: NativeGitReadOwnedPermits,
+        envelope: &ActionEnvelope,
+        clock: &crate::StdClock,
+    ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
+        let mut prepared = self.prepare_native_status(trusted, owned, envelope, clock.now())?;
+        let until = clock
+            .deadline_instant(prepared.deadline())
+            .filter(|until| *until > std::time::Instant::now())
+            .ok_or(NativeGitReadAdmissionError::StopRequired)?;
+        prepared.watchdog_clock = Some((clock.clone(), until));
+        Ok(prepared)
+    }
+
     /// Bind the fixed status spec to the service's configured canonical
     /// repository/executable and the worker's original owned permits.
     ///
@@ -97,8 +118,6 @@ impl GitReadService {
         envelope: &ActionEnvelope,
         now: MonotonicTime,
     ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
-        #[cfg(windows)]
-        let preparation_started = std::time::Instant::now();
         let command = self.status_command_spec(envelope.resources.output_bytes)?;
         let repository = command
             .cwd
@@ -111,18 +130,9 @@ impl GitReadService {
         let admission = finish_owned_native_git_read_preflight(
             trusted, owned, envelope, repository, executable, now,
         )?;
-        #[cfg(windows)]
-        let watchdog_until = preparation_started
-            .checked_add(std::time::Duration::from_millis(
-                admission
-                    .deadline()
-                    .as_millis()
-                    .saturating_sub(now.as_millis()),
-            ))
-            .ok_or(NativeGitReadAdmissionError::StopRequired)?;
         Ok(PreparedNativeGitStatus {
             #[cfg(windows)]
-            watchdog_until,
+            watchdog_clock: None,
             command,
             admission,
             envelope: envelope.clone(),
@@ -450,8 +460,17 @@ impl LeaseObservedNativeGitStatusCustody {
     pub(crate) fn arm_original_watchdog(
         &mut self,
         trusted: &NativeGitReadTrustedContext<'_>,
-        now: MonotonicTime,
     ) -> Result<(), NativeGitStatusSnapshotError> {
+        let (clock, until) = self
+            .session_owner
+            .unstarted
+            .registered
+            .prepared
+            .watchdog_clock
+            .as_ref()
+            .ok_or(NativeGitStatusSnapshotError::ClockRequired)?;
+        let now = clock.now();
+        let until = *until;
         self.session_owner
             .unstarted
             .observe_original_prelaunch_snapshot(trusted, now)?;
@@ -459,7 +478,6 @@ impl LeaseObservedNativeGitStatusCustody {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         let unstarted = &mut self.session_owner.unstarted;
-        let until = unstarted.registered.prepared.watchdog_until;
         let mut stops = unstarted
             .registered
             .prepared
@@ -500,6 +518,8 @@ impl LeaseObservedNativeGitStatusCustody {
 #[cfg(windows)]
 #[derive(Debug, Error)]
 pub enum NativeGitStatusSnapshotError {
+    #[error("native watchdog requires preparation on the original service clock")]
+    ClockRequired,
     #[error("native watchdog could not be armed: {0}")]
     Watchdog(#[from] std::io::Error),
     #[error("original native Git status admission is revoked or expired")]
