@@ -1,11 +1,11 @@
 //! Research-only Windows kernel fixture for #317.
 //! No production GitRead launch, policy change, or native owner is provided.
-//! This fixture creates a Windows system executable suspended and terminates
-//! it without resuming its primary thread.
+//! These fixtures exercise both an unresumed root and a tightly fixed,
+//! resumed system root that exits without any project input or Git operation.
 
 use super::*;
 use std::{
-    ffi::c_void,
+    ffi::{OsString, c_void},
     mem::size_of,
     os::windows::ffi::OsStrExt,
     path::PathBuf,
@@ -17,9 +17,10 @@ use windows::{
         System::JobObjects::IsProcessInJob,
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
+            EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, InitializeProcThreadAttributeList,
             LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
-            STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+            WaitForSingleObject,
         },
     },
     core::{BOOL, PCWSTR, PWSTR},
@@ -72,7 +73,8 @@ struct SuspendedFixtureProcess(PROCESS_INFORMATION);
 impl Drop for SuspendedFixtureProcess {
     fn drop(&mut self) {
         // SAFETY: CreateProcessW returned two uniquely owned process handles.
-        // The fixture never resumes its primary thread.
+        // The fixture may have resumed its primary thread; termination is safe
+        // both for a still-suspended child and one that has already exited.
         unsafe {
             let _ = TerminateProcess(self.0.hProcess, 1);
             let _ = WaitForSingleObject(self.0.hProcess, 2000);
@@ -248,5 +250,117 @@ fn invalid_target_with_job_list_leaves_no_native_process() -> Result<()> {
         0,
         "failed CreateProcessW must not leave any process in the native Job"
     );
+    Ok(())
+}
+
+#[test]
+fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<()> {
+    // Research-only physical execution proof. No Git, user project, arbitrary
+    // command, network input, or service-owned native GitRead owner is involved.
+    // /D disables cmd AutoRun commands, and the fixed payload only exits zero.
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::other("SystemRoot unavailable to hosted Windows test"))?;
+    let executable = PathBuf::from(system_root).join("System32").join("cmd.exe");
+    if !executable.is_file() {
+        return Err(Error::other("synthetic system executable unavailable"));
+    }
+    let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
+    let mut command = OsString::from("\"");
+    command.push(executable.as_os_str());
+    command.push("\" /D /Q /C exit /b 0");
+    let mut command_line: Vec<u16> = command.encode_wide().chain([0]).collect();
+
+    let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
+    assert_eq!(job.active_processes()?, 0);
+
+    let job_handles = [job.raw()];
+    let mut attributes = AttributeList::new()?;
+    // SAFETY: the Job handle array and aligned attribute buffer outlive Win32
+    // creation, and neither is shared with an untrusted caller.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(job_handles.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.lpAttributeList = attributes.raw();
+    let mut info = PROCESS_INFORMATION::default();
+
+    // SAFETY: all wide buffers and Job list stay alive for CreateProcessW.
+    // Handle inheritance is disabled. The root is initially suspended, so
+    // there is no execution before the Job membership assertion.
+    unsafe {
+        CreateProcessW(
+            PCWSTR(application.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            false,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+            None,
+            PCWSTR::null(),
+            &startup.StartupInfo,
+            &mut info,
+        )
+    }
+    .map_err(Error::other)?;
+    let process = SuspendedFixtureProcess(info);
+
+    let mut belongs = BOOL(0);
+    // SAFETY: both OS handles remain valid for the lifetime of this check.
+    unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
+        .map_err(Error::other)?;
+    assert!(
+        belongs.as_bool(),
+        "the root must be in the Job before resume"
+    );
+    assert_eq!(job.active_processes()?, 1);
+
+    // SAFETY: a live primary thread handle is owned by this fixture; resume
+    // exactly this previously suspended root, never an arbitrary PID/thread.
+    let previous = unsafe { ResumeThread(process.0.hThread) };
+    if previous == u32::MAX {
+        return Err(Error::last_os_error());
+    }
+    assert!(
+        previous > 0,
+        "the test must actually resume a suspended root"
+    );
+
+    // A timeout is a test failure, not a fabricated exit or empty-Job proof.
+    // SuspendedFixtureProcess::drop still requests a bounded root termination.
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 5000) },
+        WAIT_OBJECT_0,
+        "resumed fixed system root did not exit within the deadline"
+    );
+    let mut code = u32::MAX;
+    // SAFETY: the process handle is live and signaled, and the output buffer
+    // is writable for the duration of GetExitCodeProcess.
+    unsafe { GetExitCodeProcess(process.0.hProcess, &mut code) }.map_err(Error::other)?;
+    assert_eq!(code, 0, "the fixed exit command must complete successfully");
+
+    // Root-exit and kernel Job-empty are independent OS facts.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if job.active_processes()? == 0 {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::other(
+                "Job remained nonempty after resumed root exit",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     Ok(())
 }
