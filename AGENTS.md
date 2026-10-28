@@ -1,5 +1,12 @@
 # Repository entry point for coding agents
 
+## LATEST CANONICAL ENTRY — 28 OCTOBER 2026, post #400
+
+[PR #400](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/400) tested HEAD `a949fbf1745de0f97e03284628967c30b2fa887e`, squash integrated `main=67e3604c198f83c16465863facdf2fa855f983d7`, identical tree `444a3175b7241d85d4e959de456f8fa4f1341ae0`. [PR CI #40658720479](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40658720479) **SUCCESS 4/4 first attempt**, [native preparation #40658719448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40658719448) SUCCESS, and independent [push/main #40659396121](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40659396121) **SUCCESS 4/4, attempt 1 on the exact integrated SHA**.
+
+The registered Windows native candidate now has an **original-generation session-only** commit/stop receipt, with both close-order tests green; no child can be launched through this stage. This is not a TaskLease/policy/native creation fence. **#317/#323 remain open, Windows V1 NO-GO**, no release. Read [STATUS](STATUS.md), [GitHub handoff](docs/engineering/GITHUB_HANDOFF.md), [native witness contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md) and the [Windows V1 continuation prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md). Prior dated sections are historical. GitHub-hosted CI only, no user PC, other repos or self-hosted runners.
+
+
 ## LATEST CANONICAL ENTRY — 28 OCTOBER 2026, post #398
 
 [PR #398](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/398) (exact tested HEAD `7456f3d96dc289eb5e278e3d9acbfce8970a6dcf`) merged into `main=8aa6fd205e7a264e7873e6af6b627ddb81207d9d`. Trees identical `8883d4c0ee6a3647b543799c29f9b573be93a028`. Exact-head [CI #40655468052](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655468052) **SUCCESS 4/4**, [native preparation #40655468078](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655468078) **SUCCESS**. Independent [push/main #40656160001](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40656160001) **SUCCESS 4/4 on exact merged SHA, first attempt**. First candidate's [CI #40655374591](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655374591) failed rustfmt, not #317 behavioral acceptance.
