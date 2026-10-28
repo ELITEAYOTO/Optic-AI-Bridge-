@@ -581,6 +581,62 @@ mod tests {
     }
 
     #[test]
+    fn revoke_publishes_original_lease_stop_before_drain_and_catches_late_registration() {
+        let root = workspace("lease-stop-before-drain");
+        let (lifecycle, sessions, leases, _) = manager(&root);
+        let lifecycle = Arc::new(lifecycle);
+        let now = MonotonicTime::from_millis(10);
+        let grant = lifecycle.provision(spec(1_000), now).unwrap();
+        let admitted = sessions.begin_owned_admission(&grant.handle, now).unwrap();
+        let original = lease(grant.handle.clone(), 1_000);
+        leases.register(original.clone()).unwrap();
+        let (_, original_watch) = leases
+            .get_active_with_revocation_watch(&original.id, &grant.handle, now)
+            .unwrap();
+        let closing = Arc::clone(&lifecycle);
+        let session = grant.handle.clone();
+        let closer = thread::spawn(move || closing.revoke(&session));
+        let started = std::time::Instant::now();
+        while !original_watch.is_revoked() && started.elapsed() < Duration::from_secs(3) {
+            thread::sleep(Duration::from_millis(1));
+        }
+        let lease_stopped_before_drain = original_watch.is_revoked();
+        let session_stopped_before_drain = admitted.stop_watch().is_stop_required_at(now);
+        let capacity_held = matches!(
+            sessions.remove_quiescent_inactive(&grant.handle, now),
+            Err(SessionRegistryError::AdmissionsInFlight)
+        );
+        let waiting_for_drain = !closer.is_finished();
+        // A previously admitted producer can register after the first sweep.
+        // The post-drain sweep must still revoke this late generation.
+        let late = lease(grant.handle.clone(), 1_000);
+        leases.register(late.clone()).unwrap();
+        drop(admitted);
+        let report = closer.join().unwrap().unwrap();
+        let original_revoked = matches!(
+            leases.get_active(&original.id, &grant.handle, now),
+            Err(TaskLeaseRegistryError::Revoked)
+        );
+        let late_revoked = matches!(
+            leases.get_active(&late.id, &grant.handle, now),
+            Err(TaskLeaseRegistryError::Revoked)
+        );
+        let reaped = lifecycle.try_reap(&grant.handle, now).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert!(
+            lease_stopped_before_drain,
+            "lease stop waited for admission drainage"
+        );
+        assert!(session_stopped_before_drain);
+        assert!(capacity_held);
+        assert!(waiting_for_drain);
+        assert!(original_revoked && late_revoked);
+        assert_eq!(report.revoked_leases, 2);
+        assert!(reaped.session_removed);
+        assert_eq!(reaped.removed_leases, 2);
+    }
+
+    #[test]
     fn quiescent_seal_revokes_session_and_remains_reapable() {
         let root = workspace("quiescent-seal");
         let (lifecycle, sessions, _leases, _processes) = manager(&root);

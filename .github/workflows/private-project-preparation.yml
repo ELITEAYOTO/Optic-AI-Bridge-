@@ -69,6 +69,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'interleaved session renewal regression failed' }
           & $Probe --exact session_lifecycle::tests::renewal_rejects_close_after_admission_without_extending_lease --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'closed session renewal regression failed' }
+      - name: Verify original lease stop before session admission drain
+        shell: pwsh
+        run: |
+          $Probe = Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe'
+          & $Probe --exact session_lifecycle::tests::revoke_publishes_original_lease_stop_before_drain_and_catches_late_registration --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'original lease pre-drain stop regression failed' }
       - name: Verify exact private copies, owner binding, capacity and cleanup
         shell: pwsh
         run: |
