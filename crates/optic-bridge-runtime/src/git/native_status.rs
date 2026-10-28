@@ -319,6 +319,8 @@ impl PrecreatedNativeGitStatusCustody {
     /// This is deliberately NOT the final native GitRead commitment: the
     /// independent lease/policy issuer fence, CreateProcessW, durable guardian,
     /// completed stdio EOF and terminal OS proof are still absent.
+    // Not yet wired into the MCP owner: intentionally inert research precursor.
+    #[allow(dead_code)]
     pub(crate) fn commit_original_session(
         self,
         trusted: &NativeGitReadTrustedContext<'_>,
@@ -352,12 +354,14 @@ impl PrecreatedNativeGitStatusCustody {
 /// process launch token: no CreateProcess handle or launch API is exposed.
 #[cfg(windows)]
 #[must_use = "retain original custody and session close receipt together"]
+#[allow(dead_code)] // Research-only until the native guardian is implemented.
 pub(crate) struct SessionCommittedNativeGitStatusCustody {
     unstarted: PrecreatedNativeGitStatusCustody,
     session_commit: crate::session_registry::SessionNativeOwnerCommit,
 }
 
 #[cfg(windows)]
+#[allow(dead_code)] // No production native launch path consumes this stage yet.
 impl SessionCommittedNativeGitStatusCustody {
     pub(crate) fn job_id(&self) -> optic_bridge_core::JobId {
         self.session_commit.job_id().clone()
