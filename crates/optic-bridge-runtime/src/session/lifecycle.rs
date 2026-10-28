@@ -33,6 +33,7 @@ pub struct SessionRevokeReport {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SessionRenewalReport {
+    /// Original expiry captured by this attempt's admission, not a later renewal.
     pub previous_expires_at: MonotonicTime,
     pub expires_at: MonotonicTime,
     pub renewed_leases: usize,
@@ -205,6 +206,16 @@ impl SessionLifecycleManager {
         now: MonotonicTime,
         new_expires_at: MonotonicTime,
     ) -> Result<SessionRenewalReport, SessionLifecycleError> {
+        self.renew_after_admission(session, now, new_expires_at, || {})
+    }
+
+    fn renew_after_admission(
+        &self,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        new_expires_at: MonotonicTime,
+        after_admission: impl FnOnce(),
+    ) -> Result<SessionRenewalReport, SessionLifecycleError> {
         if new_expires_at <= now {
             return Err(SessionLifecycleError::RenewalExpiryNotFuture);
         }
@@ -214,11 +225,13 @@ impl SessionLifecycleManager {
         // renewal attempt leaves the admission critical section.
         let admission = self.sessions.begin_admission(session, now)?;
         let previous_expires_at = admission.grant().expires_at;
-        let validated = self
-            .sessions
+        after_admission();
+        // Another valid renewal may extend the registry after admission.
+        // Revalidate current eligibility without changing this attempt's
+        // original captured horizon or assuming the two observations are equal.
+        self.sessions
             .validate_renewal(session, now, new_expires_at)
             .map_err(map_session_renewal_error)?;
-        debug_assert_eq!(validated.expires_at, previous_expires_at);
         let policy_epoch = admission.grant().policy_epoch;
 
         // Renew subordinate authority first. If this fails, the session expiry remains
@@ -487,6 +500,84 @@ mod tests {
             Arc::clone(&processes),
         );
         (lifecycle, sessions, task_leases, processes)
+    }
+
+    #[test]
+    fn renewal_accepts_interleaved_extension_without_panicking_or_refreshing_old_permit() {
+        let root = workspace("renewal-interleaving");
+        let (lifecycle, sessions, leases, _) = manager(&root);
+        let lifecycle = Arc::new(lifecycle);
+        let now = MonotonicTime::from_millis(10);
+        let grant = lifecycle.provision(spec(100), now).unwrap();
+        let original = sessions.begin_owned_admission(&grant.handle, now).unwrap();
+        let owned = lease(grant.handle.clone(), 100);
+        leases.register(owned.clone()).unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let outer_lifecycle = Arc::clone(&lifecycle);
+        let session = grant.handle.clone();
+        let outer = thread::spawn(move || {
+            outer_lifecycle.renew_after_admission(
+                &session,
+                now,
+                MonotonicTime::from_millis(300),
+                || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                },
+            )
+        });
+        entered_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let inner = lifecycle.renew(&grant.handle, now, MonotonicTime::from_millis(200));
+        release_tx.send(()).unwrap();
+        let result = outer.join();
+        let original_deadline = original.grant().expires_at;
+        let original_expired = original
+            .stop_watch()
+            .is_stop_required_at(MonotonicTime::from_millis(100));
+        drop(original);
+        let final_grant = sessions.get_active(&grant.handle, now).unwrap();
+        let final_lease = leases.get_active(&owned.id, &grant.handle, now).unwrap();
+        lifecycle.revoke(&grant.handle).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        inner.expect("interleaved extension");
+        let report = result
+            .expect("outer renewal must not panic")
+            .expect("outer extension");
+        assert_eq!(report.previous_expires_at, MonotonicTime::from_millis(100));
+        assert_eq!(report.expires_at, MonotonicTime::from_millis(300));
+        assert_eq!(final_grant.expires_at, report.expires_at);
+        assert_eq!(final_lease.expires_at, report.expires_at);
+        assert_eq!(original_deadline, MonotonicTime::from_millis(100));
+        assert!(original_expired);
+    }
+
+    #[test]
+    fn renewal_rejects_close_after_admission_without_extending_lease() {
+        let root = workspace("renewal-close-before-validation");
+        let (lifecycle, sessions, leases, _) = manager(&root);
+        let now = MonotonicTime::from_millis(10);
+        let grant = lifecycle.provision(spec(100), now).unwrap();
+        let owned = lease(grant.handle.clone(), 100);
+        leases.register(owned.clone()).unwrap();
+        let result = lifecycle.renew_after_admission(
+            &grant.handle,
+            now,
+            MonotonicTime::from_millis(300),
+            || {
+                sessions
+                    .publish_revocation_before_drain(&grant.handle)
+                    .unwrap();
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(SessionLifecycleError::RenewalSessionInactive)
+        ));
+        let retained = leases.get_active(&owned.id, &grant.handle, now).unwrap();
+        assert_eq!(retained.expires_at, MonotonicTime::from_millis(100));
+        lifecycle.revoke(&grant.handle).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
