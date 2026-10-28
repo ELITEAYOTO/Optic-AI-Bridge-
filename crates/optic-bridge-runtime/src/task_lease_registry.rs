@@ -1069,7 +1069,9 @@ mod tests {
         let registry = TaskLeaseRegistry::new();
         let foreign = TaskLeaseRegistry::new();
         let grant = lease(SessionHandle::generate().expect("session"), 100);
-        registry.register(grant.clone()).expect("original generation");
+        registry
+            .register(grant.clone())
+            .expect("original generation");
         foreign.register(grant.clone()).expect("separate registry");
         let now = MonotonicTime::from_millis(1);
         let (_, original_watch) = registry
@@ -1118,15 +1120,17 @@ mod tests {
             original_commit.is_stop_required_at(now),
             "old generation stays stopped even when same opaque ID is active"
         );
-        assert!(registry
-            .commit_original_native_read_lease(
-                &grant.id,
-                &replacement_watch,
-                grant.expires_at,
-                &grant.session,
-                now,
-            )
-            .is_ok());
+        assert!(
+            registry
+                .commit_original_native_read_lease(
+                    &grant.id,
+                    &replacement_watch,
+                    grant.expires_at,
+                    &grant.session,
+                    now,
+                )
+                .is_ok()
+        );
     }
 
     #[cfg(windows)]
@@ -1202,14 +1206,16 @@ mod tests {
             ),
             Err(TaskLeaseRegistryError::Expired)
         ));
-        assert!(registry
-            .commit_original_native_read_lease(
-                &grant.id,
-                &witness,
-                grant.expires_at,
-                &grant.session,
-                MonotonicTime::from_millis(99),
-            )
-            .is_ok());
+        assert!(
+            registry
+                .commit_original_native_read_lease(
+                    &grant.id,
+                    &witness,
+                    grant.expires_at,
+                    &grant.session,
+                    MonotonicTime::from_millis(99),
+                )
+                .is_ok()
+        );
     }
 }
