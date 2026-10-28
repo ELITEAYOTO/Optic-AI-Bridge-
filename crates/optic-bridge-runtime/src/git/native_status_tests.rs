@@ -762,3 +762,97 @@ fn prelaunch_snapshot_rejects_foreign_session_registry_before_relooking_up_lease
     drop(custody);
     assert_eq!(transport.active_requests(), 0);
 }
+
+#[cfg(windows)]
+#[test]
+fn prelaunch_snapshot_never_rebinds_after_original_lease_id_reuse() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic process manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("original admission and task lease");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("reserved private process capacity");
+    let job = registered.job_id();
+    let custody = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("real empty Job, pipes and pinned service targets");
+    custody
+        .observe_original_prelaunch_snapshot(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("original still-authorized registration");
+
+    // The original TaskLease can disappear while this service-owned admission
+    // and its inert kernel Job are still retained. Re-registering the same
+    // opaque lease ID must NOT re-arm the original owner's stop witness.
+    assert!(
+        fixture
+            .leases
+            .revoke(&fixture.lease.id)
+            .expect("revoke original")
+    );
+    assert!(
+        fixture
+            .leases
+            .remove_revoked(&fixture.lease.id)
+            .expect("physically remove revoked lease")
+    );
+    fixture
+        .leases
+        .register(fixture.lease.clone())
+        .expect("new generation with the exact old ID and scopes");
+    assert!(
+        fixture
+            .leases
+            .get_active(
+                &fixture.lease.id,
+                &fixture.envelope.session,
+                MonotonicTime::from_millis(12),
+            )
+            .is_ok(),
+        "the replacement record is independently valid"
+    );
+    assert!(custody.is_stop_required_at(MonotonicTime::from_millis(12)));
+    assert!(matches!(
+        custody.observe_original_prelaunch_snapshot(
+            &fixture.trusted(),
+            MonotonicTime::from_millis(12)
+        ),
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+    ));
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .expect("original capacity remains reserved"),
+        1
+    );
+    assert_eq!(
+        custody
+            .native_active_processes()
+            .expect("kernel is still idle"),
+        0,
+        "no process exists: Job-empty before launch is not completion proof"
+    );
+    drop(custody); // Only no-child cleanup, never an uncertain live-child release.
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+}
