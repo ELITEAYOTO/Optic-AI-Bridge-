@@ -36,10 +36,37 @@ impl Default for SessionRegistry {
 
 #[derive(Clone, Debug)]
 struct SessionRecord {
+    #[cfg(any(windows, test))]
+    clock_identity: Option<crate::clock::ClockIdentity>,
     grant: SessionGrant,
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     active_admissions: u32,
+}
+
+impl SessionRecord {
+    fn new(grant: SessionGrant) -> Self {
+        Self {
+            #[cfg(any(windows, test))]
+            clock_identity: None,
+            grant,
+            revoked: false,
+            revocation_signal: Arc::new(AtomicBool::new(false)),
+            active_admissions: 0,
+        }
+    }
+}
+
+/// Internal errors do not alter the legacy session registry or MCP contract.
+#[cfg(any(windows, test))]
+#[derive(Debug, Error)]
+pub(crate) enum SessionClockError {
+    #[error("session clock provenance is missing or incompatible")]
+    ProvenanceMismatch,
+    #[error("session clock deadline must be positive and representable")]
+    InvalidDeadline,
+    #[error(transparent)]
+    Registry(#[from] SessionRegistryError),
 }
 
 impl SessionRegistry {
@@ -59,6 +86,35 @@ impl SessionRegistry {
     }
 
     pub fn register(&self, grant: SessionGrant) -> Result<(), SessionRegistryError> {
+        self.register_record(SessionRecord::new(grant))
+    }
+
+    /// Mint the expiry on the service clock at original registration, never
+    /// attest a caller-supplied logical expiry after the fact.
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Inert native preparation only.
+    pub(crate) fn register_on_clock(
+        &self,
+        mut grant: SessionGrant,
+        lifetime_ms: u64,
+        clock: &crate::StdClock,
+    ) -> Result<SessionGrant, SessionClockError> {
+        if lifetime_ms == 0 {
+            return Err(SessionClockError::InvalidDeadline);
+        }
+        grant.expires_at = crate::Clock::now(clock)
+            .as_millis()
+            .checked_add(lifetime_ms)
+            .map(MonotonicTime::from_millis)
+            .ok_or(SessionClockError::InvalidDeadline)?;
+        let mut record = SessionRecord::new(grant.clone());
+        record.clock_identity = Some(clock.identity());
+        self.register_record(record)?;
+        Ok(grant)
+    }
+
+    fn register_record(&self, record: SessionRecord) -> Result<(), SessionRegistryError> {
+        let grant = &record.grant;
         let mut sessions = self
             .sessions
             .lock()
@@ -71,15 +127,7 @@ impl SessionRegistry {
         if sessions.len() >= max_sessions {
             return Err(SessionRegistryError::CapacityExceeded);
         }
-        sessions.insert(
-            grant.handle.clone(),
-            SessionRecord {
-                grant,
-                revoked: false,
-                revocation_signal: Arc::new(AtomicBool::new(false)),
-                active_admissions: 0,
-            },
-        );
+        sessions.insert(grant.handle.clone(), record);
         Ok(())
     }
 
@@ -135,7 +183,39 @@ impl SessionRegistry {
             handle: handle.clone(),
             grant,
             revocation_watch,
+            #[cfg(any(windows, test))]
+            admission_clock: None,
         })
+    }
+
+    /// Count admission using the same clock that minted its original expiry.
+    /// A rejected transfer drops the already-counted permit before returning.
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Native owner remains non-executing.
+    pub(crate) fn begin_owned_admission_on_clock(
+        self: &Arc<Self>,
+        handle: &SessionHandle,
+        clock: &crate::StdClock,
+    ) -> Result<OwnedSessionAdmissionPermit, SessionClockError> {
+        let mut admitted = self.begin_owned_admission(handle, crate::Clock::now(clock))?;
+        if !admitted
+            .revocation_watch
+            .clock_identity
+            .as_ref()
+            .is_some_and(|identity| identity.matches(clock))
+        {
+            return Err(SessionClockError::ProvenanceMismatch);
+        }
+        // Admission may have waited for the registry mutex; retain the captured
+        // expiry and reject expiry/revoke observed after that wait as well.
+        if admitted.revocation_watch.is_revoked() {
+            return Err(SessionClockError::Registry(SessionRegistryError::Revoked));
+        }
+        if admitted.grant.is_expired_at(crate::Clock::now(clock)) {
+            return Err(SessionClockError::Registry(SessionRegistryError::Expired));
+        }
+        admitted.admission_clock = Some(clock.identity());
+        Ok(admitted)
     }
 
     fn admit_record(
@@ -164,6 +244,8 @@ impl SessionRegistry {
         // Both permit forms capture the same immutable record identity while
         // their admission is counted under the shared registry mutex.
         let revocation_watch = SessionRevocationWatch {
+            #[cfg(any(windows, test))]
+            clock_identity: record.clock_identity.clone(),
             signal: Arc::clone(&record.revocation_signal),
         };
         Ok((grant, revocation_watch))
@@ -279,6 +361,11 @@ impl SessionRegistry {
             .ok_or(SessionRenewalError::UnknownSession)?;
         validate_renewal_record(record, now, new_expires_at, self.max_renewal_horizon_ms)?;
         record.grant.expires_at = new_expires_at;
+        // An untagged renewal cannot attest provenance for future admissions.
+        #[cfg(any(windows, test))]
+        {
+            record.clock_identity = None;
+        }
         Ok(record.grant.clone())
     }
 
@@ -533,6 +620,8 @@ impl SessionNativeOwnerCommit {
 /// after its permit is dropped and the opaque handle is eventually reused.
 #[derive(Clone, Debug)]
 pub struct SessionRevocationWatch {
+    #[cfg(any(windows, test))]
+    clock_identity: Option<crate::clock::ClockIdentity>,
     signal: Arc<AtomicBool>,
 }
 
@@ -619,6 +708,8 @@ impl Drop for SessionAdmissionPermit<'_> {
 /// object until termination is independently proven; dropping it early can
 /// let synchronous revoke finish while a process remains alive.
 pub struct OwnedSessionAdmissionPermit {
+    #[cfg(any(windows, test))]
+    admission_clock: Option<crate::clock::ClockIdentity>,
     registry: Arc<SessionRegistry>,
     handle: SessionHandle,
     grant: SessionGrant,
@@ -626,6 +717,14 @@ pub struct OwnedSessionAdmissionPermit {
 }
 
 impl OwnedSessionAdmissionPermit {
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Used by the inert native clock boundary.
+    pub(crate) fn belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.admission_clock
+            .as_ref()
+            .is_some_and(|identity| identity.matches(clock))
+    }
+
     /// Original-generation cancellation only; never expose this mutable signal to MCP.
     #[cfg(windows)]
     pub(crate) fn native_stop_signal(&self) -> Arc<AtomicBool> {
@@ -681,6 +780,126 @@ mod tests {
             expires_at: MonotonicTime::from_millis(expires_at),
             policy_epoch: 1,
         }
+    }
+
+    #[test]
+    fn clocked_session_requires_original_issuance_and_clocked_admission() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let clock = crate::StdClock::new();
+        let foreign = crate::StdClock::new();
+        let issued = sessions
+            .register_on_clock(grant(1), 10_000, &clock)
+            .unwrap();
+        assert!(issued.expires_at > MonotonicTime::from_millis(1));
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&issued.handle, &foreign),
+            Err(SessionClockError::ProvenanceMismatch)
+        ));
+        let raw = sessions
+            .begin_owned_admission(&issued.handle, crate::Clock::now(&clock))
+            .unwrap();
+        assert!(!raw.belongs_to_clock(&clock));
+        drop(raw);
+        let admitted = sessions
+            .begin_owned_admission_on_clock(&issued.handle, &clock.clone())
+            .unwrap();
+        assert!(admitted.belongs_to_clock(&clock));
+        assert!(!admitted.belongs_to_clock(&foreign));
+        assert_eq!(admitted.grant().expires_at, issued.expires_at);
+        drop(admitted);
+        assert!(sessions.revoke(&issued.handle).unwrap());
+
+        let logical = grant(10_000);
+        sessions.register(logical.clone()).unwrap();
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&logical.handle, &clock),
+            Err(SessionClockError::ProvenanceMismatch)
+        ));
+        assert!(sessions.revoke(&logical.handle).unwrap());
+    }
+
+    #[test]
+    fn clocked_session_preserves_original_horizon_after_untagged_renewal() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let clock = crate::StdClock::new();
+        let issued = sessions
+            .register_on_clock(grant(1), 10_000, &clock)
+            .unwrap();
+        let admitted = sessions
+            .begin_owned_admission_on_clock(&issued.handle, &clock)
+            .unwrap();
+        let later = issued.expires_at.saturating_add_millis(1_000);
+        sessions
+            .renew_active(&issued.handle, crate::Clock::now(&clock), later)
+            .unwrap();
+        assert_eq!(admitted.grant().expires_at, issued.expires_at);
+        assert!(admitted.belongs_to_clock(&clock));
+        assert!(admitted.stop_watch().is_stop_required_at(issued.expires_at));
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&issued.handle, &clock),
+            Err(SessionClockError::ProvenanceMismatch)
+        ));
+        drop(admitted);
+        assert!(sessions.revoke(&issued.handle).unwrap());
+    }
+
+    #[test]
+    fn clocked_session_rejects_invalid_deadline_expiry_and_revocation() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let clock = crate::StdClock::new();
+        assert!(matches!(
+            sessions.register_on_clock(grant(1), 0, &clock),
+            Err(SessionClockError::InvalidDeadline)
+        ));
+        let issued = sessions.register_on_clock(grant(1), 1, &clock).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(matches!(
+            sessions.register_on_clock(grant(1), u64::MAX, &clock),
+            Err(SessionClockError::InvalidDeadline)
+        ));
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&issued.handle, &clock),
+            Err(SessionClockError::Registry(SessionRegistryError::Expired))
+        ));
+        assert!(sessions.revoke(&issued.handle).unwrap());
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&issued.handle, &clock),
+            Err(SessionClockError::Registry(SessionRegistryError::Revoked))
+        ));
+    }
+
+    #[test]
+    fn clocked_session_keeps_original_stop_after_handle_reuse() {
+        let sessions = Arc::new(SessionRegistry::new());
+        let clock = crate::StdClock::new();
+        let issued = sessions
+            .register_on_clock(grant(1), 10_000, &clock)
+            .unwrap();
+        let admitted = sessions
+            .begin_owned_admission_on_clock(&issued.handle, &clock)
+            .unwrap();
+        let stop = admitted.stop_watch();
+        sessions
+            .publish_revocation_before_drain(&issued.handle)
+            .unwrap();
+        assert!(stop.is_stop_required_at(crate::Clock::now(&clock)));
+        drop(admitted);
+        sessions.revoke(&issued.handle).unwrap();
+        assert!(
+            sessions
+                .remove_quiescent_inactive(&issued.handle, crate::Clock::now(&clock))
+                .unwrap()
+        );
+        let foreign = crate::StdClock::new();
+        sessions
+            .register_on_clock(issued.clone(), 10_000, &foreign)
+            .unwrap();
+        assert!(stop.is_stop_required_at(crate::Clock::now(&clock)));
+        assert!(matches!(
+            sessions.begin_owned_admission_on_clock(&issued.handle, &clock),
+            Err(SessionClockError::ProvenanceMismatch)
+        ));
+        assert!(sessions.revoke(&issued.handle).unwrap());
     }
 
     #[test]
