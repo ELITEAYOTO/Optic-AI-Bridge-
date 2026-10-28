@@ -80,7 +80,9 @@ pub enum NativeGitStatusPreparationError {
     #[error("native Git status transport permit has missing or foreign clock provenance")]
     TransportClockMismatch,
     #[cfg(windows)]
-    #[error("native Git status session issuance or admission has missing or foreign clock provenance")]
+    #[error(
+        "native Git status session issuance or admission has missing or foreign clock provenance"
+    )]
     SessionClockMismatch,
     #[error(transparent)]
     Command(#[from] GitReadError),
