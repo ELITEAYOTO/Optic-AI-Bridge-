@@ -374,6 +374,66 @@ impl SessionCommittedNativeGitStatusCustody {
     pub(crate) fn native_active_processes(&self) -> std::io::Result<u32> {
         self.unstarted.native_active_processes()
     }
+
+    /// Consume this already session-committed owner into a second,
+    /// **lease-only** ordered observation. The session and TaskLease mutexes
+    /// are entered separately and are NEVER represented as an atomic fence.
+    ///
+    /// No child is created. On rejection the already owned empty Job/pipes
+    /// and counted original admission/transport are dropped as no-child work.
+    #[allow(dead_code)] // Native launch guardian and policy issuer are absent.
+    pub(crate) fn commit_original_lease(
+        self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        now: MonotonicTime,
+    ) -> Result<LeaseObservedNativeGitStatusCustody, NativeGitStatusSnapshotError> {
+        // Repeat typed policy and original session/lease identity checks after
+        // session receipt issuance; these are snapshots, not launch grants.
+        self.unstarted
+            .observe_original_prelaunch_snapshot(trusted, now)?;
+        let original = &self.unstarted.registered.prepared;
+        let lease_commit = original
+            .admission
+            .commit_original_lease_for_registered_owner(
+                trusted.task_leases,
+                &original.envelope.session,
+                now,
+            )?;
+        if self.is_stop_required_at(now) || lease_commit.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        Ok(LeaseObservedNativeGitStatusCustody {
+            session_owner: self,
+            lease_commit,
+        })
+    }
+}
+
+/// Non-executing owner that retains independent session and TaskLease ordering
+/// receipts. These were issued under DIFFERENT mutexes; a revocation may win
+/// between them or immediately afterwards. This is NOT a native launch grant.
+#[cfg(windows)]
+#[must_use = "retain both original stop witnesses and native custody"]
+#[allow(dead_code)] // No CreateProcessW path can consume this research stage.
+pub(crate) struct LeaseObservedNativeGitStatusCustody {
+    session_owner: SessionCommittedNativeGitStatusCustody,
+    lease_commit: crate::task_lease_registry::TaskLeaseNativeOwnerCommit,
+}
+
+#[cfg(windows)]
+#[allow(dead_code)] // Only hosted non-executing owner tests consume this stage.
+impl LeaseObservedNativeGitStatusCustody {
+    pub(crate) fn job_id(&self) -> optic_bridge_core::JobId {
+        self.session_owner.job_id()
+    }
+
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.session_owner.is_stop_required_at(now) || self.lease_commit.is_stop_required_at(now)
+    }
+
+    pub(crate) fn native_active_processes(&self) -> std::io::Result<u32> {
+        self.session_owner.native_active_processes()
+    }
 }
 
 /// Fail-closed read-only authority observations; none of these variants is a
@@ -393,6 +453,8 @@ pub enum NativeGitStatusSnapshotError {
     NonUtf8Target,
     #[error(transparent)]
     Session(#[from] crate::SessionRegistryError),
+    #[error(transparent)]
+    LeaseRecord(#[from] crate::TaskLeaseRegistryError),
     #[error(transparent)]
     Lease(#[from] NativeGitReadLeaseError),
 }
