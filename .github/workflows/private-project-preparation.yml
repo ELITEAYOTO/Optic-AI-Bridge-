@@ -61,6 +61,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'unlocked TaskLease lookup proof failed' }
           & $Probe --exact task_lease_registry::tests::lease_renewal_identity_io_is_unlocked_and_rejects_changed_set_atomically --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'unlocked atomic TaskLease renewal proof failed' }
+      - name: Verify original session renewal interleaving
+        shell: pwsh
+        run: |
+          $Probe = Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe'
+          & $Probe --exact session_lifecycle::tests::renewal_accepts_interleaved_extension_without_panicking_or_refreshing_old_permit --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'interleaved session renewal regression failed' }
+          & $Probe --exact session_lifecycle::tests::renewal_rejects_close_after_admission_without_extending_lease --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'closed session renewal regression failed' }
       - name: Verify exact private copies, owner binding, capacity and cleanup
         shell: pwsh
         run: |
