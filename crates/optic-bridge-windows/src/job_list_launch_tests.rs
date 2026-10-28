@@ -6,20 +6,27 @@
 use super::*;
 use std::{
     ffi::{OsString, c_void},
+    fs::File,
     mem::size_of,
-    os::windows::ffi::OsStrExt,
+    os::windows::{
+        ffi::OsStrExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    },
     path::PathBuf,
     time::{Duration, Instant},
 };
 use windows::{
     Win32::{
-        Foundation::{HANDLE, WAIT_OBJECT_0},
+        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
         System::JobObjects::IsProcessInJob,
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, InitializeProcThreadAttributeList,
-            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
-            ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+            EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
+            InitializeProcThreadAttributeList,
+            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+            ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+            UpdateProcThreadAttribute,
             WaitForSingleObject,
         },
     },
@@ -32,10 +39,10 @@ struct AttributeList {
 }
 
 impl AttributeList {
-    fn new() -> Result<Self> {
+    fn new(attribute_count: u32) -> Result<Self> {
         let mut bytes = 0usize;
         // SAFETY: the null first call asks Windows for the required buffer size.
-        let _ = unsafe { InitializeProcThreadAttributeList(None, 1, None, &mut bytes) };
+        let _ = unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
         if bytes == 0 {
             return Err(Error::other("Windows returned no attribute-list size"));
         }
@@ -46,7 +53,7 @@ impl AttributeList {
                 Some(LPPROC_THREAD_ATTRIBUTE_LIST(
                     storage.as_mut_ptr().cast::<c_void>(),
                 )),
-                1,
+                attribute_count,
                 None,
                 &mut bytes,
             )
@@ -102,7 +109,7 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
 
     // Attribute value must outlive AttributeList, which must outlive CreateProcessW.
     let job_handles = [job.raw()];
-    let mut attributes = AttributeList::new()?;
+    let mut attributes = AttributeList::new(1)?;
     // SAFETY: the pointer references the live one-element Job HANDLE array.
     unsafe {
         UpdateProcThreadAttribute(
@@ -194,7 +201,7 @@ fn invalid_target_with_job_list_leaves_no_native_process() -> Result<()> {
     let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
     assert_eq!(job.active_processes()?, 0);
     let handles = [job.raw()];
-    let mut attributes = AttributeList::new()?;
+    let mut attributes = AttributeList::new(1)?;
     // SAFETY: the live Job HANDLE array and aligned attribute list remain
     // valid throughout CreateProcessW, including all failure paths.
     unsafe {
@@ -274,7 +281,7 @@ fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<
     assert_eq!(job.active_processes()?, 0);
 
     let job_handles = [job.raw()];
-    let mut attributes = AttributeList::new()?;
+    let mut attributes = AttributeList::new(1)?;
     // SAFETY: the Job handle array and aligned attribute buffer outlive Win32
     // creation, and neither is shared with an untrusted caller.
     unsafe {
@@ -362,5 +369,187 @@ fn resumed_root_exits_and_kernel_job_drains_after_job_list_creation() -> Result<
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+    Ok(())
+}
+
+#[test]
+fn resumed_job_root_produces_two_physical_pipe_eofs() -> Result<()> {
+    // Research-only physical root and stdio proof, not production GitRead.
+    // All child bytes are fixed literals and no project/user input is passed.
+    // cmd /D suppresses AutoRun; the single shell command only echoes markers.
+    fn inheritable_copy(handle: HANDLE) -> Result<OwnedHandle> {
+        let mut duplicated = HANDLE::default();
+        // SAFETY: the source belongs to this process. DuplicateHandle creates
+        // a newly owned, explicitly inheritable OS handle for one fixed child.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                handle,
+                GetCurrentProcess(),
+                &mut duplicated,
+                0,
+                true,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: successful duplication transfers exclusive handle ownership.
+        Ok(unsafe { OwnedHandle::from_raw_handle(duplicated.0) })
+    }
+
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::other("SystemRoot unavailable to hosted Windows test"))?;
+    let system_directory = PathBuf::from(system_root).join("System32");
+    let executable = system_directory.join("cmd.exe");
+    if !executable.is_file() {
+        return Err(Error::other("fixed Windows system image unavailable"));
+    }
+    let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
+    let working_directory: Vec<u16> =
+        system_directory.as_os_str().encode_wide().chain([0]).collect();
+    let mut fixed_command = OsString::from("\"");
+    fixed_command.push(executable.as_os_str());
+    fixed_command.push("\" /D /Q /C \"echo OPTIC_STDOUT & echo OPTIC_STDERR 1>&2\"");
+    let mut command_line: Vec<u16> = fixed_command.encode_wide().chain([0]).collect();
+
+    let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
+    assert_eq!(job.active_processes()?, 0);
+    let mut stdout = CapturedOutputPipe::new()?;
+    let mut stderr = CapturedOutputPipe::new()?;
+    let null_input = File::open("NUL")?;
+    let child_stdin = inheritable_copy(HANDLE(null_input.as_raw_handle()))?;
+    let child_stdout = inheritable_copy(HANDLE(stdout.writer_handle()?.as_raw_handle()))?;
+    let child_stderr = inheritable_copy(HANDLE(stderr.writer_handle()?.as_raw_handle()))?;
+    let inherited = [
+        HANDLE(child_stdin.as_raw_handle()),
+        HANDLE(child_stdout.as_raw_handle()),
+        HANDLE(child_stderr.as_raw_handle()),
+    ];
+
+    // Both attributes are essential: the root must be in the configured Job
+    // when CreateProcess returns, and only these three stdio handles may be
+    // inherited. No blanket parent handle inheritance is intended.
+    let job_handles = [job.raw()];
+    let mut attributes = AttributeList::new(2)?;
+    // SAFETY: Job and stdio handle arrays are live, stable in memory and
+    // fully initialized. The attribute buffer outlives CreateProcessW.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(job_handles.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+    // SAFETY: the three handles have explicitly inheritable duplicates.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(inherited.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>() * inherited.len(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = inherited[0];
+    startup.StartupInfo.hStdOutput = inherited[1];
+    startup.StartupInfo.hStdError = inherited[2];
+    startup.lpAttributeList = attributes.raw();
+    let mut info = PROCESS_INFORMATION::default();
+
+    // SAFETY: all paths, mutable command bytes and both attribute/handle
+    // arrays outlive this call. CREATE_SUSPENDED prevents running before
+    // verifying the Job. TRUE inheritance is restricted by HANDLE_LIST.
+    unsafe {
+        CreateProcessW(
+            PCWSTR(application.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            true,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+            None,
+            PCWSTR(working_directory.as_ptr()),
+            &startup.StartupInfo,
+            &mut info,
+        )
+    }
+    .map_err(Error::other)?;
+    let process = SuspendedFixtureProcess(info);
+
+    let mut belongs = BOOL(0);
+    // SAFETY: the kernel Job and unique root process handle remain live.
+    unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
+        .map_err(Error::other)?;
+    assert!(belongs.as_bool(), "root must be Job-associated before resume");
+    assert_eq!(job.active_processes()?, 1);
+
+    // Parent-owned original writers and all temporary inherited duplicates
+    // must be closed before EOF could be observed. Retain only the readers.
+    stdout.close_parent_writer();
+    stderr.close_parent_writer();
+    drop((child_stdin, child_stdout, child_stderr));
+
+    // SAFETY: this is the primary thread handle of our suspended child only.
+    let resume_count = unsafe { ResumeThread(process.0.hThread) };
+    if resume_count == u32::MAX {
+        return Err(Error::last_os_error());
+    }
+    assert!(resume_count > 0, "the root must have genuinely resumed");
+
+    // Root exit, Job empty and each pipe EOF are independent physical facts.
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 5000) },
+        WAIT_OBJECT_0,
+        "resumed root did not exit within the fixture deadline"
+    );
+    let mut exit_code = u32::MAX;
+    // SAFETY: the signaled process handle and writable output are valid.
+    unsafe { GetExitCodeProcess(process.0.hProcess, &mut exit_code) }.map_err(Error::other)?;
+    assert_eq!(exit_code, 0, "fixed echo command must exit successfully");
+
+    let until = Instant::now() + Duration::from_secs(5);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let mut out_eof = false;
+    let mut err_eof = false;
+    while !out_eof || !err_eof || job.active_processes()? != 0 {
+        if !out_eof {
+            let chunk = stdout.try_read(1024)?;
+            out.extend(chunk.bytes);
+            out_eof = chunk.eof;
+        }
+        if !err_eof {
+            let chunk = stderr.try_read(1024)?;
+            err.extend(chunk.bytes);
+            err_eof = chunk.eof;
+        }
+        if Instant::now() >= until {
+            return Err(Error::other(
+                "root exited but Job-empty and both physical pipe EOFs were not observed",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert!(
+        String::from_utf8_lossy(&out).contains("OPTIC_STDOUT"),
+        "the stdout pipe must contain its real child marker"
+    );
+    assert!(
+        String::from_utf8_lossy(&err).contains("OPTIC_STDERR"),
+        "the stderr pipe must contain its independent real child marker"
+    );
     Ok(())
 }
