@@ -797,7 +797,12 @@ fn prelaunch_snapshot_never_rebinds_after_original_lease_id_reuse() {
     // The original TaskLease can disappear while this service-owned admission
     // and its inert kernel Job are still retained. Re-registering the same
     // opaque lease ID must NOT re-arm the original owner's stop witness.
-    assert!(fixture.leases.revoke(&fixture.lease.id).expect("revoke original"));
+    assert!(
+        fixture
+            .leases
+            .revoke(&fixture.lease.id)
+            .expect("revoke original")
+    );
     assert!(
         fixture
             .leases
@@ -835,14 +840,19 @@ fn prelaunch_snapshot_never_rebinds_after_original_lease_id_reuse() {
         1
     );
     assert_eq!(
-        custody.native_active_processes().expect("kernel is still idle"),
+        custody
+            .native_active_processes()
+            .expect("kernel is still idle"),
         0,
         "no process exists: Job-empty before launch is not completion proof"
     );
     drop(custody); // Only no-child cleanup, never an uncertain live-child release.
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed
     );
 }
