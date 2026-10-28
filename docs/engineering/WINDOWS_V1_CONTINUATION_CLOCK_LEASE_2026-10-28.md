@@ -28,9 +28,12 @@ squash and independent push/main CI are fully verified.
   rechecks; renewal publication all-or-nothing.
 - #420: actual debug renewal panic reproduced (200 vs 100) and fixed without
   removing current validation or refreshing the original permit deadline.
-- Current pre-drain lease-stop slice: test-first initial source is deliberately
-  RED; require the final correction and exact remote receipts before treating
-  original lease stop before drainage + late-registration sweep as established.
+- Current pre-drain lease-stop slice: behavioral RED was obtained on Windows
+  and Ubuntu at cad47990342c8aa84a9ce6bcdb62943f7e90bdfa (#40753355684 and
+  #40753355716): original lease stop waited on admission drainage. The corrected
+  source publishes only flags early, retains records/pins/capacity and repeats
+  the lease sweep after drainage. Require final corrected-head and independent
+  main receipts in #323 before treating this slice as integrated.
 
 All native status preparation/custody is still **non-executing**. No native
 GitRead root has been launched by this owner. Existing real empty Job/watchdog

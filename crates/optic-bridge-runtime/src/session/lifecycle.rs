@@ -263,13 +263,16 @@ impl SessionLifecycleManager {
         // before any potentially blocking admission-drain barrier. An admitted
         // native owner may need this signal to become quiescent.
         let session_changed = self.sessions.publish_revocation_before_drain(session)?;
+        // Publish original lease stop without dropping records or executable pins.
+        // A lease observer may itself hold an admission that must drain below.
+        let immediate_lease_result = self.task_leases.revoke_session(session);
         // Ask already-registered, session-owned jobs to stop now, while a
         // counted admission can still be in flight. This is only a stop
         // request: it is NOT native termination confirmation or capacity release.
         let immediate_process_result = self.processes.cancel_session(session);
 
-        // Preserve the original admission drain barrier: leases, approval
-        // authority and their resource reservations remain until all already
+        // Preserve the original admission drain barrier: lease records/pins,
+        // approval authority and resource reservations remain until all already
         // admitted effects have left the critical section.
         let _ = self.sessions.revoke(session)?;
 
@@ -279,11 +282,12 @@ impl SessionLifecycleManager {
         // Attempt all cleanup paths before propagating any cleanup error.
         let approval_result = self.approvals.revoke_session(session);
         let reusable_approval_result = self.reusable_approvals.revoke_session(session);
+        // Catch leases registered by an admitted producer after the first sweep.
         let lease_result = self.task_leases.revoke_session(session);
         let late_process_result = self.processes.cancel_session(session);
         let revoked_approvals = approval_result?;
         let revoked_reusable_approvals = reusable_approval_result?;
-        let revoked_leases = lease_result?;
+        let revoked_leases = immediate_lease_result?.saturating_add(lease_result?);
         let cancellation_requests = immediate_process_result?.saturating_add(late_process_result?);
 
         Ok(SessionRevokeReport {
