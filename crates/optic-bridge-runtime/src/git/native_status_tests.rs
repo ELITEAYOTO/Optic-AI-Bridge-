@@ -1698,7 +1698,9 @@ fn native_clock_preparation_rejects_foreign_and_untagged_transport_without_child
         let request = if tagged {
             transport.begin_execution_on_clock(&foreign).unwrap()
         } else {
-            transport.begin_execution(crate::Clock::now(&clock)).unwrap()
+            transport
+                .begin_execution(crate::Clock::now(&clock))
+                .unwrap()
         };
         let admission = fixture
             .sessions
