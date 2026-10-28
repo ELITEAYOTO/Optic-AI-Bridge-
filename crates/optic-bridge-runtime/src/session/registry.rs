@@ -6,9 +6,9 @@ use std::{
     },
 };
 
-use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 #[cfg(windows)]
 use optic_bridge_core::JobId;
+use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
 
 #[cfg(test)]
