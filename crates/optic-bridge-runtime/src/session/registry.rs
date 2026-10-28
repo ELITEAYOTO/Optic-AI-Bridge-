@@ -7,6 +7,8 @@ use std::{
 };
 
 use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
+#[cfg(windows)]
+use optic_bridge_core::JobId;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -189,13 +191,55 @@ impl SessionRegistry {
         let record = sessions
             .get(&admitted.handle)
             .ok_or(SessionRegistryError::UnknownSession)?;
+        Self::check_original_native_owner_record(record, admitted, now)
+    }
+
+    /// Commit *only the session authority boundary* for one already registered,
+    /// precreated native owner. Direct and lifecycle close serialize against
+    /// this short critical section; no Win32 call or JobStore lock is taken.
+    ///
+    /// The receipt remains bound to the original session generation and its
+    /// real private Job ID. It is NOT a native launch permission: independent
+    /// task lease, policy epoch and target fences must still be engineered.
+    #[cfg(windows)]
+    pub(crate) fn commit_registered_native_owner_session(
+        &self,
+        admitted: &OwnedSessionAdmissionPermit,
+        registered_job: JobId,
+        now: MonotonicTime,
+    ) -> Result<SessionNativeOwnerCommit, SessionRegistryError> {
+        if !std::ptr::eq(self, admitted.registry.as_ref()) {
+            return Err(SessionRegistryError::ForeignAdmissionRegistry);
+        }
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&admitted.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        Self::check_original_native_owner_record(record, admitted, now)?;
+        // Receipt publication is ordered with the irreversible session close.
+        // Neither the original admission nor the Job is dropped here.
+        Ok(SessionNativeOwnerCommit {
+            registered_job,
+            original_stop: admitted.stop_watch(),
+        })
+    }
+
+    #[cfg(windows)]
+    fn check_original_native_owner_record(
+        record: &SessionRecord,
+        admitted: &OwnedSessionAdmissionPermit,
+        now: MonotonicTime,
+    ) -> Result<(), SessionRegistryError> {
         if !Arc::ptr_eq(&record.revocation_signal, &admitted.revocation_watch.signal) {
             return Err(SessionRegistryError::AdmissionGenerationMismatch);
         }
         if record.revoked {
             return Err(SessionRegistryError::Revoked);
         }
-        // Renewal must not extend an already-admitted owner's time horizon.
+        // An admission-time expiry must not grow after a later renewal.
         if record.grant.is_expired_at(now) || admitted.grant.is_expired_at(now) {
             return Err(SessionRegistryError::Expired);
         }
@@ -455,6 +499,27 @@ pub enum SessionRegistryError {
     AdmissionsInFlight,
     #[error("session is still active and cannot be removed")]
     StillActive,
+}
+
+/// Opaque, non-cloneable proof that the session close ordering point was
+/// reached for this already registered private native owner. Does not contain
+/// an OS handle, grant a native launch or certify process termination.
+#[cfg(windows)]
+#[must_use = "the original session stop signal must outlive native ownership"]
+pub(crate) struct SessionNativeOwnerCommit {
+    registered_job: JobId,
+    original_stop: SessionAdmissionStopWatch,
+}
+
+#[cfg(windows)]
+impl SessionNativeOwnerCommit {
+    pub(crate) fn job_id(&self) -> &JobId {
+        &self.registered_job
+    }
+
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.original_stop.is_stop_required_at(now)
+    }
 }
 
 /// Read-only observation of *explicit* revocation for one admitted session
