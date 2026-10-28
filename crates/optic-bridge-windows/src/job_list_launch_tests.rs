@@ -558,3 +558,203 @@ fn resumed_job_root_produces_two_physical_pipe_eofs() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn descendant_keeps_both_pipes_open_after_root_exit_until_job_termination() -> Result<()> {
+    // Hosted-Windows research fixture, not a GitRead service launcher. A
+    // fixed cmd.exe root uses START /B to spawn a long-lived system PowerShell
+    // child with inherited stdout/stderr; the root itself exits promptly.
+    // No project/user input or remote/network operation is involved.
+    fn inheritable_copy(handle: HANDLE) -> Result<OwnedHandle> {
+        let mut duplicated = HANDLE::default();
+        // SAFETY: the source is owned by this process and the successful
+        // duplicate becomes an independently owned, inheritable OS handle.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                handle,
+                GetCurrentProcess(),
+                &mut duplicated,
+                0,
+                true,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: successful duplication transfers this unique handle.
+        Ok(unsafe { OwnedHandle::from_raw_handle(duplicated.0) })
+    }
+
+    let root = PathBuf::from(
+        std::env::var_os("SystemRoot")
+            .ok_or_else(|| Error::other("SystemRoot unavailable to Windows test"))?,
+    );
+    let system_directory = root.join("System32");
+    let executable = system_directory.join("cmd.exe");
+    let descendant = system_directory
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    if !executable.is_file() || !descendant.is_file() {
+        return Err(Error::other("required fixed Windows system image unavailable"));
+    }
+    let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
+    let working_directory: Vec<u16> = system_directory
+        .as_os_str()
+        .encode_wide()
+        .chain([0])
+        .collect();
+
+    // START /B intentionally inherits the root's console-style standard
+    // handles. The descendant sleeps, holding both pipe writers, while cmd
+    // returns 0. The fixture then stops it through the containing Job.
+    let mut command = OsString::from("\"");
+    command.push(executable.as_os_str());
+    command.push("\" /D /Q /C start \"\" /B \"");
+    command.push(descendant.as_os_str());
+    command.push("\" -NoLogo -NoProfile -NonInteractive -Command Start-Sleep -Seconds 45");
+    let mut command_line: Vec<u16> = command.encode_wide().chain([0]).collect();
+
+    // Leave room for the fixed root and its descendant; no arbitrary launch
+    // arguments or executable identity are accepted by this test.
+    let job = OwnedJob::create(4, 512 * 1024 * 1024, 20)?;
+    let mut stdout = CapturedOutputPipe::new()?;
+    let mut stderr = CapturedOutputPipe::new()?;
+    let nul = File::open("NUL")?;
+    let stdin_handle = inheritable_copy(HANDLE(nul.as_raw_handle()))?;
+    let stdout_handle = inheritable_copy(HANDLE(stdout.writer_handle()?.as_raw_handle()))?;
+    let stderr_handle = inheritable_copy(HANDLE(stderr.writer_handle()?.as_raw_handle()))?;
+    let inherited = [
+        HANDLE(stdin_handle.as_raw_handle()),
+        HANDLE(stdout_handle.as_raw_handle()),
+        HANDLE(stderr_handle.as_raw_handle()),
+    ];
+
+    let jobs = [job.raw()];
+    let mut attributes = AttributeList::new(2)?;
+    // SAFETY: the arrays and aligned attribute-list buffer remain live and
+    // stable through the native creation call.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(jobs.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+    // SAFETY: the list restricts inheritance to only the three specifically
+    // duplicated handles, never arbitrary handles from the hosting process.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(inherited.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>() * inherited.len(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = inherited[0];
+    startup.StartupInfo.hStdOutput = inherited[1];
+    startup.StartupInfo.hStdError = inherited[2];
+    startup.lpAttributeList = attributes.raw();
+    let mut info = PROCESS_INFORMATION::default();
+
+    // SAFETY: the fixed executable, writable command line, cwd, inherited
+    // handles and attributes outlive this call. The root starts suspended
+    // and is assigned to the Job at creation, before it may run.
+    unsafe {
+        CreateProcessW(
+            PCWSTR(application.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            true,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+            None,
+            PCWSTR(working_directory.as_ptr()),
+            &startup.StartupInfo,
+            &mut info,
+        )
+    }
+    .map_err(Error::other)?;
+    let process = SuspendedFixtureProcess(info);
+    let mut belongs = BOOL(0);
+    // SAFETY: the Job and suspended process handles are still owned here.
+    unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
+        .map_err(Error::other)?;
+    assert!(belongs.as_bool(), "root must be in Job before resume");
+    assert_eq!(job.active_processes()?, 1);
+
+    // The only remaining writers after this point belong to processes.
+    stdout.close_parent_writer();
+    stderr.close_parent_writer();
+    drop((stdin_handle, stdout_handle, stderr_handle));
+
+    // SAFETY: resume exactly the owned primary thread of this suspended root.
+    let previous = unsafe { ResumeThread(process.0.hThread) };
+    if previous == u32::MAX {
+        return Err(Error::last_os_error());
+    }
+    assert!(previous > 0, "root was never resumed");
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 10000) },
+        WAIT_OBJECT_0,
+        "fixed root failed to exit while its descendant should be sleeping"
+    );
+    let mut exit_code = u32::MAX;
+    // SAFETY: the root handle is signaled, live and the output is writable.
+    unsafe { GetExitCodeProcess(process.0.hProcess, &mut exit_code) }
+        .map_err(Error::other)?;
+    assert_eq!(exit_code, 0, "the fixed START root must exit successfully");
+
+    // Demonstrate the bug's essential distinction: a successful, signaled
+    // root is NOT proof that its descendant or inherited pipes are finished.
+    assert!(
+        job.active_processes()? >= 1,
+        "expected a still-live descendant after root exit"
+    );
+    assert!(
+        !stdout.try_read(64)?.eof,
+        "stdout must not report physical EOF while descendant owns a writer"
+    );
+    assert!(
+        !stderr.try_read(64)?.eof,
+        "stderr must not report physical EOF while descendant owns a writer"
+    );
+
+    // The Job, not a root-only TerminateProcess, closes the descendant. Keep
+    // root exit, Job accounting and BOTH pipe EOFs as separate OS predicates.
+    job.terminate(1)?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stdout_eof = false;
+    let mut stderr_eof = false;
+    loop {
+        if !stdout_eof {
+            stdout_eof = stdout.try_read(1024)?.eof;
+        }
+        if !stderr_eof {
+            stderr_eof = stderr.try_read(1024)?.eof;
+        }
+        if job.active_processes()? == 0 && stdout_eof && stderr_eof {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::other(
+                "Job termination did not yield Job-empty and both physical EOFs",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
