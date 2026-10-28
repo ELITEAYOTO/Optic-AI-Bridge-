@@ -120,6 +120,21 @@ impl Fixture {
         }
     }
 
+    #[cfg(windows)]
+    fn owned_on_clock(
+        &self,
+        guard: &TransportGuard,
+        clock: &crate::StdClock,
+    ) -> NativeGitReadOwnedPermits {
+        let now = crate::Clock::now(clock);
+        NativeGitReadOwnedPermits::new(
+            self.sessions
+                .begin_owned_admission(&self.envelope.session, now)
+                .expect("original clocked admission"),
+            guard.begin_execution(now).expect("original clocked transport"),
+        )
+    }
+
     fn owned(&self, guard: &TransportGuard) -> NativeGitReadOwnedPermits {
         let now = MonotonicTime::from_millis(10);
         NativeGitReadOwnedPermits::new(
@@ -1391,6 +1406,7 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
         fixture.leases.register(fixture.lease.clone()).unwrap();
         let transport = guard(10_000);
+        let clock = crate::StdClock::new();
         let manager = crate::ProcessManager::new(
             &fixture.repository,
             optic_bridge_core::HardLimits::default(),
@@ -1399,11 +1415,11 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         .unwrap();
         let prepared = fixture
             .service()
-            .prepare_native_status(
+            .prepare_native_status_on_clock(
                 &fixture.trusted(),
-                fixture.owned(&transport),
+                fixture.owned_on_clock(&transport, &clock),
                 &fixture.envelope,
-                MonotonicTime::from_millis(10),
+                &clock,
             )
             .unwrap();
         let registered = manager
@@ -1418,10 +1434,10 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
             .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
             .unwrap();
         owner
-            .arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .arm_original_watchdog(&fixture.trusted())
             .unwrap();
         assert!(matches!(
-            owner.arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12)),
+            owner.arm_original_watchdog(&fixture.trusted()),
             Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
         ));
         match source {
@@ -1497,6 +1513,70 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizon() {
     let fixture = Fixture::new();
     let transport = guard(1_000);
+    let clock = crate::StdClock::new();
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap();
+    let job = registered.job_id();
+    let mut owner = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    fixture
+        .sessions
+        .renew_active(
+            &fixture.envelope.session,
+            MonotonicTime::from_millis(12),
+            MonotonicTime::from_millis(20_000),
+        )
+        .unwrap();
+    // Session renewal and a stale logical observation cannot restart the horizon.
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(matches!(
+        owner.arm_original_watchdog(&fixture.trusted()),
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+    ));
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn original_watchdog_rejects_logical_only_preparation_without_service_clock() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
     let manager = crate::ProcessManager::new(
         &fixture.repository,
         optic_bridge_core::HardLimits::default(),
@@ -1523,19 +1603,70 @@ fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizo
         .unwrap()
         .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
         .unwrap();
-    fixture
-        .sessions
-        .renew_active(
-            &fixture.envelope.session,
-            MonotonicTime::from_millis(12),
-            MonotonicTime::from_millis(20_000),
+    assert!(matches!(
+        owner.arm_original_watchdog(&fixture.trusted()),
+        Err(crate::NativeGitStatusSnapshotError::ClockRequired)
+    ));
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn original_watchdog_expires_on_retained_service_clock_without_caller_polling() {
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let clock = crate::StdClock::new();
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
         )
         .unwrap();
-    // Session renewal and a stale logical observation cannot restart the horizon.
-    std::thread::sleep(Duration::from_millis(150));
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap();
+    let job = registered.job_id();
+    let mut owner = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+    let bound = std::time::Instant::now() + Duration::from_secs(2);
+    while !owner.watchdog_stop_observed() && std::time::Instant::now() < bound {
+        std::thread::yield_now();
+    }
+    assert!(owner.watchdog_stop_observed());
+    assert!(owner.watchdog_deadline_expired());
     assert!(matches!(
-        owner.arm_original_watchdog(&fixture.trusted(), MonotonicTime::from_millis(12)),
-        Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
+        owner.arm_original_watchdog(&fixture.trusted()),
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
     ));
     assert_eq!(owner.native_active_processes().unwrap(), 0);
     drop(owner);

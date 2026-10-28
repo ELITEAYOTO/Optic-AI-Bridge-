@@ -12,6 +12,14 @@ pub struct StdClock {
 }
 
 impl StdClock {
+    /// Project an absolute service horizon from this clock's original origin.
+    /// Cloning, delayed observation and watchdog arm cannot restart its budget.
+    #[cfg(any(windows, test))]
+    pub(crate) fn deadline_instant(&self, deadline: MonotonicTime) -> Option<Instant> {
+        self.origin
+            .checked_add(std::time::Duration::from_millis(deadline.as_millis()))
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -37,6 +45,24 @@ impl Clock for StdClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absolute_deadline_keeps_original_origin_across_clones_and_delay() {
+        let origin = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(2))
+            .unwrap();
+        let clock = StdClock { origin };
+        let deadline = MonotonicTime::from_millis(1_000);
+        let expected = origin + std::time::Duration::from_secs(1);
+        assert_eq!(clock.deadline_instant(deadline), Some(expected));
+        assert!(expected < Instant::now(), "elapsed horizon remains elapsed");
+        let cloned = clock.clone();
+        assert_eq!(cloned.deadline_instant(deadline), Some(expected));
+        assert_eq!(
+            clock.deadline_instant(MonotonicTime::from_millis(0)),
+            Some(origin)
+        );
+    }
 
     #[test]
     fn std_clock_is_monotonic() {
