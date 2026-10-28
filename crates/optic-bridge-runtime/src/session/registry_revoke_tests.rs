@@ -607,9 +607,11 @@ fn original_owner_observation_orders_with_direct_and_lifecycle_close() {
             .begin_owned_admission(&original.handle, now)
             .unwrap();
         let other_owner = registry.begin_owned_admission(&other.handle, now).unwrap();
-        assert!(registry
-            .observe_original_owned_admission_under_close_lock(&owner, now)
-            .is_ok());
+        assert!(
+            registry
+                .observe_original_owned_admission_under_close_lock(&owner, now)
+                .is_ok()
+        );
 
         let closer_registry = Arc::clone(&registry);
         let handle = original.handle.clone();
@@ -642,9 +644,18 @@ fn original_owner_observation_orders_with_direct_and_lifecycle_close() {
         closer.join().unwrap();
 
         assert_eq!(closed, Err(SessionRegistryError::Revoked));
-        assert!(other_still_valid.is_ok(), "another session remains independent");
-        assert!(original_watch_stopped, "close must reach the old generation");
-        assert!(waiting_for_original_owner, "close is not admission drainage");
+        assert!(
+            other_still_valid.is_ok(),
+            "another session remains independent"
+        );
+        assert!(
+            original_watch_stopped,
+            "close must reach the old generation"
+        );
+        assert!(
+            waiting_for_original_owner,
+            "close is not admission drainage"
+        );
         assert_eq!(result, (true, false));
         drop(other_owner);
     }
@@ -671,12 +682,14 @@ fn original_owner_observation_rejects_foreign_registry_and_renewed_deadline() {
     registry
         .renew_active(&original.handle, now, MonotonicTime::from_millis(200))
         .unwrap();
-    assert!(registry
-        .observe_original_owned_admission_under_close_lock(
-            &owner,
-            MonotonicTime::from_millis(99),
-        )
-        .is_ok());
+    assert!(
+        registry
+            .observe_original_owned_admission_under_close_lock(
+                &owner,
+                MonotonicTime::from_millis(99),
+            )
+            .is_ok()
+    );
     assert_eq!(
         registry.observe_original_owned_admission_under_close_lock(
             &owner,
