@@ -767,3 +767,7 @@ mod native_error_regression {
         assert_eq!(job_query_io_error(native).raw_os_error(), Some(status.0));
     }
 }
+
+#[cfg(test)]
+#[path = "job_list_launch_tests.rs"]
+mod job_list_launch_tests;
