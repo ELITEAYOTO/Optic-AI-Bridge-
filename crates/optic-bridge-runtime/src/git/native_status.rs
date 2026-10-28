@@ -84,6 +84,9 @@ pub enum NativeGitStatusPreparationError {
         "native Git status session issuance or admission has missing or foreign clock provenance"
     )]
     SessionClockMismatch,
+    #[cfg(windows)]
+    #[error("native Git status task lease has missing or foreign clock provenance")]
+    LeaseClockMismatch,
     #[error(transparent)]
     Command(#[from] GitReadError),
     #[error(transparent)]
@@ -110,6 +113,9 @@ impl GitReadService {
             return Err(NativeGitStatusPreparationError::SessionClockMismatch);
         }
         let mut prepared = self.prepare_native_status(trusted, owned, envelope, clock.now())?;
+        if !prepared.admission.lease_belongs_to_clock(clock) {
+            return Err(NativeGitStatusPreparationError::LeaseClockMismatch);
+        }
         let until = clock
             .deadline_instant(prepared.deadline())
             .filter(|until| *until > std::time::Instant::now())
