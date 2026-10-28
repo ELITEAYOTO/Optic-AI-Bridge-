@@ -202,6 +202,7 @@ impl SessionRegistry {
     /// real private Job ID. It is NOT a native launch permission: independent
     /// task lease, policy epoch and target fences must still be engineered.
     #[cfg(windows)]
+    #[allow(dead_code)] // This short commit is used by the inert native stage only.
     pub(crate) fn commit_registered_native_owner_session(
         &self,
         admitted: &OwnedSessionAdmissionPermit,
@@ -506,12 +507,14 @@ pub enum SessionRegistryError {
 /// an OS handle, grant a native launch or certify process termination.
 #[cfg(windows)]
 #[must_use = "the original session stop signal must outlive native ownership"]
+#[allow(dead_code)] // Original stop receipt is not wired into production GitRead.
 pub(crate) struct SessionNativeOwnerCommit {
     registered_job: JobId,
     original_stop: SessionAdmissionStopWatch,
 }
 
 #[cfg(windows)]
+#[allow(dead_code)] // Receipt accessors are used by the inert native owner stage.
 impl SessionNativeOwnerCommit {
     pub(crate) fn job_id(&self) -> &JobId {
         &self.registered_job
