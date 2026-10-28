@@ -131,7 +131,9 @@ impl Fixture {
             self.sessions
                 .begin_owned_admission(&self.envelope.session, now)
                 .expect("original clocked admission"),
-            guard.begin_execution(now).expect("original clocked transport"),
+            guard
+                .begin_execution(now)
+                .expect("original clocked transport"),
         )
     }
 
@@ -1433,9 +1435,7 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
             .unwrap()
             .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
             .unwrap();
-        owner
-            .arm_original_watchdog(&fixture.trusted())
-            .unwrap();
+        owner.arm_original_watchdog(&fixture.trusted()).unwrap();
         assert!(matches!(
             owner.arm_original_watchdog(&fixture.trusted()),
             Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
