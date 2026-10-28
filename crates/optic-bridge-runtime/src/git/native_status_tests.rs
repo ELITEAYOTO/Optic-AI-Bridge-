@@ -856,3 +856,198 @@ fn prelaunch_snapshot_never_rebinds_after_original_lease_id_reuse() {
         crate::ProcessStatus::Failed
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn session_only_commit_precedes_direct_close_and_preserves_registered_owner() {
+    use std::{sync::mpsc, thread, time::Instant};
+
+    let fixture = Fixture::new();
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .expect("synthetic process manager");
+    let prepared = fixture
+        .service()
+        .prepare_native_status(
+            &fixture.trusted(),
+            fixture.owned(&transport),
+            &fixture.envelope,
+            MonotonicTime::from_millis(10),
+        )
+        .expect("admitted original native status");
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .expect("registered private process capacity");
+    let job = registered.job_id();
+    let unstarted = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .expect("empty native Job/pipes and pinned original targets");
+    let committed = unstarted
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .expect("commit session only, without a native launch");
+    assert_eq!(committed.job_id(), job);
+    assert!(!committed.is_stop_required_at(MonotonicTime::from_millis(12)));
+    assert_eq!(
+        committed.native_active_processes().expect("kernel Job"),
+        0,
+        "session commitment never executes a native child"
+    );
+
+    let registry = Arc::clone(&fixture.sessions);
+    let handle = fixture.envelope.session.clone();
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let closer = thread::spawn(move || {
+        done_tx
+            .send(registry.revoke(&handle))
+            .expect("revoke result");
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let observation = fixture
+            .sessions
+            .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12));
+        if matches!(observation, Err(SessionRegistryError::Revoked)) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "direct close not published");
+        thread::yield_now();
+    }
+
+    let stopped = committed.is_stop_required_at(MonotonicTime::from_millis(12));
+    let no_child = committed.native_active_processes().expect("real empty Job") == 0;
+    let retained_transport = transport.active_requests() == 1;
+    let retained_process = manager
+        .active_session_job_count(&fixture.envelope.session)
+        .expect("registered job count")
+        == 1;
+    let revoke_is_draining = matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+
+    // Release before asserting so the real synchronous revoker is never
+    // left blocked by a failed test.
+    drop(committed);
+    let result = done_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("revoke drains after original custody drops")
+        .expect("direct revoke");
+    closer.join().expect("revoke thread");
+    assert!(result);
+    assert!(stopped, "the committed generation must receive stop");
+    assert!(no_child, "no native child may exist in this phase");
+    assert!(
+        retained_transport,
+        "original worker permit retained through close"
+    );
+    assert!(
+        retained_process,
+        "registered native quota retained through close"
+    );
+    assert!(revoke_is_draining, "close is not process quiescence");
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed,
+        "no-child disposal must not counterfeit native terminal proof"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
+    use std::{sync::mpsc, thread, time::Instant};
+
+    for lifecycle_close in [false, true] {
+        let fixture = Fixture::new();
+        let transport = guard(1_000);
+        let manager = crate::ProcessManager::new(
+            &fixture.repository,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .expect("synthetic manager");
+        let prepared = fixture
+            .service()
+            .prepare_native_status(
+                &fixture.trusted(),
+                fixture.owned(&transport),
+                &fixture.envelope,
+                MonotonicTime::from_millis(10),
+            )
+            .expect("original active admission");
+        let registered = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+            .expect("native capacity");
+        let job = registered.job_id();
+        let custody = registered
+            .precreate_native_custody(MonotonicTime::from_millis(11))
+            .expect("unstarted native Job/stdio");
+        assert_eq!(custody.native_active_processes().unwrap(), 0);
+
+        let registry = Arc::clone(&fixture.sessions);
+        let handle = fixture.envelope.session.clone();
+        let mut direct_closer = None;
+        if lifecycle_close {
+            assert!(
+                registry
+                    .publish_revocation_before_drain(&handle)
+                    .expect("lifecycle close publishes original stop")
+            );
+        } else {
+            let (done_tx, done_rx) = mpsc::sync_channel(1);
+            let closer = thread::spawn(move || {
+                done_tx
+                    .send(registry.revoke(&handle))
+                    .expect("direct revoke result");
+            });
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let observation = fixture
+                    .sessions
+                    .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12));
+                if matches!(observation, Err(SessionRegistryError::Revoked)) {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "direct close not published");
+                thread::yield_now();
+            }
+            direct_closer = Some((closer, done_rx));
+        }
+
+        // Consumes and safely drops the already registered no-child owner
+        // on rejection. A failed session-only commit creates no new process.
+        let denied =
+            custody.commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12));
+        assert!(matches!(
+            denied,
+            Err(crate::NativeGitStatusSnapshotError::StopRequired)
+                | Err(crate::NativeGitStatusSnapshotError::Session(
+                    SessionRegistryError::Revoked
+                ))
+        ));
+        assert_eq!(transport.active_requests(), 0);
+        assert_eq!(
+            manager
+                .result(&fixture.envelope.session, &job)
+                .unwrap()
+                .status,
+            crate::ProcessStatus::Failed
+        );
+        if let Some((closer, done_rx)) = direct_closer {
+            assert!(
+                done_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("direct revoke completes after denied owner drops")
+                    .expect("direct revoke")
+            );
+            closer.join().expect("revoke thread");
+        } else {
+            assert!(!fixture.sessions.revoke(&fixture.envelope.session).unwrap());
+        }
+    }
+}

@@ -177,6 +177,19 @@ impl NativeGitReadAdmittedPreflight {
         registry.observe_original_owned_admission_under_close_lock(&self.session_admission, now)
     }
 
+    /// Session-only commit for the already registered, Job-owned native
+    /// candidate. Its receipt is generation-bound, not an effect/launch grant.
+    #[cfg(windows)]
+    #[allow(dead_code)] // No live native guardian consumes this research receipt yet.
+    pub(crate) fn commit_original_session_for_registered_owner(
+        &self,
+        registry: &Arc<SessionRegistry>,
+        job_id: optic_bridge_core::JobId,
+        now: MonotonicTime,
+    ) -> Result<crate::session_registry::SessionNativeOwnerCommit, SessionRegistryError> {
+        registry.commit_registered_native_owner_session(&self.session_admission, job_id, now)
+    }
+
     #[cfg(windows)]
     pub(crate) fn matches_original_lease_registration(
         &self,
