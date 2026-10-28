@@ -347,7 +347,10 @@ impl TaskLeaseRegistry {
                     continue;
                 }
                 validate_renewal_candidate(record, now, expected_policy_epoch)?;
-                snapshots.insert(record.lease.id.clone(), LeaseIdentitySnapshot::capture(record));
+                snapshots.insert(
+                    record.lease.id.clone(),
+                    LeaseIdentitySnapshot::capture(record),
+                );
             }
             snapshots
         };
@@ -743,7 +746,10 @@ mod tests {
                         Ok(())
                     },
                 );
-                matches!(result, Err(TaskLeaseRenewalError::ChangedDuringVerification))
+                matches!(
+                    result,
+                    Err(TaskLeaseRenewalError::ChangedDuringVerification)
+                )
             } else {
                 let result = reader_registry.get_active_with_verifier(
                     &first_id,
@@ -814,21 +820,26 @@ mod tests {
         release_tx.send(()).unwrap();
         let observed_expected = reader.join().unwrap();
         mutator.join().unwrap();
-        let remaining = registry.get_active(
-            &second.id,
-            &session,
-            MonotonicTime::from_millis(1),
-        );
+        let remaining = registry.get_active(&second.id, &session, MonotonicTime::from_millis(1));
         if let Ok(remaining) = remaining {
             let expected = if action == "extend" { 15_000 } else { 10_000 };
             assert_eq!(remaining.expires_at, MonotonicTime::from_millis(expected));
         }
         drop(registry);
         fs::remove_dir_all(root).unwrap();
-        assert!(changed_before_release, "registry mutation waited on identity IO");
-        assert!(observed_expected, "identity result lost its original generation or horizon");
+        assert!(
+            changed_before_release,
+            "registry mutation waited on identity IO"
+        );
+        assert!(
+            observed_expected,
+            "identity result lost its original generation or horizon"
+        );
         #[cfg(windows)]
-        assert!(pin_retained, "original pin disappeared during unlocked verification");
+        assert!(
+            pin_retained,
+            "original pin disappeared during unlocked verification"
+        );
     }
 
     #[test]
