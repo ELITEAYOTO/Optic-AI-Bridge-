@@ -1,5 +1,16 @@
 # Repository entry point for coding agents
 
+## LATEST CANONICAL ENTRY — 28 OCTOBER 2026, post #398
+
+[PR #398](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/398) (exact tested HEAD `7456f3d96dc289eb5e278e3d9acbfce8970a6dcf`) merged into `main=8aa6fd205e7a264e7873e6af6b627ddb81207d9d`. Trees identical `8883d4c0ee6a3647b543799c29f9b573be93a028`. Exact-head [CI #40655468052](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655468052) **SUCCESS 4/4**, [native preparation #40655468078](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655468078) **SUCCESS**. Independent [push/main #40656160001](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40656160001) **SUCCESS 4/4 on exact merged SHA, first attempt**. First candidate's [CI #40655374591](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40655374591) failed rustfmt, not #317 behavioral acceptance.
+
+The Windows-only, internal `SessionRegistry::observe_original_owned_admission_under_close_lock` rechecks an owned admission's original registry, registration-generation signal, revoked bit and captured expiry under the **same mutex** as direct `revoke` and lifecycle `publish_revocation_before_drain`. The precreated, **non-executing** native GitRead custody now invokes it both before and after its independent lease/policy snapshot. Windows tests `original_owner_observation_orders_with_direct_and_lifecycle_close` and `original_owner_observation_rejects_foreign_registry_and_renewed_deadline` passed on exact HEAD. No OS IO or policy work is performed under that session lock.
+
+**Nonclaims:** the mutex is released after this observation: it is not an owner **commit** or CreateProcess permit, nor a cross-registry TaskLease/policy epoch fence. Session or lease revoke may still race native creation. No real GitRead root, native child/descendant/stdio EOF, out-of-band stop, crash/uncertainty recovery or MCP switch is implemented; real #352/#355 acceptance remains RED. #317/#323/#185/#319 remain OPEN; **Windows V1 NO-GO**, no release or operator-PC access.
+
+See [STATUS](STATUS.md), [GitHub handoff](docs/engineering/GITHUB_HANDOFF.md), [native witness contract](docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md) and the [full Windows V1 prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_CHAT_2026-10-27.md). Older dated checkpoints are historical, not the current main SHA. GitHub-only, no Optic Desktop, REL, remote work or self-hosted runners.
+
+
 ## LATEST CANONICAL ENTRY — 28 OCTOBER 2026, verified post #396
 
 `main=8ee1ad0b2c135af3d639ab753703c3f911dc4941` is independently verified by [push/main #40653860272](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40653860272), SUCCESS 4/4 attempt 1. [#395](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/395) protects the original TaskLease generation witness against same-ID replacement (test-only); [#396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/396) tests a real Windows Job after a missing-image `CreateProcessW` failure (test-only). Neither is a real native GitRead implementation. #352/#355 acceptance unmet; #317/#323/#185/#319 OPEN; Windows V1 **NO-GO**, no release.
