@@ -1,5 +1,14 @@
 # OPTIC AI BRIDGE — PROMPT INTÉGRAL DE REPRISE TECHNIQUE — WINDOWS V1
-**Passation du 28 octobre 2026, après les PR #402, #403 et #404 — édition pour nouveau chat.**
+
+## 28 October 2026 — #410 physical descendant-held pipe/Job proof (NO-GO)
+
+**Merged research-only test:** [PR #410](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/410) at `main=20ed7887715601e260cc6f0fe9e73c18a1b3170e`. Exact final PR HEAD `99ba2e5d773bb82ad0ac6b3f39142055b1a3cb70` passed [CI #40679470136](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40679470136) **completed/success, 4/4 jobs**. Windows job `122786478971` logged `job::job_list_launch_tests::descendant_keeps_both_pipes_open_after_root_exit_until_job_termination ... ok`. Three exact-head hosted Windows workflows [Owned Native Process Pipes #40679470081](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40679470081), [Private Rust Compilation #40679470074](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40679470074) and [Private Project Preparation #40679470063](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40679470063) passed. Independent post-merge [push/main CI #40680226256](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40680226256) was **in progress when this checkpoint was written**; recheck its final exact-SHA, four-job outcome.
+
+**Physical scope:** a fixed `cmd.exe` root starts suspended already inside a private kernel Job, with both `PROC_THREAD_ATTRIBUTE_JOB_LIST` and a three-handle stdio inheritance list. It starts one fixed sleeping Windows PowerShell descendant using `START /B` and exits with code 0 while Job accounting still sees a live descendant and **neither stdout nor stderr has physical EOF**. Explicit `TerminateJobObject` then results in independently observed bounded Job-empty, stdout EOF and stderr EOF. No user project, actual GitRead, network, production launch owner or MCP change; one Rust Windows test only. The first candidate CI failed rustfmt; it was corrected before the successful final HEAD.
+
+**Still blocked (P0):** the MCP `git_status` implementation continues using `HardenedCommandRunner` with potentially unbounded blocking reader joins. No single synchronized session + original TaskLease + policy epoch + host shutdown native launch/revoke issuer exists; no production Win32 guardian, fail-closed owner-loss recovery, real native Git status/descendant budget/timeout acceptance, or validated Windows 10/11 device campaign exists. [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) stays **OPEN — Windows V1 NO-GO**; #185 and #319 remain separate blockers. The next engineering PR must target genuine native ownership/authority, not activate the service from a synthetic witness. No releases, other repositories, self-hosted runners or user-PC operations.
+
+**Passation technique du 28 octobre 2026, après la PR #410 — conserver les jalons historiques ci-dessous.**
 
 ## 28 October 2026 — #408 real stdout/stderr EOF on fixed Windows root
 
