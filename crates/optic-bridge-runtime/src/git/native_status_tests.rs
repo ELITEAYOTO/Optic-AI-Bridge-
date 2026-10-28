@@ -132,7 +132,7 @@ impl Fixture {
                 .begin_owned_admission(&self.envelope.session, now)
                 .expect("original clocked admission"),
             guard
-                .begin_execution(now)
+                .begin_execution_on_clock(clock)
                 .expect("original clocked transport"),
         )
     }
@@ -1684,4 +1684,48 @@ fn original_watchdog_expires_on_retained_service_clock_without_caller_polling() 
             .status,
         crate::ProcessStatus::Failed
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn native_clock_preparation_rejects_foreign_and_untagged_transport_without_child() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let clock = crate::StdClock::new();
+    let foreign = crate::StdClock::new();
+    let transport = guard(1_000);
+    for tagged in [false, true] {
+        let request = if tagged {
+            transport.begin_execution_on_clock(&foreign).unwrap()
+        } else {
+            transport.begin_execution(crate::Clock::now(&clock)).unwrap()
+        };
+        let admission = fixture
+            .sessions
+            .begin_owned_admission(&fixture.envelope.session, crate::Clock::now(&clock))
+            .unwrap();
+        let result = service.prepare_native_status_on_clock(
+            &fixture.trusted(),
+            NativeGitReadOwnedPermits::new(admission, request),
+            &fixture.envelope,
+            &clock,
+        );
+        assert!(matches!(
+            result,
+            Err(NativeGitStatusPreparationError::TransportClockMismatch)
+        ));
+        assert_eq!(transport.active_requests(), 0);
+    }
+    let prepared = service
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock.clone(),
+        )
+        .expect("clone retains original transport authority");
+    assert_eq!(transport.active_requests(), 1);
+    drop(prepared);
+    assert_eq!(transport.active_requests(), 0);
+    fixture.sessions.revoke(&fixture.envelope.session).unwrap();
 }

@@ -76,6 +76,9 @@ impl PreparedNativeGitStatus {
 pub enum NativeGitStatusPreparationError {
     #[error("native Git status requires UTF-8 service-owned targets")]
     NonUtf8Target,
+    #[cfg(windows)]
+    #[error("native Git status transport permit has missing or foreign clock provenance")]
+    TransportClockMismatch,
     #[error(transparent)]
     Command(#[from] GitReadError),
     #[error(transparent)]
@@ -95,6 +98,9 @@ impl GitReadService {
         envelope: &ActionEnvelope,
         clock: &crate::StdClock,
     ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
+        if !owned.transport_belongs_to_clock(clock) {
+            return Err(NativeGitStatusPreparationError::TransportClockMismatch);
+        }
         let mut prepared = self.prepare_native_status(trusted, owned, envelope, clock.now())?;
         let until = clock
             .deadline_instant(prepared.deadline())
