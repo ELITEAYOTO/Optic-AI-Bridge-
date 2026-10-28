@@ -460,7 +460,11 @@ impl LeaseObservedNativeGitStatusCustody {
         }
         let unstarted = &mut self.session_owner.unstarted;
         let until = unstarted.registered.prepared.watchdog_until;
-        let mut stops = unstarted.registered.prepared.admission.native_stop_signals();
+        let mut stops = unstarted
+            .registered
+            .prepared
+            .admission
+            .native_stop_signals();
         stops.push(unstarted.registered.record.stop_signal());
         unstarted.native.arm_watchdog_until(until, stops)?;
         // Revocation racing arm remains attached to the independent worker.
@@ -476,9 +480,11 @@ impl LeaseObservedNativeGitStatusCustody {
     }
 
     pub(crate) fn watchdog_deadline_expired(&self) -> bool {
-        self.session_owner.unstarted.native.watchdog_deadline_expired()
+        self.session_owner
+            .unstarted
+            .native
+            .watchdog_deadline_expired()
     }
-
 
     pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
         self.session_owner.is_stop_required_at(now) || self.lease_commit.is_stop_required_at(now)

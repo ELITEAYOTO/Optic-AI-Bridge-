@@ -502,6 +502,7 @@ impl ContainedAppContainerProcess {
         // Even a failed termination request can race natural exit. Only the
         // owned kernel accounting below establishes an empty process tree.
         let _ = self.job.terminate(1);
+        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
         loop {
             if self.job.active_processes()? == 0 && self.child.try_wait_exit()?.is_some() {
                 return Ok(());
@@ -554,7 +555,6 @@ impl NativeJobDeadline {
         let (cancel, receive) = mpsc::sync_channel(1);
         let expired = Arc::new(AtomicBool::new(false));
         let observed = Arc::clone(&expired);
-        let until = std::time::Instant::now() + Duration::from_millis(u64::from(timeout_ms));
         let worker = std::thread::Builder::new()
             .name("optic-job-deadline".into())
             .spawn(move || {

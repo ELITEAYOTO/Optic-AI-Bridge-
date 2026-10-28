@@ -1460,11 +1460,16 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         let empty = owner.native_active_processes().unwrap() == 0;
         assert_eq!(transport.active_requests(), 1);
         assert_eq!(
-            manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+            manager
+                .active_session_job_count(&fixture.envelope.session)
+                .unwrap(),
             1
         );
         drop(owner);
-        assert!(observed, "independent worker must observe original {source}");
+        assert!(
+            observed,
+            "independent worker must observe original {source}"
+        );
         assert!(
             !expired,
             "revocation proof must precede the five-second deadline"
@@ -1472,11 +1477,16 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         assert!(empty, "no child is created by watchdog wiring");
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(
-            manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+            manager
+                .active_session_job_count(&fixture.envelope.session)
+                .unwrap(),
             0
         );
         assert_eq!(
-            manager.result(&fixture.envelope.session, &job).unwrap().status,
+            manager
+                .result(&fixture.envelope.session, &job)
+                .unwrap()
+                .status,
             crate::ProcessStatus::Failed
         );
     }
@@ -1531,11 +1541,16 @@ fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizo
     drop(owner);
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.active_session_job_count(&fixture.envelope.session).unwrap(),
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
         0
     );
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed
     );
 }
