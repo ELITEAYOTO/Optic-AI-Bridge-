@@ -165,6 +165,18 @@ impl NativeGitReadAdmittedPreflight {
         self.session_admission.belongs_to_registry(registry)
     }
 
+    /// A generation-bound, read-only session check serialized with direct
+    /// and lifecycle close. It does NOT commit a native owner, and the result
+    /// can become stale as soon as the session mutex is released.
+    #[cfg(windows)]
+    pub(crate) fn observe_original_session_under_close_lock(
+        &self,
+        registry: &Arc<SessionRegistry>,
+        now: MonotonicTime,
+    ) -> Result<(), SessionRegistryError> {
+        registry.observe_original_owned_admission_under_close_lock(&self.session_admission, now)
+    }
+
     #[cfg(windows)]
     pub(crate) fn matches_original_lease_registration(
         &self,
