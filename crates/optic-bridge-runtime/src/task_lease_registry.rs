@@ -34,10 +34,34 @@ impl Default for TaskLeaseRegistry {
 
 #[derive(Debug)]
 struct LeaseRecord {
+    #[cfg(any(windows, test))]
+    clock_identity: Option<crate::clock::ClockIdentity>,
     lease: TaskLease,
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     process_authorities: HashMap<String, ProcessAuthority>,
+}
+
+impl LeaseRecord {
+    fn new(lease: TaskLease) -> Self {
+        Self {
+            #[cfg(any(windows, test))]
+            clock_identity: None,
+            lease,
+            revoked: false,
+            revocation_signal: Arc::new(AtomicBool::new(false)),
+            process_authorities: HashMap::new(),
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, Error)]
+pub(crate) enum TaskLeaseClockError {
+    #[error("task lease clock lifetime must be positive and representable")]
+    InvalidDeadline,
+    #[error(transparent)]
+    Registry(#[from] TaskLeaseRegistryError),
 }
 
 /// Read-only observation bound to one concrete, verified TaskLease record.
@@ -45,10 +69,20 @@ struct LeaseRecord {
 /// Removal and even reuse of the opaque lease ID cannot retarget this signal.
 #[derive(Clone, Debug)]
 pub(crate) struct TaskLeaseRevocationWatch {
+    #[cfg(any(windows, test))]
+    clock_identity: Option<crate::clock::ClockIdentity>,
     signal: Arc<AtomicBool>,
 }
 
 impl TaskLeaseRevocationWatch {
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Required by the inert native clock boundary.
+    pub(crate) fn belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.clock_identity
+            .as_ref()
+            .is_some_and(|identity| identity.matches(clock))
+    }
+
     /// Retain the exact original registration; no lookup by reusable public ID.
     #[cfg(windows)]
     pub(crate) fn native_stop_signal(&self) -> Arc<AtomicBool> {
@@ -105,6 +139,35 @@ impl TaskLeaseRegistry {
     }
 
     pub fn register(&self, lease: TaskLease) -> Result<(), TaskLeaseRegistryError> {
+        self.register_record(LeaseRecord::new(lease))
+    }
+
+    /// Issue a new registration on the retained service clock. The input lease
+    /// supplies scope/capability metadata, never an existing expiry to attest.
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // No production native launcher consumes this issuer yet.
+    pub(crate) fn register_on_clock(
+        &self,
+        mut lease: TaskLease,
+        lifetime_ms: u64,
+        clock: &crate::StdClock,
+    ) -> Result<TaskLease, TaskLeaseClockError> {
+        if lifetime_ms == 0 {
+            return Err(TaskLeaseClockError::InvalidDeadline);
+        }
+        lease.expires_at = crate::Clock::now(clock)
+            .as_millis()
+            .checked_add(lifetime_ms)
+            .map(MonotonicTime::from_millis)
+            .ok_or(TaskLeaseClockError::InvalidDeadline)?;
+        let mut record = LeaseRecord::new(lease.clone());
+        record.clock_identity = Some(clock.identity());
+        self.register_record(record)?;
+        Ok(lease)
+    }
+
+    fn register_record(&self, mut record: LeaseRecord) -> Result<(), TaskLeaseRegistryError> {
+        let lease = &record.lease;
         // Reject known duplicates and exhausted capacity before opening and
         // hashing an executable. Never hold the registry lock during file IO.
         {
@@ -112,10 +175,10 @@ impl TaskLeaseRegistry {
                 .leases
                 .lock()
                 .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
-            self.validate_registration(&leases, &lease)?;
+            self.validate_registration(&leases, lease)?;
         }
 
-        let process_authorities = capture_process_authorities(&lease)?;
+        record.process_authorities = capture_process_authorities(lease)?;
 
         let mut leases = self
             .leases
@@ -123,16 +186,8 @@ impl TaskLeaseRegistry {
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         // Concurrent registrations/removals may have changed the result since
         // preflight. Only this locked second check authorizes insertion.
-        self.validate_registration(&leases, &lease)?;
-        leases.insert(
-            lease.id.clone(),
-            LeaseRecord {
-                lease,
-                revoked: false,
-                revocation_signal: Arc::new(AtomicBool::new(false)),
-                process_authorities,
-            },
-        );
+        self.validate_registration(&leases, lease)?;
+        leases.insert(lease.id.clone(), record);
         Ok(())
     }
 
@@ -192,6 +247,8 @@ impl TaskLeaseRegistry {
         Ok((
             record.lease.clone(),
             TaskLeaseRevocationWatch {
+                #[cfg(any(windows, test))]
+                clock_identity: record.clock_identity.clone(),
                 signal: Arc::clone(&record.revocation_signal),
             },
         ))
@@ -233,6 +290,11 @@ impl TaskLeaseRegistry {
                 && record.lease.expires_at < new_expires_at
             {
                 record.lease.expires_at = new_expires_at;
+                #[cfg(any(windows, test))]
+                {
+                    // Untagged renewal cannot attest a new expiry's origin.
+                    record.clock_identity = None;
+                }
                 changed += 1;
             }
         }
@@ -528,6 +590,109 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture root");
         root
+    }
+
+    #[test]
+    fn clocked_lease_watch_requires_original_registration_origin() {
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().unwrap();
+        let clock = crate::StdClock::new();
+        let foreign = crate::StdClock::new();
+        let issued = registry
+            .register_on_clock(lease(session.clone(), 1), 10_000, &clock)
+            .unwrap();
+        let (_, original) = registry
+            .get_active_with_revocation_watch(&issued.id, &session, crate::Clock::now(&clock))
+            .unwrap();
+        assert!(original.belongs_to_clock(&clock));
+        assert!(original.belongs_to_clock(&clock.clone()));
+        assert!(!original.belongs_to_clock(&foreign));
+        assert!(matches!(
+            registry.register_on_clock(issued.clone(), 10_000, &foreign),
+            Err(TaskLeaseClockError::Registry(
+                TaskLeaseRegistryError::AlreadyRegistered
+            ))
+        ));
+        registry.revoke(&issued.id).unwrap();
+        registry.remove_revoked(&issued.id).unwrap();
+        registry.register(issued.clone()).unwrap();
+        let (_, raw) = registry
+            .get_active_with_revocation_watch(&issued.id, &session, crate::Clock::now(&clock))
+            .unwrap();
+        assert!(!raw.belongs_to_clock(&clock));
+        assert!(original.is_revoked());
+    }
+
+    #[test]
+    fn clocked_lease_retains_old_horizon_and_origin_after_untagged_renewal() {
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().unwrap();
+        let clock = crate::StdClock::new();
+        let issued = registry
+            .register_on_clock(lease(session.clone(), 1), 10_000, &clock)
+            .unwrap();
+        let (original, watch) = registry
+            .get_active_with_revocation_watch(&issued.id, &session, crate::Clock::now(&clock))
+            .unwrap();
+        let renewed = issued.expires_at.saturating_add_millis(1_000);
+        registry
+            .renew_active_session(&session, crate::Clock::now(&clock), 1, renewed)
+            .unwrap();
+        let (current, current_watch) = registry
+            .get_active_with_revocation_watch(&issued.id, &session, crate::Clock::now(&clock))
+            .unwrap();
+        assert_eq!(original.expires_at, issued.expires_at);
+        assert_eq!(current.expires_at, renewed);
+        assert!(watch.belongs_to_clock(&clock));
+        assert!(!current_watch.belongs_to_clock(&clock));
+        registry.revoke(&issued.id).unwrap();
+        registry.remove_revoked(&issued.id).unwrap();
+        let foreign = crate::StdClock::new();
+        registry
+            .register_on_clock(issued.clone(), 10_000, &foreign)
+            .unwrap();
+        assert!(watch.is_revoked());
+        let (_, replacement) = registry
+            .get_active_with_revocation_watch(&issued.id, &session, crate::Clock::now(&foreign))
+            .unwrap();
+        assert!(replacement.belongs_to_clock(&foreign));
+        assert!(!replacement.belongs_to_clock(&clock));
+    }
+
+    #[test]
+    fn clocked_lease_rejects_invalid_deadline_expiry_and_revocation() {
+        let registry = TaskLeaseRegistry::new();
+        let session = SessionHandle::generate().unwrap();
+        let clock = crate::StdClock::new();
+        assert!(matches!(
+            registry.register_on_clock(lease(session.clone(), 1), 0, &clock),
+            Err(TaskLeaseClockError::InvalidDeadline)
+        ));
+        let issued = registry
+            .register_on_clock(lease(session.clone(), 1), 1, &clock)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(matches!(
+            registry.register_on_clock(lease(session.clone(), 1), u64::MAX, &clock),
+            Err(TaskLeaseClockError::InvalidDeadline)
+        ));
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &issued.id,
+                &session,
+                crate::Clock::now(&clock)
+            ),
+            Err(TaskLeaseRegistryError::Expired)
+        ));
+        registry.revoke(&issued.id).unwrap();
+        assert!(matches!(
+            registry.get_active_with_revocation_watch(
+                &issued.id,
+                &session,
+                crate::Clock::now(&clock)
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
     }
 
     #[test]

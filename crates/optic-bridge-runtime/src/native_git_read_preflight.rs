@@ -33,6 +33,11 @@ pub struct NativeGitReadLeaseWitness {
 }
 
 impl NativeGitReadLeaseWitness {
+    #[cfg(windows)]
+    pub(crate) fn belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.revocation.belongs_to_clock(clock)
+    }
+
     #[must_use]
     pub fn lease_id(&self) -> &TaskLeaseId {
         &self.lease_id
@@ -174,6 +179,12 @@ pub struct NativeGitReadAdmittedPreflight {
 }
 
 impl NativeGitReadAdmittedPreflight {
+    /// The original verified lease generation, not a refreshed ID lookup.
+    #[cfg(windows)]
+    pub(crate) fn lease_belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.lease_witness.belongs_to_clock(clock)
+    }
+
     /// Service-internal cancellation sources from the already owned generations.
     /// Deadlines are separate and must not be renewed when cloning these flags.
     #[cfg(windows)]

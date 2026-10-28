@@ -101,7 +101,16 @@ impl Fixture {
             sessions.register(grant).expect("session registry");
         }
         let leases = TaskLeaseRegistry::new();
-        leases.register(lease.clone()).expect("pinned scoped lease");
+        let lease = if let Some(clock) = clock {
+            leases
+                .register_on_clock(lease, 10_000, clock)
+                .expect("clock-issued pinned scoped lease")
+        } else {
+            leases.register(lease.clone()).expect("pinned scoped lease");
+            lease
+        };
+        #[cfg(not(windows))]
+        drop(lease);
         Self {
             root,
             repository,
@@ -1421,7 +1430,10 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         fixture.lease.resource_ceiling.timeout_ms = 5_000;
         assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
         assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
-        fixture.leases.register(fixture.lease.clone()).unwrap();
+        fixture
+            .leases
+            .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+            .unwrap();
         let transport = guard(10_000);
         let manager = crate::ProcessManager::new(
             &fixture.repository,
@@ -1775,6 +1787,39 @@ fn native_clock_preparation_rejects_foreign_and_untagged_session_without_child()
         assert!(matches!(
             result,
             Err(NativeGitStatusPreparationError::SessionClockMismatch)
+        ));
+        assert_eq!(transport.active_requests(), 0);
+        fixture.sessions.revoke(&fixture.envelope.session).unwrap();
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn native_clock_preparation_rejects_foreign_and_untagged_lease_without_child() {
+    let clock = crate::StdClock::new();
+    let foreign = crate::StdClock::new();
+    for tagged in [false, true] {
+        let fixture = Fixture::new_on_clock(&clock);
+        fixture.leases.revoke(&fixture.lease.id).unwrap();
+        fixture.leases.remove_revoked(&fixture.lease.id).unwrap();
+        if tagged {
+            fixture
+                .leases
+                .register_on_clock(fixture.lease.clone(), 10_000, &foreign)
+                .unwrap();
+        } else {
+            fixture.leases.register(fixture.lease.clone()).unwrap();
+        }
+        let transport = guard(1_000);
+        let result = fixture.service().prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        );
+        assert!(matches!(
+            result,
+            Err(NativeGitStatusPreparationError::LeaseClockMismatch)
         ));
         assert_eq!(transport.active_requests(), 0);
         fixture.sessions.revoke(&fixture.envelope.session).unwrap();

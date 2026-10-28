@@ -49,6 +49,10 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
         id: workspace-tests
+        env:
+          # Capture the original cold/parallel failure, not just later
+          # serialized comparisons. Fixed opt-in markers grant no authority.
+          OPTIC_LAUNCHER_PHASES: ${{ runner.os == 'Windows' && '1' || '' }}
         run: cargo test --locked --workspace --all-features
       - name: Diagnose failed Windows Node loopback proof without relaxing its gate
         if: failure() && runner.os == 'Windows' && steps.workspace-tests.outcome == 'failure'
