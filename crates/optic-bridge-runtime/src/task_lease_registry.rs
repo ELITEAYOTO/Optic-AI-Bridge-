@@ -65,6 +65,24 @@ impl TaskLeaseRevocationWatch {
     }
 }
 
+/// Non-cloneable observation of the *original* TaskLease revocation order,
+/// with its immutable admitted deadline. No process launch authority.
+#[cfg(windows)]
+#[must_use = "retain the original TaskLease stop watch through owner cleanup"]
+#[allow(dead_code)] // Used only by the inert native owner stage.
+pub(crate) struct TaskLeaseNativeOwnerCommit {
+    original_stop: TaskLeaseRevocationWatch,
+    original_expires_at: MonotonicTime,
+}
+
+#[cfg(windows)]
+#[allow(dead_code)] // No production native guardian consumes the receipt yet.
+impl TaskLeaseNativeOwnerCommit {
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.original_stop.is_revoked() || now >= self.original_expires_at
+    }
+}
+
 impl TaskLeaseRegistry {
     #[must_use]
     pub fn new() -> Self {
@@ -243,6 +261,54 @@ impl TaskLeaseRegistry {
             }
         }
         Ok(changed)
+    }
+
+    /// Mint a *lease-only* commit observation for a previously registered,
+    /// non-executing native owner, ordered under the SAME mutex as direct
+    /// `revoke`, `revoke_session` and `remove_session`.
+    ///
+    /// The original witness's Arc identity is mandatory. An opaque TaskLeaseId
+    /// can be reused after revocation and removal, but may never revive an
+    /// older owner. This critical section does NO file IO, native calls,
+    /// session locking or policy callbacks.
+    ///
+    /// The result is NOT a launch permission: session close and policy
+    /// authorities are independent; their observations are not atomic.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Inert research stage; no live native launch consumes it.
+    pub(crate) fn commit_original_native_read_lease(
+        &self,
+        id: &TaskLeaseId,
+        original: &TaskLeaseRevocationWatch,
+        original_expires_at: MonotonicTime,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+        let leases = self
+            .leases
+            .lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
+        if !Arc::ptr_eq(&record.revocation_signal, &original.signal) {
+            // Fail closed as Revoked: changing this public error enum would
+            // broaden the MCP contract for a private, non-executing stage.
+            // A foreign or reused generation is never an active authority.
+            return Err(TaskLeaseRegistryError::Revoked);
+        }
+        if record.revoked {
+            return Err(TaskLeaseRegistryError::Revoked);
+        }
+        if &record.lease.session != session {
+            return Err(TaskLeaseRegistryError::WrongSession);
+        }
+        // Renewal can extend a registry entry, never the retained owner.
+        if record.lease.is_expired_at(now) || now >= original_expires_at {
+            return Err(TaskLeaseRegistryError::Expired);
+        }
+        Ok(TaskLeaseNativeOwnerCommit {
+            original_stop: original.clone(),
+            original_expires_at,
+        })
     }
 
     /// Cheap lifetime observation only. Callers must already have verified and
@@ -994,6 +1060,162 @@ mod tests {
                 .get_active(&lease.id, &owner, MonotonicTime::from_millis(1))
                 .expect_err("revoked lease must fail"),
             TaskLeaseRegistryError::Revoked
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_original_lease_receipt_survives_id_reuse_and_foreign_registry() {
+        let registry = TaskLeaseRegistry::new();
+        let foreign = TaskLeaseRegistry::new();
+        let grant = lease(SessionHandle::generate().expect("session"), 100);
+        registry
+            .register(grant.clone())
+            .expect("original generation");
+        foreign.register(grant.clone()).expect("separate registry");
+        let now = MonotonicTime::from_millis(1);
+        let (_, original_watch) = registry
+            .get_active_with_revocation_watch(&grant.id, &grant.session, now)
+            .expect("original witness");
+        let original_commit = registry
+            .commit_original_native_read_lease(
+                &grant.id,
+                &original_watch,
+                grant.expires_at,
+                &grant.session,
+                now,
+            )
+            .expect("commit original lease under the revoke mutex");
+        assert!(!original_commit.is_stop_required_at(now));
+
+        assert!(matches!(
+            foreign.commit_original_native_read_lease(
+                &grant.id,
+                &original_watch,
+                grant.expires_at,
+                &grant.session,
+                now,
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
+        assert!(registry.revoke(&grant.id).expect("revoke original"));
+        assert!(original_commit.is_stop_required_at(now));
+        assert!(registry.remove_revoked(&grant.id).expect("remove original"));
+        registry.register(grant.clone()).expect("reuse opaque ID");
+        let (_, replacement_watch) = registry
+            .get_active_with_revocation_watch(&grant.id, &grant.session, now)
+            .expect("new generation");
+        assert!(!replacement_watch.is_revoked());
+        assert!(matches!(
+            registry.commit_original_native_read_lease(
+                &grant.id,
+                &original_watch,
+                grant.expires_at,
+                &grant.session,
+                now,
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
+        assert!(
+            original_commit.is_stop_required_at(now),
+            "old generation stays stopped even when same opaque ID is active"
+        );
+        assert!(
+            registry
+                .commit_original_native_read_lease(
+                    &grant.id,
+                    &replacement_watch,
+                    grant.expires_at,
+                    &grant.session,
+                    now,
+                )
+                .is_ok()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn original_lease_gate_rejects_all_revoke_forms_and_renewed_deadline() {
+        for remove_session in [false, true] {
+            let registry = TaskLeaseRegistry::new();
+            let grant = lease(SessionHandle::generate().expect("session"), 100);
+            registry.register(grant.clone()).unwrap();
+            let now = MonotonicTime::from_millis(1);
+            let (_, witness) = registry
+                .get_active_with_revocation_watch(&grant.id, &grant.session, now)
+                .unwrap();
+            let original = registry
+                .commit_original_native_read_lease(
+                    &grant.id,
+                    &witness,
+                    grant.expires_at,
+                    &grant.session,
+                    now,
+                )
+                .unwrap();
+            if remove_session {
+                assert_eq!(registry.remove_session(&grant.session).unwrap(), 1);
+                assert!(matches!(
+                    registry.commit_original_native_read_lease(
+                        &grant.id,
+                        &witness,
+                        grant.expires_at,
+                        &grant.session,
+                        now,
+                    ),
+                    Err(TaskLeaseRegistryError::UnknownLease)
+                ));
+            } else {
+                assert_eq!(registry.revoke_session(&grant.session).unwrap(), 1);
+                assert!(matches!(
+                    registry.commit_original_native_read_lease(
+                        &grant.id,
+                        &witness,
+                        grant.expires_at,
+                        &grant.session,
+                        now,
+                    ),
+                    Err(TaskLeaseRegistryError::Revoked)
+                ));
+            }
+            assert!(original.is_stop_required_at(now));
+        }
+
+        let registry = TaskLeaseRegistry::new();
+        let grant = lease(SessionHandle::generate().expect("session"), 100);
+        registry.register(grant.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let (_, witness) = registry
+            .get_active_with_revocation_watch(&grant.id, &grant.session, now)
+            .unwrap();
+        registry
+            .renew_active_session(
+                &grant.session,
+                now,
+                grant.policy_epoch,
+                MonotonicTime::from_millis(200),
+            )
+            .expect("active session lease can be renewed");
+        assert!(matches!(
+            registry.commit_original_native_read_lease(
+                &grant.id,
+                &witness,
+                grant.expires_at,
+                &grant.session,
+                MonotonicTime::from_millis(100),
+            ),
+            Err(TaskLeaseRegistryError::Expired)
+        ));
+        assert!(
+            registry
+                .commit_original_native_read_lease(
+                    &grant.id,
+                    &witness,
+                    grant.expires_at,
+                    &grant.session,
+                    MonotonicTime::from_millis(99),
+                )
+                .is_ok()
         );
     }
 }
