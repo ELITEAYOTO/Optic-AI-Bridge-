@@ -56,6 +56,19 @@ impl TransportGuard {
         self.begin_execution(now)
     }
 
+    /// Admit on the original service clock; callers cannot attach provenance
+    /// to an existing logical-only permit or replace its captured deadline.
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Native preparation only; legacy MCP remains unchanged.
+    pub(crate) fn begin_execution_on_clock(
+        &self,
+        clock: &crate::StdClock,
+    ) -> Result<RequestPermit, TransportError> {
+        let mut permit = self.begin_execution(crate::Clock::now(clock))?;
+        permit.clock_identity = Some(clock.identity());
+        Ok(permit)
+    }
+
     pub fn begin_execution(&self, now: MonotonicTime) -> Result<RequestPermit, TransportError> {
         let mut current = self.in_flight.load(Ordering::Acquire);
         loop {
@@ -75,6 +88,8 @@ impl TransportGuard {
         }
 
         Ok(RequestPermit {
+            #[cfg(any(windows, test))]
+            clock_identity: None,
             in_flight: Arc::clone(&self.in_flight),
             deadline: now.saturating_add_millis(self.limits.max_request_duration_ms),
         })
@@ -107,11 +122,21 @@ impl TransportGuard {
 
 #[derive(Debug)]
 pub struct RequestPermit {
+    #[cfg(any(windows, test))]
+    clock_identity: Option<crate::clock::ClockIdentity>,
     in_flight: Arc<AtomicU32>,
     deadline: MonotonicTime,
 }
 
 impl RequestPermit {
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)] // Only the inert native path requires clock provenance.
+    pub(crate) fn belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.clock_identity
+            .as_ref()
+            .is_some_and(|identity| identity.matches(clock))
+    }
+
     #[must_use]
     pub const fn deadline(&self) -> MonotonicTime {
         self.deadline
@@ -153,6 +178,28 @@ mod tests {
             max_concurrent_requests,
         })
         .expect("valid limits")
+    }
+
+    #[test]
+    fn clocked_transport_retains_origin_and_rejects_missing_or_foreign_identity() {
+        let guard = guard(1);
+        let clock = crate::StdClock::new();
+        let cloned = clock.clone();
+        let foreign = crate::StdClock::new();
+        let permit = guard.begin_execution_on_clock(&clock).unwrap();
+        let deadline = permit.deadline();
+        assert!(permit.belongs_to_clock(&clock));
+        assert!(permit.belongs_to_clock(&cloned));
+        assert!(!permit.belongs_to_clock(&foreign));
+        assert_eq!(permit.deadline(), deadline);
+        assert_eq!(guard.active_requests(), 1);
+        drop(permit);
+        assert_eq!(guard.active_requests(), 0);
+
+        let logical = guard.begin_execution(crate::Clock::now(&clock)).unwrap();
+        assert!(!logical.belongs_to_clock(&clock));
+        drop(logical);
+        assert_eq!(guard.active_requests(), 0);
     }
 
     #[test]
