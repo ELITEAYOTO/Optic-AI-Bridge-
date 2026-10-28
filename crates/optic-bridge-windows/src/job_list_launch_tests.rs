@@ -13,15 +13,16 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::{BOOL, HANDLE, WAIT_OBJECT_0},
+        Foundation::{HANDLE, WAIT_OBJECT_0},
+        System::JobObjects::IsProcessInJob,
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList, IsProcessInJob,
+            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
             LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
             STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
         },
     },
-    core::{PCWSTR, PWSTR},
+    core::{BOOL, PCWSTR, PWSTR},
 };
 
 /// Pointer-aligned buffer whose lifetime covers the entire CreateProcessW call.
