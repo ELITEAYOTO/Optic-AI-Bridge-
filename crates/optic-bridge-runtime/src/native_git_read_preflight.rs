@@ -313,6 +313,11 @@ pub struct NativeGitReadOwnedPermits {
 }
 
 impl NativeGitReadOwnedPermits {
+    #[cfg(windows)]
+    pub(crate) fn session_belongs_to_clock(&self, clock: &crate::StdClock) -> bool {
+        self.admission.belongs_to_clock(clock)
+    }
+
     /// Transport provenance alone; session/lease deadline provenance is separate.
     #[cfg(windows)]
     pub(crate) fn transport_belongs_to_clock(&self, clock: &crate::StdClock) -> bool {

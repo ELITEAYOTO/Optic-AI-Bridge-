@@ -79,6 +79,9 @@ pub enum NativeGitStatusPreparationError {
     #[cfg(windows)]
     #[error("native Git status transport permit has missing or foreign clock provenance")]
     TransportClockMismatch,
+    #[cfg(windows)]
+    #[error("native Git status session issuance or admission has missing or foreign clock provenance")]
+    SessionClockMismatch,
     #[error(transparent)]
     Command(#[from] GitReadError),
     #[error(transparent)]
@@ -100,6 +103,9 @@ impl GitReadService {
     ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
         if !owned.transport_belongs_to_clock(clock) {
             return Err(NativeGitStatusPreparationError::TransportClockMismatch);
+        }
+        if !owned.session_belongs_to_clock(clock) {
+            return Err(NativeGitStatusPreparationError::SessionClockMismatch);
         }
         let mut prepared = self.prepare_native_status(trusted, owned, envelope, clock.now())?;
         let until = clock

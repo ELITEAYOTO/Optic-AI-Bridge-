@@ -29,6 +29,15 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::build(None)
+    }
+
+    #[cfg(windows)]
+    fn new_on_clock(clock: &crate::StdClock) -> Self {
+        Self::build(Some(clock))
+    }
+
+    fn build(clock: Option<&crate::StdClock>) -> Self {
         let root = std::env::temp_dir().join(format!(
             "optic-native-status-{}",
             ActionId::generate().expect("entropy").to_token()
@@ -84,7 +93,13 @@ impl Fixture {
             policy_epoch: grant.policy_epoch,
         };
         let sessions = Arc::new(SessionRegistry::new());
-        sessions.register(grant).expect("session registry");
+        if let Some(clock) = clock {
+            sessions
+                .register_on_clock(grant, 10_000, clock)
+                .expect("clock-issued session registry");
+        } else {
+            sessions.register(grant).expect("session registry");
+        }
         let leases = TaskLeaseRegistry::new();
         leases.register(lease.clone()).expect("pinned scoped lease");
         Self {
@@ -126,10 +141,9 @@ impl Fixture {
         guard: &TransportGuard,
         clock: &crate::StdClock,
     ) -> NativeGitReadOwnedPermits {
-        let now = crate::Clock::now(clock);
         NativeGitReadOwnedPermits::new(
             self.sessions
-                .begin_owned_admission(&self.envelope.session, now)
+                .begin_owned_admission_on_clock(&self.envelope.session, clock)
                 .expect("original clocked admission"),
             guard
                 .begin_execution_on_clock(clock)
@@ -1400,7 +1414,8 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
 #[test]
 fn original_watchdog_observes_session_lease_generation_and_job_stops_without_child() {
     for source in ["session", "lease-reused-id", "job"] {
-        let mut fixture = Fixture::new();
+        let clock = crate::StdClock::new();
+        let mut fixture = Fixture::new_on_clock(&clock);
         // Keep explicit revocation distinct from deadline expiry in this test.
         fixture.envelope.resources.timeout_ms = 5_000;
         fixture.lease.resource_ceiling.timeout_ms = 5_000;
@@ -1408,7 +1423,6 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
         fixture.leases.register(fixture.lease.clone()).unwrap();
         let transport = guard(10_000);
-        let clock = crate::StdClock::new();
         let manager = crate::ProcessManager::new(
             &fixture.repository,
             optic_bridge_core::HardLimits::default(),
@@ -1511,9 +1525,9 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 #[cfg(windows)]
 #[test]
 fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizon() {
-    let fixture = Fixture::new();
-    let transport = guard(1_000);
     let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let transport = guard(1_000);
     let manager = crate::ProcessManager::new(
         &fixture.repository,
         optic_bridge_core::HardLimits::default(),
@@ -1628,9 +1642,9 @@ fn original_watchdog_rejects_logical_only_preparation_without_service_clock() {
 #[cfg(windows)]
 #[test]
 fn original_watchdog_expires_on_retained_service_clock_without_caller_polling() {
-    let fixture = Fixture::new();
-    let transport = guard(1_000);
     let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let transport = guard(1_000);
     let manager = crate::ProcessManager::new(
         &fixture.repository,
         optic_bridge_core::HardLimits::default(),
@@ -1689,9 +1703,9 @@ fn original_watchdog_expires_on_retained_service_clock_without_caller_polling() 
 #[cfg(windows)]
 #[test]
 fn native_clock_preparation_rejects_foreign_and_untagged_transport_without_child() {
-    let fixture = Fixture::new();
-    let service = fixture.service();
     let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let service = fixture.service();
     let foreign = crate::StdClock::new();
     let transport = guard(1_000);
     for tagged in [false, true] {
@@ -1730,4 +1744,39 @@ fn native_clock_preparation_rejects_foreign_and_untagged_transport_without_child
     drop(prepared);
     assert_eq!(transport.active_requests(), 0);
     fixture.sessions.revoke(&fixture.envelope.session).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn native_clock_preparation_rejects_foreign_and_untagged_session_without_child() {
+    let clock = crate::StdClock::new();
+    let foreign = crate::StdClock::new();
+    for tagged in [false, true] {
+        let fixture = Fixture::new_on_clock(&foreign);
+        let transport = guard(1_000);
+        let admission = if tagged {
+            fixture
+                .sessions
+                .begin_owned_admission_on_clock(&fixture.envelope.session, &foreign)
+                .unwrap()
+        } else {
+            fixture
+                .sessions
+                .begin_owned_admission(&fixture.envelope.session, crate::Clock::now(&clock))
+                .unwrap()
+        };
+        let request = transport.begin_execution_on_clock(&clock).unwrap();
+        let result = fixture.service().prepare_native_status_on_clock(
+            &fixture.trusted(),
+            NativeGitReadOwnedPermits::new(admission, request),
+            &fixture.envelope,
+            &clock,
+        );
+        assert!(matches!(
+            result,
+            Err(NativeGitStatusPreparationError::SessionClockMismatch)
+        ));
+        assert_eq!(transport.active_requests(), 0);
+        fixture.sessions.revoke(&fixture.envelope.session).unwrap();
+    }
 }
