@@ -46,6 +46,26 @@ impl NativeGitReadLeaseWitness {
             && self.revocation.same_registration(&observed.revocation)
     }
 
+    /// Lease-only commitment of this retained exact registration generation
+    /// against the same mutex used by all TaskLease revoke/removal paths.
+    /// This does NOT synchronize policy or session authority, nor permit spawn.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Only reachable from the non-executing native stage.
+    pub(crate) fn commit_original_lease_under_revoke_lock(
+        &self,
+        registry: &TaskLeaseRegistry,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+        registry.commit_original_native_read_lease(
+            &self.lease_id,
+            &self.revocation,
+            self.lease_expires_at,
+            session,
+            now,
+        )
+    }
+
     /// The original lease workload category is authoritative for reservation limits.
     #[must_use]
     pub fn workload_class(&self) -> WorkloadClass {
@@ -196,6 +216,21 @@ impl NativeGitReadAdmittedPreflight {
         observed: &NativeGitReadLeaseWitness,
     ) -> bool {
         self.lease_witness.same_registration(observed)
+    }
+
+    /// Use the original non-cloneable preflight's lease witness to issue a
+    /// TaskLease-only owner receipt; no additional admission or fresh lookup
+    /// can substitute a reused opaque ID.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Inert native owner until actual OS guardian exists.
+    pub(crate) fn commit_original_lease_for_registered_owner(
+        &self,
+        registry: &TaskLeaseRegistry,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+        self.lease_witness
+            .commit_original_lease_under_revoke_lock(registry, session, now)
     }
 
     #[must_use]
