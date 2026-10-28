@@ -226,11 +226,12 @@ impl SessionLifecycleManager {
         let admission = self.sessions.begin_admission(session, now)?;
         let previous_expires_at = admission.grant().expires_at;
         after_admission();
-        let validated = self
-            .sessions
+        // Another valid renewal may extend the registry after admission.
+        // Revalidate current eligibility without changing this attempt's
+        // original captured horizon or assuming the two observations are equal.
+        self.sessions
             .validate_renewal(session, now, new_expires_at)
             .map_err(map_session_renewal_error)?;
-        debug_assert_eq!(validated.expires_at, previous_expires_at);
         let policy_epoch = admission.grant().policy_epoch;
 
         // Renew subordinate authority first. If this fails, the session expiry remains
@@ -508,9 +509,7 @@ mod tests {
         let lifecycle = Arc::new(lifecycle);
         let now = MonotonicTime::from_millis(10);
         let grant = lifecycle.provision(spec(100), now).unwrap();
-        let original = sessions
-            .begin_owned_admission(&grant.handle, now)
-            .unwrap();
+        let original = sessions.begin_owned_admission(&grant.handle, now).unwrap();
         let owned = lease(grant.handle.clone(), 100);
         leases.register(owned.clone()).unwrap();
         let (entered_tx, entered_rx) = mpsc::channel();
