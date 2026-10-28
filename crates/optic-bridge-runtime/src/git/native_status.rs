@@ -273,6 +273,11 @@ impl PrecreatedNativeGitStatusCustody {
         {
             return Err(NativeGitStatusSnapshotError::ForeignSessionRegistry);
         }
+        // Close and this read share SessionRegistry's mutex. This alone is
+        // NOT a cross-registry fence or a permission to create a process.
+        prepared
+            .admission
+            .observe_original_session_under_close_lock(trusted.sessions, now)?;
         let repository = prepared
             .repository_root()
             .to_str()
@@ -296,6 +301,11 @@ impl PrecreatedNativeGitStatusCustody {
         {
             return Err(NativeGitStatusSnapshotError::LeaseGenerationMismatch);
         }
+        // Re-observe the exact session registration after potentially expensive
+        // lease/policy checks. A later revoke may still win before OS creation.
+        prepared
+            .admission
+            .observe_original_session_under_close_lock(trusted.sessions, now)?;
         if self.is_stop_required_at(now) {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
@@ -318,6 +328,8 @@ pub enum NativeGitStatusSnapshotError {
     LeaseGenerationMismatch,
     #[error("original service-owned GitRead target is not UTF-8")]
     NonUtf8Target,
+    #[error(transparent)]
+    Session(#[from] crate::SessionRegistryError),
     #[error(transparent)]
     Lease(#[from] NativeGitReadLeaseError),
 }
