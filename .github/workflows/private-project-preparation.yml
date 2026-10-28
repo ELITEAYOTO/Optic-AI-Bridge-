@@ -53,6 +53,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'TaskLease clock provenance proof failed' }
           & $Probe git_read::native_status_tests:: --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'inert native GitRead custody proof failed' }
+      - name: Verify unlocked TaskLease identity and atomic renewal
+        shell: pwsh
+        run: |
+          $Probe = Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe'
+          & $Probe task_lease_registry::tests::lease_lookup_identity_io_ --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'unlocked TaskLease lookup proof failed' }
+          & $Probe --exact task_lease_registry::tests::lease_renewal_identity_io_is_unlocked_and_rejects_changed_set_atomically --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'unlocked atomic TaskLease renewal proof failed' }
       - name: Verify exact private copies, owner binding, capacity and cleanup
         shell: pwsh
         run: |
