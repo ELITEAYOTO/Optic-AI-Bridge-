@@ -1224,25 +1224,27 @@ fn session_close_between_original_session_and_lease_receipts_denies_native_custo
     assert_eq!(transport.active_requests(), 1);
     // Lifecycle close must publish session stop immediately, even though
     // original admission and private Job ownership remain counted.
-    assert!(fixture
-        .sessions
-        .publish_revocation_before_drain(&fixture.envelope.session)
-        .expect("lifecycle publishes original stop"));
+    assert!(
+        fixture
+            .sessions
+            .publish_revocation_before_drain(&fixture.envelope.session)
+            .expect("lifecycle publishes original stop")
+    );
     assert!(session_only.is_stop_required_at(MonotonicTime::from_millis(12)));
     // The independent TaskLease registry is still active. Its availability
     // cannot override the earlier original session close.
-    assert!(fixture
-        .leases
-        .get_active(
-            &fixture.lease.id,
-            &fixture.envelope.session,
-            MonotonicTime::from_millis(12),
-        )
-        .is_ok());
-    let stopped = session_only.commit_original_lease(
-        &fixture.trusted(),
-        MonotonicTime::from_millis(12),
+    assert!(
+        fixture
+            .leases
+            .get_active(
+                &fixture.lease.id,
+                &fixture.envelope.session,
+                MonotonicTime::from_millis(12),
+            )
+            .is_ok()
     );
+    let stopped =
+        session_only.commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12));
     assert!(matches!(
         stopped,
         Err(crate::NativeGitStatusSnapshotError::StopRequired)
@@ -1315,7 +1317,10 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
         if matches!(observation, Err(SessionRegistryError::Revoked)) {
             break;
         }
-        assert!(Instant::now() < deadline, "direct session close never published");
+        assert!(
+            Instant::now() < deadline,
+            "direct session close never published"
+        );
         thread::yield_now();
     }
 
@@ -1324,7 +1329,8 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
     let permit_counted = transport.active_requests() == 1;
     let job_counted = manager
         .active_session_job_count(&fixture.envelope.session)
-        .expect("original registered job count") == 1;
+        .expect("original registered job count")
+        == 1;
     let revoke_draining = matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty));
     // The second receipt is NOT a global permission: the independent TaskLease
     // can still be active while the original session has been closed.
@@ -1347,12 +1353,21 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
     closer.join().expect("join direct revoker");
 
     assert!(revoked);
-    assert!(stopped, "first-generation stop remains visible after both commits");
+    assert!(
+        stopped,
+        "first-generation stop remains visible after both commits"
+    );
     assert!(job_empty, "receipts never create a child");
-    assert!(permit_counted, "original transport admission retained to drop");
+    assert!(
+        permit_counted,
+        "original transport admission retained to drop"
+    );
     assert!(job_counted, "registered Job capacity retained to drop");
     assert!(revoke_draining, "close is not native process quiescence");
-    assert!(lease_still_active, "lease authority cannot revive closed session");
+    assert!(
+        lease_still_active,
+        "lease authority cannot revive closed session"
+    );
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
         manager
