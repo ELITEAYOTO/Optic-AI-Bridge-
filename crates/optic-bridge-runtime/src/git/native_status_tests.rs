@@ -901,17 +901,16 @@ fn session_only_commit_precedes_direct_close_and_preserves_registered_owner() {
     let handle = fixture.envelope.session.clone();
     let (done_tx, done_rx) = mpsc::sync_channel(1);
     let closer = thread::spawn(move || {
-        done_tx.send(registry.revoke(&handle)).expect("revoke result");
+        done_tx
+            .send(registry.revoke(&handle))
+            .expect("revoke result");
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        if matches!(
-            fixture.sessions.get_active(
-                &fixture.envelope.session,
-                MonotonicTime::from_millis(12),
-            ),
-            Err(SessionRegistryError::Revoked)
-        ) {
+        let observation = fixture
+            .sessions
+            .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12));
+        if matches!(observation, Err(SessionRegistryError::Revoked)) {
             break;
         }
         assert!(Instant::now() < deadline, "direct close not published");
@@ -938,12 +937,21 @@ fn session_only_commit_precedes_direct_close_and_preserves_registered_owner() {
     assert!(result);
     assert!(stopped, "the committed generation must receive stop");
     assert!(no_child, "no native child may exist in this phase");
-    assert!(retained_transport, "original worker permit retained through close");
-    assert!(retained_process, "registered native quota retained through close");
+    assert!(
+        retained_transport,
+        "original worker permit retained through close"
+    );
+    assert!(
+        retained_process,
+        "registered native quota retained through close"
+    );
     assert!(revoke_is_draining, "close is not process quiescence");
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed,
         "no-child disposal must not counterfeit native terminal proof"
     );
@@ -985,23 +993,24 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
         let handle = fixture.envelope.session.clone();
         let mut direct_closer = None;
         if lifecycle_close {
-            assert!(registry
+            assert!(
+            registry
                 .publish_revocation_before_drain(&handle)
-                .expect("lifecycle close publishes original stop"));
+                .expect("lifecycle close publishes original stop")
+        );
         } else {
             let (done_tx, done_rx) = mpsc::sync_channel(1);
             let closer = thread::spawn(move || {
-                done_tx.send(registry.revoke(&handle)).expect("direct revoke result");
+                done_tx
+                    .send(registry.revoke(&handle))
+                    .expect("direct revoke result");
             });
             let deadline = Instant::now() + Duration::from_secs(2);
             loop {
-                if matches!(
-                    fixture.sessions.get_active(
-                        &fixture.envelope.session,
-                        MonotonicTime::from_millis(12),
-                    ),
-                    Err(SessionRegistryError::Revoked)
-                ) {
+                let observation = fixture
+                    .sessions
+                    .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12));
+                if matches!(observation, Err(SessionRegistryError::Revoked)) {
                     break;
                 }
                 assert!(Instant::now() < deadline, "direct close not published");
@@ -1012,10 +1021,8 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
 
         // Consumes and safely drops the already registered no-child owner
         // on rejection. A failed session-only commit creates no new process.
-        let denied = custody.commit_original_session(
-            &fixture.trusted(),
-            MonotonicTime::from_millis(12),
-        );
+        let denied =
+            custody.commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12));
         assert!(matches!(
             denied,
             Err(crate::NativeGitStatusSnapshotError::StopRequired)
@@ -1029,10 +1036,12 @@ fn session_only_commit_after_direct_or_lifecycle_close_is_denied() {
             crate::ProcessStatus::Failed
         );
         if let Some((closer, done_rx)) = direct_closer {
-            assert!(done_rx
-                .recv_timeout(Duration::from_secs(5))
-                .expect("direct revoke completes after denied owner drops")
-                .expect("direct revoke"));
+            assert!(
+                done_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("direct revoke completes after denied owner drops")
+                    .expect("direct revoke")
+            );
             closer.join().expect("revoke thread");
         } else {
             assert!(!fixture.sessions.revoke(&fixture.envelope.session).unwrap());
