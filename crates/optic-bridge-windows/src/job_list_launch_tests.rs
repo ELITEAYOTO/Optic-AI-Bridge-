@@ -22,12 +22,10 @@ use windows::{
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
             EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-            InitializeProcThreadAttributeList,
-            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-            PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
             ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
-            UpdateProcThreadAttribute,
-            WaitForSingleObject,
+            UpdateProcThreadAttribute, WaitForSingleObject,
         },
     },
     core::{BOOL, PCWSTR, PWSTR},
@@ -42,7 +40,8 @@ impl AttributeList {
     fn new(attribute_count: u32) -> Result<Self> {
         let mut bytes = 0usize;
         // SAFETY: the null first call asks Windows for the required buffer size.
-        let _ = unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
+        let _ =
+            unsafe { InitializeProcThreadAttributeList(None, attribute_count, None, &mut bytes) };
         if bytes == 0 {
             return Err(Error::other("Windows returned no attribute-list size"));
         }
@@ -405,8 +404,11 @@ fn resumed_job_root_produces_two_physical_pipe_eofs() -> Result<()> {
         return Err(Error::other("fixed Windows system image unavailable"));
     }
     let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
-    let working_directory: Vec<u16> =
-        system_directory.as_os_str().encode_wide().chain([0]).collect();
+    let working_directory: Vec<u16> = system_directory
+        .as_os_str()
+        .encode_wide()
+        .chain([0])
+        .collect();
     let mut fixed_command = OsString::from("\"");
     fixed_command.push(executable.as_os_str());
     fixed_command.push("\" /D /Q /C \"echo OPTIC_STDOUT & echo OPTIC_STDERR 1>&2\"");
@@ -492,7 +494,10 @@ fn resumed_job_root_produces_two_physical_pipe_eofs() -> Result<()> {
     // SAFETY: the kernel Job and unique root process handle remain live.
     unsafe { IsProcessInJob(process.0.hProcess, Some(job.raw()), &mut belongs) }
         .map_err(Error::other)?;
-    assert!(belongs.as_bool(), "root must be Job-associated before resume");
+    assert!(
+        belongs.as_bool(),
+        "root must be Job-associated before resume"
+    );
     assert_eq!(job.active_processes()?, 1);
 
     // Parent-owned original writers and all temporary inherited duplicates
