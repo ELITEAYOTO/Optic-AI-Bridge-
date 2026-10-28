@@ -17,10 +17,10 @@ use windows::{
         System::JobObjects::IsProcessInJob,
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-            EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
+            EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, InitializeProcThreadAttributeList,
             LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
-            GetExitCodeProcess, ResumeThread, STARTUPINFOEXW, TerminateProcess,
-            UpdateProcThreadAttribute, WaitForSingleObject,
+            ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+            WaitForSingleObject,
         },
     },
     core::{BOOL, PCWSTR, PWSTR},
@@ -74,7 +74,7 @@ impl Drop for SuspendedFixtureProcess {
     fn drop(&mut self) {
         // SAFETY: CreateProcessW returned two uniquely owned process handles.
         // The fixture may have resumed its primary thread; termination is safe
-    // both for a still-suspended child and one that has already exited.
+        // both for a still-suspended child and one that has already exited.
         unsafe {
             let _ = TerminateProcess(self.0.hProcess, 1);
             let _ = WaitForSingleObject(self.0.hProcess, 2000);
