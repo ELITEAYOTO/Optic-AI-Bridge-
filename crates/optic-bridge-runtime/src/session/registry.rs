@@ -626,6 +626,12 @@ pub struct OwnedSessionAdmissionPermit {
 }
 
 impl OwnedSessionAdmissionPermit {
+    /// Original-generation cancellation only; never expose this mutable signal to MCP.
+    #[cfg(windows)]
+    pub(crate) fn native_stop_signal(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.revocation_watch.signal)
+    }
+
     #[must_use]
     pub fn grant(&self) -> &SessionGrant {
         &self.grant
