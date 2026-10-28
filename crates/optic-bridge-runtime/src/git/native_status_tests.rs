@@ -1105,10 +1105,12 @@ fn lease_only_commit_preserves_original_stop_after_tasklease_id_reuse() {
         .leases
         .register(fixture.lease.clone())
         .expect("new registration reuses the same opaque ID");
-    assert!(fixture
-        .sessions
-        .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12))
-        .is_ok());
+    assert!(
+        fixture
+            .sessions
+            .get_active(&fixture.envelope.session, MonotonicTime::from_millis(12))
+            .is_ok()
+    );
     let stays_stopped = both.is_stop_required_at(MonotonicTime::from_millis(12));
     let still_empty = both.native_active_processes().expect("kernel Job") == 0;
     let still_owned = transport.active_requests() == 1;
@@ -1118,7 +1120,10 @@ fn lease_only_commit_preserves_original_stop_after_tasklease_id_reuse() {
     assert!(still_owned, "original admission survives TaskLease removal");
     assert_eq!(transport.active_requests(), 0);
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed,
         "no child ever existed, so no native completion is claimed"
     );
@@ -1168,17 +1173,17 @@ fn lease_only_commit_rejects_revoke_after_session_commit_without_spawn() {
         }
         assert!(session_only.is_stop_required_at(MonotonicTime::from_millis(12)));
         assert!(matches!(
-            session_only.commit_original_lease(
-                &fixture.trusted(),
-                MonotonicTime::from_millis(12)
-            ),
+            session_only.commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12)),
             Err(crate::NativeGitStatusSnapshotError::StopRequired)
                 | Err(crate::NativeGitStatusSnapshotError::Lease(_))
                 | Err(crate::NativeGitStatusSnapshotError::LeaseRecord(_))
         ));
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(
-            manager.result(&fixture.envelope.session, &job).unwrap().status,
+            manager
+                .result(&fixture.envelope.session, &job)
+                .unwrap()
+                .status,
             crate::ProcessStatus::Failed,
             "rejected no-child owner cleans up original capacity"
         );
