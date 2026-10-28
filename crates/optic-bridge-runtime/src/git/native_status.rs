@@ -311,6 +311,65 @@ impl PrecreatedNativeGitStatusCustody {
         }
         Ok(())
     }
+
+    /// Consume the uniquely owned, already registered and kernel-precreated
+    /// candidate into a session-only commitment. Session close and this short
+    /// receipt publication share the original registry mutex.
+    ///
+    /// This is deliberately NOT the final native GitRead commitment: the
+    /// independent lease/policy issuer fence, CreateProcessW, durable guardian,
+    /// completed stdio EOF and terminal OS proof are still absent.
+    pub(crate) fn commit_original_session(
+        self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        now: MonotonicTime,
+    ) -> Result<SessionCommittedNativeGitStatusCustody, NativeGitStatusSnapshotError> {
+        self.observe_original_prelaunch_snapshot(trusted, now)?;
+        let commit = self
+            .registered
+            .prepared
+            .admission
+            .commit_original_session_for_registered_owner(
+                trusted.sessions,
+                self.registered.job_id(),
+                now,
+            )?;
+        // A close after the session-only commitment must remain observable.
+        // There is still NO child, so a rejected transition safely disposes
+        // the no-child owner and its original counted permits.
+        if self.is_stop_required_at(now) {
+            return Err(NativeGitStatusSnapshotError::StopRequired);
+        }
+        Ok(SessionCommittedNativeGitStatusCustody {
+            unstarted: self,
+            session_commit: commit,
+        })
+    }
+}
+
+/// An already registered, pinned and still unstarted native candidate with a
+/// session-only original-generation commitment. Non-cloneable and never a
+/// process launch token: no CreateProcess handle or launch API is exposed.
+#[cfg(windows)]
+#[must_use = "retain original custody and session close receipt together"]
+pub(crate) struct SessionCommittedNativeGitStatusCustody {
+    unstarted: PrecreatedNativeGitStatusCustody,
+    session_commit: crate::session_registry::SessionNativeOwnerCommit,
+}
+
+#[cfg(windows)]
+impl SessionCommittedNativeGitStatusCustody {
+    pub(crate) fn job_id(&self) -> optic_bridge_core::JobId {
+        self.session_commit.job_id().clone()
+    }
+
+    pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        self.session_commit.is_stop_required_at(now) || self.unstarted.is_stop_required_at(now)
+    }
+
+    pub(crate) fn native_active_processes(&self) -> std::io::Result<u32> {
+        self.unstarted.native_active_processes()
+    }
 }
 
 /// Fail-closed read-only authority observations; none of these variants is a
