@@ -290,7 +290,10 @@ impl TaskLeaseRegistry {
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
         if !Arc::ptr_eq(&record.revocation_signal, &original.signal) {
-            return Err(TaskLeaseRegistryError::RegistrationGenerationMismatch);
+            // Fail closed as Revoked: changing this public error enum would
+            // broaden the MCP contract for a private, non-executing stage.
+            // A foreign or reused generation is never an active authority.
+            return Err(TaskLeaseRegistryError::Revoked);
         }
         if record.revoked {
             return Err(TaskLeaseRegistryError::Revoked);
@@ -449,9 +452,6 @@ pub enum TaskLeaseRegistryError {
     WrongSession,
     #[error("task lease has expired")]
     Expired,
-    #[cfg(windows)]
-    #[error("native owner task lease generation differs from the registered original")]
-    RegistrationGenerationMismatch,
     #[error("process executable identity changed since authorization")]
     ProcessIdentityChanged,
     #[error("process executable identity is unavailable for this lease")]
@@ -1096,7 +1096,7 @@ mod tests {
                 &grant.session,
                 now,
             ),
-            Err(TaskLeaseRegistryError::RegistrationGenerationMismatch)
+            Err(TaskLeaseRegistryError::Revoked)
         ));
         assert!(registry.revoke(&grant.id).expect("revoke original"));
         assert!(original_commit.is_stop_required_at(now));
@@ -1114,7 +1114,7 @@ mod tests {
                 &grant.session,
                 now,
             ),
-            Err(TaskLeaseRegistryError::RegistrationGenerationMismatch)
+            Err(TaskLeaseRegistryError::Revoked)
         ));
         assert!(
             original_commit.is_stop_required_at(now),
