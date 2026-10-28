@@ -13,6 +13,13 @@ Tests cover raw/foreign/cloned origins, duplicate-registration refusal, invalid/
 **Remaining limits:** this proves an internal inert construction, not live MCP worker wiring, cross-registry atomic launch, HostStartup/policy cancellation, crash recovery, physical Git/descendant exit or pipe EOF. Raw legacy permits cannot arm this native watchdog. Native GitRead stays disabled; Windows V1 stays **NO-GO**.
 
 
+
+### Preserved first-head Windows failure and validation strengthening
+
+First HEAD `4e57f565205b35ecdf23725bb36b19ed9ec9688b`: [CI #40746209363](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40746209363) failed its original Windows workspace test in `capability_free_appcontainer_denies_node_loopback_connection`: TimedOut, exit 1, 10053 ms, no Node stdout/stderr and no observed connection attempt. The later three built-in serialized diagnostic comparisons passed with launcher phases and actual NETWORK_ATTEMPT/NETWORK_DENIED; they do **not** clear the original failure or establish its cause (#185 remains open).
+
+The ordinary workspace test now enables the existing fixed launcher phase opt-in on Windows, so a future **original cold/parallel** failure contains phase evidence, not only later comparisons. The specialized Windows workflow also runs the actual TaskLease clock and inert native status test groups before unrelated Node proofs, so an earlier workspace abort cannot leave the new Windows tests unexecuted. No timeout, scheduling, network grant, sandbox, assertion or test acceptance is weakened. No unchanged-SHA retry was requested. A green later HEAD is evidence for that source only, never a #185 fix. Root cause remains unproved and Windows V1 NO-GO.
+
 ## 28 October 2026 — original session clock issuance and admission
 
 Previous increment [#416](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/416) is squash-integrated at `36fc443cfa70bd36873aa25ba2ca17161ec4276f`, tree identical to its tested HEAD; independent [push/main #40742225141](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40742225141) verified SUCCESS 4/4.

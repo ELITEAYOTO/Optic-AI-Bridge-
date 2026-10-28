@@ -45,6 +45,14 @@ jobs:
           path: ${{ runner.temp }}/optic-private-project-preparation
           retention-days: 7
           if-no-files-found: error
+      - name: Verify original native GitRead clock and no-child custody
+        shell: pwsh
+        run: |
+          $Probe = Join-Path $env:RUNNER_TEMP 'optic-private-project-preparation/optic-private-project-preparation.exe'
+          & $Probe task_lease_registry::tests::clocked_lease_ --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'TaskLease clock provenance proof failed' }
+          & $Probe git_read::native_status_tests:: --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'inert native GitRead custody proof failed' }
       - name: Verify exact private copies, owner binding, capacity and cleanup
         shell: pwsh
         run: |
