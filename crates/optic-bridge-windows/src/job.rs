@@ -251,6 +251,9 @@ impl Drop for OwnedJob {
 /// create/spawn/resume method and is never proof of a completed child.
 #[must_use = "retain native handles until unstarted cleanup or later terminal proof"]
 pub struct PrecreatedNativeReadCustody {
+    // Disarm and join the independent watchdog before closing the owned Job.
+    // A watchdog is optional until a future trusted native launch owner arms it.
+    deadline: Option<NativeJobDeadline>,
     // The Job uses KILL_ON_JOB_CLOSE. No process can be added through this API.
     job: OwnedJob,
     _stdin: File,
@@ -272,11 +275,45 @@ impl PrecreatedNativeReadCustody {
         let stderr = CapturedOutputPipe::new()?;
         let stdin = File::open("NUL")?;
         Ok(Self {
+            deadline: None,
             job,
             _stdin: stdin,
             _stdout: stdout,
             _stderr: stderr,
         })
+    }
+
+    /// Install a nonrenewable watchdog on this *original* private kernel Job,
+    /// before any future native launcher is allowed to use it. Its separate
+    /// worker holds a noninheritable duplicate of the exact Job handle and
+    /// observes at most four already-owner-bound stop flags.
+    ///
+    /// This type still cannot create, resume or admit a process. An armed
+    /// watchdog is neither a cross-registry launch grant nor proof that a
+    /// process tree or either output pipe has physically terminated. Future
+    /// native custody must retain the Job and both streams until that proof.
+    pub fn arm_watchdog(
+        &mut self,
+        timeout_ms: u32,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<()> {
+        if timeout_ms == 0 || stop_flags.len() > 4 || self.deadline.is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "native read watchdog requires one positive, nonrenewable budget and at most four original stop flags",
+            ));
+        }
+        self.deadline = Some(NativeJobDeadline::new(&self.job, timeout_ms, stop_flags)?);
+        Ok(())
+    }
+
+    /// The watchdog's deadline flag is a timeout observation, not a Job-empty,
+    /// root-exit, pipe-EOF or successful TerminateJobObject receipt.
+    #[must_use]
+    pub fn watchdog_deadline_expired(&self) -> bool {
+        self.deadline
+            .as_ref()
+            .is_some_and(|deadline| deadline.expired.load(Ordering::Acquire))
     }
 
     /// Read the actual kernel Job's active-process count. Zero here is only
@@ -304,6 +341,47 @@ mod precreated_native_read_tests {
         // File::open("NUL") in the constructor proved stdin opened; device
         // handles need not support ordinary filesystem metadata queries.
         // No root existed; no EOF or OS termination receipt is claimed.
+    }
+
+    #[test]
+    fn unstarted_native_read_watchdog_is_nonrenewable_and_deadline_bounded() {
+        let limits =
+            LimitedJobObject::new(1, 64 * 1024 * 1024, 10).expect("positive kernel limits");
+        let mut owned =
+            PrecreatedNativeReadCustody::new(limits).expect("real unstarted kernel custody");
+
+        assert!(matches!(
+            owned.arm_watchdog(0, Vec::new()),
+            Err(ref error) if error.kind() == ErrorKind::InvalidInput
+        ));
+        let too_many = (0..5).map(|_| Arc::new(AtomicBool::new(false))).collect();
+        assert!(matches!(
+            owned.arm_watchdog(200, too_many),
+            Err(ref error) if error.kind() == ErrorKind::InvalidInput
+        ));
+        assert!(!owned.watchdog_deadline_expired());
+        assert_eq!(owned.active_processes().expect("real Job accounting"), 0);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        owned
+            .arm_watchdog(75, vec![stop])
+            .expect("arm once with an original owner stop signal");
+        assert!(matches!(
+            owned.arm_watchdog(1_000, Vec::new()),
+            Err(ref error) if error.kind() == ErrorKind::InvalidInput
+        ));
+
+        // This checks the actual independent timer signal. No child exists:
+        // it deliberately does NOT claim terminal process or pipe evidence.
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while !owned.watchdog_deadline_expired() {
+            assert!(
+                std::time::Instant::now() < until,
+                "native Job watchdog deadline was not observed"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(owned.active_processes().expect("real Job accounting"), 0);
     }
 }
 
