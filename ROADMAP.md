@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 29 October 2026 — finish the ordinary stdout lifetime gate
+
+#429 must require physical exit with an unread stdout reader still open, retain
+original admission cleanup and confirm both dedicated IO joins. Preserve initial
+observer failure separately from target behavior; validate exact final-head and
+independent-main CI. Then prove active-work/uncertain-IO ownership, the original
+host/policy launch fence and actual native Git/root/Job/stream quiescence.
+[ADR-0038](docs/decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md) defines the narrow
+output boundary; V1 remains NO-GO with #185/#319 and platform/security gates open.
+
 ## Windows V1 gate — stdout lifetime now has a separate characterization (#428)
 
 The hosted schema-3 supervisor reproduces a root retained by unread queued stdout

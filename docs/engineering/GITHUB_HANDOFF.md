@@ -1,5 +1,13 @@
 # GitHub-only project handoff
 
+## 29 October — #429 owned stdout validation
+
+Current scope is defined by [ADR-0038](../decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md)
+and [physical schema 4](PHYSICAL_HOST_SHUTDOWN_PROOF.md). Preserve first observer
+failure #40919730293 separately from actual unread-stdout RED #40921106974.
+Read final exact-head and independent-main receipts in #429/#323 before further
+work. Native GitRead remains inactive and Windows V1 NO-GO.
+
 ## 29 October 2026 — stdio close increment
 
 Start at the [current continuation](WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md).

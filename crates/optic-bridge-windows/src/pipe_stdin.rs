@@ -66,6 +66,7 @@ fn start_reader<R: Read + AsHandle + Send + 'static>(
         ));
     }
     let (send, receive) = mpsc::channel(1);
+    crate::stdio_mode::require_synchronous(&input)?;
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
     let worker = thread::Builder::new()

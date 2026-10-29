@@ -24,8 +24,12 @@ mod memory;
 mod output_pipe;
 #[cfg(windows)]
 mod pipe_stdin;
+#[cfg(windows)]
+mod pipe_stdout;
 #[cfg(all(windows, test))]
 mod rust_compile_probe;
+#[cfg(windows)]
+mod stdio_mode;
 #[cfg(windows)]
 mod workspace_grant;
 
@@ -57,5 +61,7 @@ pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
 #[cfg(windows)]
 pub use pipe_stdin::{PipeStdinOwner, PipeStdinReader, start_pipe_stdin};
+#[cfg(windows)]
+pub use pipe_stdout::{OwnedStdoutOwner, OwnedStdoutWriter, start_owned_stdout};
 #[cfg(windows)]
 pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};

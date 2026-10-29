@@ -33,9 +33,15 @@ def bounded_read(path):
 
 
 def phases(path):
-    return [line.split("phase=", 1)[1].split()[0]
-            for line in bounded_read(path).decode("utf-8", errors="replace").splitlines()
-            if line.startswith("OPTIC_STARTUP phase=")]
+    observed = []
+    for line in bounded_read(path).decode("utf-8", errors="replace").splitlines(keepends=True):
+        # stderr formatting may use several writes. A prefix is not a complete
+        # timing record, and must neither crash this observer nor satisfy a gate.
+        if line.endswith("\n") and line.startswith("OPTIC_STARTUP phase="):
+            phase, separator, elapsed = line[len("OPTIC_STARTUP phase="):].partition(" elapsed_ms=")
+            assert separator and phase and elapsed.strip().isdigit(), "malformed complete timing record"
+            observed.append(phase)
+    return observed
 
 
 def receive(path, request_id, process):
@@ -132,7 +138,7 @@ def receive_pipe(process, request_id):
 
 
 def stalled_stdout_case(command, root, deliver):
-    """Characterize retention; this case cannot certify stalled-output shutdown."""
+    """Require joined stdout and root exit while both unread pipe ends stay open."""
     process = None
     log = root / "stderr.log"
     with log.open("wb") as error:
@@ -144,7 +150,9 @@ def stalled_stdout_case(command, root, deliver):
             def phase(name):
                 if name in phases(log):
                     return True
-                assert process.poll() is None, "Bridge exited before phase: " + name
+                if process.poll() is not None:
+                    assert name in phases(log), "Bridge exited before phase: " + name
+                    return True
                 return False
 
             wait_for(lambda: phase("host-shutdown-listening"), 10, "stdout-case listener")
@@ -174,21 +182,20 @@ def stalled_stdout_case(command, root, deliver):
             wait_for(lambda: phase("original-session-cleanup-complete"), 10, "stdout-case cleanup")
             wait_for(lambda: phase("stdin-reader-joined"), 10, "stdout-case input join")
             assert not process.stdin.closed and not process.stdout.closed
-            time.sleep(0.5)
-            assert process.poll() is None, "stalled-output retention was not reproduced"
-            after = stdout_pipe_state(process)
-            assert after["queued_bytes"] > 0
-            process.stdout.close()  # Sole intervention; stdin is still open.
             process.wait(timeout=5)
-            assert process.returncode == 1 and not process.stdin.closed
+            assert process.returncode == 1 and not process.stdin.closed and not process.stdout.closed
+            after = stdout_pipe_state(process)
+            assert after["queued_bytes"] > 0, "parent must not drain output to permit exit"
             ordered = phases(log)
             assert ordered.index("host-stop-observed") < ordered.index("original-session-cleanup-complete")
             assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
-            result = dict(event="stalled-stdout", initialized=True, characterization_only=True,
+            assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
+            result = dict(event="stalled-stdout", initialized=True, characterization_only=False,
                           physical_signal=True, original_cleanup_observed=True, stdin_reader_joined=True,
-                          stdin_held_open_through_exit=True, alive_500ms_after_cleanup=True,
+                          stdout_writer_joined=True, stdin_held_open_through_exit=True,
+                          stdout_reader_held_open_through_exit=True, exit_with_unread_stdout=True,
                           stdout_before_stop=before, stdout_after_cleanup=after,
-                          released_by_stdout_reader_close=True, final_exit_code=process.returncode)
+                          released_by_stdout_reader_close=False, final_exit_code=process.returncode)
             (root / "result.json").write_text(json.dumps(result), encoding="utf-8")
         except BaseException:
             detail = bounded_read(log).decode("utf-8", errors="replace")
@@ -226,7 +233,9 @@ def worker(args):
                 current = phases(log)
                 if name in current:
                     return True
-                assert process.poll() is None, "Bridge exited before phase: " + name
+                if process.poll() is not None:
+                    assert name in phases(log), "Bridge exited before phase: " + name
+                    return True
                 return False
 
             wait_for(lambda: phase("host-shutdown-listening"), 10, "OS listener registration")
@@ -246,8 +255,10 @@ def worker(args):
                 assert process.returncode == 0, "headless EOF failed"
                 assert "original-session-cleanup-complete" in phases(log)
                 assert "stdin-reader-joined" in phases(log)
+                assert "stdout-writer-joined" in phases(log)
                 result = dict(event="headless", initialized=True, eof_exit_code=0,
-                              cleanup_marker=True, stdin_reader_joined=True, physical_signal=False)
+                              cleanup_marker=True, stdin_reader_joined=True,
+                              stdout_writer_joined=True, physical_signal=False)
             else:
                 if os.name == "nt":
                     deliver(process, {"ctrl-c": 0, "ctrl-break": 1}[args.event])
@@ -262,6 +273,7 @@ def worker(args):
                     process.wait(timeout=5)
                     assert not process.stdin.closed
                     assert "stdin-reader-joined" in phases(log)
+                    assert "stdout-writer-joined" in phases(log)
                     open_stdin_exit = True
                 else:
                     # Unix remains characterization, separate from Windows acceptance.
@@ -281,6 +293,8 @@ def worker(args):
                 if os.name == "nt":
                     assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
                     result["stdin_reader_joined"] = True
+                    assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
+                    result["stdout_writer_joined"] = True
                 else:
                     result.update(alive_500ms_after_cleanup=retained,
                                   exit_after_input_close=process.returncode)
@@ -313,10 +327,10 @@ def supervise(args):
     if os.name == "nt":
         cases.append(("headless", True))
         cases.append(("stalled-stdout", True))
-    result = dict(schema_version=3, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+    result = dict(schema_version=4, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
-                  claim="Windows normal pipe exit/join; stalled stdout and Unix retention are characterization only, not shutdown acceptance")
+                  claim="Windows pipe input/output joins and exit with unread stdout; Unix retention remains characterization only")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:

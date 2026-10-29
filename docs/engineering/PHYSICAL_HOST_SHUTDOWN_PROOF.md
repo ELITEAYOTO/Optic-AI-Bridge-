@@ -1,5 +1,48 @@
 # Physical process signal to original stdio cleanup
 
+## Schema 4 — unread stdout must not retain root exit (#429)
+
+The existing stalled-output case now requires root exit 1 within the unchanged
+five-second wait while parent stdin and stdout's reader remain open and output
+is not consumed. Original cleanup precedes input join and confirmed output join;
+queued output remains after exit. JSON records `characterization_only: false`,
+`stdout_writer_joined`, `exit_with_unread_stdout`, both open-end observations and
+`released_by_stdout_reader_close: false`. This gate is for ordinary synchronous
+Windows pipes with metadata traffic; it does not cover active admitted work.
+The normal Windows signal/headless cases and separate Unix characterizations
+remain required. [Ownership and limits](../decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md).
+
+Preserve first #429 HEAD `27f6b95c92b4a278bf2f81697c8c342b1668f6f4`,
+[CI #40919730293](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40919730293):
+Windows passed three signal cases then failed in the observer's `phases()` with
+IndexError while stderr contained a partial timing prefix. The stdout case was
+not reached, so this is a harness failure, not target behavioral RED. The
+corrected observer waits for complete valid records and rereads final logs on
+process exit; all phase and exit assertions remain. Three offline parser tests
+run before the physical proof. Final exact-head/main receipts belong in #429/#323.
+
+Historical schema-3 characterization below remains evidence of the prior defect,
+not of the new ownership implementation. Windows V1 remains NO-GO.
+
+After the observer correction, second test-first HEAD
+`e9aa3dc7d21db4a617bb0cd5d8f166b8c86c192b`,
+[CI #40921106974](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40921106974),
+reached the actual target: all four normal Windows signals and headless EOF
+passed, then unread stdout exceeded the unchanged five-second root exit wait.
+Stderr confirms host stop, original cleanup and input join first. This is target
+behavioral RED on the unchanged Tokio-output runtime, separate from the earlier
+observer failure. The correction also requires the output-join marker in every
+normal Windows/headless case. In the stalled-output case, neither parent endpoint
+is closed or drained to make exit pass; headless EOF still closes input normally.
+
+First corrected owner `029726bc22e72b42537a92b81bb737cf37e6eba3`,
+[CI #40922838253](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40922838253),
+passed all four jobs and all six Windows cases. Unread stdout reported 4280 bytes
+before stop and 3852 after cleanup, both parent ends open, both joins and exit 1,
+with normal supervisor reaping/empty Job. Subsequent review adds synchronous-mode
+attestation to both original IO factories and an overlapped-handle rejection
+regression. That final guarded source still requires its own exact-head/main CI.
+
 ## Current schema 3 — separate unread-stdout characterization (#428)
 
 Schema 3 preserves all prior normal cases and adds one Windows-only

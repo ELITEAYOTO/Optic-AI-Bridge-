@@ -1,5 +1,36 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Current stdout owner candidate — #429
+
+Baseline #428 main `c3265b79824142c3ff8dae32950fbb5afeb3c8f1` has independent
+CI #40887676383 SUCCESS 4/4. #429 adds an original process-owned bounded Windows
+stdout worker, exact-thread cancellation and actual join after original cleanup.
+Pipe and redirected disk stdout share this path; character handles fail before
+grants. Unix remains unchanged. [ADR-0038](../decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md)
+and [schema 4 proof](PHYSICAL_HOST_SHUTDOWN_PROOF.md) own the behavior and limits.
+
+First test-first CI #40919730293 failed in the physical observer on a partial
+stderr prefix after three signal cases, before reaching unread stdout. Preserve
+it as a harness failure. A complete-record parser and offline tests repair the
+observer without dropping any phase, exit, queue or containment assertion.
+Require final exact-head and independent-main receipts in #429/#323; local six
+native IO tests are supplemental. This is not active-work/uncertain-driver or
+native Git/host-policy launch acceptance. V1 remains NO-GO, no release.
+
+Actual target RED: observer-corrected `e9aa3dc7d21db4a617bb0cd5d8f166b8c86c192b`,
+CI #40921106974, passed the five earlier Windows cases then timed out after 5s
+with unread stdout despite original cleanup/input join. The source correction
+has six native IO, 53 application unit and four actual stdio tests passing locally;
+three offline observer regressions and app/Windows all-target Clippy also pass.
+These subsets do not replace the exact final-head hosted gates.
+
+Owner candidate `029726bc` passed CI #40922838253 4/4 with six successful Windows
+physical cases, including unread-output exit. Final review adds shared native
+synchronous-mode validation before input/output spawning; FILE_TYPE alone is
+insufficient for Rust File IO. A real overlapped-handle rejection first failed
+locally, then the guard passed all 11 input/output tests. Require the final guarded
+HEAD's own hosted and independent-main evidence; the earlier green is historical.
+
 ## Next output-lifetime evidence — #428
 
 The schema-3 physical supervisor adds a Windows **characterization-only** case
