@@ -92,9 +92,21 @@ jobs:
           OPTIC_LAUNCHER_PHASES: "1"
         run: cargo test --locked -p optic-bridge-app --test appcontainer_network_isolation_windows -- --nocapture
       - name: Build bridge binaries for MCP and installer smokes
-        if: runner.os == 'Windows'
-        shell: pwsh
         run: cargo build --locked -p optic-bridge-app -j 1
+      - name: Prove physical host signals with open stdin under external supervision
+        shell: bash
+        timeout-minutes: 5
+        env:
+          OPTIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/tests/host_shutdown_supervisor.py --bridge target/debug/optic-bridge${{ runner.os == 'Windows' && '.exe' || '' }} --output target/physical-host-shutdown.json
+      - name: Preserve physical host-stop evidence including failed attempts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: physical-host-shutdown-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/physical-host-shutdown.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Smoke isolated Node doctor with TEMP-only environment
         if: runner.os == 'Windows'
         shell: pwsh

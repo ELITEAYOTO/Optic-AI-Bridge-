@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 29 October 2026 — stdin ownership after physical host-stop proof
+
+#426 observes real OS signals reaching original stdio cleanup on hosted Windows
+and Ubuntu. Eight signal samples retained their process with input open through
+500ms; reaping required explicit parent input closure. Next design and prove
+owned stdin/process shutdown without premature admission/quota release or a fake
+drain timeout. Then establish the live host/policy native-launch fence. Physical
+signal proof is not active-child/Job/EOF or Windows 10/11 acceptance. [Owning proof](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+V1 NO-GO; no release/native GitRead activation.
+
 ## 29 October 2026 — cooperative process stop before native launch
 
 PR #425 routes process-owned Ctrl+C/Ctrl+Break (Windows), SIGINT/SIGTERM (Unix)

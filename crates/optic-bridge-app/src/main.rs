@@ -441,8 +441,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 ).into()))
             }
         }
-    }, host_shutdown::requested()).await;
-    finish_original_stdio_session(service_result, lifecycle, supervised_session).await
+    }, async {
+        host_shutdown::requested(&startup_timing).await?;
+        startup_timing.mark("host-stop-observed");
+        Ok(())
+    }).await;
+    finish_original_stdio_session(
+        service_result,
+        lifecycle,
+        supervised_session,
+        Some(&startup_timing),
+    )
+    .await
 }
 
 async fn until_host_shutdown(
@@ -501,6 +511,7 @@ async fn finish_original_stdio_session(
     service_result: Result<(), Box<dyn Error + Send + Sync>>,
     lifecycle: Arc<SessionLifecycleManager>,
     session: SessionHandle,
+    timing: Option<&StartupTiming>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     // EOF or returned initialize/wait errors close the original service session,
     // independently of local renewal. Dropping the supervisor cannot cancel a
@@ -511,6 +522,9 @@ async fn finish_original_stdio_session(
         Ok(_)
         | Err(SessionLifecycleError::SessionRegistry(SessionRegistryError::UnknownSession)) => {}
         Err(error) => return Err(error.into()),
+    }
+    if let Some(timing) = timing {
+        timing.mark("original-session-cleanup-complete");
     }
     service_result
 }
