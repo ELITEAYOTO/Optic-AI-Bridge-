@@ -49,6 +49,7 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
         id: workspace-tests
+        timeout-minutes: 10
         env:
           # Capture the original cold/parallel failure, not just later
           # serialized comparisons. Fixed opt-in markers grant no authority.

@@ -1,5 +1,23 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 29 October 2026 — Windows pipe input owner and real join
+
+#427 makes one process-owned Windows synchronous-pipe stdin claim before session
+provisioning. A dedicated owned reader and single-slot bounded channel replace
+Tokio's uncancellable blocking-pool read. The owner survives original session/
+TaskLease/admission drainage, then requests targeted cancellation and awaits real
+join, including the stop-check/read-entry race. Unknown cancellation retains
+ownership without detachment or timeout. Console/disk stdin is rejected; Unix
+remains the old Tokio path. [ADR](../decisions/ADR-0037-WINDOWS-PIPE-STDIN-OWNERSHIP.md), [proof schema v2](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
+Behavioral RED #40869915928 reached cleanup then timed out waiting 5s with stdin
+open. Corrected-code #40871949465 passed regular CI and the three applicable
+native workflows; physical Windows cases exited with stdin still open and reader
+join observed. Final exact-head and independent-main receipts must still be read
+in #427/#323. Active work, stalled stdout/legacy IO, uncertain drivers, abrupt
+interruption and live host/policy native launch fencing remain open. No authority
+deadline/quota relaxation, forced exit, native GitRead activation or release; V1 NO-GO.
+
 ## 29 October 2026 — real OS signals reach cleanup; stdin still retains process
 
 PR #426 adds a hosted external supervisor for real Bridge signals before/after

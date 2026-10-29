@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 29 October 2026 — Windows input owner before broader shutdown claims
+
+#427 requires Windows synchronous-pipe reader ownership, cancellation and real
+join after original admission drainage; physical signal acceptance keeps parent
+stdin open through root exit. Console/disk Windows input is outside this contract,
+Unix retention remains separate. Next prove active-work/stalled-output/uncertainty
+schedules and the live host/policy native-launch fence; do not infer a universal
+shutdown guarantee from idle-input cases. [Owning ADR](docs/decisions/ADR-0037-WINDOWS-PIPE-STDIN-OWNERSHIP.md).
+No native GitRead activation or release; Windows V1 NO-GO.
+
 ## 29 October 2026 — stdin ownership after physical host-stop proof
 
 #426 observes real OS signals reaching original stdio cleanup on hosted Windows

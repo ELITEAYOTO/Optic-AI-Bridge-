@@ -134,6 +134,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = AppArgs::parse()?;
     startup_timing.mark("arguments-parsed");
     let limits = HardLimits::default().validate_nonzero()?;
+    // Own input before issuing any session authority; startup errors also join
+    // the Windows reader through its guard. Unix keeps its existing stdin path.
+    #[cfg(windows)]
+    let (stdin, stdin_owner) = optic_bridge_windows::start_pipe_stdin()?;
+    #[cfg(not(windows))]
+    let stdin = tokio::io::stdin();
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
     let expires_at = now.saturating_add_millis(args.session_lifetime_ms);
@@ -391,7 +397,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let max_response_bytes = usize::try_from(limits.max_response_bytes)
         .map_err(|_| std::io::Error::other("response hard limit does not fit usize"))?;
     let transport = BoundedJsonLineTransport::new(
-        tokio::io::stdin(),
+        stdin,
         tokio::io::stdout(),
         max_request_bytes,
         max_response_bytes,
@@ -446,13 +452,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         startup_timing.mark("host-stop-observed");
         Ok(())
     }).await;
-    finish_original_stdio_session(
+    let service_result = finish_original_stdio_session(
         service_result,
         lifecycle,
         supervised_session,
         Some(&startup_timing),
     )
-    .await
+    .await;
+    #[cfg(windows)]
+    {
+        // Never bypass original admission drainage to manufacture process exit.
+        // The dedicated input worker is retained until cancellation AND join.
+        tokio::task::spawn_blocking(move || stdin_owner.stop_and_join()).await??;
+        startup_timing.mark("stdin-reader-joined");
+    }
+    service_result
 }
 
 async fn until_host_shutdown(
