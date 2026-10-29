@@ -22,6 +22,8 @@ mod job;
 mod memory;
 #[cfg(windows)]
 mod output_pipe;
+#[cfg(windows)]
+mod pipe_stdin;
 #[cfg(all(windows, test))]
 mod rust_compile_probe;
 #[cfg(windows)]
@@ -53,5 +55,7 @@ pub use job::{ContainedAppContainerProcess, LimitedJobObject, PrecreatedNativeRe
 pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
 pub use output_pipe::{CapturedOutputChunk, CapturedOutputPipe};
+#[cfg(windows)]
+pub use pipe_stdin::{PipeStdinOwner, PipeStdinReader, start_pipe_stdin};
 #[cfg(windows)]
 pub use workspace_grant::{AppContainerDirectoryMetadataGrant, AppContainerReadFileGrant};
