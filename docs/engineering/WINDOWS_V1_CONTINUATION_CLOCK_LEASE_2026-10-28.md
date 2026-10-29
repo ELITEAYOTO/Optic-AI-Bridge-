@@ -1,5 +1,13 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 29 October 2026 — process shutdown requests close original stdio authority
+
+PR #425 connects private process-owned OS listeners to the existing original-session cleanup across MCP initialization and serving: Ctrl+C/Ctrl+Break on Windows, SIGINT/SIGTERM on Unix. A ready stop takes precedence over a simultaneously ready service result; listener registration/stream errors fail closed. Successful cleanup preserves Interrupted or the source error, publishes original session/TaskLease stop and retains counted admissions until they drain. No MCP request supplies or resets this source.
+
+Test-first ce7e6c37efb26a6a66125f0a823bdf82373d5ee1, CI #40857686017, reproduced four behavioral failures on Windows and Ubuntu after format/Clippy: idle initialize ignored stop, initialized service did not publish stop, listener failure was ignored, and a ready service result won over ready stop. RMCP duplex tests inject the internal notification; they cover renewal off/on, retained admission and unrelated-session survival, not physical OS signal delivery. Exact final-head and independent push/main receipts belong to #425/#323.
+
+Handling is cooperative. Tokio's blocking stdin reader can keep the runtime/process alive with an open idle input pipe even after authority revocation and RMCP cancellation; this PR adds no forced exit or drain timeout and proves no process-exit bound. Tokio listeners are registered when the process-owned future is first polled before initialization; handlers affect process signal behavior for its lifetime. Blocking startup before that point, abrupt kill, Windows console close/logoff/shutdown, unbounded admission drainage/legacy joins and physical native child/Job/EOF acceptance remain outside this proof. This is a returned service-close path, not a global host/policy revocation fence or native launch permission. The signal feature uses existing locked Tokio dependencies; no security or memory guard changes. Native GitRead stays inactive, Windows V1 NO-GO, no release.
+
 ## 29 October 2026 — original session horizon during stdio initialization
 
 PR #424 bounds MCP initialization by the remaining original session lifetime, including time already spent in startup. Pre-initialize traffic does not renew that horizon; local session renewal still begins only after initialization. Already-expired or late-ready initialization fails closed and follows the existing original-session cleanup, which publishes session/lease stop before waiting for counted admissions. This does not bound admission drainage or fix the legacy process/pipe joins.

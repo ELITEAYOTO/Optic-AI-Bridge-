@@ -447,10 +447,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
 async fn until_host_shutdown(
     service: impl std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
-    _shutdown: impl std::future::Future<Output = std::io::Result<()>>,
+    shutdown: impl std::future::Future<Output = std::io::Result<()>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Test-first extraction: preserve the existing unobserved host-stop behavior.
-    service.await
+    // Poll the process-owned source before allowing initialization or more
+    // service progress. A ready stop wins a simultaneously ready service result.
+    // Returning drops the service future; the caller still owns and drains the
+    // original lifecycle/session rather than detaching counted admissions.
+    tokio::select! {
+        biased;
+        result = shutdown => {
+            result?;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "process requested stdio shutdown",
+            ).into())
+        }
+        result = service => result,
+    }
 }
 
 async fn initialize_before_original_session_expiry<T, E>(
