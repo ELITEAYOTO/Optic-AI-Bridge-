@@ -417,7 +417,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service_result: Result<(), Box<dyn Error + Send + Sync>> = async {
-        let service = server.serve(transport).await?;
+        let service = initialize_before_original_session_expiry(
+            server.serve(transport),
+            clock.as_ref(),
+            expires_at,
+        )
+        .await?;
         startup_timing.mark("mcp-service-started");
         let renewal = args
             .supervise_session
@@ -438,6 +443,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     .await;
     finish_original_stdio_session(service_result, lifecycle, supervised_session).await
+}
+
+async fn initialize_before_original_session_expiry<T, E>(
+    initialization: impl std::future::Future<Output = Result<T, E>>,
+    _clock: &dyn Clock,
+    _expires_at: MonotonicTime,
+) -> Result<T, Box<dyn Error + Send + Sync>>
+where
+    E: Error + Send + Sync + 'static,
+{
+    // Test-first extraction of the existing unbounded initialization boundary.
+    initialization.await.map_err(Into::into)
 }
 
 async fn finish_original_stdio_session(

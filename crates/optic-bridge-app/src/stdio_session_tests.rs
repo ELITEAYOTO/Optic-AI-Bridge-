@@ -9,6 +9,57 @@ use rmcp::{
 use std::fs;
 use tokio::{io::DuplexStream, task::JoinHandle};
 
+#[tokio::test]
+async fn stdio_idle_initialize_expires_on_original_session_horizon() {
+    for supervised in [false, true] {
+        let fixture = Fixture::with_original_lifetime(500);
+        let (client, mut owner) = fixture.start(supervised);
+        let completed = tokio::time::timeout(Duration::from_secs(2), &mut owner).await;
+        let bounded = completed.is_ok();
+        drop(client);
+        let (_, result) = match completed {
+            Ok(joined) => joined.unwrap(),
+            Err(_) => tokio::time::timeout(Duration::from_secs(5), owner)
+                .await
+                .unwrap()
+                .unwrap(),
+        };
+        assert!(bounded, "idle initialize outlived original session horizon");
+        let error = result.expect_err("expired initialization must fail closed");
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+        assert!(fixture.original_closed());
+        assert!(fixture.other_active());
+    }
+}
+
+#[tokio::test]
+async fn stdio_initialize_expiry_publishes_stop_before_admission_drain() {
+    let fixture = Fixture::with_original_lifetime(500);
+    let admitted = fixture.owned_admission();
+    let (client, owner) = fixture.start(false);
+    let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+        while !fixture.original_closed() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .is_ok();
+    let retained = !owner.is_finished();
+    drop(admitted);
+    drop(client);
+    let (_, result) = tokio::time::timeout(Duration::from_secs(5), owner)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stopped, "initialize expiry did not publish original stop");
+    assert!(retained, "cleanup must retain admission until drain");
+    assert!(result.is_err());
+    assert!(fixture.other_active());
+}
+
 type ServiceResult = Result<(), Box<dyn Error + Send + Sync>>;
 
 struct ProbeClient;
@@ -32,10 +83,15 @@ struct Fixture {
     session: SessionHandle,
     other_session: SessionHandle,
     lease: TaskLeaseId,
+    expires_at: MonotonicTime,
 }
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_original_lifetime(60_000)
+    }
+
+    fn with_original_lifetime(lifetime_ms: u64) -> Self {
         let root = std::env::temp_dir().join(format!(
             "optic-stdio-owner-{}",
             optic_bridge_core::ActionId::generate().unwrap().to_token()
@@ -57,15 +113,22 @@ impl Fixture {
             Arc::clone(&processes),
         ));
         let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
-        let spec = || SessionGrantSpec {
+        let expires_at = clock.now().saturating_add_millis(lifetime_ms);
+        let spec = |expires_at| SessionGrantSpec {
             principal: PrincipalId::new("stdio-proof").unwrap(),
             project: ProjectId::new("synthetic").unwrap(),
             capabilities: BTreeSet::from([Capability::FileRead]),
-            expires_at: clock.now().saturating_add_millis(60_000),
+            expires_at,
             policy_epoch: 1,
         };
-        let session = lifecycle.provision(spec(), clock.now()).unwrap().handle;
-        let other_session = lifecycle.provision(spec(), clock.now()).unwrap().handle;
+        let session = lifecycle
+            .provision(spec(expires_at), clock.now())
+            .unwrap()
+            .handle;
+        let other_session = lifecycle
+            .provision(spec(clock.now().saturating_add_millis(60_000)), clock.now())
+            .unwrap()
+            .handle;
         let lease = TaskLeaseId::generate().unwrap();
         leases
             .register(TaskLease {
@@ -75,7 +138,7 @@ impl Fixture {
                 scopes: BTreeSet::new(),
                 resource_ceiling: read_authority_resource_budget(HardLimits::default()),
                 workload_class: WorkloadClass::Standard,
-                expires_at: clock.now().saturating_add_millis(60_000),
+                expires_at,
                 policy_epoch: 1,
             })
             .unwrap();
@@ -89,6 +152,7 @@ impl Fixture {
             session,
             other_session,
             lease,
+            expires_at,
         }
     }
 
@@ -113,9 +177,15 @@ impl Fixture {
         let lifecycle = Arc::clone(&self.lifecycle);
         let session = self.session.clone();
         let clock = Arc::clone(&self.clock);
+        let expires_at = self.expires_at;
         let owner = tokio::spawn(async move {
             let result: ServiceResult = async {
-                let service = server.serve(transport).await?;
+                let service = initialize_before_original_session_expiry(
+                    server.serve(transport),
+                    clock.as_ref(),
+                    expires_at,
+                )
+                .await?;
                 let renewal = supervised.then_some((session.clone(), 60_000));
                 tokio::select! {
                     result = service.waiting() => result.map(|_| ()).map_err(Into::into),
