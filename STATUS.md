@@ -1,5 +1,15 @@
 # Current project status
 
+## 29 October 2026 — original stdio session close
+
+#421 is integrated at `efb3fc28a47fba136ea912381fc9d1cc5fe1d08c`, independent
+[main CI #40754598941](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40754598941) SUCCESS 4/4.
+The next PR closes the original session on ordinary service EOF and returned MCP
+initialize errors, independently of renewal. Local Windows regression and binary
+tests pass; exact-head hosted and independent post-merge CI remain delivery gates.
+See [current scope and limits](docs/engineering/WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md).
+**Windows V1 NO-GO**; no physical Git termination or global host/policy fence claimed.
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.

@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## 29 October 2026 — stdio close increment
+
+Start at the [current continuation](WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md).
+The owner authorized local isolated work for this task only; hosted CI remains
+the integration gate. Baseline is #421 at `efb3fc28a47fba136ea912381fc9d1cc5fe1d08c`
+with independent main CI #40754598941 SUCCESS 4/4. The new service-close PR needs
+its own exact-head and post-merge receipts in #323. Existing research PRs stay
+separate; Windows V1 NO-GO and original #185/#319 failures remain visible.
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.

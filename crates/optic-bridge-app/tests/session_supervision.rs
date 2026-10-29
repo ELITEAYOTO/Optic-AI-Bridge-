@@ -112,7 +112,7 @@ async fn exercise(supervised: bool, revoke: bool, cross_expiry: bool) {
                 tokio::time::sleep(Duration::from_millis(2100)).await;
             }
         }
-        if !supervised || revoke {
+        if (!supervised && cross_expiry) || revoke {
             for (name, args) in [
                 ("session_info", json!({})),
                 ("fs_read", json!({"path":"public.txt"})),
@@ -126,6 +126,16 @@ async fn exercise(supervised: bool, revoke: bool, cross_expiry: bool) {
                         )));
                     }
                 }
+            }
+        }
+        if !supervised && !cross_expiry {
+            // Close a still-active default service, not merely an expired one.
+            let info = peer
+                .call_tool(request("session_info", json!({})))
+                .await
+                .map_err(io::Error::other)?;
+            if info.is_error == Some(true) {
+                return Err(io::Error::other("default authority ended before EOF"));
             }
         }
         let _ = peer.cancel().await;
@@ -169,4 +179,9 @@ async fn local_supervision_renews_same_scopes_and_revoke_stays_terminal() {
 #[tokio::test]
 async fn transport_eof_stops_an_active_local_supervisor_cleanly() {
     exercise(true, false, false).await;
+}
+
+#[tokio::test]
+async fn transport_eof_stops_an_active_default_service_cleanly() {
+    exercise(false, false, false).await;
 }

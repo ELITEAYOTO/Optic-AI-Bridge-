@@ -3,6 +3,9 @@
 mod persistent_config;
 mod tool_profile_config;
 
+#[cfg(test)]
+mod stdio_session_tests;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
@@ -413,34 +416,44 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "disabled"
         },
     );
-    let service = server.serve(transport).await?;
-    startup_timing.mark("mcp-service-started");
-    let renewal = args
-        .supervise_session
-        .then_some((supervised_session.clone(), args.session_lifetime_ms));
-    if args.supervise_session {
-        eprintln!("Optic AI Bridge operator supervision enabled; bounded leases, unchanged scopes");
-    }
-    let service_result: Result<(), Box<dyn Error + Send + Sync>> = tokio::select! {
-        result = service.waiting() => result.map(|_| ()).map_err(Into::into),
-        result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock), renewal) => {
-            result.and_then(|()| Err(std::io::Error::other(
-                "session expiry supervisor stopped unexpectedly",
-            ).into()))
+    let service_result: Result<(), Box<dyn Error + Send + Sync>> = async {
+        let service = server.serve(transport).await?;
+        startup_timing.mark("mcp-service-started");
+        let renewal = args
+            .supervise_session
+            .then_some((supervised_session.clone(), args.session_lifetime_ms));
+        if args.supervise_session {
+            eprintln!(
+                "Optic AI Bridge operator supervision enabled; bounded leases, unchanged scopes"
+            );
         }
-    };
-    if args.supervise_session {
-        // Dropping the supervisor future cannot cancel a started blocking renewal.
-        // Revoke closes admission and waits for that critical section: a renewal
-        // racing transport shutdown must never leave effective authority behind.
-        let cleanup =
-            tokio::task::spawn_blocking(move || lifecycle.revoke(&supervised_session)).await?;
-        match cleanup {
-            Ok(_)
-            | Err(SessionLifecycleError::SessionRegistry(SessionRegistryError::UnknownSession)) => {
+        tokio::select! {
+            result = service.waiting() => result.map(|_| ()).map_err(Into::into),
+            result = supervise_session_expiry(Arc::clone(&lifecycle), Arc::clone(&clock), renewal) => {
+                result.and_then(|()| Err(std::io::Error::other(
+                    "session expiry supervisor stopped unexpectedly",
+                ).into()))
             }
-            Err(error) => return Err(error.into()),
         }
+    }
+    .await;
+    finish_original_stdio_session(service_result, lifecycle, supervised_session).await
+}
+
+async fn finish_original_stdio_session(
+    service_result: Result<(), Box<dyn Error + Send + Sync>>,
+    lifecycle: Arc<SessionLifecycleManager>,
+    session: SessionHandle,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // EOF or returned initialize/wait errors close the original service session,
+    // independently of local renewal. Dropping the supervisor cannot cancel a
+    // started blocking renewal; revoke publishes stop and drains original counted
+    // admissions. Never detach this drain or release its retained capacity early.
+    let cleanup = tokio::task::spawn_blocking(move || lifecycle.revoke(&session)).await?;
+    match cleanup {
+        Ok(_)
+        | Err(SessionLifecycleError::SessionRegistry(SessionRegistryError::UnknownSession)) => {}
+        Err(error) => return Err(error.into()),
     }
     service_result
 }

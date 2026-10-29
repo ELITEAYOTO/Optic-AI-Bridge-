@@ -1,5 +1,14 @@
 # Delivery roadmap
 
+## 29 October 2026 — service ownership before native launch
+
+Validate unconditional original-session cleanup on default/supervised stdio EOF
+and returned MCP initialize errors, retaining admitted capacity through drainage.
+Then establish the independent original host/policy launch authority, interruption
+ownership and real Git/root/Job/stdio termination contract described in the
+[current continuation](docs/engineering/WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md).
+This service-close slice does not authorize native MCP activation or a V1 release.
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.
