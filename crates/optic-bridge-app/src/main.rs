@@ -417,7 +417,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         },
     );
     let service_result: Result<(), Box<dyn Error + Send + Sync>> = async {
-        let service = server.serve(transport).await?;
+        let service = initialize_before_original_session_expiry(
+            server.serve(transport),
+            clock.as_ref(),
+            expires_at,
+        )
+        .await?;
         startup_timing.mark("mcp-service-started");
         let renewal = args
             .supervise_session
@@ -438,6 +443,37 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     .await;
     finish_original_stdio_session(service_result, lifecycle, supervised_session).await
+}
+
+async fn initialize_before_original_session_expiry<T, E>(
+    initialization: impl std::future::Future<Output = Result<T, E>>,
+    clock: &dyn Clock,
+    expires_at: MonotonicTime,
+) -> Result<T, Box<dyn Error + Send + Sync>>
+where
+    E: Error + Send + Sync + 'static,
+{
+    let expired = || {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "original stdio session expired during MCP initialization",
+        )
+    };
+    // Count startup time against the original horizon. Neither pre-initialize
+    // traffic nor the later renewal supervisor may restart this budget.
+    let remaining = expires_at
+        .as_millis()
+        .checked_sub(clock.now().as_millis())
+        .filter(|remaining| *remaining != 0)
+        .ok_or_else(expired)?;
+    let result = tokio::time::timeout(Duration::from_millis(remaining), initialization)
+        .await
+        .map_err(|_| expired())?;
+    // A ready initialization future must not win after the original horizon.
+    if clock.now() >= expires_at {
+        return Err(expired().into());
+    }
+    result.map_err(Into::into)
 }
 
 async fn finish_original_stdio_session(

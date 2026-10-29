@@ -1,5 +1,13 @@
 # Current project status
 
+## 29 October 2026 — original session horizon during stdio initialization
+
+PR #424 bounds MCP initialization by the remaining original session lifetime, including time already spent in startup. Pre-initialize traffic does not renew that horizon; local session renewal still begins only after initialization. Already-expired or late-ready initialization fails closed and follows the existing original-session cleanup, which publishes session/lease stop before waiting for counted admissions. This does not bound admission drainage or fix the legacy process/pipe joins.
+
+Real RMCP duplex regressions reproduced behavioral RED on Windows and Ubuntu at 14a9d1c3722fcc7312f54acf08181cbf8c10baa1, CI #40848166754: idle initialization outlived the horizon and expiry did not publish stop. They cover default/supervised idle initialization and retained admission during cleanup. The correction keeps the original deadline, error path, other-session independence and resource ownership. Exact-head and independent-main validation receipts are recorded in #424 and #323; this description alone is not CI acceptance.
+
+No native GitRead launch or global host/policy revocation fence is added. Early setup errors, abrupt task/process interruption and physical child/Job/EOF proof remain separate requirements. Windows V1 stays NO-GO; no release. Local work remains lightweight; full validation uses hosted Windows/Ubuntu.
+
 ## 29 October 2026 — original stdio session close
 
 #421 is integrated at `efb3fc28a47fba136ea912381fc9d1cc5fe1d08c`, independent
