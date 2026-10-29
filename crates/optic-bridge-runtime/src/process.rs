@@ -561,7 +561,13 @@ impl ProcessManager {
 
         let mut command = CommandWrap::from(command);
         #[cfg(windows)]
-        command.wrap(limited_job);
+        command.wrap(if requires_isolation {
+            // The private launcher communicates over pipes. A console signal
+            // must reach Bridge's lifecycle, not independently kill its helper.
+            limited_job.without_console()
+        } else {
+            limited_job
+        });
         #[cfg(unix)]
         {
             command.wrap(KillOnDrop);

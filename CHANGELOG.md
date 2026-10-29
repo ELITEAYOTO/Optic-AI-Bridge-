@@ -1,5 +1,17 @@
 # Changelog
 
+## 29 October — private isolation launcher without a console (#431)
+
+The Windows LimitedJobObject wrapper gains a typed opt-in no-console mode,
+selected only for the private isolation launcher. Other managed launches keep
+the default; CREATE_SUSPENDED, Job limits, assignment and resume ordering remain.
+No arbitrary creation flags, grants or protocol options are exposed. Schema 6
+adds physical Ctrl+Break with a running isolated Node and open stdin. The console
+inventory still requires exactly worker plus Bridge before broadcast; its first
+hosted candidate refused a third client rather than allowing a direct signal to
+the helper. Exact-head/main evidence is required. V1 remains NO-GO; no release,
+held-admission, product resource-release or native Git acceptance is inferred.
+
 ## 29 October — physical active managed Node EOF case
 
 The hosted schema-5 supervisor adds one real MCP-started isolated Node job to the
