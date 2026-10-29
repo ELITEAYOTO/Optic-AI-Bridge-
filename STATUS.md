@@ -1,5 +1,18 @@
 # Current project status
 
+## Windows V1 — next physical active managed-job proof
+
+Baseline #429 is integrated at `1387a3e9f4b2981c89572bf32ed9f815c6d6dacd`, with
+independent main CI #40925991711 SUCCESS4/4. Schema 5 adds a hosted-only actual
+isolated Node job that must be alive, image-verified and in the original outer
+Job immediately before client EOF. A retained native handle must become signaled
+within the same five-second root-exit budget, before the 30s child timeout; no
+stop RPC or fixture kill supplies success. Seven offline observer tests pass.
+Exact-head and independent-main results remain required. This is an active
+managed job, not held-admission/resource-release or native Git acceptance.
+[Owning proof and limitations](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+**Windows V1 NO-GO.** No runtime authorization or release change.
+
 ## Windows V1 — owned stdout candidate (#429)
 
 After #428 (`main=c3265b79824142c3ff8dae32950fbb5afeb3c8f1`, independent CI

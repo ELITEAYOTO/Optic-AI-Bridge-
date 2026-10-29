@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Active managed-job EOF evidence increment
+
+After independently verified #429/main `1387a3e`, follow
+[schema 5](PHYSICAL_HOST_SHUTDOWN_PROOF.md): a real isolated Node job, native
+handle, original external Job membership and actual client EOF. Require final
+exact-head and independent-main receipts; seven local offline observer tests
+are supplemental only. No held-admission or native Git acceptance is inferred.
+V1 remains NO-GO; historical research branches and security guards stay intact.
+
 ## 29 October — #429 owned stdout validation
 
 Current scope is defined by [ADR-0038](../decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md)

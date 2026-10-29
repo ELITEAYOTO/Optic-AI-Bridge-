@@ -6,12 +6,20 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 
 LIMIT = 65536
+
+
+def active_proof():
+    spec = importlib.util.spec_from_file_location("active_job_shutdown", Path(__file__).with_name("active_job_shutdown.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def wait_for(predicate, seconds, label):
@@ -216,12 +224,18 @@ def worker(args):
     root = Path(args.root)
     wait_for(lambda: (root / "go").exists(), 10, "external ownership gate")
     deliver = callback = None
-    if os.name == "nt" and args.event != "headless":
+    if os.name == "nt" and args.event not in ["headless", "active-job"]:
         deliver, callback = windows_console()
     command = [str(Path(args.bridge).resolve()), str(root)]
+    if args.event == "active-job":
+        node = Path(args.node).resolve(strict=True)
+        assert node.name.lower() == "node.exe"
+        command.extend(["--allow-executable=interpreter:" + str(node), "--allow-isolated-node=" + str(node)])
     if args.event == "stalled-stdout":
         return stalled_stdout_case(command, root, deliver)
     environment = dict(os.environ, OPTIC_STARTUP_TIMING="1")
+    if args.event == "active-job":
+        environment["OPTIC_LAUNCHER_PHASES"] = "1"
     process = None
     with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
         try:
@@ -249,7 +263,9 @@ def worker(args):
                 send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
                     "name": "session_info", "arguments": {}}})
                 assert receive(root / "stdout.log", 2, process).get("isError") is not True
-            if args.event == "headless":
+            if args.event == "active-job":
+                result = active_proof().run_case(process, log, root, node, send, receive, phases, wait_for)
+            elif args.event == "headless":
                 process.stdin.close()
                 process.wait(timeout=5)
                 assert process.returncode == 0, "headless EOF failed"
@@ -327,10 +343,11 @@ def supervise(args):
     if os.name == "nt":
         cases.append(("headless", True))
         cases.append(("stalled-stdout", True))
-    result = dict(schema_version=4, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+        cases.append(("active-job", True))
+    result = dict(schema_version=5, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
-                  claim="Windows pipe input/output joins and exit with unread stdout; Unix retention remains characterization only")
+                  claim="Windows ordinary stdio and active isolated Node EOF exit; not held-admission/native Git acceptance; Unix characterization only")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -342,13 +359,17 @@ def supervise(args):
                            "--bridge", str(bridge), "--root", str(root), "--event", event]
                 if initialized:
                     command.append("--initialized")
+                if event == "active-job":
+                    node = shutil.which("node.exe")
+                    assert node, "hosted operator Node missing"
+                    command.extend(["--node", str(Path(node).resolve(strict=True))])
                 options = dict(start_new_session=True) if os.name != "nt" else {}
                 if os.name == "nt":
                     startup = subprocess.STARTUPINFO()
                     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     startup.wShowWindow = 0
                     options.update(startupinfo=startup, creationflags=(
-                        subprocess.CREATE_NO_WINDOW if event == "headless" else subprocess.CREATE_NEW_CONSOLE))
+                        subprocess.CREATE_NO_WINDOW if event in ["headless", "active-job"] else subprocess.CREATE_NEW_CONSOLE))
                 job = guard.Job() if guard else None
                 process = None
                 completed = False
@@ -360,7 +381,15 @@ def supervise(args):
                             job.assign(process)
                         (root / "go").write_text("owned", encoding="ascii")
                         if job:
-                            process.wait(timeout=45)
+                            worker_deadline = time.monotonic() + 45
+                            if event == "active-job":
+                                wait_for(lambda: (root / "active-ready.json").exists() or process.poll() is not None,
+                                         25, "managed process readiness handoff")
+                                assert process.poll() is None, "active-job worker exited before ownership check"
+                                ready = json.loads(bounded_read(root / "active-ready.json").decode("utf-8"))
+                                assert ready["pid"] in active_proof().job_members(job), "managed PID absent from original outer Job"
+                                active_proof().publish_json(root / "active-owned.json", ready)
+                            process.wait(timeout=max(0.001, worker_deadline - time.monotonic()))
                             worker_exit = process.returncode
                         else:
                             # Keep the worker unreaped until recovery is decided,
@@ -415,7 +444,8 @@ if __name__ == "__main__":
     parser.add_argument("--output")
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--root")
-    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout"])
+    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout", "active-job"])
+    parser.add_argument("--node")
     parser.add_argument("--initialized", action="store_true")
     options = parser.parse_args()
     worker(options) if options.worker else supervise(options)

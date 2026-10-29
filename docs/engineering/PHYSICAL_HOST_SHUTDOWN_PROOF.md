@@ -1,5 +1,57 @@
 # Physical process signal to original stdio cleanup
 
+## Schema 5 — actual managed isolated Node during transport EOF
+
+Adds one Windows `active-job` case, preserving the six earlier Windows and four
+Unix cases. The hosted operator selects the canonical installed Node executable,
+grants its existing interpreter/AppContainer eligibility and invokes real MCP
+`process_start`. The fixed in-memory program emits a random nonce and its PID,
+then stays alive with an interval. It reads no project file and requests no
+network, extra process or source-read grant. Existing 256 MiB/4096-byte/30s
+budgets, host-memory admission and sandbox rules apply without weakening.
+
+The worker reads that nonce/PID through the actual `process_read` result, retains
+a non-inherited query/synchronize-only native process handle, checks its image
+against operator Node, queries the actual token's AppContainer bit and verifies
+the process is unsignaled. Token access is query-only. The parent independently
+checks membership in its original retained external Job before acknowledging an
+atomic, bounded ownership record. [Job process lists include nested Jobs](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list).
+The fixture enables no privilege and requests query/synchronize rights only;
+it issues no arbitrary PID termination, console broadcast or new runtime test
+hook. The headless worker avoids affecting unrelated consoles.
+
+MCP `process_result` must still say running and the native handle must remain
+unsignaled immediately before the fixture closes Bridge stdin. No `process_stop`
+RPC is sent. A single five-second deadline covers BOTH normal Bridge exit 0 and
+the retained Node handle becoming kernel-signaled. EOF must start before 20s of
+the 30s child budget and completion must precede that budget, excluding an
+observed natural timeout as the success path. Original cleanup and both IO-join
+markers are required. The parent requires worker reaping and its external Job
+empty BEFORE failure-recovery closure can terminate any remaining process.
+
+The original 45s worker bound includes the new ownership handshake; it is not
+extended. Fixed launcher phases are enabled for first-failure diagnostics.
+Missing Node, memory refusal, startup failure, wrong identity/membership or
+uncertain wait fails the case; no retry/fallback can make it pass. Local offline
+tests exercise record parsing and atomic publication only; physical proof remains
+hosted-only and final exact-head/main JSON receipts belong in #323/the PR.
+
+This observes a genuinely running MANAGED job after `process_start` admission
+has ended. It does NOT prove a held counted admission, pre-exit quota-release
+ordering, product-owned Job-empty or physical target stdout/stderr EOF, helper
+profile/ACL artifact cleanup, uncertain-stop recovery, native GitRead, or the
+host/policy native launch fence. `held_admission_proven` and `native_git_proven`
+are explicitly false. Windows V1 remains NO-GO, no release.
+
+First exact candidate `f8afe2b4271dde6d0f3f2edcf67e5a1fbe4a27cb`,
+[CI #40933810147](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40933810147),
+completed SUCCESS4/4, attempt1, with seven Windows and four Unix cases. The active
+case confirmed the original Job, image, actual AppContainer token, running state,
+retained-handle signal and normal empty-Job cleanup before the natural budget.
+The final observer strengthens this with a direct total wall-clock assertion and
+`eof_to_kernel_exit_ms` measurement; require that exact final-head/main evidence
+rather than substituting the earlier report.
+
 ## Schema 4 — unread stdout must not retain root exit (#429)
 
 The existing stalled-output case now requires root exit 1 within the unchanged

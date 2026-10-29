@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 29 October — active managed job during actual transport loss
+
+Require a real AppContainer Node job alive before EOF, original external Job
+membership, native process-handle identity/liveness and signaled exit within the
+same five-second bound as Bridge shutdown. Retain all prior stdio cases and
+first-failure evidence; do not replace missing behavior with a fixture kill.
+Then address held admissions, uncertain-stop/quota ordering, native Git and live
+host/policy fencing plus the outstanding security/platform gates.
+[Schema 5](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md) is deliberately narrower;
+Windows V1 remains NO-GO pending its own final exact-head/main evidence and other gates.
+
 ## 29 October 2026 — finish the ordinary stdout lifetime gate
 
 #429 must require physical exit with an unread stdout reader still open, retain
