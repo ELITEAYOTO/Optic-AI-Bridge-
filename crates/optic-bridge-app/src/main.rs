@@ -447,14 +447,33 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
 async fn initialize_before_original_session_expiry<T, E>(
     initialization: impl std::future::Future<Output = Result<T, E>>,
-    _clock: &dyn Clock,
-    _expires_at: MonotonicTime,
+    clock: &dyn Clock,
+    expires_at: MonotonicTime,
 ) -> Result<T, Box<dyn Error + Send + Sync>>
 where
     E: Error + Send + Sync + 'static,
 {
-    // Test-first extraction of the existing unbounded initialization boundary.
-    initialization.await.map_err(Into::into)
+    let expired = || {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "original stdio session expired during MCP initialization",
+        )
+    };
+    // Count startup time against the original horizon. Neither pre-initialize
+    // traffic nor the later renewal supervisor may restart this budget.
+    let remaining = expires_at
+        .as_millis()
+        .checked_sub(clock.now().as_millis())
+        .filter(|remaining| *remaining != 0)
+        .ok_or_else(expired)?;
+    let result = tokio::time::timeout(Duration::from_millis(remaining), initialization)
+        .await
+        .map_err(|_| expired())?;
+    // A ready initialization future must not win after the original horizon.
+    if clock.now() >= expires_at {
+        return Err(expired().into());
+    }
+    result.map_err(Into::into)
 }
 
 async fn finish_original_stdio_session(
