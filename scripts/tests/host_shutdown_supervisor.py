@@ -1,0 +1,253 @@
+"""Hosted-only physical Bridge signal proof; cleanup is not bounded-exit acceptance."""
+import argparse
+import ctypes
+import importlib.util
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+LIMIT = 65536
+
+
+def wait_for(predicate, seconds, label):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise RuntimeError("physical host-stop deadline: " + label)
+
+
+def bounded_read(path):
+    if not path.exists():
+        return b""
+    with path.open("rb") as stream:
+        value = stream.read(LIMIT + 1)
+    assert len(value) <= LIMIT, "fixture output exceeded bound"
+    return value
+
+
+def phases(path):
+    return [line.split("phase=", 1)[1].split()[0]
+            for line in bounded_read(path).decode("utf-8", errors="replace").splitlines()
+            if line.startswith("OPTIC_STARTUP phase=")]
+
+
+def receive(path, request_id, process):
+    found = []
+
+    def ready():
+        for line in bounded_read(path).splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                continue
+            message = json.loads(line.decode("utf-8"))
+            if message.get("id") == request_id:
+                found.append(message)
+                return True
+        assert process.poll() is None, "Bridge exited before MCP response"
+        return False
+
+    wait_for(ready, 10, "MCP response")
+    assert "result" in found[0] and "error" not in found[0], "MCP request failed"
+    return found[0]["result"]
+
+
+def send(process, message):
+    process.stdin.write((json.dumps(message) + "\n").encode("utf-8"))
+    process.stdin.flush()
+
+
+def windows_console():
+    from ctypes import wintypes as w
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    callback_type = ctypes.WINFUNCTYPE(w.BOOL, w.DWORD)
+    callback = callback_type(lambda event: True)
+    kernel.SetConsoleCtrlHandler.argtypes = [ctypes.c_void_p, w.BOOL]
+    kernel.GetConsoleProcessList.argtypes = [ctypes.POINTER(w.DWORD), w.DWORD]
+    kernel.GenerateConsoleCtrlEvent.argtypes = [w.DWORD, w.DWORD]
+    # Only this isolated worker's handler is changed. Do not inherit Ctrl+C ignore.
+    if not kernel.SetConsoleCtrlHandler(None, False):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not kernel.SetConsoleCtrlHandler(ctypes.cast(callback, ctypes.c_void_p), True):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    def deliver(process, event):
+        clients = (w.DWORD * 8)()
+        count = kernel.GetConsoleProcessList(clients, 8)
+        assert 0 < count <= 8, "missing/private console not verified"
+        assert set(clients[:count]) == {os.getpid(), process.pid}, "foreign console client"
+        # CTRL+C cannot target a nonzero process group. Broadcast only after the
+        # private console inventory proves that no runner/other process is present.
+        if not kernel.GenerateConsoleCtrlEvent(event, 0):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    return deliver, callback  # Keep the native callback alive until worker exit.
+
+
+def worker(args):
+    root = Path(args.root)
+    wait_for(lambda: (root / "go").exists(), 10, "external ownership gate")
+    deliver = callback = None
+    if os.name == "nt" and args.event != "headless":
+        deliver, callback = windows_console()
+    command = [str(Path(args.bridge).resolve()), "--workspace", str(root)]
+    environment = dict(os.environ, OPTIC_STARTUP_TIMING="1")
+    process = None
+    with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
+                                       stderr=error, env=environment)
+            log = root / "stderr.log"
+
+            def phase(name):
+                current = phases(log)
+                if name in current:
+                    return True
+                assert process.poll() is None, "Bridge exited before phase: " + name
+                return False
+
+            wait_for(lambda: phase("host-shutdown-listening"), 10, "OS listener registration")
+            if args.initialized or args.event == "headless":
+                send(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                    "protocolVersion": "2025-03-26", "capabilities": {},
+                    "clientInfo": {"name": "physical-host-stop-proof", "version": "0"}}})
+                receive(root / "stdout.log", 1, process)
+                send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+                wait_for(lambda: phase("mcp-service-started"), 10, "initialized service")
+                send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                    "name": "session_info", "arguments": {}}})
+                assert receive(root / "stdout.log", 2, process).get("isError") is not True
+            if args.event == "headless":
+                process.stdin.close()
+                process.wait(timeout=5)
+                assert process.returncode == 0, "headless EOF failed"
+                assert "original-session-cleanup-complete" in phases(log)
+                result = dict(event="headless", initialized=True, eof_exit_code=0,
+                              cleanup_marker=True, physical_signal=False)
+            else:
+                if os.name == "nt":
+                    deliver(process, {"ctrl-c": 0, "ctrl-break": 1}[args.event])
+                else:
+                    os.kill(process.pid, {"sigint": signal.SIGINT, "sigterm": signal.SIGTERM}[args.event])
+                wait_for(lambda: phase("host-stop-observed"), 10, "physical signal receipt")
+                wait_for(lambda: phase("original-session-cleanup-complete"), 10, "original cleanup")
+                assert not process.stdin.closed, "input was closed before cleanup proof"
+                # Characterize retention without treating either observation as
+                # bounded process-exit acceptance. The external sender still owns stdin.
+                time.sleep(0.5)
+                retained = process.poll() is None
+                process.stdin.close()
+                process.wait(timeout=5)
+                assert process.returncode == 1, "expected preserved Interrupted failure"
+                ordered = phases(log)
+                assert ordered.index("host-shutdown-listening") < ordered.index("host-stop-observed")
+                assert ordered.index("host-stop-observed") < ordered.index("original-session-cleanup-complete")
+                result = dict(event=args.event, initialized=args.initialized,
+                              physical_signal=True, cleanup_with_stdin_open=True,
+                              alive_500ms_after_cleanup=retained,
+                              exit_after_input_close=process.returncode)
+            (root / "result.json").write_text(json.dumps(result), encoding="utf-8")
+        except BaseException:
+            detail = bounded_read(root / "stderr.log").decode("utf-8", errors="replace")
+            print("BRIDGE_STDERR " + detail.replace(str(root), "<fixture>")[-2000:], file=sys.stderr)
+            raise
+        finally:
+            if process is not None:
+                if process.poll() is None:
+                    process.kill()  # Failure recovery only; never a successful receipt.
+                process.wait(timeout=2)
+                if process.stdin and not process.stdin.closed:
+                    process.stdin.close()
+                if os.name == "nt":
+                    process._handle.Close()
+
+
+def supervise(args):
+    bridge = Path(args.bridge).resolve()
+    assert bridge.is_file(), "built Bridge binary missing"
+    guard = None
+    if os.name == "nt":
+        spec = importlib.util.spec_from_file_location("guard", Path(__file__).with_name("doctor_pipe_supervisor.py"))
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+    events = ["ctrl-c", "ctrl-break"] if os.name == "nt" else ["sigint", "sigterm"]
+    cases = [(event, initialized) for event in events for initialized in [False, True]]
+    if os.name == "nt":
+        cases.append(("headless", True))
+    result = dict(sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+                  checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
+                  attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
+                  claim="physical signal to original cleanup; no bounded open-stdin process-exit claim")
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="optic-physical-stop-") as temporary:
+            for index, (event, initialized) in enumerate(cases):
+                root = Path(temporary) / str(index)
+                root.mkdir()
+                command = [sys.executable, "-I", str(Path(__file__).resolve()), "--worker",
+                           "--bridge", str(bridge), "--root", str(root), "--event", event]
+                if initialized:
+                    command.append("--initialized")
+                options = dict(start_new_session=True) if os.name != "nt" else {}
+                if os.name == "nt":
+                    startup = subprocess.STARTUPINFO()
+                    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startup.wShowWindow = 0
+                    options.update(startupinfo=startup, creationflags=(
+                        subprocess.CREATE_NO_WINDOW if event == "headless" else subprocess.CREATE_NEW_CONSOLE))
+                job = guard.Job() if guard else None
+                process = None
+                try:
+                    with (root / "worker.log").open("wb") as log:
+                        process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                                                   stdout=log, stderr=log, **options)
+                        if job:
+                            job.assign(process)
+                        (root / "go").write_text("owned", encoding="ascii")
+                        process.wait(timeout=45)
+                    assert process.returncode == 0, "physical fixture failed: " + event + ": " + bounded_read(root / "worker.log").decode("utf-8", errors="replace")[-2000:]
+                    case = json.loads((root / "result.json").read_text(encoding="utf-8"))
+                    if job:
+                        wait_for(lambda: job.active() == 0, 2, "Job empty after normal fixture exit")
+                    case["supervisor_cleanup"] = "normal-exit-job-empty" if job else "normal-exit-worker-reaped"
+                    result["cases"].append(case)
+                finally:
+                    try:
+                        if job:
+                            job.close()
+                        elif process is not None:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                    finally:
+                        if process is not None:
+                            if process.poll() is None:
+                                process.kill()
+                            process.wait(timeout=2)
+                            if os.name == "nt":
+                                process._handle.Close()
+                output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        result["complete"] = True
+    finally:
+        output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        print("OPTIC_PHYSICAL_HOST_STOP " + json.dumps(result, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "GitHub-hosted fixture only"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bridge", required=True)
+    parser.add_argument("--output")
+    parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--root")
+    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless"])
+    parser.add_argument("--initialized", action="store_true")
+    options = parser.parse_args()
+    worker(options) if options.worker else supervise(options)

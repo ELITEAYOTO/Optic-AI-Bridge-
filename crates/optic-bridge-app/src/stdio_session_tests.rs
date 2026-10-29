@@ -324,7 +324,7 @@ impl Fixture {
                 }
             }, shutdown).await;
             let original_error = result.as_ref().err().map(ToString::to_string);
-            let result = finish_original_stdio_session(result, lifecycle, session).await;
+            let result = finish_original_stdio_session(result, lifecycle, session, None).await;
             (original_error, result)
         });
         (client, owner)

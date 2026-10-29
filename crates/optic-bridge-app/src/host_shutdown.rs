@@ -2,7 +2,7 @@
 
 use std::io;
 
-pub(super) async fn requested() -> io::Result<()> {
+pub(super) async fn requested(timing: &super::StartupTiming) -> io::Result<()> {
     #[cfg(windows)]
     let (mut interrupt, mut terminate) = (
         tokio::signal::windows::ctrl_c()?,
@@ -15,6 +15,7 @@ pub(super) async fn requested() -> io::Result<()> {
     );
     #[cfg(any(windows, unix))]
     {
+        timing.mark("host-shutdown-listening");
         let event = tokio::select! {
             event = interrupt.recv() => event,
             event = terminate.recv() => event,
