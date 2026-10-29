@@ -99,7 +99,9 @@ jobs:
         timeout-minutes: 5
         env:
           OPTIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python scripts/tests/host_shutdown_supervisor.py --bridge target/debug/optic-bridge${{ runner.os == 'Windows' && '.exe' || '' }} --output target/physical-host-shutdown.json
+        run: |
+          python -m unittest discover -s scripts/tests -p test_host_shutdown_supervisor.py
+          python scripts/tests/host_shutdown_supervisor.py --bridge target/debug/optic-bridge${{ runner.os == 'Windows' && '.exe' || '' }} --output target/physical-host-shutdown.json
       - name: Preserve physical host-stop evidence including failed attempts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

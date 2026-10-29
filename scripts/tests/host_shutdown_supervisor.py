@@ -33,9 +33,15 @@ def bounded_read(path):
 
 
 def phases(path):
-    return [line.split("phase=", 1)[1].split()[0]
-            for line in bounded_read(path).decode("utf-8", errors="replace").splitlines()
-            if line.startswith("OPTIC_STARTUP phase=")]
+    observed = []
+    for line in bounded_read(path).decode("utf-8", errors="replace").splitlines(keepends=True):
+        # stderr formatting may use several writes. A prefix is not a complete
+        # timing record, and must neither crash this observer nor satisfy a gate.
+        if line.endswith("\n") and line.startswith("OPTIC_STARTUP phase="):
+            phase, separator, elapsed = line[len("OPTIC_STARTUP phase="):].partition(" elapsed_ms=")
+            assert separator and phase and elapsed.strip().isdigit(), "malformed complete timing record"
+            observed.append(phase)
+    return observed
 
 
 def receive(path, request_id, process):
@@ -144,7 +150,9 @@ def stalled_stdout_case(command, root, deliver):
             def phase(name):
                 if name in phases(log):
                     return True
-                assert process.poll() is None, "Bridge exited before phase: " + name
+                if process.poll() is not None:
+                    assert name in phases(log), "Bridge exited before phase: " + name
+                    return True
                 return False
 
             wait_for(lambda: phase("host-shutdown-listening"), 10, "stdout-case listener")
@@ -225,7 +233,9 @@ def worker(args):
                 current = phases(log)
                 if name in current:
                     return True
-                assert process.poll() is None, "Bridge exited before phase: " + name
+                if process.poll() is not None:
+                    assert name in phases(log), "Bridge exited before phase: " + name
+                    return True
                 return False
 
             wait_for(lambda: phase("host-shutdown-listening"), 10, "OS listener registration")
