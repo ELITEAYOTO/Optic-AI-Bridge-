@@ -1,5 +1,23 @@
 # Current project status
 
+## 29 October 2026 — owned Windows pipe stdin joins after original cleanup
+
+PR #427 replaces Windows Tokio stdin with a single claimed, dedicated owned pipe
+reader, bounded payload queue and thread-targeted cancel/retry plus actual join.
+Main retains the owner through original session/TaskLease/admission cleanup.
+Console/disk stdin is rejected before issuing authority; standard synchronous MCP
+pipes are the supported Windows contract. Unix keeps its existing input path.
+
+Test-first CI #40869915928 physically received Ctrl+C and completed cleanup but
+failed the unchanged 5s exit gate with parent stdin open. Corrected-code
+#40871949465 passed 4/4 plus all three native workflows: four Windows physical
+signal cases exited with input still open and real reader-join markers; native
+bytes/EOF, early/idle stop, backpressure Drop and non-pipe checks passed.
+[Decision and limits](docs/decisions/ADR-0037-WINDOWS-PIPE-STDIN-OWNERSHIP.md), [current proof](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Exact final-head/main receipts remain mandatory in #427/#323. Unknown/stalled IO,
+held work, stdout and native Git/Job/EOF remain separate; no universal shutdown
+bound, forced exit, drain timeout or native GitRead activation. V1 NO-GO, no release.
+
 ## 29 October 2026 — physical host signals and open-stdin retention
 
 PR #426 adds externally supervised real-binary signal coverage: Ctrl+C/Ctrl+Break

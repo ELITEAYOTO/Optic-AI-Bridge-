@@ -127,8 +127,9 @@ def worker(args):
                 process.wait(timeout=5)
                 assert process.returncode == 0, "headless EOF failed"
                 assert "original-session-cleanup-complete" in phases(log)
+                assert "stdin-reader-joined" in phases(log)
                 result = dict(event="headless", initialized=True, eof_exit_code=0,
-                              cleanup_marker=True, physical_signal=False)
+                              cleanup_marker=True, stdin_reader_joined=True, physical_signal=False)
             else:
                 if os.name == "nt":
                     deliver(process, {"ctrl-c": 0, "ctrl-break": 1}[args.event])
@@ -196,7 +197,7 @@ def supervise(args):
     result = dict(schema_version=2, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
-                  claim="physical signal to original cleanup; no bounded open-stdin process-exit claim")
+                  claim="Windows synchronous-pipe open-stdin exit and reader join samples; Unix retention only; no universal or active-work shutdown bound")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:

@@ -5,7 +5,7 @@
 //!
 //! This crate is the only project layer allowed to call the Win32 APIs needed
 //! for Job Object containment, AppContainer isolation primitives and handle-first
-//! filesystem mutation checks. Core, policy, MCP and the cross-platform runtime
+//! filesystem mutation checks and owned stdio cancellation. Core, policy, MCP and the cross-platform runtime
 //! remain `unsafe`-free.
 
 #[cfg(windows)]

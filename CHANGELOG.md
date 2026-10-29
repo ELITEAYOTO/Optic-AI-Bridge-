@@ -1,5 +1,18 @@
 # Changelog
 
+## 29 October 2026 — owned Windows synchronous-pipe input
+
+PR #427 replaces Tokio stdin on Windows with a non-inheritable owned pipe handle,
+dedicated bounded reader and real cancel/join after original session cleanup.
+One process claim prevents rearming; console/disk stdin is rejected before grants.
+A stop request never substitutes for completed join. Unix keeps its existing input.
+Physical Windows cases now require exit while parent input remains open and an
+ordered join marker; schema v2 separates that acceptance from Unix retention.
+Four native regressions cover bytes/EOF, early/idle stop, backpressure Drop and
+non-pipe rejection. The regular Rust test step gains an external 10-minute CI
+budget; product deadlines and the physical 5s gate are unchanged.
+[Contract and limits](docs/decisions/ADR-0037-WINDOWS-PIPE-STDIN-OWNERSHIP.md). V1 NO-GO; no release/native GitRead.
+
 ## 29 October 2026 — physical process-stop coverage
 
 PR #426 adds hosted real-binary Ctrl+C/Ctrl+Break and SIGINT/SIGTERM fixtures,

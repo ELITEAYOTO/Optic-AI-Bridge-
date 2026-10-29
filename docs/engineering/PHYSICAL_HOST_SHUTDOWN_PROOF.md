@@ -1,5 +1,33 @@
 # Physical process signal to original stdio cleanup
 
+## Current #427 Windows synchronous-pipe gate (schema v2)
+
+Windows now requires normal root exit within the existing external 5s wait while
+the parent input pipe is still open. JSON records exit_with_stdin_open=true,
+final_exit_code=1 and stdin_reader_joined=true; cleanup must precede the reader
+join marker. The headless EOF case separately requires code0 and a join marker.
+The sender closes input only after the Windows exit requirement has succeeded;
+failure recovery cannot make it pass. Native ownership is specified by
+[ADR-0037](../decisions/ADR-0037-WINDOWS-PIPE-STDIN-OWNERSHIP.md).
+
+The Windows binary claims a standard synchronous pipe once before grants; console
+and disk input are rejected. The dedicated reader is cancelled on its exact thread
+and actually joined after original admission cleanup, never detached. Unknown IO
+completion may still retain that owner; this is not a universal process-exit bound
+or active-work/stdout/native Git/Job/EOF acceptance. No policy deadline is reset.
+
+Test-first bb0efacb67b98fe4e8e530b6554e7b1503bbf758 CI #40869915928 failed the real
+Ctrl+C exit wait after receipt/cleanup with input open. Corrected-code
+eb886b72b9b7021af95748fa6263583993b0f20d CI #40871949465 passed 4/4 plus three
+native workflows: four physical Windows open-input exits and reader joins, and
+normal headless EOF. The headless join assertion is strengthened on final HEAD.
+Final-head and independent-main receipts remain required in #427/#323.
+
+Unix retains its former characterization: alive_500ms_after_cleanup and explicit
+input closure before reaping, with exit_with_stdin_open=false. It is not included
+in the Windows exit acceptance. The original #426 method and observations below
+are historical for Windows and still describe the Unix characterization.
+
 Scope: Optic AI Bridge only. Windows V1 **NO-GO**, no release or native GitRead
 activation. This proof observes the real Bridge binary; it does not provide a
 global host/policy native-launch fence or a process-exit deadline with open stdin.
