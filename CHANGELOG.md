@@ -1,5 +1,17 @@
 # Changelog
 
+## 29 October 2026 — physical process-stop coverage
+
+PR #426 adds hosted real-binary Ctrl+C/Ctrl+Break and SIGINT/SIGTERM fixtures,
+private-console inventory and external supervision, plus Windows headless MCP/EOF.
+Three existing opt-in diagnostic phase markers expose listener registration,
+stop receipt and original cleanup return; permissions/deadlines/drain stay unchanged.
+Eight corrected-code signal samples reached cleanup with stdin open but retained
+the process at 500ms; input closure preceded reaping. This is retention evidence,
+not bounded open-stdin exit. First fixture CLI error is preserved separately.
+[Proof, exact evidence and limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Windows V1 NO-GO; no release or native GitRead activation.
+
 ## 29 October 2026 — cooperative process requests close original stdio authority
 
 PR #425 observes private process-owned Ctrl+C/Ctrl+Break (Windows) and

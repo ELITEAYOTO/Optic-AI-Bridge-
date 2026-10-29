@@ -1,5 +1,17 @@
 # Current project status
 
+## 29 October 2026 — physical host signals and open-stdin retention
+
+PR #426 adds externally supervised real-binary signal coverage: Ctrl+C/Ctrl+Break
+in a verified private Windows console, SIGINT/SIGTERM on Unix, before/after MCP
+initialize; a Windows headless case checks registration and normal MCP/EOF.
+Corrected-code CI #40862883957 passed 4/4. All eight physical signal samples
+reached original cleanup while stdin stayed open, remained alive at 500ms, then
+exited after the fixture closed input. This is concrete retention evidence, not
+bounded shutdown acceptance. Next is stdin/process-exit ownership without dropping
+admitted resources or weakening authority deadlines. [Proof and limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md);
+exact final-head/main receipts: #426/#323. Native GitRead inactive, V1 NO-GO, no release.
+
 ## 29 October 2026 — process shutdown requests close original stdio authority
 
 PR #425 connects private process-owned OS listeners to the existing original-session cleanup across MCP initialization and serving: Ctrl+C/Ctrl+Break on Windows, SIGINT/SIGTERM on Unix. A ready stop takes precedence over a simultaneously ready service result; listener registration/stream errors fail closed. Successful cleanup preserves Interrupted or the source error, publishes original session/TaskLease stop and retains counted admissions until they drain. No MCP request supplies or resets this source.

@@ -1,5 +1,22 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 29 October 2026 — real OS signals reach cleanup; stdin still retains process
+
+PR #426 adds a hosted external supervisor for real Bridge signals before/after
+MCP initialize. Windows uses a hidden private console with exact worker/Bridge
+inventory before broadcast; Unix targets the Bridge PID. A separate Windows
+headless case covers registration and normal MCP/EOF. Corrected-code CI
+#40862883957 passed 4/4; all eight signal cases reached original cleanup while
+input remained open, and all retained their process at 500ms until the sender
+closed input. The headless case exited normally. [Owning method and preserved first fixture error](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
+This proves the stated hosted signal-to-cleanup route, not bounded process exit,
+active-work drainage, Windows 10/11 installation acceptance or physical native
+Git/root/Job/EOF. Next address stdin/process lifetime ownership while retaining
+admissions and original deadlines, then the live host/policy native-launch fence.
+Exact final-head and independent-main JSON receipts remain mandatory in #426/#323.
+No forced exit/drain timeout or GitRead activation; Windows V1 NO-GO, no release.
+
 ## 29 October 2026 — process shutdown requests close original stdio authority
 
 PR #425 connects private process-owned OS listeners to the existing original-session cleanup across MCP initialization and serving: Ctrl+C/Ctrl+Break on Windows, SIGINT/SIGTERM on Unix. A ready stop takes precedence over a simultaneously ready service result; listener registration/stream errors fail closed. Successful cleanup preserves Interrupted or the source error, publishes original session/TaskLease stop and retains counted admissions until they drain. No MCP request supplies or resets this source.
