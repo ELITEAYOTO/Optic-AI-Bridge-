@@ -1,5 +1,18 @@
 # Current project status
 
+## Windows V1 — first-failure diagnostics after #431 main refusal
+
+Latest merged main `9af7232937525a5ba7c597027edeef267c4a80dc` has an OPEN
+post-merge gate: CI #40940330506 failed Windows after six physical cases, before
+active-job ownership verification. The worker cause was lost on that supervisor
+path. #431's PR evidence was green, but does not replace independent main proof.
+The follow-up preserves bounded worker/Bridge stderr tails in failed JSON before
+recovery and temporary cleanup; the first case error survives later cleanup errors.
+Eleven offline observer tests pass. All eight Windows/four Unix cases, deadlines,
+console guard, no-retry and ordinary success conditions remain unchanged.
+[Owning contract](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md). Cause remains
+UNKNOWN until captured, with no claim to fix #185/#319. **Windows V1 NO-GO.**
+
 ## Windows V1 — private launcher console boundary (#431)
 
 #430 is integrated at `440c17b6a0eedfaac5a507647eebb232491908c0`;

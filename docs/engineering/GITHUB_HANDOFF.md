@@ -1,5 +1,17 @@
 # GitHub-only project handoff
 
+## Current failure-evidence follow-up
+
+#431 is merged at `9af7232937525a5ba7c597027edeef267c4a80dc`, but independent
+main CI #40940330506 FAILED3/4 before active-job ownership. Source/test-merge/
+squash trees match and PR CI/native gates were green. Receipt #323/comment6506475217
+records the failure and unknown cause. Do not substitute PR green or rerun blindly.
+The current diagnostic-only follow-up preserves first body/cleanup errors and
+bounded worker/Bridge stderr tails before recovery/temporary cleanup. Eleven
+offline tests pass; the same eight/four physical cases and all guards remain.
+Read final exact-head/main receipts before another PR. A later pass will not
+identify the lost cause or close #185/#319. V1 NO-GO, no release/native Git.
+
 ## Current private-console launcher increment — #431
 
 #430 main `440c17b6a0eedfaac5a507647eebb232491908c0` has independent CI

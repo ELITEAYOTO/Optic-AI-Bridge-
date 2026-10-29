@@ -71,5 +71,49 @@ class ManagedReadyTests(unittest.TestCase):
             self.assertFalse(path.with_name(path.name + ".pending").exists())
 
 
+class FailureEvidenceTests(unittest.TestCase):
+    def test_missing_log_does_not_mask_original_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = {}
+            supervisor.remember_failure(result, root, "active-job", AssertionError("first"))
+            self.assertEqual(result["failure"]["message"], "first")
+            self.assertTrue(result["failure"]["worker_log_tail"]["missing"])
+
+    def test_oversized_invalid_utf8_tail_is_bounded_without_weakening_log_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "worker.log"
+            path.write_bytes(b"x" * supervisor.LIMIT + b"\xff" * supervisor.FAILURE_TAIL_LIMIT)
+            with self.assertRaises(AssertionError):
+                supervisor.bounded_read(path)
+            evidence = supervisor.failure_tail(path)
+            self.assertEqual(evidence["bytes_kept"], supervisor.FAILURE_TAIL_LIMIT)
+            self.assertEqual(len(evidence["text"]), supervisor.FAILURE_TAIL_LIMIT)
+            self.assertTrue(evidence["truncated"])
+
+    def test_first_cause_and_logs_survive_cleanup_and_later_failure(self):
+        result = {}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "worker.log").write_bytes(b"worker startup exception")
+            (root / "stderr.log").write_bytes(b"original Bridge phase")
+            supervisor.remember_failure(result, root, "active-job", AssertionError("ownership"))
+            supervisor.remember_failure(result, root, "active-job", OSError("later cleanup"))
+        evidence = result["failure"]
+        self.assertEqual(evidence["error_type"], "AssertionError")
+        self.assertEqual(evidence["message"], "ownership")
+        self.assertEqual(evidence["worker_log_tail"]["text"], "worker startup exception")
+        self.assertEqual(evidence["bridge_stderr_tail"]["text"], "original Bridge phase")
+
+    def test_unreadable_diagnostic_does_not_replace_case_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "worker.log").mkdir()
+            result = {}
+            supervisor.remember_failure(result, root, "ctrl-break", RuntimeError("deadline"))
+            self.assertEqual(result["failure"]["message"], "deadline")
+            self.assertIn("read_error", result["failure"]["worker_log_tail"])
+
+
 if __name__ == "__main__":
     unittest.main()

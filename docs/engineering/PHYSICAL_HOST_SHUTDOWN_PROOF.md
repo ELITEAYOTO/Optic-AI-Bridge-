@@ -1,5 +1,38 @@
 # Physical process signal to original stdio cleanup
 
+## Schema 6 failure-evidence supplement — first cause retained
+
+#431 final head `288b9ed03246034fcb9d009e643095370a4d8f62` passed
+[CI40939351677](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40939351677)
+4/4 and all three native workflows, with complete Windows8/Unix4 reports.
+Squash `9af7232937525a5ba7c597027edeef267c4a80dc` has the same tree, but
+independent [main CI40940330506](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40940330506)
+FAILED3/4: six Windows physical cases passed, then `active-job worker exited
+before ownership check`. No active-job EOF or signal acceptance was reached.
+The early parent assertion lost the worker traceback/Bridge stderr when the
+temporary directory was deleted. The original cause is UNKNOWN, with no evidence
+to attribute it to #185, #319, a guard refusal or the launcher console mode.
+[Failure receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6506475217).
+
+Schema 6 now permits an optional `failure` object on unsuccessful runs. Case-body
+errors capture event, exception class/message (last 1024 characters), worker log
+and Bridge stderr tails BEFORE recovery. Each tail reads at most 4096 bytes from
+the file end, records bytes kept/truncation, and decodes invalid UTF-8 safely.
+Missing/unreadable diagnostic files become explicit evidence rather than masking
+the case failure. Cleanup-only failures are recorded too; later cleanup failure
+cannot replace an already retained first case cause. The final JSON is still
+written/printed after failure; captured strings survive temporary-directory deletion.
+
+Eleven offline tests include oversized/malformed log tails, missing/unreadable
+files, survival after temporary deletion and preservation of the first cause.
+They never launch Bridge or deliver a signal. The existing 64KiB ordinary log
+guard remains strict; oversized diagnostics do not turn a failure into success.
+All eight Windows/four Unix cases, original Job containment/reaping, 45s worker,
+25s ownership and five-second shutdown limits, strict console inventory and
+no-retry rule remain unchanged. Product code is unchanged. A later green run
+cannot explain or claim to fix the lost startup failure; retain the original
+failed receipt and require new exact-head/independent-main evidence. V1 NO-GO.
+
 ## Schema 6 — private-console Ctrl+Break with actual active Node (#431)
 
 Preserves all seven Windows and four Unix schema-5 cases, adding Windows

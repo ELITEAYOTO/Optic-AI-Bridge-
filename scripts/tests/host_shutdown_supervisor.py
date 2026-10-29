@@ -13,6 +13,7 @@ import tempfile
 import time
 
 LIMIT = 65536
+FAILURE_TAIL_LIMIT = 4096
 
 
 def active_proof():
@@ -38,6 +39,31 @@ def bounded_read(path):
         value = stream.read(LIMIT + 1)
     assert len(value) <= LIMIT, "fixture output exceeded bound"
     return value
+
+
+def failure_tail(path):
+    """Read bounded diagnostic bytes without masking the original failure."""
+    try:
+        with path.open("rb") as stream:
+            length = stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, length - FAILURE_TAIL_LIMIT))
+            value = stream.read(FAILURE_TAIL_LIMIT)
+        return dict(text=value.decode("utf-8", errors="replace"),
+                    bytes_kept=len(value), truncated=length > FAILURE_TAIL_LIMIT)
+    except FileNotFoundError:
+        return dict(text="", missing=True)
+    except OSError as error:
+        return dict(text="", read_error=type(error).__name__)
+
+
+def remember_failure(result, root, event, error):
+    # Capture before recovery/TemporaryDirectory cleanup. A later recovery
+    # failure must not replace the original case failure with less evidence.
+    if "failure" not in result:
+        result["failure"] = dict(event=event, error_type=type(error).__name__,
+                                 message=str(error)[-1024:],
+                                 worker_log_tail=failure_tail(root / "worker.log"),
+                                 bridge_stderr_tail=failure_tail(root / "stderr.log"))
 
 
 def phases(path):
@@ -416,22 +442,29 @@ def supervise(args):
                     case["supervisor_cleanup"] = "normal-exit-job-empty" if job else "normal-exit-worker-reaped"
                     result["cases"].append(case)
                     completed = True
+                except Exception as error:
+                    remember_failure(result, root, event, error)
+                    raise
                 finally:
                     try:
-                        if job:
-                            job.close()
-                        elif process is not None and not completed:
-                            try:
-                                os.killpg(process.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                    finally:
-                        if process is not None:
-                            if process.poll() is None:
-                                process.kill()
-                            process.wait(timeout=2)
-                            if os.name == "nt":
-                                process._handle.Close()
+                        try:
+                            if job:
+                                job.close()
+                            elif process is not None and not completed:
+                                try:
+                                    os.killpg(process.pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                        finally:
+                            if process is not None:
+                                if process.poll() is None:
+                                    process.kill()
+                                process.wait(timeout=2)
+                                if os.name == "nt":
+                                    process._handle.Close()
+                    except Exception as error:
+                        remember_failure(result, root, event, error)
+                        raise
                 output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["complete"] = True
     finally:

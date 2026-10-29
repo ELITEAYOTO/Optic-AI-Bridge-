@@ -1,5 +1,17 @@
 # Delivery roadmap
 
+## 29 October — preserve the actual first host-stop failure
+
+Before another acceptance claim, preserve worker/Bridge diagnostics for early
+active-readiness, original Job ownership and cleanup failures. #431 main CI
+#40940330506 failed before ownership; its original worker cause was lost.
+Keep its failure receipt and all case/deadline/containment guards. Require the
+new exact head and independent main CI; a later green does not identify or fix
+the earlier unknown startup cause. Then address held admissions, uncertain-stop
+resource ordering, live host/policy/native Git and security/platform gates.
+[Failure evidence contract](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+V1 remains NO-GO, no release.
+
 ## 29 October — active Node and private-console Ctrl+Break
 
 After #430's independently verified active-job EOF proof, require a physical

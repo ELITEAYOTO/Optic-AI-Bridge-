@@ -1,5 +1,21 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Current continuation — first-failure diagnostics after #431
+
+Main `9af7232937525a5ba7c597027edeef267c4a80dc`, tree
+`af05c48f06c2bf8ef024b5563a1f5c36b6f75543`: #431 PR CI40939351677 was
+SUCCESS4/4 with Windows8/Unix4 and all three same-head native workflows green.
+Independent main CI40940330506 FAILED3/4 at active-job readiness before original
+Job verification. Its supervisor path discarded worker traceback/stderr. The
+cause is UNKNOWN; receipt #323/comment6506475217 preserves this accurately.
+The next small follow-up records bounded first-failure diagnostics before
+recovery/temporary deletion, retaining the first cause across cleanup errors.
+No process, authority, deadline, success criterion or no-retry rule changes.
+Require its exact-head and independent-main gates. Do not claim that a later pass
+fixes the earlier startup failure. [Contract](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Held admissions and native Git/host-policy/resource/security/platform acceptance
+remain open; Windows V1 NO-GO, no release.
+
 ## Current active-job physical-stop increment — #431
 
 #430 is squash-integrated at `440c17b6a0eedfaac5a507647eebb232491908c0`,
