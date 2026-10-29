@@ -105,7 +105,7 @@ class ObservedProcess:
             self.handle = None
 
 
-def run_case(process, log, root, executable, send, receive, phases, wait_for):
+def run_case(process, log, root, executable, send, receive, phases, wait_for, signal_stop=None):
     assert os.name == "nt", "Windows managed-job proof only"
     nonce = secrets.token_hex(16)
     next_id = 10
@@ -166,23 +166,32 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for):
         assert before_eof_ms < 20000, "insufficient distance from the 30s child budget"
         stopped_at = time.monotonic()
         deadline = stopped_at + 5
-        process.stdin.close()  # Actual client transport EOF; no process_stop RPC.
+        if signal_stop is None:
+            process.stdin.close()  # Actual client transport EOF; no process_stop RPC.
+        else:
+            signal_stop(process, 1)  # Existing strict private-console guard remains.
         process.wait(timeout=max(0.001, deadline - time.monotonic()))
-        assert process.returncode == 0, "Bridge did not exit normally on active-job EOF"
+        expected_exit = 0 if signal_stop is None else 1
+        assert process.returncode == expected_exit, "Bridge lost expected shutdown result"
         observed.require_exited(deadline - time.monotonic())
         completed_at = time.monotonic()
         assert completed_at <= deadline, "combined Bridge/Node observation exceeded 5s"
         assert (time.monotonic() - launched_at) * 1000 < 30000, "natural job timeout could explain exit"
         ordered = phases(log)
+        if signal_stop is not None:
+            assert not process.stdin.closed, "signal case must not close input to force exit"
+            assert ordered.index("host-stop-observed") < ordered.index("original-session-cleanup-complete")
         assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
         assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
-        return dict(event="active-job", initialized=True, physical_signal=False,
-                    managed_job_running_before_eof=True, readiness_nonce_matched=True,
+        return dict(event="active-job" if signal_stop is None else "active-job-signal",
+                    initialized=True, physical_signal=signal_stop is not None,
+                    managed_job_running_before_shutdown=True, readiness_nonce_matched=True,
                     native_image_matches_operator=True, original_outer_job_member=True,
                     native_appcontainer_token_verified=True,
-                    retained_process_handle_signaled=True, before_eof_ms=before_eof_ms,
-                    eof_to_kernel_exit_ms=round((completed_at - stopped_at) * 1000),
-                    natural_timeout_reached=False, process_stop_rpc=False, bridge_exit_code=0,
+                    retained_process_handle_signaled=True, before_shutdown_ms=before_eof_ms,
+                    shutdown_to_kernel_exit_ms=round((completed_at - stopped_at) * 1000),
+                    natural_timeout_reached=False, process_stop_rpc=False, bridge_exit_code=expected_exit,
+                    stdin_held_open_through_exit=signal_stop is not None,
                     stdin_reader_joined=True, stdout_writer_joined=True,
                     held_admission_proven=False, native_git_proven=False)
     finally:
