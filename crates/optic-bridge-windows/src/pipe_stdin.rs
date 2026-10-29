@@ -192,12 +192,10 @@ impl PipeStdinOwner {
                 // cancel a pooled thread or release its handle before join.
                 if let Err(error) =
                     unsafe { CancelSynchronousIo(HANDLE(worker.as_handle().as_raw_handle())) }
+                    && error.code() != windows::core::HRESULT::from_win32(ERROR_NOT_FOUND.0)
+                    && cancellation_error.is_none()
                 {
-                    if error.code() != windows::core::HRESULT::from_win32(ERROR_NOT_FOUND.0)
-                        && cancellation_error.is_none()
-                    {
-                        cancellation_error = Some(io::Error::other(error));
-                    }
+                    cancellation_error = Some(io::Error::other(error));
                 }
                 // Retry closes the stop-check/enter-ReadFile race, including
                 // ERROR_NOT_FOUND before that read is actually pending. A cancel
