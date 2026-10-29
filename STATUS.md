@@ -1,5 +1,22 @@
 # Current project status
 
+## Windows V1 — unread stdout retention characterized (#428)
+
+Windows V1 remains **NO-GO**. The schema-3 physical supervisor now adds a Windows
+characterization case: after original-session cleanup and the owned stdin reader's
+join, queued unread stdout can still retain the root process. Closing only the
+parent's stdout reader releases it with code 1 while parent stdin remains open.
+This is evidence of the remaining output-lifetime gate, **not its implementation**.
+The four normal Windows signal cases and headless EOF/join remain required;
+Unix stdin retention remains characterization only. No active admitted worker,
+uncertain-stop, OS-version matrix, or native GitRead acceptance is inferred.
+
+First exact candidate `9e0750b4cdb742bcb8a834180f594471bd9c5951`:
+[hosted CI 40877904438](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40877904438),
+attempt 1, 4/4 jobs; Windows six cases, Ubuntu four. See the
+[physical proof contract](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+No release/tag or runtime authorization change belongs to this test-only increment.
+
 ## 29 October 2026 — owned Windows pipe stdin joins after original cleanup
 
 PR #427 replaces Windows Tokio stdin with a single claimed, dedicated owned pipe

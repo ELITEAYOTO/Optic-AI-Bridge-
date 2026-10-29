@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — Windows unread-stdout characterization (#428)
+
+- Add a Windows-only physical Ctrl-Break case using 32 bounded metadata-only
+  `session_info` requests, then retain the unread stdout pipe across original
+  cleanup and stdin-reader join. Verify process retention for 500 ms and exit 1
+  after closing only the output reader, with input open through exit.
+- Publish schema 3: six Windows cases and four unchanged Unix cases. Mark the new
+  case explicitly as characterization; retain the normal Windows exit/join gates.
+- Hosted first candidate `9e0750b4cdb742bcb8a834180f594471bd9c5951`, CI
+  [40877904438](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40877904438),
+  attempt 1, all four jobs successful. No production runtime or GitRead activation
+  change; Windows V1 remains NO-GO.
+
 ## 29 October 2026 — owned Windows synchronous-pipe input
 
 PR #427 replaces Tokio stdin on Windows with a non-inheritable owned pipe handle,

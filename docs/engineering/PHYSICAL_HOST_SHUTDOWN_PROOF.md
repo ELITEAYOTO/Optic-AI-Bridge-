@@ -1,5 +1,43 @@
 # Physical process signal to original stdio cleanup
 
+## Current schema 3 — separate unread-stdout characterization (#428)
+
+Schema 3 preserves all prior normal cases and adds one Windows-only
+`stalled-stdout` case with `characterization_only: true`. A passing report means
+that a known output-lifetime limitation was reproduced, **not** that bounded
+stdout shutdown is implemented. Historical schema-2 evidence below remains valid
+for its earlier, narrower input-reader scope.
+
+After MCP initialization and a metadata round-trip, the parent sends a fixed
+32-request `session_info` batch (at most 4096 input bytes), then stops reading
+stdout. The parent uses unbuffered pipe handles and read-only
+`PeekNamedPipe`/`GetNamedPipeInfo` observations; it neither duplicates the output
+reader nor drains it during the retention interval. It sends physical Ctrl-Break
+inside the existing private console, with the original Job/supervisor safeguards.
+The fixture requires, in order, host-stop observation, original-session cleanup,
+and `stdin-reader-joined`, then a root still alive after 500 ms with both parent
+pipe ends open and queued output still present. It closes **only stdout's reader**,
+requires ordinary exit 1 within the existing five-second exit bound, and checks
+that parent stdin stayed open through exit. Forced termination remains failure
+cleanup only; success requires a reaped worker and an empty containment Job.
+
+First candidate `9e0750b4cdb742bcb8a834180f594471bd9c5951`,
+[CI 40877904438](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40877904438),
+attempt 1, all four jobs successful: Windows reported 4280 queued bytes before
+stop and after cleanup, with a reported pipe capacity of 4096 bytes. These are
+observed values, **not** a strict fullness threshold, a universal capacity bound,
+or a sampled kernel write-thread state. Microsoft's APIs permit these observations
+on [anonymous pipe handles](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-getnamedpipeinfo);
+[anonymous pipe writes can wait for a reader](https://learn.microsoft.com/en-us/windows/win32/ipc/anonymous-pipe-operations).
+The process-lifetime observation and output-reader release are the asserted result.
+
+Expected reports are six Windows cases (four normal signals requiring cleanup,
+input join and exit with parent stdin open; headless EOF/join; this characterization)
+and the four existing Unix signal characterizations. The metadata batch proves
+neither active admitted file/process work nor uncertain-stop behavior. It changes
+no runtime code, task authority, deadlines, input-handle support, or GitRead gate.
+Windows V1 remains **NO-GO** until independent outstanding gates have their proofs.
+
 ## Current #427 Windows synchronous-pipe gate (schema v2)
 
 Windows now requires normal root exit within the existing external 5s wait while
