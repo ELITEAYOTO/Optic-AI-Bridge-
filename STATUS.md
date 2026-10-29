@@ -1,5 +1,20 @@
 # Current project status
 
+## Windows V1 — owned stdout candidate (#429)
+
+After #428 (`main=c3265b79824142c3ff8dae32950fbb5afeb3c8f1`, independent CI
+#40887676383 SUCCESS 4/4), the next change replaces Windows Tokio stdout with
+bounded, process-owned synchronous output, targeted cancellation and confirmed
+join after original admission cleanup. Standard pipe and redirected disk output
+are supported; character output fails before grants. Unix is unchanged.
+
+Six local native IO tests pass, including unread-pipe cancel/Drop, byte/flush/EOF
+and broken-reader errors. Physical schema 4 requires exit without parent stdout
+closure/drain. First CI #40919730293 failed in a partial-stderr observer before
+that gate; it is preserved, not called behavioral RED. See [proof and current
+limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md). Exact final-head and
+independent-main CI remain required; **Windows V1 NO-GO**, no native Git or release.
+
 ## Windows V1 — unread stdout retention characterized (#428)
 
 Windows V1 remains **NO-GO**. The schema-3 physical supervisor now adds a Windows

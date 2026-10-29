@@ -1,5 +1,21 @@
 # Changelog
 
+## 29 October 2026 — Windows stdout ownership (#429)
+
+Windows stdio now owns a dedicated bounded output worker for synchronous pipes
+and redirected disk files. Flush observes actual write completion; host shutdown
+retains original session/admission cleanup, cancels the exact writer thread and
+actually joins both IO owners. Native IO errors propagate and no pooled writer,
+forced exit or drain timeout is used. Character output is rejected before grants.
+
+Physical schema 4 requires root exit with parent input and unread stdout kept
+open; closing/draining output cannot make it pass. Initial CI #40919730293 instead
+exposed a partial-stderr parser crash before reaching that gate; complete-record
+observation and three offline regressions fix that harness defect without
+weakening its assertions. Native byte/flush/EOF, cancellation/Drop, disk and
+broken-reader tests supplement hosted proof. [Contract and limits](docs/decisions/ADR-0038-WINDOWS-STDOUT-OWNERSHIP.md).
+Final exact-head/main evidence is required. Windows V1 NO-GO, native Git inactive.
+
 ## Unreleased — Windows unread-stdout characterization (#428)
 
 - Add a Windows-only physical Ctrl-Break case using 32 bounded metadata-only

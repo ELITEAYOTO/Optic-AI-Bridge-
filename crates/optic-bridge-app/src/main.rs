@@ -134,12 +134,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = AppArgs::parse()?;
     startup_timing.mark("arguments-parsed");
     let limits = HardLimits::default().validate_nonzero()?;
-    // Own input before issuing any session authority; startup errors also join
-    // the Windows reader through its guard. Unix keeps its existing stdin path.
+    // Own stdio before issuing authority; startup errors also cancel and join
+    // the Windows guards. Unix keeps its existing Tokio stdio path.
     #[cfg(windows)]
     let (stdin, stdin_owner) = optic_bridge_windows::start_pipe_stdin()?;
+    #[cfg(windows)]
+    let (stdout, stdout_owner) = optic_bridge_windows::start_owned_stdout()?;
     #[cfg(not(windows))]
     let stdin = tokio::io::stdin();
+    #[cfg(not(windows))]
+    let stdout = tokio::io::stdout();
     let clock: Arc<dyn Clock> = Arc::new(StdClock::new());
     let now = clock.now();
     let expires_at = now.saturating_add_millis(args.session_lifetime_ms);
@@ -396,12 +400,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .map_err(|_| std::io::Error::other("request hard limit does not fit usize"))?;
     let max_response_bytes = usize::try_from(limits.max_response_bytes)
         .map_err(|_| std::io::Error::other("response hard limit does not fit usize"))?;
-    let transport = BoundedJsonLineTransport::new(
-        stdin,
-        tokio::io::stdout(),
-        max_request_bytes,
-        max_response_bytes,
-    )?;
+    let transport =
+        BoundedJsonLineTransport::new(stdin, stdout, max_request_bytes, max_response_bytes)?;
 
     startup_timing.mark("transport-created");
     eprintln!(
@@ -463,8 +463,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     {
         // Never bypass original admission drainage to manufacture process exit.
         // The dedicated input worker is retained until cancellation AND join.
-        tokio::task::spawn_blocking(move || stdin_owner.stop_and_join()).await??;
-        startup_timing.mark("stdin-reader-joined");
+        let input_join = tokio::task::spawn_blocking(move || stdin_owner.stop_and_join()).await;
+        if matches!(&input_join, Ok(Ok(()))) {
+            startup_timing.mark("stdin-reader-joined");
+        }
+        // Attempt both joins even if input cleanup failed. Output buffers and
+        // the exact writer thread stay owned until its synchronous IO returns.
+        let output_join = tokio::task::spawn_blocking(move || stdout_owner.stop_and_join()).await;
+        if matches!(&output_join, Ok(Ok(()))) {
+            startup_timing.mark("stdout-writer-joined");
+        }
+        input_join??;
+        output_join??;
     }
     service_result
 }

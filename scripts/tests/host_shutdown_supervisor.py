@@ -255,8 +255,10 @@ def worker(args):
                 assert process.returncode == 0, "headless EOF failed"
                 assert "original-session-cleanup-complete" in phases(log)
                 assert "stdin-reader-joined" in phases(log)
+                assert "stdout-writer-joined" in phases(log)
                 result = dict(event="headless", initialized=True, eof_exit_code=0,
-                              cleanup_marker=True, stdin_reader_joined=True, physical_signal=False)
+                              cleanup_marker=True, stdin_reader_joined=True,
+                              stdout_writer_joined=True, physical_signal=False)
             else:
                 if os.name == "nt":
                     deliver(process, {"ctrl-c": 0, "ctrl-break": 1}[args.event])
@@ -271,6 +273,7 @@ def worker(args):
                     process.wait(timeout=5)
                     assert not process.stdin.closed
                     assert "stdin-reader-joined" in phases(log)
+                    assert "stdout-writer-joined" in phases(log)
                     open_stdin_exit = True
                 else:
                     # Unix remains characterization, separate from Windows acceptance.
@@ -290,6 +293,8 @@ def worker(args):
                 if os.name == "nt":
                     assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
                     result["stdin_reader_joined"] = True
+                    assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
+                    result["stdout_writer_joined"] = True
                 else:
                     result.update(alive_500ms_after_cleanup=retained,
                                   exit_after_input_close=process.returncode)
