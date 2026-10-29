@@ -1,5 +1,19 @@
 # Current project status
 
+## Windows V1 — private launcher console boundary (#431)
+
+#430 is integrated at `440c17b6a0eedfaac5a507647eebb232491908c0`;
+independent main CI #40936393957 passed 4/4, with seven Windows and four Unix
+physical cases. The next schema-6 case requires actual Ctrl+Break while that
+isolated Node is running and stdin remains open. Its strict console inventory
+first refused three clients before broadcasting (CI #40937939931).
+A typed no-console option now applies only to the private isolation launcher;
+Job limits and suspended creation/assignment/resume ordering stay unchanged.
+Require final exact-head and independent-main results in #431/#323.
+[Physical contract and limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+**Windows V1 NO-GO**; held admissions, uncertain release ordering, native Git,
+host/policy fencing and security/platform gates remain open. No release.
+
 ## Windows V1 — next physical active managed-job proof
 
 Baseline #429 is integrated at `1387a3e9f4b2981c89572bf32ed9f815c6d6dacd`, with

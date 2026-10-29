@@ -1,5 +1,48 @@
 # Physical process signal to original stdio cleanup
 
+## Schema 6 — private-console Ctrl+Break with actual active Node (#431)
+
+Preserves all seven Windows and four Unix schema-5 cases, adding Windows
+`active-job-signal`. It uses the same real MCP process_start/read/result path,
+operator-selected Node, nonce, native image/token/liveness check, retained
+query/synchronize-only process handle and original external Job membership.
+The Node is running before physical Ctrl+Break. Stdin stays open through exit;
+no stop RPC, fixture kill or natural 30s budget expiry supplies success.
+One unchanged five-second deadline covers Bridge exit 1 AND native Node handle
+signal. Original host-stop/cleanup and both IO joins must be ordered; the outer
+supervisor still requires normal worker reaping and empty original Job before
+recovery closure. This observes a managed job, not a held counted admission.
+
+Broadcast requires the console inventory to contain EXACTLY worker and Bridge.
+The private helper now opts into LimitedJobObject.without_console(); default
+managed launches remain unchanged. The wrapper combines CREATE_NO_WINDOW with
+CREATE_SUSPENDED itself, so its pre_spawn does not overwrite a caller's desired
+helper mode. Job limits, assignment-before-resume, ownership and authorization
+are unchanged. [Windows flag semantics](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
+exclude console inheritance for this console helper. No new generic flags,
+IPC authority, driver, dependency or protection change is introduced.
+
+Test-first head `050e3a6f3165de647188129601ada6a7232f1d55`,
+[CI #40937939931](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40937939931),
+passed the earlier seven Windows cases, then failed the unchanged exact console
+set assertion with three attached PIDs. Ctrl+Break was NOT delivered. This is
+observed extra-console-client refusal; the launcher explanation follows source
+inspection (the extra PID's image was not queried). Preserve the failure and do
+not reinterpret it as active-job cleanup failure or expand the console allowlist.
+Local all-target/all-feature app/runtime/Windows Clippy passes after removal of
+an obsolete unused import; offline parser tests remain supplemental. Final
+exact-head and independent-main results belong in #431/#323.
+
+Schema 6 renames the active-case telemetry to `before_shutdown_ms` and
+`shutdown_to_kernel_exit_ms` for both EOF and signal. Rounded elapsed samples
+are observations, not universal latency guarantees. #430's final schema-5 head
+`d063615bd30b39022fbc0da15fa7d229c2409a1a` and main
+`440c17b6a0eedfaac5a507647eebb232491908c0` passed respective CIs
+#40935035115 and #40936393957 (4/4, attempt1); prior schema-5 fields below are
+historical. No claim covers pre-exit quota release, uncertain-stop handling,
+physical target stream EOF, product Job-empty/profile cleanup, native GitRead,
+host/policy launch fencing or Windows 10/11 installed acceptance. V1 NO-GO.
+
 ## Schema 5 — actual managed isolated Node during transport EOF
 
 Adds one Windows `active-job` case, preserving the six earlier Windows and four

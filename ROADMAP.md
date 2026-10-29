@@ -1,5 +1,18 @@
 # Delivery roadmap
 
+## 29 October — active Node and private-console Ctrl+Break
+
+After #430's independently verified active-job EOF proof, require a physical
+Ctrl+Break with the real isolated Node alive, stdin held open and a console
+containing exactly worker and Bridge. Keep all seven earlier Windows cases and
+four Unix characterizations. Require the same shared five-second Bridge/Node
+bound, both IO joins and normal empty external Job before recovery closure.
+The private launcher must stay outside that console without changing Job limits
+or assignment-before-resume. [Schema 6](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md)
+owns evidence and nonclaims; #431/#323 own final exact-head/main receipts.
+Then address held admissions, uncertain-stop/quota ordering and live native
+host/policy/Git gates. V1 remains NO-GO, no release.
+
 ## 29 October — active managed job during actual transport loss
 
 Require a real AppContainer Node job alive before EOF, original external Job

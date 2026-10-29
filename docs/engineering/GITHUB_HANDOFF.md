@@ -1,5 +1,17 @@
 # GitHub-only project handoff
 
+## Current private-console launcher increment — #431
+
+#430 main `440c17b6a0eedfaac5a507647eebb232491908c0` has independent CI
+#40936393957 SUCCESS4/4, seven Windows and four Unix physical cases. Continue
+with [schema 6](PHYSICAL_HOST_SHUTDOWN_PROOF.md): keep the strict two-client
+console guard, retain first refusal #40937939931 and require actual active-Node
+Ctrl+Break without stdin closure or recovery kill supplying success. The typed
+no-console mode affects only the private launcher, preserving suspended Job
+assignment and all limits. Read final #431/#323 receipts before another PR;
+exact tested and integrated trees plus independent main CI remain mandatory.
+Held admissions, uncertain release ordering, native Git and V1 GO remain open.
+
 ## Active managed-job EOF evidence increment
 
 After independently verified #429/main `1387a3e`, follow

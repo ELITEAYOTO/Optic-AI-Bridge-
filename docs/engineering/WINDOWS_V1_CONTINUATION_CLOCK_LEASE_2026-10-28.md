@@ -1,5 +1,22 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Current active-job physical-stop increment — #431
+
+#430 is squash-integrated at `440c17b6a0eedfaac5a507647eebb232491908c0`,
+independent main CI #40936393957 SUCCESS4/4; final receipt #323/comment6505919815.
+The next narrow increment keeps the private launcher outside Bridge's console
+and requires physical Ctrl+Break with the actual AppContainer Node alive and
+stdin still open. First test-only head `050e3a6f3165de647188129601ada6a7232f1d55`,
+CI #40937939931, passed seven Windows cases then refused three console clients
+BEFORE sending the signal. This is a console-boundary precondition failure,
+not an observed shutdown failure after delivery. Do not weaken its inventory.
+Typed CREATE_NO_WINDOW opt-in retains CREATE_SUSPENDED and existing Job limits,
+assignment-before-resume and cleanup. [Schema 6](PHYSICAL_HOST_SHUTDOWN_PROOF.md)
+owns the bounded physical contract. Require final exact-head/native workflow and
+independent-main evidence plus #323 receipt, one PR at a time. Held admissions,
+resource-release ordering, profile cleanup, native Git and host/policy fencing
+remain separate. Windows V1 NO-GO, no release or security relaxation.
+
 ## Next real active managed-job EOF proof
 
 #429 main `1387a3e9f4b2981c89572bf32ed9f815c6d6dacd` has independent CI

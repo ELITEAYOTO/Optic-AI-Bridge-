@@ -38,8 +38,8 @@ use windows::{
                 QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
-                CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
-                PROCESS_CREATION_FLAGS, ResumeThread, THREAD_SUSPEND_RESUME,
+                CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
+                ResumeThread, THREAD_SUSPEND_RESUME,
             },
         },
     },
@@ -58,6 +58,7 @@ pub struct LimitedJobObject {
     active_process_limit: u32,
     job_memory_limit: usize,
     cpu_percent: u32,
+    without_console: bool,
 }
 
 impl LimitedJobObject {
@@ -82,13 +83,28 @@ impl LimitedJobObject {
             active_process_limit,
             job_memory_limit,
             cpu_percent,
+            without_console: false,
         })
+    }
+
+    /// Keep a private non-interactive helper out of its parent's console.
+    /// This changes no Job limit or suspension/assignment/resume ordering.
+    #[must_use]
+    pub fn without_console(mut self) -> Self {
+        self.without_console = true;
+        self
     }
 }
 
 impl CommandWrapper for LimitedJobObject {
     fn pre_spawn(&mut self, command: &mut Command, _core: &CommandWrap) -> Result<()> {
-        command.creation_flags(PROCESS_CREATION_FLAGS(CREATE_SUSPENDED.0).0);
+        let flags = CREATE_SUSPENDED.0
+            | if self.without_console {
+                CREATE_NO_WINDOW.0
+            } else {
+                0
+            };
+        command.creation_flags(flags);
         Ok(())
     }
 
