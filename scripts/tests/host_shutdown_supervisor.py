@@ -203,6 +203,7 @@ def supervise(args):
                         subprocess.CREATE_NO_WINDOW if event == "headless" else subprocess.CREATE_NEW_CONSOLE))
                 job = guard.Job() if guard else None
                 process = None
+                completed = False
                 try:
                     with (root / "worker.log").open("wb") as log:
                         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
@@ -210,18 +211,37 @@ def supervise(args):
                         if job:
                             job.assign(process)
                         (root / "go").write_text("owned", encoding="ascii")
-                        process.wait(timeout=45)
-                    assert process.returncode == 0, "physical fixture failed: " + event + ": " + bounded_read(root / "worker.log").decode("utf-8", errors="replace")[-2000:]
+                        if job:
+                            process.wait(timeout=45)
+                            worker_exit = process.returncode
+                        else:
+                            # Keep the worker unreaped until recovery is decided,
+                            # so its private process-group ID cannot be reused.
+                            exited = []
+
+                            def worker_exited():
+                                status = os.waitid(os.P_PID, process.pid,
+                                                   os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                                if status is not None:
+                                    exited.append(status)
+                                    return True
+                                return False
+
+                            wait_for(worker_exited, 45, "worker exit")
+                            status = exited[0]
+                            worker_exit = status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
+                    assert worker_exit == 0, "physical fixture failed: " + event + ": " + bounded_read(root / "worker.log").decode("utf-8", errors="replace")[-2000:]
                     case = json.loads((root / "result.json").read_text(encoding="utf-8"))
                     if job:
                         wait_for(lambda: job.active() == 0, 2, "Job empty after normal fixture exit")
                     case["supervisor_cleanup"] = "normal-exit-job-empty" if job else "normal-exit-worker-reaped"
                     result["cases"].append(case)
+                    completed = True
                 finally:
                     try:
                         if job:
                             job.close()
-                        elif process is not None:
+                        elif process is not None and not completed:
                             try:
                                 os.killpg(process.pid, signal.SIGKILL)
                             except ProcessLookupError:
