@@ -137,10 +137,18 @@ def worker(args):
                 wait_for(lambda: phase("host-stop-observed"), 10, "physical signal receipt")
                 wait_for(lambda: phase("original-session-cleanup-complete"), 10, "original cleanup")
                 assert not process.stdin.closed, "input was closed before cleanup proof"
-                # Characterize retention without treating either observation as
-                # bounded process-exit acceptance. The external sender still owns stdin.
-                time.sleep(0.5)
-                retained = process.poll() is None
+                if os.name == "nt":
+                    # Windows must leave the parent input open through root exit.
+                    # Closing it to unblock a reader is no longer an acceptance path.
+                    process.wait(timeout=5)
+                    assert not process.stdin.closed
+                    assert "stdin-reader-joined" in phases(log)
+                    open_stdin_exit = True
+                else:
+                    # Unix remains characterization, separate from Windows acceptance.
+                    time.sleep(0.5)
+                    retained = process.poll() is None
+                    open_stdin_exit = False
                 process.stdin.close()
                 process.wait(timeout=5)
                 assert process.returncode == 1, "expected preserved Interrupted failure"
@@ -149,8 +157,14 @@ def worker(args):
                 assert ordered.index("host-stop-observed") < ordered.index("original-session-cleanup-complete")
                 result = dict(event=args.event, initialized=args.initialized,
                               physical_signal=True, cleanup_with_stdin_open=True,
-                              alive_500ms_after_cleanup=retained,
-                              exit_after_input_close=process.returncode)
+                              exit_with_stdin_open=open_stdin_exit,
+                              final_exit_code=process.returncode)
+                if os.name == "nt":
+                    assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
+                    result["stdin_reader_joined"] = True
+                else:
+                    result.update(alive_500ms_after_cleanup=retained,
+                                  exit_after_input_close=process.returncode)
             (root / "result.json").write_text(json.dumps(result), encoding="utf-8")
         except BaseException:
             detail = bounded_read(root / "stderr.log").decode("utf-8", errors="replace")
@@ -179,7 +193,7 @@ def supervise(args):
     cases = [(event, initialized) for event in events for initialized in [False, True]]
     if os.name == "nt":
         cases.append(("headless", True))
-    result = dict(sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+    result = dict(schema_version=2, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
                   claim="physical signal to original cleanup; no bounded open-stdin process-exit claim")
