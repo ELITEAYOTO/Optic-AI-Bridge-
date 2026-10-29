@@ -1,5 +1,16 @@
 # Changelog
 
+## 29 October — bounded host-stop first-failure evidence
+
+The physical supervisor now preserves optional failed-report diagnostics before
+its temporary files are deleted, including early ownership-handshake failures.
+Each worker/Bridge stderr tail reads at most 4096 bytes; missing/unreadable or
+oversized logs cannot mask the case error, and later recovery errors cannot
+replace it. Eleven offline observer tests cover these paths. Successful case
+criteria, eight Windows/four Unix cases, deadlines, no-retry rule and product
+code stay unchanged. #431 main CI #40940330506 remains first-failure evidence
+with unknown worker cause; this change does not claim a startup fix or V1 GO.
+
 ## 29 October — private isolation launcher without a console (#431)
 
 The Windows LimitedJobObject wrapper gains a typed opt-in no-console mode,
