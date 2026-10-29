@@ -95,7 +95,7 @@ def worker(args):
     deliver = callback = None
     if os.name == "nt" and args.event != "headless":
         deliver, callback = windows_console()
-    command = [str(Path(args.bridge).resolve()), "--workspace", str(root)]
+    command = [str(Path(args.bridge).resolve()), str(root)]
     environment = dict(os.environ, OPTIC_STARTUP_TIMING="1")
     process = None
     with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
