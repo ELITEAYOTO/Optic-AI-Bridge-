@@ -1,5 +1,23 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Next output-lifetime evidence — #428
+
+The schema-3 physical supervisor adds a Windows **characterization-only** case
+for queued unread stdout. First candidate `9e0750b4cdb742bcb8a834180f594471bd9c5951`
+passed [CI 40877904438](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40877904438)
+attempt 1, 4/4 jobs: six Windows and four Unix cases.
+Original cleanup and the owned input-reader join complete before the root is
+observed alive after 500 ms. Closing only stdout releases exit 1 with input still
+open. This isolates an output-lifetime limitation after the #427 input join.
+
+The fixture uses a fixed batch of metadata `session_info` calls; it does not
+exercise an admitted file/process worker, uncertain-stop handling, or native Git.
+No sampled kernel-thread stack or strict pipe-full threshold is claimed.
+Implementing stdout ownership/cancellation/join is a later increment; do not
+reinterpret this passing characterization as an accepted stdout gate or GO.
+See [the current physical proof contract](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+No production code, deadlines, authority, Windows protection, or release changes.
+
 ## 29 October 2026 — Windows pipe input owner and real join
 
 #427 makes one process-owned Windows synchronous-pipe stdin claim before session

@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## Windows V1 gate — stdout lifetime now has a separate characterization (#428)
+
+The hosted schema-3 supervisor reproduces a root retained by unread queued stdout
+after original cleanup and stdin-reader join; closing the output reader alone
+releases exit 1 with input still open. This completes a **characterization step**,
+not stdout-worker ownership, cancellation/join, or general bounded shutdown.
+Next implementation must address that lifetime explicitly without weakening
+cleanup or the existing Windows open-stdin exit gates. Active admitted work,
+uncertain-stop policy, representative Windows versions and native GitRead
+remain separate NO-GO gates. Keep release/tag creation disabled.
+
 ## 29 October 2026 — Windows input owner before broader shutdown claims
 
 #427 requires Windows synchronous-pipe reader ownership, cancellation and real
