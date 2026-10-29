@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod host_shutdown;
 mod persistent_config;
 mod tool_profile_config;
 
@@ -416,7 +417,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "disabled"
         },
     );
-    let service_result: Result<(), Box<dyn Error + Send + Sync>> = async {
+    let service_result = until_host_shutdown(async {
         let service = initialize_before_original_session_expiry(
             server.serve(transport),
             clock.as_ref(),
@@ -440,9 +441,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 ).into()))
             }
         }
-    }
-    .await;
+    }, host_shutdown::requested()).await;
     finish_original_stdio_session(service_result, lifecycle, supervised_session).await
+}
+
+async fn until_host_shutdown(
+    service: impl std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
+    _shutdown: impl std::future::Future<Output = std::io::Result<()>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Test-first extraction: preserve the existing unobserved host-stop behavior.
+    service.await
 }
 
 async fn initialize_before_original_session_expiry<T, E>(
