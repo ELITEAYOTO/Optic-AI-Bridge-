@@ -24,6 +24,13 @@ has six native IO, 53 application unit and four actual stdio tests passing local
 three offline observer regressions and app/Windows all-target Clippy also pass.
 These subsets do not replace the exact final-head hosted gates.
 
+Owner candidate `029726bc` passed CI #40922838253 4/4 with six successful Windows
+physical cases, including unread-output exit. Final review adds shared native
+synchronous-mode validation before input/output spawning; FILE_TYPE alone is
+insufficient for Rust File IO. A real overlapped-handle rejection first failed
+locally, then the guard passed all 11 input/output tests. Require the final guarded
+HEAD's own hosted and independent-main evidence; the earlier green is historical.
+
 ## Next output-lifetime evidence — #428
 
 The schema-3 physical supervisor adds a Windows **characterization-only** case

@@ -8,12 +8,20 @@ bounded, process-owned synchronous output, targeted cancellation and confirmed
 join after original admission cleanup. Standard pipe and redirected disk output
 are supported; character output fails before grants. Unix is unchanged.
 
-Six local native IO tests pass, including unread-pipe cancel/Drop, byte/flush/EOF
+Eleven local IO tests pass (seven output, four existing input), including unread-pipe cancel/Drop, byte/flush/EOF
 and broken-reader errors. Physical schema 4 requires exit without parent stdout
 closure/drain. First CI #40919730293 failed in a partial-stderr observer before
 that gate; it is preserved, not called behavioral RED. See [proof and current
 limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md). Exact final-head and
 independent-main CI remain required; **Windows V1 NO-GO**, no native Git or release.
+
+First corrected owner HEAD `029726bc22e72b42537a92b81bb737cf37e6eba3`, CI
+#40922838253, passed 4/4 and all six physical Windows cases, including unread
+stdout exit/join. Self-review then added shared actual-handle synchronous-mode
+attestation before either worker: the FILE_TYPE check alone accepted an
+overlapped handle incompatible with Rust File IO. Its local rejection test first
+failed, then all eleven IO tests passed. The final guarded HEAD needs its own CI;
+do not substitute the earlier green owner's evidence for that final validation.
 
 ## Windows V1 — unread stdout retention characterized (#428)
 

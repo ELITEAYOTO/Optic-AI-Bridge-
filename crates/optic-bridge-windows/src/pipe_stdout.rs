@@ -72,6 +72,7 @@ fn start_writer<W: Write + AsHandle + Send + 'static>(
         ));
     }
     let (send, receive) = mpsc::sync_channel(1);
+    crate::stdio_mode::require_synchronous(&output)?;
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stop);
     let worker = thread::Builder::new()
@@ -390,5 +391,29 @@ mod tests {
         owner.stop_and_join().unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"redirected output\0\xff\n");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn stdout_rejects_overlapped_handle_before_spawning() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+        let path = std::env::temp_dir().join(format!(
+            "optic-stdout-overlapped-{}-{}.tmp",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = File::options()
+            .create_new(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED.0)
+            .open(&path)
+            .unwrap();
+        // Never submit IO to this async handle through the synchronous worker.
+        let rejected = start_writer(file).is_err();
+        std::fs::remove_file(path).unwrap();
+        assert!(rejected, "synchronous writer accepted an overlapped handle");
     }
 }

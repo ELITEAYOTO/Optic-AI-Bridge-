@@ -29,6 +29,8 @@ mod pipe_stdout;
 #[cfg(all(windows, test))]
 mod rust_compile_probe;
 #[cfg(windows)]
+mod stdio_mode;
+#[cfg(windows)]
 mod workspace_grant;
 
 #[cfg(windows)]

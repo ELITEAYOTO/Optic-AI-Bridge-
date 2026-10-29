@@ -15,8 +15,17 @@ no MCP argument selects a handle, destination or cancellation thread. Standard
 synchronous pipes and redirected disk files use the same owned implementation.
 Disk output preserves the existing physical supervisor's file capture. Console,
 NUL and other character output are rejected before grants; stdin remains pipe
-only. Unix keeps its existing Tokio path. Overlapped/unusual driver handles are
-not certified by a FILE_TYPE query or these ordinary synchronous-handle tests.
+only. Unix keeps its existing Tokio path.
+
+A FILE_TYPE query alone cannot establish the synchronous prerequisite of Rust's
+[File Read/Write implementations](https://doc.rust-lang.org/std/fs/struct.File.html#platform-specific-behavior).
+Both original IO factories query `FileModeInformation` on the same retained
+handle before spawning. They require a synchronous mode bit and reject failed,
+unknown or overlapped mode before any data IO/grants. This uses the existing
+pinned Windows dependency's Wdk_Storage_FileSystem binding for a user-mode ntdll
+metadata query; no driver or additional privilege is installed. Mode definitions
+are documented in Microsoft's [FILE_MODE_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_mode_information).
+This does not certify unusual devices/drivers or promise their cancellation bound.
 
 ## Buffering and ownership
 
@@ -55,7 +64,8 @@ held while calling Win32, sleeping or joining.
 Native tests use actual anonymous pipes for raw bytes across frames, flush and
 EOF, idle/early stop, explicit cancel and Drop with an unread reader kept open,
 and broken-reader error propagation. Disk redirection and character-handle
-rejection have separate tests. Offline parser tests prevent partial stderr
+rejection have separate tests. An actual overlapped disk handle is rejected
+without submitting data IO. Offline parser tests prevent partial stderr
 records from falsely satisfying a physical gate or crashing its observer.
 
 Schema 4 keeps the existing external five-second exit bound. The stalled-output

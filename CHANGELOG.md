@@ -7,6 +7,10 @@ and redirected disk files. Flush observes actual write completion; host shutdown
 retains original session/admission cleanup, cancels the exact writer thread and
 actually joins both IO owners. Native IO errors propagate and no pooled writer,
 forced exit or drain timeout is used. Character output is rejected before grants.
+Both original IO factories additionally attest the retained handle's synchronous
+mode and reject overlapped/unknown mode before spawning, using a binding feature
+of the existing pinned Windows crate. No data IO is attempted on an unsupported
+handle and no driver/privilege or dependency version is added.
 
 Physical schema 4 requires root exit with parent input and unread stdout kept
 open; closing/draining output cannot make it pass. Initial CI #40919730293 instead

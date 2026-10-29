@@ -35,6 +35,14 @@ observer failure. The correction also requires the output-join marker in every
 normal Windows/headless case. In the stalled-output case, neither parent endpoint
 is closed or drained to make exit pass; headless EOF still closes input normally.
 
+First corrected owner `029726bc22e72b42537a92b81bb737cf37e6eba3`,
+[CI #40922838253](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40922838253),
+passed all four jobs and all six Windows cases. Unread stdout reported 4280 bytes
+before stop and 3852 after cleanup, both parent ends open, both joins and exit 1,
+with normal supervisor reaping/empty Job. Subsequent review adds synchronous-mode
+attestation to both original IO factories and an overlapped-handle rejection
+regression. That final guarded source still requires its own exact-head/main CI.
+
 ## Current schema 3 — separate unread-stdout characterization (#428)
 
 Schema 3 preserves all prior normal cases and adds one Windows-only
