@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 29 October 2026 — cooperative process stop before native launch
+
+PR #425 routes process-owned Ctrl+C/Ctrl+Break (Windows), SIGINT/SIGTERM (Unix)
+through original stdio session/TaskLease stop-before-drain, including idle MCP
+initialization. Internal notification regressions are separate from physical OS
+signal delivery and process-exit acceptance. Next prove those paths with open
+stdin, retained work and uncertain termination; Tokio blocking stdin and legacy
+joins remain unbounded. Then establish a live host/policy native launch fence.
+Exact-head and independent-main receipts: #425/#323. Windows V1 NO-GO; no release
+or native GitRead activation.
+
 ## 29 October 2026 — service ownership before native launch
 
 Validate unconditional original-session cleanup on default/supervised stdio EOF

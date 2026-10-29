@@ -22,7 +22,7 @@ optic-bridge-runtime = { path = "../optic-bridge-runtime" }
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 
 [target.'cfg(windows)'.dependencies]
 optic-bridge-windows = { path = "../optic-bridge-windows" }

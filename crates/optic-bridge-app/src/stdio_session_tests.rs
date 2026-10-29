@@ -62,6 +62,127 @@ async fn stdio_initialize_expiry_publishes_stop_before_admission_drain() {
 
 type ServiceResult = Result<(), Box<dyn Error + Send + Sync>>;
 
+#[tokio::test]
+async fn stdio_host_shutdown_without_initialize_closes_original_authorities() {
+    for supervised in [false, true] {
+        let fixture = Fixture::new();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let (client, mut owner) = fixture.start_with_shutdown(supervised, async move {
+            receive.await.map_err(std::io::Error::other)
+        });
+        send.send(()).unwrap();
+        let completed = tokio::time::timeout(Duration::from_secs(2), &mut owner).await;
+        let bounded = completed.is_ok();
+        drop(client); // Baseline cleanup must not leave an idle owner behind.
+        let (_, result) = match completed {
+            Ok(joined) => joined.unwrap(),
+            Err(_) => tokio::time::timeout(Duration::from_secs(5), owner)
+                .await
+                .unwrap()
+                .unwrap(),
+        };
+        assert!(bounded, "host stop did not interrupt idle initialization");
+        assert_eq!(
+            result
+                .unwrap_err()
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .kind(),
+            std::io::ErrorKind::Interrupted
+        );
+        assert!(fixture.original_closed());
+        assert!(fixture.other_active());
+    }
+}
+
+#[tokio::test]
+async fn stdio_host_shutdown_after_initialize_publishes_stop_before_drain() {
+    for supervised in [false, true] {
+        let fixture = Fixture::new();
+        let admitted = fixture.owned_admission();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let (client, owner) = fixture.start_with_shutdown(supervised, async move {
+            receive.await.map_err(std::io::Error::other)
+        });
+        let (read, write) = tokio::io::split(client);
+        let peer = ProbeClient.serve((read, write)).await.unwrap();
+        send.send(()).unwrap();
+        let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+            while !fixture.original_closed() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .is_ok();
+        let retained = !owner.is_finished();
+        drop(admitted);
+        let _ = peer.cancel().await;
+        let (_, result) = tokio::time::timeout(Duration::from_secs(5), owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            stopped,
+            "host stop did not publish original session/lease stop"
+        );
+        assert!(
+            retained,
+            "host stop released ownership before admission drain"
+        );
+        assert_eq!(
+            result
+                .unwrap_err()
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .kind(),
+            std::io::ErrorKind::Interrupted
+        );
+        assert!(fixture.other_active());
+    }
+}
+
+#[tokio::test]
+async fn stdio_host_shutdown_source_error_is_preserved() {
+    let fixture = Fixture::new();
+    let (client, mut owner) = fixture.start_with_shutdown(
+        false,
+        std::future::ready(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "host shutdown listener fixture denied",
+        ))),
+    );
+    let completed = tokio::time::timeout(Duration::from_secs(2), &mut owner).await;
+    let bounded = completed.is_ok();
+    drop(client);
+    let (before, result) = match completed {
+        Ok(joined) => joined.unwrap(),
+        Err(_) => tokio::time::timeout(Duration::from_secs(5), owner)
+            .await
+            .unwrap()
+            .unwrap(),
+    };
+    assert!(bounded, "failed host listener was ignored");
+    let error = result.unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<std::io::Error>().unwrap().kind(),
+        std::io::ErrorKind::PermissionDenied
+    );
+    assert_eq!(Some(error.to_string()), before);
+    assert!(fixture.original_closed());
+    assert!(fixture.other_active());
+}
+
+#[tokio::test]
+async fn stdio_ready_host_shutdown_precedes_ready_service_result() {
+    let error = until_host_shutdown(async { Ok(()) }, async { Ok(()) })
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<std::io::Error>().unwrap().kind(),
+        std::io::ErrorKind::Interrupted
+    );
+}
+
 struct ProbeClient;
 
 impl ClientHandler for ProbeClient {
@@ -160,6 +281,14 @@ impl Fixture {
         &self,
         supervised: bool,
     ) -> (DuplexStream, JoinHandle<(Option<String>, ServiceResult)>) {
+        self.start_with_shutdown(supervised, std::future::pending())
+    }
+
+    fn start_with_shutdown(
+        &self,
+        supervised: bool,
+        shutdown: impl std::future::Future<Output = std::io::Result<()>> + Send + 'static,
+    ) -> (DuplexStream, JoinHandle<(Option<String>, ServiceResult)>) {
         let server = ReadonlyMcpServer::new_with_process_runtime(
             &self.root,
             Arc::clone(&self.sessions),
@@ -179,7 +308,7 @@ impl Fixture {
         let clock = Arc::clone(&self.clock);
         let expires_at = self.expires_at;
         let owner = tokio::spawn(async move {
-            let result: ServiceResult = async {
+            let result = until_host_shutdown(async {
                 let service = initialize_before_original_session_expiry(
                     server.serve(transport),
                     clock.as_ref(),
@@ -193,8 +322,7 @@ impl Fixture {
                         result.and_then(|()| Err(std::io::Error::other("unexpected supervisor completion").into()))
                     }
                 }
-            }
-            .await;
+            }, shutdown).await;
             let original_error = result.as_ref().err().map(ToString::to_string);
             let result = finish_original_stdio_session(result, lifecycle, session).await;
             (original_error, result)

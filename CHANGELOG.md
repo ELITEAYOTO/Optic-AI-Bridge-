@@ -1,5 +1,17 @@
 # Changelog
 
+## 29 October 2026 — cooperative process requests close original stdio authority
+
+PR #425 observes private process-owned Ctrl+C/Ctrl+Break (Windows) and
+SIGINT/SIGTERM (Unix) during MCP initialize/serving, then uses original-session
+cleanup. A ready stop wins over a ready service result; source errors stay errors,
+and counted admissions remain until drainage. Four notification-injected RMCP
+regressions first failed behaviorally on both OS in CI #40857686017.
+
+Physical OS delivery, runtime/process exit with open stdin and bounded legacy
+cleanup are not established. No forced exit, new native GitRead permission or
+release; Windows V1 NO-GO. Exact final receipts are maintained in #425/#323.
+
 ## 29 October 2026 — close original stdio session independently of renewal
 
 Transport EOF and returned MCP initialization/wait errors now invoke cleanup on
