@@ -1,6 +1,6 @@
 # Repository entry point for coding agents
 
-**Current continuation (28 October 2026, clock/lease stabilization):** [current code/evidence and next host/policy boundary](docs/engineering/WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md). Read live main and latest #323 receipts; historical checkpoints below are not the current SHA. Windows V1 NO-GO, hosted CI only, one PR at a time.
+**Current continuation (29 October 2026, clock/lease and stdio service close):** [current code/evidence and next host/policy boundary](docs/engineering/WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md). Read live main and latest #323 receipts; historical checkpoints below are not the current SHA. Windows V1 NO-GO, hosted CI integration gate, one PR at a time. Local execution requires explicit task-specific owner authorization; the 29 October task has it, as recorded in the continuation.
 
 ## 28 octobre 2026 — jalon #412 : watchdog natif précréé, V1 toujours NO-GO
 

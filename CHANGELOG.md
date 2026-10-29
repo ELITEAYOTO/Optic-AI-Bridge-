@@ -1,5 +1,22 @@
 # Changelog
 
+## 29 October 2026 — close original stdio session independently of renewal
+
+Transport EOF and returned MCP initialization/wait errors now invoke cleanup on
+the original lifecycle and session even without `--supervise-session`. Cleanup
+publishes stop and waits for counted admissions; successful cleanup preserves
+the original service result. Renewal timing and MCP permissions stay unchanged.
+
+Local Windows test-first reproduction obtained three behavioral failures with
+conditional cleanup, then three passes after correction. Real RMCP transport
+and original registries cover EOF, failed initialize, session/lease stop, retained
+capacity during drain and another session's noninterference. The actual stdio
+binary suite also covers active default-mode EOF.
+Hosted exact-head and independent-main CI must be checked before integration is
+claimed. This is ordinary service cleanup, not a native HostStartup/policy launch
+fence or physical Git termination; legacy reader joins remain unbounded.
+**Windows V1 NO-GO.**
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.

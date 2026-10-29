@@ -2,6 +2,15 @@
 
 28 October 2026. Repository: **ELITEAYOTO/Optic-AI-Bridge- only**. Windows V1 **NO-GO**.
 
+29 October service-close increment: baseline main is now
+`efb3fc28a47fba136ea912381fc9d1cc5fe1d08c`, tree
+`69e7136857e4e320392453ab93d9111cfa23087c`; #421 independent
+[push/main CI #40754598941](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40754598941)
+is SUCCESS 4/4. The owner explicitly authorized local isolated work under
+`E:/Optic-IA-Bridge` for this task on 29 October; this does not change the
+standing restrictions for unrelated repositories, security settings or releases.
+The new PR must still pass exact-head hosted CI and independent post-merge CI.
+
 ## Read current evidence before changing anything
 
 Last independently closed checkpoint when this source was written:
@@ -51,10 +60,19 @@ Observed on the checked production source:
 - app main constructs `Arc<dyn Clock>` from StdClock and issues legacy numeric
   session/lease expiries; MCP workers still use the legacy admission interfaces.
   The internal clock-coherent native constructors are not wired into that path.
-- app main invokes lifecycle revoke after transport termination explicitly
-  inside `if args.supervise_session`. Audit default vs supervised shutdown and
-  all early-error/drop paths; this observation alone does not establish what
-  physically happens to native jobs when the application runtime exits.
+- This increment removes the `args.supervise_session` condition from original
+  session cleanup. Both successful service completion and returned MCP initialize
+  errors go through the original lifecycle/session, then propagate the service
+  result if cleanup succeeds. The supervisor still starts only after initialize.
+  Real RMCP duplex tests cover default/supervised EOF, initialize EOF and a held
+  original admission: stop is published, the owner waits, session capacity stays
+  occupied until drain and explicit reaping; another session stays active.
+  No native child exists in these registry tests. Actual binary EOF/renewal
+  regression tests are supplemental, not physical Git/descendant/pipe proof.
+  Future abortion, abrupt OS exit and setup errors before MCP initialization
+  remain outside this ordinary returned-result boundary. The admission drain
+  remains potentially unbounded if legacy admitted IO does not finish; never
+  detach it or discard pins/quotas to manufacture a successful shutdown.
 - policy_epoch is carried from startup configuration/session/lease/envelope;
   equality of captured integers is not a live policy-revocation issuer.
 - session and lease mutexes remain distinct. Positive sequential observations
