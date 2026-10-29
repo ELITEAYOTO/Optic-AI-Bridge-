@@ -164,11 +164,14 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for):
         observed.require_running()
         before_eof_ms = round((time.monotonic() - launched_at) * 1000)
         assert before_eof_ms < 20000, "insufficient distance from the 30s child budget"
-        deadline = time.monotonic() + 5
+        stopped_at = time.monotonic()
+        deadline = stopped_at + 5
         process.stdin.close()  # Actual client transport EOF; no process_stop RPC.
         process.wait(timeout=max(0.001, deadline - time.monotonic()))
         assert process.returncode == 0, "Bridge did not exit normally on active-job EOF"
         observed.require_exited(deadline - time.monotonic())
+        completed_at = time.monotonic()
+        assert completed_at <= deadline, "combined Bridge/Node observation exceeded 5s"
         assert (time.monotonic() - launched_at) * 1000 < 30000, "natural job timeout could explain exit"
         ordered = phases(log)
         assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
@@ -178,6 +181,7 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for):
                     native_image_matches_operator=True, original_outer_job_member=True,
                     native_appcontainer_token_verified=True,
                     retained_process_handle_signaled=True, before_eof_ms=before_eof_ms,
+                    eof_to_kernel_exit_ms=round((completed_at - stopped_at) * 1000),
                     natural_timeout_reached=False, process_stop_rpc=False, bridge_exit_code=0,
                     stdin_reader_joined=True, stdout_writer_joined=True,
                     held_admission_proven=False, native_git_proven=False)

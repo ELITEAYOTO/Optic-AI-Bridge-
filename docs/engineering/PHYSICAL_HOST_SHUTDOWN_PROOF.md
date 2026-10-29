@@ -43,6 +43,15 @@ profile/ACL artifact cleanup, uncertain-stop recovery, native GitRead, or the
 host/policy native launch fence. `held_admission_proven` and `native_git_proven`
 are explicitly false. Windows V1 remains NO-GO, no release.
 
+First exact candidate `f8afe2b4271dde6d0f3f2edcf67e5a1fbe4a27cb`,
+[CI #40933810147](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40933810147),
+completed SUCCESS4/4, attempt1, with seven Windows and four Unix cases. The active
+case confirmed the original Job, image, actual AppContainer token, running state,
+retained-handle signal and normal empty-Job cleanup before the natural budget.
+The final observer strengthens this with a direct total wall-clock assertion and
+`eof_to_kernel_exit_ms` measurement; require that exact final-head/main evidence
+rather than substituting the earlier report.
+
 ## Schema 4 — unread stdout must not retain root exit (#429)
 
 The existing stalled-output case now requires root exit 1 within the unchanged

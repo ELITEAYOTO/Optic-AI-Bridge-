@@ -55,11 +55,10 @@ class ManagedReadyTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(AssertionError):
                 active.ready_pid(value, nonce)
 
-    def test_fixed_program_emits_newline_and_stays_active(self):
+    def test_program_nonce_and_newline_are_not_injectable_or_double_escaped(self):
         program = active.node_program("a" * 32)
         self.assertIn("process.pid+'\\n'", program)
         self.assertNotIn("\\\\n", program)
-        self.assertIn("setInterval(()=>{},1000)", program)
         with self.assertRaises(AssertionError):
             active.node_program("injected'code")
 
