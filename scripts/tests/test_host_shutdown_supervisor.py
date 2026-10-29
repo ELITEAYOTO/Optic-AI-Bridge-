@@ -8,6 +8,7 @@ spec = importlib.util.spec_from_file_location(
     "host_shutdown_supervisor", Path(__file__).with_name("host_shutdown_supervisor.py"))
 supervisor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(supervisor)
+active = supervisor.active_proof()
 
 
 class TimingRecordTests(unittest.TestCase):
@@ -37,6 +38,38 @@ class TimingRecordTests(unittest.TestCase):
             path.write_bytes(b"OPTIC_STARTUP phase=\n")
             with self.assertRaises(AssertionError):
                 supervisor.phases(path)
+
+
+class ManagedReadyTests(unittest.TestCase):
+    def test_partial_record_waits_then_complete_nonce_and_pid_match(self):
+        nonce = "a" * 32
+        prefix = ("OPTIC_ACTIVE " + nonce + " 123").encode("ascii")
+        self.assertIsNone(active.ready_pid(prefix, nonce))
+        self.assertEqual(active.ready_pid(prefix + b"\n", nonce), 123)
+
+    def test_foreign_nonce_malformed_or_unbounded_record_fails(self):
+        nonce = "a" * 32
+        for value in [("OPTIC_ACTIVE " + "b" * 32 + " 123\n").encode("ascii"),
+                      b"not a readiness record\n", b"x" * 257,
+                      ("OPTIC_ACTIVE " + nonce + " 4294967296\n").encode("ascii")]:
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                active.ready_pid(value, nonce)
+
+    def test_fixed_program_emits_newline_and_stays_active(self):
+        program = active.node_program("a" * 32)
+        self.assertIn("process.pid+'\\n'", program)
+        self.assertNotIn("\\\\n", program)
+        self.assertIn("setInterval(()=>{},1000)", program)
+        with self.assertRaises(AssertionError):
+            active.node_program("injected'code")
+
+    def test_ownership_record_is_published_after_close(self):
+        with tempfile.TemporaryDirectory(prefix="optic-active-record-") as directory:
+            path = Path(directory) / "owned.json"
+            active.publish_json(path, {"pid": 123, "nonce": "a" * 32})
+            self.assertEqual(supervisor.json.loads(path.read_text(encoding="utf-8")),
+                             {"pid": 123, "nonce": "a" * 32})
+            self.assertFalse(path.with_name(path.name + ".pending").exists())
 
 
 if __name__ == "__main__":

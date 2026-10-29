@@ -1,5 +1,18 @@
 # Changelog
 
+## 29 October — physical active managed Node EOF case
+
+The hosted schema-5 supervisor adds one real MCP-started isolated Node job to the
+existing stdio shutdown cases. It verifies nonce/PID output, operator image and
+original outer Job membership, retains a read-only native process handle, then
+requires normal Bridge exit and Node kernel-signaled exit within one unchanged
+five-second window after transport EOF. Natural timeout and fixture recovery
+cannot supply a successful result. Atomic ownership records and seven offline
+observer regressions guard the new fixture path. No production code, permission,
+deadline, sandbox or release behavior is changed. This is not held-admission,
+physical target-stream EOF, product Job/quota/profile cleanup or native Git proof;
+final exact-head/main evidence remains mandatory and Windows V1 stays NO-GO.
+
 ## 29 October 2026 — Windows stdout ownership (#429)
 
 Windows stdio now owns a dedicated bounded output worker for synchronous pipes

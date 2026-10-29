@@ -1,5 +1,19 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Next real active managed-job EOF proof
+
+#429 main `1387a3e9f4b2981c89572bf32ed9f815c6d6dacd` has independent CI
+#40925991711 SUCCESS4/4. The next test-only increment adds a hosted actual isolated
+Node job alive before client EOF, with operator-image verification, a retained
+native process handle and membership in the original external Job. One unchanged
+five-second window must cover Bridge exit and Node becoming kernel-signaled,
+without a stop RPC, natural budget expiry or fixture recovery producing success.
+Read [schema 5 and exact limits](PHYSICAL_HOST_SHUTDOWN_PROOF.md) and final #323/PR
+receipts; offline parser tests are not physical evidence. Active managed-job
+completion is separate from held counted admissions, uncertain release ordering,
+profile/ACL cleanup, native Git streams/Job and global host/policy launch fencing.
+Windows V1 remains NO-GO, no production authorization or release change.
+
 ## Current stdout owner candidate — #429
 
 Baseline #428 main `c3265b79824142c3ff8dae32950fbb5afeb3c8f1` has independent
