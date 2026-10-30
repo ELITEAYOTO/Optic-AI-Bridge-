@@ -1,5 +1,41 @@
 # Physical process signal to original stdio cleanup
 
+## Prelaunch startup failure and unfinished identity stages — 30 October
+
+#433 finalbfcf8f902d5c8f3752bb4af6e1160ac1bef1ac4f passed [PR CI41002570074](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41002570074)
+4/4, attempt1, schema7 Windows9/Unix4. New expiry case observed native exit10078ms,
+original session reaping, live Bridge/input and exact inactive start refusal.
+Squashfc7f2b71352e7cee4938ca75907d769988426dd7 has the same tree, but its
+[independent main41003133144](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41003133144)
+FAILED3/4, attempt1. Six Windows physical cases passed, then active-job worker
+timed out10s waiting for host-shutdown-listening. Bounded worker/stderr evidence
+ends at read-authorities-provisioned (1ms), with no process-leases-provisioned,
+server-created or listener record. No Node had been launched. The original
+expiry case was not reached. [Failure receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6515093418)
+is preserved; exact blocked operation and cause remain unproved.
+
+Source narrows this interval to process-lease eligibility/ID/registry/executable
+identity capture. The old identity-duration record is emitted only after ALL
+capture work returns, so it cannot locate an unfinished call. With existing
+OPTIC_STARTUP_TIMING=1, the follow-up emits fixed OPTIC_PROCESS_IDENTITY_PHASE
+boundaries: capture-started before canonicalization, path-checked after canonical
+path/file checks, pin-opened after retained pin/metadata/final-path acquisition,
+and hash-complete after full bounded content hashing. The application also marks
+process-leases-started immediately before provisioning. Last observed boundary
+can narrow a future failure; absence of capture-started does not prove file IO.
+These are coarse phases, not syscall traces, stack samples or causal attribution.
+
+All fields are fixed stage names/elapsed times, with no paths, hashes, content,
+lease IDs or authority detail. Existing completion summary remains; timings may
+include diagnostic-output overhead and are not strict operation latency bounds.
+The opt-in flag is sampled once per capture. Five existing identity/pin/launch/
+bounded-observation tests and app/runtime all-target/all-feature Clippy pass.
+No canonicalization, sharing/pin lifetime, full hash/512MiB bound, registry rule,
+authority, deadline, physical9/Unix4 success rule or no-retry behavior changes.
+All native/applicable workflows and independent-main gates still apply. A later
+green does not prove the startup issue fixed; preserve both failed main receipts.
+V1 NO-GO, native Git inactive, no release or protection relaxation.
+
 ## Schema 7 — original session expiry with real active isolated Node
 
 Adds Windows `active-job-expiry`, keeping the eight previous Windows and four

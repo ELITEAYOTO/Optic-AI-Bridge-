@@ -1,5 +1,17 @@
 # Changelog
 
+## 30 October — unfinished executable identity capture diagnostics
+
+OPTIC_STARTUP_TIMING=1 now emits fixed capture-started, path-checked, pin-opened
+and hash-complete boundaries before/after identity operations, plus application
+process-leases-started. The existing completed-duration summary remains. No path,
+file content, identity hash, lease ID or grant is logged. Opt-in profiling is
+sampled once per capture; elapsed timings include instrumentation overhead.
+Canonicalization, pinned sharing, full bounded hashing, registry checks and all
+timeouts remain unchanged. Five identity tests and app/runtime Clippy pass.
+#433 main's prelaunch timeout remains unclassified at syscall level; this is
+observability, not a startup/Node/expiry fix or V1 GO. No release.
+
 ## 30 October — physical original-session expiry with active isolated Node
 
 The hosted supervisor adds an actual active-Node session-expiry case using the

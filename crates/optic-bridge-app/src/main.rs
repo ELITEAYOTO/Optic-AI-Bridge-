@@ -294,6 +294,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     startup_timing.mark("read-authorities-provisioned");
     // C5E keeps the first production minting path deliberately profile-specific:
     // only exact operator-selected Node interpreters may receive eligibility.
+    startup_timing.mark("process-leases-started");
     let process_leases = provision_process_leases(
         &task_leases,
         &session,

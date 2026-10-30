@@ -1,5 +1,17 @@
 # Delivery roadmap
 
+## 30 October — identify the prelaunch startup stall
+
+Preserve #433 main CI41003133144 and receipt6515093418: no Node launched, listener
+registration exceeded10s, last phase read-authorities-provisioned. Capture fixed
+begin/completion boundaries around canonical path, pinned executable open and
+bounded full content hashing, plus process-lease entry. Existing completion-only
+timing cannot identify an unfinished call. Require exact-head/all applicable
+workflows, review, squash and independent main. A later green does not identify
+or fix the underlying startup stall. Then address owned startup IO, host/policy
+launch fencing and outstanding managed-resource/security/platform gates.
+[Owning evidence](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md). V1 NO-GO.
+
 ## 30 October — real active managed job at original session expiry
 
 Require operator lifetime10s without renewal, an attested active AppContainer

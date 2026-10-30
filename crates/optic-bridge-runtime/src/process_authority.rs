@@ -56,13 +56,18 @@ impl ProcessExecutableIdentity {
         // startup timings. Never reveal an executable path, file contents,
         // identity hash, or additional authority through this diagnostic.
         let started = Instant::now();
+        let timing_enabled = std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1");
+        identity_capture_phase(timing_enabled, "capture-started", &started);
         let canonical_path = canonical_executable(executable)?;
         let path_done = started.elapsed();
+        identity_capture_phase(timing_enabled, "path-checked", &started);
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let pin_done = started.elapsed();
+        identity_capture_phase(timing_enabled, "pin-opened", &started);
         let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
         let total = started.elapsed();
-        if std::env::var("OPTIC_STARTUP_TIMING").ok().as_deref() == Some("1") {
+        identity_capture_phase(timing_enabled, "hash-complete", &started);
+        if timing_enabled {
             eprintln!(
                 "OPTIC_PROCESS_IDENTITY_TIMING path_ms={} pin_ms={} hash_ms={} total_ms={}",
                 path_done.as_millis(),
@@ -100,6 +105,17 @@ impl ProcessExecutableIdentity {
             return Err(ProcessAuthorityError::ExecutableIdentityChanged);
         }
         Ok(())
+    }
+}
+
+// Fixed operator-opted-in boundaries survive an IO stall/error; the existing
+// completed-duration summary alone cannot identify an unfinished capture.
+fn identity_capture_phase(enabled: bool, phase: &'static str, started: &Instant) {
+    if enabled {
+        eprintln!(
+            "OPTIC_PROCESS_IDENTITY_PHASE phase={phase} elapsed_ms={}",
+            started.elapsed().as_millis(),
+        );
     }
 }
 
