@@ -337,6 +337,16 @@ impl SessionLifecycleManager {
             Err(error) => return Err(error.into()),
         }
 
+        self.reap_after_inactive_observation(session, now)
+    }
+
+    // An independent collector may finish after the eligibility observation.
+    // Keep this continuation private; it grants no new cleanup authority.
+    fn reap_after_inactive_observation(
+        &self,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<SessionReapReport, SessionLifecycleError> {
         // This is idempotent for an already-revoked session. For an expired session it
         // closes admission first, waits for admitted effects to drain, revokes leases,
         // and requests termination for every owned process job.
@@ -1290,6 +1300,74 @@ mod tests {
             .provision(spec(1_000), now)
             .expect("capacity must be reusable after safe reap");
         fs::remove_dir_all(root).expect("remove lifecycle workspace");
+    }
+
+    #[test]
+    fn reap_after_competing_cleanup_preserves_other_session_and_lease() {
+        for revoked in [false, true] {
+            let root = workspace("competing-reap");
+            let (lifecycle, sessions, task_leases, _) = manager(&root);
+            let start = MonotonicTime::from_millis(1);
+            let session_a = lifecycle.provision(spec(10), start).expect("session A");
+            let session_b = lifecycle.provision(spec(1_000), start).expect("session B");
+            let lease_a = lease(session_a.handle.clone(), 10);
+            let lease_b = lease(session_b.handle.clone(), 1_000);
+            task_leases.register(lease_a.clone()).expect("lease A");
+            task_leases.register(lease_b.clone()).expect("lease B");
+            let now = if revoked {
+                lifecycle.revoke(&session_a.handle).expect("revoke A");
+                start
+            } else {
+                MonotonicTime::from_millis(10)
+            };
+            // Deterministic interleaving at try_reap's real eligibility boundary:
+            // A is inactive, another collector fully reaps it, then the first
+            // collector resumes its unchanged cleanup continuation. No child IO.
+            assert_eq!(
+                sessions.get_active(&session_a.handle, now).unwrap_err(),
+                if revoked {
+                    SessionRegistryError::Revoked
+                } else {
+                    SessionRegistryError::Expired
+                }
+            );
+            let winner = lifecycle.try_reap(&session_a.handle, now).unwrap();
+            assert!(winner.session_removed);
+            assert_eq!(winner.removed_leases, 1);
+            assert_eq!(
+                lifecycle
+                    .reap_after_inactive_observation(&session_a.handle, now)
+                    .expect("already reaped cleanup is idempotent"),
+                SessionReapReport::default()
+            );
+            assert_eq!(
+                sessions.get_active(&session_a.handle, now).unwrap_err(),
+                SessionRegistryError::UnknownSession
+            );
+            assert_eq!(
+                task_leases
+                    .get_active(&lease_a.id, &session_a.handle, now)
+                    .unwrap_err(),
+                TaskLeaseRegistryError::UnknownLease
+            );
+            sessions.get_active(&session_b.handle, now).unwrap();
+            task_leases
+                .get_active(&lease_b.id, &session_b.handle, now)
+                .unwrap();
+            assert!(matches!(
+                lifecycle.try_reap(&session_b.handle, now),
+                Err(SessionLifecycleError::SessionStillActive)
+            ));
+            assert_eq!(lifecycle.reap_inactive(now).unwrap(), 0);
+            lifecycle.revoke(&session_b.handle).unwrap();
+            assert!(
+                lifecycle
+                    .try_reap(&session_b.handle, now)
+                    .unwrap()
+                    .session_removed
+            );
+            fs::remove_dir_all(root).expect("remove lifecycle workspace");
+        }
     }
 
     #[test]
