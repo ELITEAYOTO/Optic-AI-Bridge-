@@ -17,7 +17,7 @@ use std::{
 };
 use windows::{
     Win32::{
-        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
         System::JobObjects::IsProcessInJob,
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
@@ -92,6 +92,18 @@ impl Drop for SuspendedFixtureProcess {
 
 #[test]
 fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
+    observe_suspended_job_list_creation(false)
+}
+
+#[test]
+fn terminating_empty_job_does_not_seal_later_suspended_creation() -> Result<()> {
+    // Research-only negative authority witness: successful termination of an
+    // empty Job must not be mistaken for a durable native launch/revoke fence.
+    // The fixed system child stays suspended and is never allowed to execute.
+    observe_suspended_job_list_creation(true)
+}
+
+fn observe_suspended_job_list_creation(terminate_before_creation: bool) -> Result<()> {
     // A disposable Windows system program is used only as a suspended root.
     // No arbitrary project executable, network, or Git command is launched.
     let system_root = std::env::var_os("SystemRoot")
@@ -105,6 +117,10 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
 
     let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
     assert_eq!(job.active_processes()?, 0);
+    if terminate_before_creation {
+        job.terminate(73)?;
+        assert_eq!(job.active_processes()?, 0);
+    }
 
     // Attribute value must outlive AttributeList, which must outlive CreateProcessW.
     let job_handles = [job.raw()];
@@ -157,6 +173,13 @@ fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
         "root must already belong to the kernel Job"
     );
     assert_eq!(job.active_processes()?, 1);
+    // SAFETY: the retained original process handle remains open. No call to
+    // ResumeThread occurs in this fixture, even after the earlier Job kill.
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 0) },
+        WAIT_TIMEOUT,
+        "the newly associated suspended root must still be alive"
+    );
 
     // The test never resumes the root. A failed or delayed kernel termination
     // remains a test failure, not a fabricated Job-empty success.
