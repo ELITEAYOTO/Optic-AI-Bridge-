@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current stdio terminal observer correction — 30 October
+
+#434 main317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314 has CI41005173901 FAILED3/4:
+Windows physical9 passed, but Ubuntu EOF unit observer failed before its physical
+cases. Receipt6515367478 verified. Source permits a started blocking reaper to
+remove revoked original records; original_closed incorrectly required only
+Revoked tombstones. Actual CI states were not printed, so its exact interleaving
+is inferred, not directly observed. Local deterministic removal reproduces the
+observer bug. Test-only correction accepts strict terminal states for BOTH
+session/lease, preserves live/mixed negative guards and adds failure-state output.
+All12 stdio tests/app Clippy pass. Require exact-head/main evidence. No production
+cleanup change or startup fix. [Contract](PHYSICAL_HOST_SHUTDOWN_PROOF.md). V1 NO-GO.
+
 ## Current prelaunch identity-stage diagnostics — 30 October
 
 #433 is merged at fc7f2b71352e7cee4938ca75907d769988426dd7, but independent

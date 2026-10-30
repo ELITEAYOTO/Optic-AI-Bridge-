@@ -1,5 +1,43 @@
 # Physical process signal to original stdio cleanup
 
+## Test-only original-authority observer after concurrent reaping
+
+#434 headf4c8ba429cc49aefdbad48de0958f46f5adbb6bc passed [PR41004466674](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41004466674)
+4/4 and applicable native preparation41004466593. Squash317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314
+has the same tree. Independent [main41005173901](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41005173901)
+FAILED3/4: Windows job123898328162 passed complete schema7 Windows9, including
+native expiry10094ms/live input/exact inactive launch refusal; Ubuntu job123898328117
+failed stdio_eof_revokes_original_session_independent_of_renewal_mode with
+supervised=false, before Unix physical cases. [Receipt6515367478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6515367478)
+remains preserved. The CI assertion printed only a boolean; actual registry
+results/interleaving were not captured and must not be invented.
+
+The test helper original_closed required both originals to return Revoked.
+The real lifecycle permits a started spawn_blocking reaper to outlive supervisor
+cancellation and physically remove already-revoked state after quiescence.
+Removal orders process history, leases, then session. A deterministic local test
+creates real registries, checks live=false, revokes both originals, checks closed,
+physically reaps them, asserts UnknownSession/UnknownLease, then checks closed.
+Before the fix this ONE selected test FAILED at the final observer assertion;
+no live process or source behavior changed. The initial unqualified exact filter
+matched zero tests and is excluded from reproduction evidence.
+
+The test-only predicate now accepts only Revoked OR UnknownSession for the
+known-provisioned original session AND Revoked OR UnknownLease for its original
+lease. It does not accept live, expired, wrong-owner or unavailable states.
+Two additional real-registry tests reject each mixed live/revoked pair and retain
+other-session liveness. Existing counted-admission/drain assertions are unchanged.
+EOF failures print both current result classes (without grant/identity details).
+All12 stdio tests pass after the fix, app all-target/all-feature Clippy and fmt
+pass. This repairs a proven observer bug; exact CI interleaving is still inferred,
+not a claim that production EOF cleanup had failed or was changed.
+
+No production runtime, renewal/drain, authority, deadline, physical9/4 case or
+no-retry change. Require exact-head and independent-main evidence; preserve both
+older startup failures. The prelaunch startup stall remains unproved at syscall
+level despite new fixed diagnostics. No native Git, held-admission/global fence,
+quota/profile/security/installed-platform acceptance or V1 GO; no release.
+
 ## Prelaunch startup failure and unfinished identity stages — 30 October
 
 #433 finalbfcf8f902d5c8f3752bb4af6e1160ac1bef1ac4f passed [PR CI41002570074](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41002570074)

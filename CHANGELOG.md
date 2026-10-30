@@ -1,5 +1,17 @@
 # Changelog
 
+## 30 October — stdio terminal-authority test observer
+
+The test-only original_closed helper now accepts each original authority as
+revoked or physically removed, matching the existing concurrent reaper. It still
+requires BOTH authorities terminal and rejects live, expired or unavailable
+states. EOF failures print session/lease result classes rather than a misleading
+active-only label. Three registry-based regressions cover actual terminal removal
+and both mixed live/revoked cases. A deterministic local test failed before the
+helper fix; all12 stdio tests and app Clippy pass afterward. No production code,
+cleanup/renewal, deadline, grant or release behavior changes. Startup and V1
+acceptance remain open; no blind rerun or hidden original failure.
+
 ## 30 October — unfinished executable identity capture diagnostics
 
 OPTIC_STARTUP_TIMING=1 now emits fixed capture-started, path-checked, pin-opened
