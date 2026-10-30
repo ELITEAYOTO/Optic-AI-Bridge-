@@ -1461,6 +1461,7 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
             .unwrap()
             .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
             .unwrap();
+        assert_eq!(owner.watchdog_termination_result(), None);
         owner.arm_original_watchdog(&fixture.trusted()).unwrap();
         assert!(matches!(
             owner.arm_original_watchdog(&fixture.trusted()),
@@ -1499,6 +1500,7 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
         }
         let observed = owner.watchdog_stop_observed();
         let expired = owner.watchdog_deadline_expired();
+        let termination = owner.watchdog_termination_result();
         let empty = owner.native_active_processes().unwrap() == 0;
         assert_eq!(transport.active_requests(), 1);
         assert_eq!(
@@ -1516,6 +1518,7 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
             !expired,
             "revocation proof must precede the five-second deadline"
         );
+        assert_eq!(termination, Some(Ok(())), "actual native call for {source}");
         assert!(empty, "no child is created by watchdog wiring");
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(
@@ -1690,6 +1693,7 @@ fn original_watchdog_expires_on_retained_service_clock_without_caller_polling() 
     }
     assert!(owner.watchdog_stop_observed());
     assert!(owner.watchdog_deadline_expired());
+    assert_eq!(owner.watchdog_termination_result(), Some(Ok(())));
     assert!(matches!(
         owner.arm_original_watchdog(&fixture.trusted()),
         Err(crate::NativeGitStatusSnapshotError::StopRequired)

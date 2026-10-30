@@ -517,6 +517,15 @@ impl LeaseObservedNativeGitStatusCustody {
         self.session_owner.unstarted.native.watchdog_stop_observed()
     }
 
+    /// Completed original-Job termination attempt only. Preserve pending or
+    /// failed outcomes; neither worker completion nor success is quiescence.
+    pub(crate) fn watchdog_termination_result(&self) -> Option<std::result::Result<(), i32>> {
+        self.session_owner
+            .unstarted
+            .native
+            .watchdog_termination_result()
+    }
+
     pub(crate) fn watchdog_deadline_expired(&self) -> bool {
         self.session_owner
             .unstarted

@@ -462,6 +462,66 @@ mod precreated_native_read_tests {
     }
 
     #[test]
+    fn watchdog_retains_real_access_denied_for_stop_and_expiry() {
+        use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
+        // Win32 JOB_OBJECT_QUERY, from SystemServices in the SDK. Keep this
+        // fixture-only mask local rather than enabling another binding feature.
+        const JOB_OBJECT_QUERY: u32 = 0x0004;
+
+        for stop_requested in [true, false] {
+            let job = OwnedJob::create(1, 64 * 1024 * 1024, 10).expect("original empty Job");
+            let mut duplicate = HANDLE::default();
+            // SAFETY: duplicate our live fixture Job into this process, without
+            // inheritance and with QUERY only. No ACL or original right changes.
+            unsafe {
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    job.raw(),
+                    GetCurrentProcess(),
+                    &mut duplicate,
+                    JOB_OBJECT_QUERY,
+                    false,
+                    Default::default(),
+                )
+            }
+            .expect("query-only Job duplicate");
+            // Exactly this fresh handle is owned; retain the full original Job
+            // separately so failure/drop cannot destroy its kernel object.
+            let query_only = OwnedJob(duplicate);
+            assert_eq!(query_only.active_processes().expect("QUERY right"), 0);
+            let stop = Arc::new(AtomicBool::new(stop_requested));
+            let deadline = NativeJobDeadline::new(
+                &query_only,
+                if stop_requested { 30_000 } else { 25 },
+                vec![stop],
+            )
+            .expect("duplicate original restricted handle into real worker");
+            let bound = std::time::Instant::now() + Duration::from_secs(5);
+            while !deadline.worker.as_ref().unwrap().is_finished() {
+                assert!(
+                    std::time::Instant::now() < bound,
+                    "denied worker must return"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let denied = windows::core::HRESULT::from_win32(ERROR_ACCESS_DENIED.0).0;
+            assert_eq!(deadline.termination_result.get(), Some(&Err(denied)));
+            assert_eq!(deadline.expired.load(Ordering::Acquire), !stop_requested);
+            assert_eq!(job.active_processes().expect("original Job still owned"), 0);
+            // The denied receipt is retained after joining/cancelling the worker.
+            let receipt = Arc::clone(&deadline.termination_result);
+            drop(deadline);
+            assert_eq!(receipt.get(), Some(&Err(denied)));
+            assert_eq!(
+                query_only
+                    .active_processes()
+                    .expect("restricted owner retained"),
+                0
+            );
+        }
+    }
+
+    #[test]
     fn cancelled_unstarted_watchdog_does_not_publish_termination_success() {
         let job = OwnedJob::create(1, 64 * 1024 * 1024, 10).expect("original Job");
         let deadline = NativeJobDeadline::new(&job, 30_000, Vec::new()).expect("watchdog");
