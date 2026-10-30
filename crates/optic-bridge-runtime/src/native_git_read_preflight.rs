@@ -309,6 +309,9 @@ pub enum NativeGitReadAdmissionError {
 /// Runtime-owned dependencies; never populate from untrusted MCP parameters.
 /// Grouped to keep the admitted preflight interface explicit and reviewable.
 pub struct NativeGitReadTrustedContext<'a> {
+    /// Required by service-clock native preparation; raw legacy preflight stays inert.
+    #[cfg(windows)]
+    pub host_stop: Option<&'a crate::HostStopWatch>,
     pub sessions: &'a Arc<SessionRegistry>,
     pub trusted_session: &'a SessionHandle,
     pub task_leases: &'a TaskLeaseRegistry,
@@ -584,6 +587,8 @@ mod tests {
             let guard = transport_guard();
             let request_permit = guard.begin_execution(now).expect("bounded test request");
             let trusted = NativeGitReadTrustedContext {
+                #[cfg(windows)]
+                host_stop: None,
                 sessions: &self.sessions,
                 trusted_session,
                 task_leases: &self.registry,
@@ -700,6 +705,8 @@ mod tests {
         let now = MonotonicTime::from_millis(10);
         let permit = guard.begin_execution(now).expect("worker transport");
         let trusted = NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: None,
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
             task_leases: &fixture.registry,
@@ -752,6 +759,8 @@ mod tests {
             .begin_execution(now)
             .expect("reserve transport capacity");
         let trusted = NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: None,
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
             task_leases: &fixture.registry,
@@ -794,6 +803,8 @@ mod tests {
         let start = MonotonicTime::from_millis(10);
         let permit = guard.begin_execution(start).expect("reserve transport");
         let trusted = NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: None,
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
             task_leases: &fixture.registry,
@@ -834,6 +845,8 @@ mod tests {
             .begin_owned_admission(&fixture.grant.handle, now)
             .expect("worker admission");
         let trusted = NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: None,
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
             task_leases: &fixture.registry,
@@ -888,6 +901,8 @@ mod tests {
             .begin_owned_admission(&fixture.grant.handle, now)
             .expect("foreign owned admission");
         let trusted = NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: None,
             sessions: &fixture.sessions,
             trusted_session: &fixture.grant.handle,
             task_leases: &fixture.registry,

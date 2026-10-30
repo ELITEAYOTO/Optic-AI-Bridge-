@@ -1,5 +1,45 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 30 October — original host-stop source binding
+
+[ADR-0039](../decisions/ADR-0039-ORIGINAL-HOST-STOP-PROVENANCE.md) defines the
+new bounded cancellation contract. Main creates one noncloneable HostStopSource
+before startup. The actual until_host_shutdown path wraps both awaited peers so
+success/error completion publishes irreversible stop BEFORE returning to select
+and dropping the losing future. Source Drop also publishes; watch clones cannot
+reset it or change its exact original Arc identity. This does not handle process
+abort or create a new signal listener.
+
+NativeGitReadTrustedContext can carry a read-only host watch, never an MCP
+parameter. Service-clock native status preparation REQUIRES a live watch,
+retains the original identity and rechecks stop after existing preparation IO.
+Original native snapshots/arm reject missing/foreign context hosts. Stop remains
+attached after construction of another live source. Raw logical preparation is
+unchanged/inert, keeps no host binding and cannot arm the existing watchdog.
+The worker now receives exactly four original signals: session, TaskLease, Job,
+host; original absolute clock horizon and existing watchdog ceiling are unchanged.
+
+Local evidence: two real shared-source tests (irreversible stop, clone/foreign
+identity and owner Drop), thirteen stdio tests including a four-way peer-Drop
+observer covering host/service success/error BEFORE cancellation, and28 native
+owner tests. Native preparation rejects missing/closed host and releases no-child
+permits; foreign/omitted host is rejected after preparation while counted resources
+remain1 until safe no-child drop; original host stop cannot be reset. The existing
+independent original-stop test now covers host in addition to session, lease-ID
+replacement and Job; it requires actual native termination success, no deadline
+expiry, empty Job and original capacity retained until owner drop. All native
+fixtures still use inert synthetic executable bytes and create NO child.
+
+Limits: no native MCP preparation/launch is wired to the app watch yet because
+that launcher is disabled. Main source publication and inert native binding are
+separately verified components; do not present them as live GitRead termination.
+This is not the final shared session/lease/policy/host create/resume issuer,
+uncertain syscall ownership/recovery or descendant EOF proof. No locks over IO,
+deadline reset, new native permission, protection change or release. Historical
+startup failures remain separate. Require exact-head ordinary/applicable native
+checks, review, authorized squash, independent main and factual323 receipt.
+Windows V1 NO-GO.
+
 ## 30 October — failed watchdog completion with an actual suspended root
 
 Extend the existing private Job-list fixture with explicit scenario variants,

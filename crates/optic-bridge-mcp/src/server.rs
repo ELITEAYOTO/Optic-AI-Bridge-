@@ -1751,6 +1751,8 @@ mod tests {
                     policy_epoch: admission.grant().policy_epoch,
                 };
                 let trusted = NativeGitReadTrustedContext {
+                    #[cfg(windows)]
+                    host_stop: None,
                     sessions: &server.sessions,
                     trusted_session: &server.session,
                     task_leases: &server.task_leases,

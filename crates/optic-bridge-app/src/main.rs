@@ -25,11 +25,11 @@ use optic_bridge_mcp::{BoundedJsonLineTransport, ReadonlyMcpServer};
 use optic_bridge_runtime::{
     ApprovalBroker, AuthorizedFileMutationService, AuthorizedGitIntegrationService, Clock,
     EnvironmentGrant, EnvironmentVariableClass, GitIntegrationAuthoritySet,
-    GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService, MutationAuthoritySet,
-    MutationAuthoritySpec, ProcessManager, ReadAuthoritySet, ReadAuthoritySpec, SessionGrantSpec,
-    SessionLifecycleError, SessionLifecycleManager, SessionRegistry, SessionRegistryError,
-    StdClock, TaskLeaseRegistry, TransactionalFileService, git_integration_resource_budget,
-    mutation_resource_budget, read_authority_resource_budget,
+    GitIntegrationAuthoritySpec, GitIntegrationService, GitReadService, HostStopSource,
+    MutationAuthoritySet, MutationAuthoritySpec, ProcessManager, ReadAuthoritySet,
+    ReadAuthoritySpec, SessionGrantSpec, SessionLifecycleError, SessionLifecycleManager,
+    SessionRegistry, SessionRegistryError, StdClock, TaskLeaseRegistry, TransactionalFileService,
+    git_integration_resource_budget, mutation_resource_budget, read_authority_resource_budget,
 };
 use rmcp::ServiceExt;
 
@@ -129,6 +129,7 @@ fn discover_isolation_launcher() -> Result<Option<PathBuf>, std::io::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let host_stop = HostStopSource::new();
     let startup_timing = StartupTiming::new();
     startup_timing.mark("entry");
     let args = AppArgs::parse()?;
@@ -424,7 +425,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "disabled"
         },
     );
-    let service_result = until_host_shutdown(async {
+    let service_result = until_host_shutdown(&host_stop, async {
         let service = initialize_before_original_session_expiry(
             server.serve(transport),
             clock.as_ref(),
@@ -481,6 +482,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 async fn until_host_shutdown(
+    host_stop: &HostStopSource,
     service: impl std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>>,
     shutdown: impl std::future::Future<Output = std::io::Result<()>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -488,6 +490,17 @@ async fn until_host_shutdown(
     // service progress. A ready stop wins a simultaneously ready service result.
     // Returning drops the service future; the caller still owns and drains the
     // original lifecycle/session rather than detaching counted admissions.
+    // Publish inside the selected future, BEFORE select drops its peer.
+    let service = async {
+        let result = service.await;
+        host_stop.request_stop();
+        result
+    };
+    let shutdown = async {
+        let result = shutdown.await;
+        host_stop.request_stop();
+        result
+    };
     tokio::select! {
         biased;
         result = shutdown => {

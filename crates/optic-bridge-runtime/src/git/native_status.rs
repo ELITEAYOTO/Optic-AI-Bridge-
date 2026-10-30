@@ -19,6 +19,8 @@ use crate::{
 /// registered guardian must retain it through real terminal OS/pipe proof.
 #[must_use = "native preparation must remain owned until proven terminal"]
 pub struct PreparedNativeGitStatus {
+    #[cfg(windows)]
+    host_stop: Option<crate::HostStopWatch>,
     // Only the service-clock constructor can establish this immutable binding.
     // The legacy logical-time preparation remains inert and cannot arm.
     #[cfg(windows)]
@@ -68,6 +70,14 @@ impl PreparedNativeGitStatus {
     /// Stop request only: false is never independent permission to spawn.
     #[must_use]
     pub fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
+        #[cfg(windows)]
+        if self
+            .host_stop
+            .as_ref()
+            .is_some_and(crate::HostStopWatch::is_stop_requested)
+        {
+            return true;
+        }
         self.admission.is_stop_required_at(now)
     }
 }
@@ -79,6 +89,9 @@ pub enum NativeGitStatusPreparationError {
     #[cfg(windows)]
     #[error("native Git status transport permit has missing or foreign clock provenance")]
     TransportClockMismatch,
+    #[cfg(windows)]
+    #[error("native Git status requires a live process-owned host stop source")]
+    HostStopRequired,
     #[cfg(windows)]
     #[error(
         "native Git status session issuance or admission has missing or foreign clock provenance"
@@ -106,6 +119,10 @@ impl GitReadService {
         envelope: &ActionEnvelope,
         clock: &crate::StdClock,
     ) -> Result<PreparedNativeGitStatus, NativeGitStatusPreparationError> {
+        let host = trusted
+            .host_stop
+            .filter(|watch| !watch.is_stop_requested())
+            .ok_or(NativeGitStatusPreparationError::HostStopRequired)?;
         if !owned.transport_belongs_to_clock(clock) {
             return Err(NativeGitStatusPreparationError::TransportClockMismatch);
         }
@@ -120,6 +137,10 @@ impl GitReadService {
             .deadline_instant(prepared.deadline())
             .filter(|until| *until > std::time::Instant::now())
             .ok_or(NativeGitReadAdmissionError::StopRequired)?;
+        if host.is_stop_requested() {
+            return Err(NativeGitStatusPreparationError::HostStopRequired);
+        }
+        prepared.host_stop = Some(host.clone());
         prepared.watchdog_clock = Some((clock.clone(), until));
         Ok(prepared)
     }
@@ -151,6 +172,8 @@ impl GitReadService {
             trusted, owned, envelope, repository, executable, now,
         )?;
         Ok(PreparedNativeGitStatus {
+            #[cfg(windows)]
+            host_stop: None,
             #[cfg(windows)]
             watchdog_clock: None,
             command,
@@ -311,6 +334,13 @@ impl PrecreatedNativeGitStatusCustody {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         let prepared = &self.registered.prepared;
+        if let Some(original) = prepared.host_stop.as_ref()
+            && !trusted
+                .host_stop
+                .is_some_and(|watch| original.same_source(watch))
+        {
+            return Err(NativeGitStatusSnapshotError::HostOriginMismatch);
+        }
         if &prepared.envelope.session != trusted.trusted_session {
             return Err(NativeGitStatusSnapshotError::WrongTrustedSession);
         }
@@ -504,6 +534,13 @@ impl LeaseObservedNativeGitStatusCustody {
             .admission
             .native_stop_signals();
         stops.push(unstarted.registered.record.stop_signal());
+        let host = unstarted
+            .registered
+            .prepared
+            .host_stop
+            .as_ref()
+            .ok_or(NativeGitStatusSnapshotError::HostOriginMismatch)?;
+        stops.push(host.stop_signal());
         unstarted.native.arm_watchdog_until(until, stops)?;
         // Revocation racing arm remains attached to the independent worker.
         // Failure is still no-child custody; callers must dispose it.
@@ -547,6 +584,8 @@ impl LeaseObservedNativeGitStatusCustody {
 #[cfg(windows)]
 #[derive(Debug, Error)]
 pub enum NativeGitStatusSnapshotError {
+    #[error("native owner host stop source is missing or foreign")]
+    HostOriginMismatch,
     #[error("native watchdog requires preparation on the original service clock")]
     ClockRequired,
     #[error("native watchdog could not be armed: {0}")]

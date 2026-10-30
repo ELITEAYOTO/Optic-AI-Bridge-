@@ -17,6 +17,10 @@ use crate::{
 };
 
 struct Fixture {
+    #[cfg(windows)]
+    host: crate::HostStopSource,
+    #[cfg(windows)]
+    host_watch: crate::HostStopWatch,
     root: PathBuf,
     repository: PathBuf,
     executable: PathBuf,
@@ -111,7 +115,15 @@ impl Fixture {
         };
         #[cfg(not(windows))]
         drop(lease);
+        #[cfg(windows)]
+        let host = crate::HostStopSource::new();
+        #[cfg(windows)]
+        let host_watch = host.watch();
         Self {
+            #[cfg(windows)]
+            host,
+            #[cfg(windows)]
+            host_watch,
             root,
             repository,
             executable,
@@ -137,6 +149,8 @@ impl Fixture {
 
     fn trusted(&self) -> NativeGitReadTrustedContext<'_> {
         NativeGitReadTrustedContext {
+            #[cfg(windows)]
+            host_stop: Some(&self.host_watch),
             sessions: &self.sessions,
             trusted_session: &self.envelope.session,
             task_leases: &self.leases,
@@ -720,6 +734,7 @@ fn prelaunch_snapshot_rejects_foreign_same_id_task_lease_and_retain_original_adm
         .register(fixture.lease.clone())
         .expect("independently pinned lease with identical opaque ID");
     let foreign_context = NativeGitReadTrustedContext {
+        host_stop: Some(&fixture.host_watch),
         sessions: &fixture.sessions,
         trusted_session: &fixture.envelope.session,
         task_leases: &foreign,
@@ -788,6 +803,7 @@ fn prelaunch_snapshot_rejects_foreign_session_registry_before_relooking_up_lease
         .expect("unstarted native custody");
     let foreign_sessions = Arc::new(SessionRegistry::new());
     let forged_context = NativeGitReadTrustedContext {
+        host_stop: Some(&fixture.host_watch),
         sessions: &foreign_sessions,
         trusted_session: &fixture.envelope.session,
         task_leases: &fixture.leases,
@@ -1422,7 +1438,7 @@ fn dual_receipt_session_close_after_lease_commit_drains_and_stops() {
 #[cfg(windows)]
 #[test]
 fn original_watchdog_observes_session_lease_generation_and_job_stops_without_child() {
-    for source in ["session", "lease-reused-id", "job"] {
+    for source in ["session", "lease-reused-id", "job", "host"] {
         let clock = crate::StdClock::new();
         let mut fixture = Fixture::new_on_clock(&clock);
         // Keep explicit revocation distinct from deadline expiry in this test.
@@ -1468,6 +1484,9 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
             Err(crate::NativeGitStatusSnapshotError::Watchdog(_))
         ));
         match source {
+            "host" => {
+                assert!(fixture.host.request_stop());
+            }
             "session" => {
                 fixture
                     .sessions
@@ -1828,4 +1847,109 @@ fn native_clock_preparation_rejects_foreign_and_untagged_lease_without_child() {
         assert_eq!(transport.active_requests(), 0);
         fixture.sessions.revoke(&fixture.envelope.session).unwrap();
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn original_host_is_required_before_clocked_preparation() {
+    for missing in [true, false] {
+        let clock = crate::StdClock::new();
+        let fixture = Fixture::new_on_clock(&clock);
+        let transport = guard(10_000);
+        if !missing {
+            fixture.host.request_stop();
+        }
+        let mut trusted = fixture.trusted();
+        if missing {
+            trusted.host_stop = None;
+        }
+        let result = fixture.service().prepare_native_status_on_clock(
+            &trusted,
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        );
+        assert!(matches!(
+            result,
+            Err(NativeGitStatusPreparationError::HostStopRequired)
+        ));
+        assert_eq!(
+            transport.active_requests(),
+            0,
+            "rejected no-child permit released"
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn original_host_cannot_be_substituted_or_omitted_after_preparation() {
+    let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let transport = guard(10_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let mut owner = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap()
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    let foreign = crate::HostStopSource::new();
+    let foreign_watch = foreign.watch();
+    let mut substituted = fixture.trusted();
+    substituted.host_stop = Some(&foreign_watch);
+    assert!(matches!(
+        owner.arm_original_watchdog(&substituted),
+        Err(crate::NativeGitStatusSnapshotError::HostOriginMismatch)
+    ));
+    substituted.host_stop = None;
+    assert!(matches!(
+        owner.arm_original_watchdog(&substituted),
+        Err(crate::NativeGitStatusSnapshotError::HostOriginMismatch)
+    ));
+    assert_eq!(owner.watchdog_termination_result(), None);
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        1
+    );
+    fixture.host.request_stop();
+    assert!(owner.is_stop_required_at(MonotonicTime::from_millis(12)));
+    substituted.host_stop = Some(&foreign_watch);
+    assert!(matches!(
+        owner.arm_original_watchdog(&substituted),
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+    ));
+    assert!(
+        !foreign_watch.is_stop_requested(),
+        "new source cannot reset original stop"
+    );
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
 }

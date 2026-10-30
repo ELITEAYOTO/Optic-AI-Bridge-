@@ -39,6 +39,7 @@ mod git_tree_write;
 #[path = "git/worktree.rs"]
 mod git_worktree;
 mod hardened_command;
+mod host_stop;
 #[path = "mutation/journaled.rs"]
 mod journaled_mutation;
 #[path = "mutation/atomic.rs"]
@@ -195,3 +196,5 @@ pub use task_lease_registry::{TaskLeaseRegistry, TaskLeaseRegistryError};
 pub use tool_profile_registry::{ToolProfileRegistry, ToolProfileRegistryError};
 pub use transactional_file::{BytePatch, TransactionalFileError, TransactionalFileService};
 pub use transport::{RequestPermit, TransportError, TransportGuard, TransportLimits};
+
+pub use host_stop::{HostStopSource, HostStopWatch};
