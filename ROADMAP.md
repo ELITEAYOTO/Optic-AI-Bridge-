@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 30 October — keep terminal cleanup observation race-correct
+
+Preserve main41005173901's Ubuntu EOF observer failure (Windows9 succeeded).
+Reproduce actual revocation followed by registry reaping, then fix the test to
+recognize both revoked tombstones and physical removal, independently for the
+original session AND lease. Reject live/mixed states and report actual states
+on future failure. Product cleanup, admission drainage and all deadlines stay
+unchanged. Require exact-head and independent-main checks; then continue held
+admitted IO/global launch fencing and startup/security/platform acceptance.
+[Owning evidence](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md). V1 NO-GO.
+
 ## 30 October — identify the prelaunch startup stall
 
 Preserve #433 main CI41003133144 and receipt6515093418: no Node launched, listener

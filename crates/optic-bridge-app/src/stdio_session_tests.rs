@@ -331,13 +331,28 @@ impl Fixture {
     }
 
     fn original_closed(&self) -> bool {
+        // A started blocking reaper can outlive supervisor cancellation and
+        // remove the already-revoked originals. Both authorities must still
+        // independently be terminal; active, expired or unavailable is not proof.
         matches!(
             self.sessions.get_active(&self.session, self.clock.now()),
-            Err(SessionRegistryError::Revoked)
+            Err(SessionRegistryError::Revoked | SessionRegistryError::UnknownSession)
         ) && matches!(
             self.leases
                 .get_active(&self.lease, &self.session, self.clock.now()),
-            Err(TaskLeaseRegistryError::Revoked)
+            Err(TaskLeaseRegistryError::Revoked | TaskLeaseRegistryError::UnknownLease)
+        )
+    }
+
+    fn original_state_description(&self) -> String {
+        format!(
+            "session={:?}, lease={:?}",
+            self.sessions
+                .get_active(&self.session, self.clock.now())
+                .map(|_| ()),
+            self.leases
+                .get_active(&self.lease, &self.session, self.clock.now())
+                .map(|_| ()),
         )
     }
 
@@ -402,10 +417,74 @@ async fn stdio_eof_revokes_original_session_independent_of_renewal_mode() {
         result.unwrap();
         assert!(
             fixture.original_closed(),
-            "EOF left original session/lease active; supervised={supervised}"
+            "EOF did not close both original authorities; supervised={supervised}; {}",
+            fixture.original_state_description(),
         );
         assert!(fixture.other_active());
     }
+}
+
+#[test]
+fn original_closed_observer_accepts_physically_reaped_originals() {
+    let fixture = Fixture::new();
+    assert!(
+        !fixture.original_closed(),
+        "live authority must not be terminal"
+    );
+    fixture.lifecycle.revoke(&fixture.session).unwrap();
+    assert!(fixture.original_closed(), "revoked originals are terminal");
+    assert_eq!(
+        fixture
+            .lifecycle
+            .reap_inactive(fixture.clock.now())
+            .unwrap(),
+        1
+    );
+    assert!(matches!(
+        fixture
+            .sessions
+            .get_active(&fixture.session, fixture.clock.now()),
+        Err(SessionRegistryError::UnknownSession)
+    ));
+    assert!(matches!(
+        fixture
+            .leases
+            .get_active(&fixture.lease, &fixture.session, fixture.clock.now()),
+        Err(TaskLeaseRegistryError::UnknownLease)
+    ));
+    assert!(
+        fixture.original_closed(),
+        "physical removal must not appear active"
+    );
+    assert!(fixture.other_active());
+}
+
+#[test]
+fn original_closed_observer_rejects_revoked_session_with_live_lease() {
+    let fixture = Fixture::new();
+    fixture.sessions.revoke(&fixture.session).unwrap();
+    assert!(
+        fixture
+            .leases
+            .get_active(&fixture.lease, &fixture.session, fixture.clock.now())
+            .is_ok()
+    );
+    assert!(!fixture.original_closed());
+    assert!(fixture.other_active());
+}
+
+#[test]
+fn original_closed_observer_rejects_revoked_lease_with_live_session() {
+    let fixture = Fixture::new();
+    fixture.leases.revoke(&fixture.lease).unwrap();
+    assert!(
+        fixture
+            .sessions
+            .get_active(&fixture.session, fixture.clock.now())
+            .is_ok()
+    );
+    assert!(!fixture.original_closed());
+    assert!(fixture.other_active());
 }
 
 #[tokio::test]

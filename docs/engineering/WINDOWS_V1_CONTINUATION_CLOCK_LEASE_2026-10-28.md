@@ -1,5 +1,23 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Current 30 October continuation — terminal observer race
+
+#434 headf4c8ba429cc49aefdbad48de0958f46f5adbb6bc/CI41004466674 passed4/4,
+applicable native preparation41004466593 passed, source/test-merge/squash trees
+equal82507febef50a46c3757af1cd4d8fe0e365fa0ac. Main317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314
+CI41005173901 FAILED3/4: Windows9 passed including real Node expiry/refusal;
+Ubuntu EOF original_closed unit assertion failed, Unix physical cases not reached.
+Receipt6515367478 verified. Observer recognized Revoked only; existing reaper
+may physically remove both originals. Actual CI states unavailable, but a local
+registry-removal regression deterministically fails before the test-only fix.
+The correction recognizes only Revoked/UnknownSession AND Revoked/UnknownLease,
+rejects live/mixed states, adds state diagnostics; all12 stdio tests/app Clippy
+pass. Product lifecycle/drain/renewal, deadlines and physical9/4 criteria unchanged.
+[Owning proof](PHYSICAL_HOST_SHUTDOWN_PROOF.md). Exact-head/review/squash/main/#323 still required.
+Startup failure41003133144 remains unproved at syscall level; held admissions,
+global launch fencing, native Git/resource/security/platform gates remain open.
+V1 NO-GO; no release or protection relaxation.
+
 ## Current 30 October continuation — prelaunch startup failure captured
 
 #433 headbfcf8f902d5c8f3752bb4af6e1160ac1bef1ac4f/CI41002570074 passed4/4,

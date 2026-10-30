@@ -1,5 +1,18 @@
 # Current project status
 
+## Windows V1 — terminal-state observer after concurrent reaping
+
+Baseline main317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314 has failed independent
+CI41005173901: Windows9 passed, Ubuntu stopped at the EOF original_closed test.
+That test accepted only Revoked tombstones, while a started blocking reaper can
+remove already-revoked originals. Deterministic local regression reproduces the
+false negative after actual registry removal. The test-only fix accepts strictly
+Revoked/UnknownSession AND Revoked/UnknownLease, rejects live/mixed states and
+prints current state diagnostics on EOF failure. No production cleanup change.
+All12 stdio tests and app Clippy pass; exact-head/main gates remain mandatory.
+[Evidence and limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Startup stall remains unproved at syscall level; Windows V1 NO-GO, no release.
+
 ## Windows V1 — locate unfinished prelaunch identity capture
 
 #433 mainfc7f2b71352e7cee4938ca75907d769988426dd7 has a FAILED independent
