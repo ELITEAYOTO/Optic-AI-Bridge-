@@ -1,4 +1,9 @@
-use std::{fs, io, path::Path, time::Instant};
+use std::{
+    fs,
+    io::{self, Read},
+    path::Path,
+    time::Instant,
+};
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -64,7 +69,20 @@ impl ProcessExecutableIdentity {
         let mut pin = open_identity_pin(Path::new(&canonical_path))?;
         let pin_done = started.elapsed();
         identity_capture_phase(timing_enabled, "pin-opened", &started);
-        let version = ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?;
+        let version = if timing_enabled {
+            ContentVersion::from_reader_bounded(
+                IdentityReadEvidence {
+                    reader: pin.file_mut(),
+                    started: &started,
+                    calls: 0,
+                    bytes: 0,
+                    next_sample: IDENTITY_READ_SAMPLE_BYTES,
+                },
+                max_bytes,
+            )?
+        } else {
+            ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?
+        };
         let total = started.elapsed();
         identity_capture_phase(timing_enabled, "hash-complete", &started);
         if timing_enabled {
@@ -105,6 +123,65 @@ impl ProcessExecutableIdentity {
             return Err(ProcessAuthorityError::ExecutableIdentityChanged);
         }
         Ok(())
+    }
+}
+
+// Bounded opt-in metadata only: first two reads, then one pair per16MiB,
+// plus the final EOF/error if unsampled. Under the512MiB+1 identity ceiling
+// this is at most70 records, independent of the number of short reads.
+const IDENTITY_READ_SAMPLE_BYTES: u64 = 16 * 1024 * 1024;
+
+struct IdentityReadEvidence<'a, R> {
+    reader: R,
+    started: &'a Instant,
+    calls: u64,
+    bytes: u64,
+    next_sample: u64,
+}
+
+impl<R: Read> Read for IdentityReadEvidence<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let sample = self.calls < 2 || self.bytes >= self.next_sample;
+        if self.bytes >= self.next_sample {
+            self.next_sample = self.bytes.saturating_add(IDENTITY_READ_SAMPLE_BYTES);
+        }
+        self.calls += 1;
+        if sample {
+            eprintln!(
+                "OPTIC_PROCESS_IDENTITY_READ phase=read-started call={} observed_bytes={} elapsed_ms={}",
+                self.calls,
+                self.bytes,
+                self.started.elapsed().as_millis(),
+            );
+        }
+        // Exactly one original read, with the original buffer and error. The
+        // unchanged bounded core reader remains responsible for hashing/limits.
+        let result = self.reader.read(buffer);
+        match &result {
+            Ok(read) => {
+                self.bytes = self.bytes.saturating_add(*read as u64);
+                if sample || *read == 0 {
+                    eprintln!(
+                        "OPTIC_PROCESS_IDENTITY_READ phase=read-returned call={} observed_bytes={} read_bytes={} elapsed_ms={}",
+                        self.calls,
+                        self.bytes,
+                        read,
+                        self.started.elapsed().as_millis(),
+                    );
+                }
+            }
+            Err(error) => {
+                // Error KIND only, never a path-bearing native error message.
+                eprintln!(
+                    "OPTIC_PROCESS_IDENTITY_READ phase=read-error call={} observed_bytes={} kind={:?} elapsed_ms={}",
+                    self.calls,
+                    self.bytes,
+                    error.kind(),
+                    self.started.elapsed().as_millis(),
+                );
+            }
+        }
+        result
     }
 }
 
@@ -218,6 +295,35 @@ mod tests {
     use std::{env, fs};
 
     use super::*;
+
+    #[test]
+    fn identity_read_evidence_preserves_digest_and_exact_limit_across_milestone() {
+        let data = vec![0x5a; IDENTITY_READ_SAMPLE_BYTES as usize + 17];
+        let started = Instant::now();
+        let mut reader = IdentityReadEvidence {
+            reader: io::Cursor::new(&data),
+            started: &started,
+            calls: 0,
+            bytes: 0,
+            next_sample: IDENTITY_READ_SAMPLE_BYTES,
+        };
+        let version = ContentVersion::from_reader_bounded(&mut reader, data.len() as u64).unwrap();
+        assert_eq!(version, ContentVersion::from_bytes(&data));
+        assert_eq!(reader.bytes, reader.reader.position());
+        let mut limited = IdentityReadEvidence {
+            reader: io::Cursor::new(&data),
+            started: &started,
+            calls: 0,
+            bytes: 0,
+            next_sample: IDENTITY_READ_SAMPLE_BYTES,
+        };
+        assert!(matches!(
+            ContentVersion::from_reader_bounded(&mut limited, IDENTITY_READ_SAMPLE_BYTES),
+            Err(ContentVersionReadError::LimitExceeded)
+        ));
+        assert_eq!(limited.reader.position(), IDENTITY_READ_SAMPLE_BYTES + 1);
+        assert_eq!(limited.bytes, limited.reader.position());
+    }
 
     fn workspace(label: &str) -> std::path::PathBuf {
         let root = env::temp_dir().join(format!(

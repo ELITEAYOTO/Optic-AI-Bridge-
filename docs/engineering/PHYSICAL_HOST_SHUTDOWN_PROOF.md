@@ -1,5 +1,49 @@
 # Physical process signal to original stdio cleanup
 
+## 30 October — first pin-opened startup failure; bounded identity read evidence
+
+Host-binding PR443 tested headfc278af9/CI41122187026 passed4/4, applicable
+preparation41122187106 passed; squash main46e4965 tree252b552f matches exactly.
+Independent [push/main41123153308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41123153308)
+FAILED3/4 attempt1. Ordinary Windows124294700173 passes the new host/app/native
+binding tests and17 offline observer tests, then completes only six physical
+cases. Active-job worker fails before listener/ownership handshake; later cases
+are NOT reached. Ubuntu124294700772 passes complete4 characterizations.
+[Preserved receipt6532906159](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6532906159).
+
+Original bounded stderr reaches process-leases-started, capture-started,
+path-checked and pin-opened at0/1ms, but never hash-complete before the10s listener
+registration deadline. No Node process_start occurred. The remaining source
+interval contains ContentVersion::from_reader_bounded reader calls, BLAKE3
+updates/finalization and scheduling; neither blocked syscall, hashing CPU,
+Defender nor a host-binding regression/fix is established. Do not erase this
+failure with a later green source or request an unchanged-SHA rerun.
+
+The follow-up retains the exact pinned file and unchanged bounded core hasher.
+Only existing OPTIC_STARTUP_TIMING=1 wraps its Read calls: log read-started and
+read-returned for the first two calls, then at each16MiB milestone, plus final
+EOF/error even if unsampled. At most70 metadata records under the existing
+512MiB+1 consumption ceiling, independent of arbitrarily short reads. Report
+call ordinal, observed/read byte counts, elapsed duration and error KIND only;
+no path, raw error message, content or hash. Unselected calls remain invisible;
+these records are observations, not a sampled thread stack or universal latency
+bound. Logging/scheduling and gaps between reads/hash work can still affect timing.
+No helper worker, cache, skipped read/hash, pin/share change or timeout increase.
+
+With tracing disabled the original direct reader remains. One exact original
+read is forwarded per wrapper call, preserving its buffer, result and error;
+core still enforces full hashing and max+1 rejection. Existing identity/change/
+pin/limit tests run with the opt-in enabled. A synthetic16MiB+17 streaming test
+crosses a sampling milestone, requires the same full digest and confirms ceiling
+rejection consumes exactly limit+1. This tests wrapper semantics; no new fixture
+claims an actual stuck kernel read. Physical supervisor remains hosted-only.
+
+Host-count work remains unimplemented/deferred. Native Git stays disabled;
+shared launch/revoke ordering, actual held service admissions/uncertainty/resource
+release, security/platform and startup gates remain. Require exact-head applicable
+checks, review, squash, independent main and new factual receipt before claiming
+this diagnostic increment integrated. Windows V1 NO-GO; no release/tag.
+
 ## Supplemental component — counted worker with OS-pipe EOF (#438)
 
 This test is not a new physical supervisor case and does not change schema8's

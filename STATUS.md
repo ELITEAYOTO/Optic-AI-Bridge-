@@ -1,5 +1,16 @@
 # Current project status
 
+## 30 October — preserve first pin-opened startup failure and bounded read progress
+
+After host-stop binding, independent main41123153308 FAILED Windows active-job
+before listener/ownership and before Node launch: six earlier cases pass, last
+original identity phase pin-opened, no hash-complete within existing10s. New
+host tests pass; no read-call/CPU/scheduler cause is established. Opt-in identity
+read milestones now report the first two calls, then16MiB samples and EOF/error
+metadata, at most70 records under the unchanged512MiB+1 read ceiling. Full core
+hashing/pins/deadlines unchanged; this is evidence, not a startup fix. V1 NO-GO.
+[Owning startup proof](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
 ## 30 October — bind original process-owned host stop
 
 Trusted startup now owns an irreversible host-stop source, published on actual
