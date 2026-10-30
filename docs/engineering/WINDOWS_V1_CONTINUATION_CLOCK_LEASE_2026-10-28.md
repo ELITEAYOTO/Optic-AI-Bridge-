@@ -1,5 +1,20 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — counted worker owns unfinished real pipe read (#438)
+
+New component evidence uses the actual generic MCP admitted blocking worker,
+original session/lease/transport and a one-slot governor. After async waiter
+abort/helper timeout, both stops publish but drainage/capacity remain held until
+the EXTERNAL fixture peer closes its sole writer and Read returns physical EOF0.
+Then counts reclaim and original reap leaves the other session/lease active.
+This is a fixed-logical-clock component test, not live fs_read/host-signal/stdio,
+production read cancellation, service horizon/renewal or native Git acceptance.
+[Detailed scope](PHYSICAL_HOST_SHUTDOWN_PROOF.md). Schema8 Windows10/Unix4 unchanged.
+First CI41058447719 FAILED Windows Node probe before this test, cause UNKNOWN;
+early focused exact step plus unchanged full gate now gives independent own evidence.
+Source d092cb84/CI41059298644 SUCCESS4/4 attempt1: focused1/1 plus workspace pass
+both platforms. Require final-head and main receipts; no startup fix or release.
+
 ## 30 October — combine active Node and unread Bridge output (#437)
 
 Schema8 adds active-job-stalled-stdout, preserving all nine earlier Windows/four

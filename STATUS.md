@@ -1,5 +1,24 @@
 # Current project status
 
+## 30 October — counted MCP worker with real pipe EOF (#438)
+
+A generic admitted-worker component test now replaces the synthetic pause with
+an unfinished OS-pipe read. Across async-waiter cancellation and the helper's own
+timeout, original session/lease stops publish while admission drainage, transport
+count1 and the sole blocking slot remain retained. Only the fixture peer closing
+the writer supplies EOF0; then revocation drains, capacity returns, new original
+requests are denied and reaping preserves another live session/lease.
+
+Source `d092cb846ca76bde4468e74cff5e07ec88cb8935`,
+[CI41059298644](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41059298644)
+SUCCESS4/4 attempt1: exactly one focused test passes on each OS and passes again
+in the full workspace; existing schema8 Windows10/Unix4 remain complete.
+First3e9c9ab/CI41058447719 FAILED3/4 on an earlier unchanged Windows Node probe,
+new MCP test not reached there; later green is not a startup fix.
+[Owning method and limitations](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+No production code change, public fs_read/host-signal/cancellation/native Git or
+installed-platform acceptance is implied. Windows V1 NO-GO; no release/tag.
+
 ## 30 October — active Node with unread stdout (#437)
 
 Schema8 adds a hosted Windows conjunction of two previous proofs: an actual

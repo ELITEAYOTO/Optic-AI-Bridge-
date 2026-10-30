@@ -1,5 +1,20 @@
 # GitHub-only project handoff
 
+## Current counted-worker real-pipe evidence — 30 October (#438)
+
+Baseline4371f69fceb has independent CI41052483408 SUCCESS4/4. New component test
+keeps original admitted-worker/session/lease/transport/blocking capacity across
+waiter abort/helper timeout while real pipe Read is unfinished; an external peer
+supplies EOF0 before reclamation and safe original reaping. Another owner stays
+active. This is not public fs_read/host/stdio/production IO-cancellation proof.
+[Owning scope](PHYSICAL_HOST_SHUTDOWN_PROOF.md) retains the fixed fixture clock,
+no sampled kernel-stack claim and unchanged schema8 Windows10/Unix4 gates.
+First3e9c9ab/CI41058447719 FAILED Windows Node probe before MCP test; cause UNKNOWN.
+Early focused exact step preserves own evidence without replacing the full gate.
+Source d092cb84/CI41059298644 SUCCESS4/4 attempt1, focused1/1 plus workspace pass
+on both OS. No product/isolation/budget change or startup fix. Require final exact
+head/review/squash/independent-main/#323 receipts. V1 NO-GO, no release/native Git.
+
 ## Current combined active-job/unread-output proof — 30 October (#437)
 
 Baseline436bcbf5fde9313ed48e405f8363711b5131c1db8df has independent
