@@ -1,5 +1,16 @@
 # GitHub-only project handoff
 
+## 30 October — retain the native watchdog termination result
+
+The inert native Job custody now retains the completed TerminateJobObject
+result: absent before an attempt returns, success only after native success,
+or the original Windows HRESULT on failure. Cancellation without a stop or
+expiry publishes no termination receipt. Deadline observation and worker
+completion remain separate; even successful termination is neither root exit,
+Job-empty, pipe EOF nor future launch closure (#439). No native Git activation.
+Hosted exact-head and independent-main validation remain required. Windows V1
+**NO-GO**. [Owning authority audit](ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## Current native boundary prerequisite — 30 October (#439)
 
 Baseline4383363d5c has independent CI41061196369 SUCCESS4/4. New Windows fixture

@@ -8,7 +8,7 @@ use std::{
     pin::Pin,
     process::ExitStatus,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -346,6 +346,17 @@ impl PrecreatedNativeReadCustody {
             .is_some_and(std::thread::JoinHandle::is_finished)
     }
 
+    /// Exact completed TerminateJobObject attempt on the original Job. None
+    /// means no result has been published (including an unarmed watchdog).
+    /// Err retains the Windows HRESULT without converting it into success.
+    /// Even Ok is NOT root exit, Job-empty, pipe EOF or future launch closure.
+    #[must_use]
+    pub fn watchdog_termination_result(&self) -> Option<std::result::Result<(), i32>> {
+        self.deadline
+            .as_ref()
+            .and_then(|deadline| deadline.termination_result.get().copied())
+    }
+
     /// The watchdog's deadline flag is a timeout observation, not a Job-empty,
     /// root-exit, pipe-EOF or successful TerminateJobObject receipt.
     #[must_use]
@@ -399,6 +410,7 @@ mod precreated_native_read_tests {
             Err(ref error) if error.kind() == ErrorKind::InvalidInput
         ));
         assert!(!owned.watchdog_deadline_expired());
+        assert_eq!(owned.watchdog_termination_result(), None);
         assert_eq!(owned.active_processes().expect("real Job accounting"), 0);
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -420,7 +432,43 @@ mod precreated_native_read_tests {
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+        while !owned.watchdog_stop_observed() {
+            assert!(std::time::Instant::now() < until, "watchdog did not return");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(owned.watchdog_termination_result(), Some(Ok(())));
         assert_eq!(owned.active_processes().expect("real Job accounting"), 0);
+    }
+
+    #[test]
+    fn original_stop_retains_completed_job_termination_result() {
+        let limits = LimitedJobObject::new(1, 64 * 1024 * 1024, 10).expect("limits");
+        let mut owned = PrecreatedNativeReadCustody::new(limits).expect("original Job");
+        let stop = Arc::new(AtomicBool::new(true));
+        owned
+            .arm_watchdog(30_000, vec![stop])
+            .expect("original stop");
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while !owned.watchdog_stop_observed() {
+            assert!(
+                std::time::Instant::now() < until,
+                "stop worker did not return"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!owned.watchdog_deadline_expired());
+        assert_eq!(owned.watchdog_termination_result(), Some(Ok(())));
+        assert_eq!(owned.active_processes().expect("separate Job query"), 0);
+    }
+
+    #[test]
+    fn cancelled_unstarted_watchdog_does_not_publish_termination_success() {
+        let job = OwnedJob::create(1, 64 * 1024 * 1024, 10).expect("original Job");
+        let deadline = NativeJobDeadline::new(&job, 30_000, Vec::new()).expect("watchdog");
+        let receipt = Arc::clone(&deadline.termination_result);
+        drop(deadline); // cancel and join while the horizon is still future
+        assert_eq!(receipt.get(), None);
+        assert_eq!(job.active_processes().expect("separate Job query"), 0);
     }
 }
 
@@ -537,6 +585,7 @@ struct NativeJobDeadline {
     cancel: Option<mpsc::SyncSender<()>>,
     worker: Option<std::thread::JoinHandle<()>>,
     expired: Arc<AtomicBool>,
+    termination_result: Arc<OnceLock<std::result::Result<(), i32>>>,
 }
 impl NativeJobDeadline {
     fn new(job: &OwnedJob, timeout_ms: u32, stop_flags: Vec<Arc<AtomicBool>>) -> Result<Self> {
@@ -571,6 +620,8 @@ impl NativeJobDeadline {
         let (cancel, receive) = mpsc::sync_channel(1);
         let expired = Arc::new(AtomicBool::new(false));
         let observed = Arc::clone(&expired);
+        let termination_result = Arc::new(OnceLock::new());
+        let receipt = Arc::clone(&termination_result);
         let worker = std::thread::Builder::new()
             .name("optic-job-deadline".into())
             .spawn(move || {
@@ -582,7 +633,12 @@ impl NativeJobDeadline {
                         }
                         // SAFETY: this thread owns the duplicate of this exact kernel
                         // job. It takes no PID and performs no file/profile cleanup.
-                        let _ = unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) };
+                        let result =
+                            unsafe { TerminateJobObject(HANDLE(handle.as_raw_handle()), 1) }
+                                .map_err(|error| error.code().0);
+                        // Publish only after the native call returned. A deadline
+                        // flag or finished worker is not a termination receipt.
+                        let _ = receipt.set(result);
                         break;
                     }
                     let remaining = until.saturating_duration_since(std::time::Instant::now());
@@ -596,6 +652,7 @@ impl NativeJobDeadline {
             cancel: Some(cancel),
             worker: Some(worker),
             expired,
+            termination_result,
         })
     }
 }
