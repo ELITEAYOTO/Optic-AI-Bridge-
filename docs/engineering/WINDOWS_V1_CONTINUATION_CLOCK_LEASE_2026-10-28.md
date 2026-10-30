@@ -1,5 +1,17 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — original runtime owner observes native termination outcome
+
+The inert native Git status owner now exposes the original watchdog's retained
+termination result without replacing pending/failure with success. A real
+query-only duplicate of an empty fixture Job proves ACCESS_DENIED is retained
+through both explicit stop and expiry, and remains readable after worker join.
+No ACL, original Job rights, grants, horizon or cleanup order changes. Original
+runtime session/lease-generation/Job-stop and deadline tests require the native
+success receipt while counted resources remain owned. Exact-head hosted checks
+and independent-main receipt remain required; Windows V1 **NO-GO**.
+[Owning authority audit](ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## 30 October — retain the native watchdog termination result
 
 The inert native Job custody now retains the completed TerminateJobObject

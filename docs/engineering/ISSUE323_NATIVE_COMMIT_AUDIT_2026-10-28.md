@@ -1,5 +1,41 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 30 October — propagate the exact termination receipt and exercise native denial
+
+LeaseObservedNativeGitStatusCustody now forwards the retained original Job
+watchdog result: None is pending/unarmed/cancelled without an attempt; Ok or
+Err(HRESULT) describes the completed native call only. It neither consumes nor
+releases its registered record, original session admission, transport, pins,
+Job or streams. Existing original session/lease-reused-ID/Job-stop and absolute
+service-clock expiry fixtures additionally require actual native success.
+The stop fixture checks transport and registered Job counts remain1 before
+owner drop and return0 afterward. No live MCP native launcher is enabled.
+
+A new Windows no-child test duplicates a real bounded empty original Job with
+only JOB_OBJECT_QUERY (0x0004), noninheritable, without DUPLICATE_SAME_ACCESS.
+The real NativeJobDeadline duplicates THAT restricted handle, observes an
+already-published stop or its own25ms deadline, calls TerminateJobObject, returns
+and publishes the actual ACCESS_DENIED HRESULT. The receipt must remain Err
+after worker drop/join. Separate kernel queries through both original and
+query-only handles prove the same empty Job remains usable. This is a native
+access-right denial, not a mocked API, invalid handle, ACL change or product
+configuration. Microsoft's [Job Object Security and Access Rights](https://learn.microsoft.com/en-us/windows/win32/procthread/job-object-security-and-access-rights)
+requires JOB_OBJECT_TERMINATE for termination; the fixture deliberately withholds
+that right only from its own extra duplicate. Production duplication is unchanged.
+
+First local compilation failed because JOB_OBJECT_QUERY is exported under an
+unselected SystemServices binding feature. Preserve the log; the fixture uses
+the documented local mask without adding a feature/dependency. Five Windows
+focused tests pass after correction; hosted exact-head evidence still required.
+
+Limits: only empty Jobs are used. No active root survives a failed stop, no
+uncertain process accounting/recovery, worker panic/stalled native-call bound,
+shared host/policy/session/lease create-resume fence, descendant EOF or installed
+Windows matrix is proven. A completed worker may hold Err; a successful receipt
+still cannot authorize future creation (#439) or stand in for physical terminal
+proof. This increment exposes the distinction to the actual inert runtime owner;
+it does not make uncertain native Git execution safe. V1 NO-GO, no release.
+
 ## 30 October — distinguish watchdog completion from native termination result
 
 The existing watchdog discarded the Windows result of TerminateJobObject.
