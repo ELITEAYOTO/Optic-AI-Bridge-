@@ -1,5 +1,39 @@
 # Physical process signal to original stdio cleanup
 
+## Supplemental lifecycle regression — competing cleanup (#436)
+
+This is **not a new physical shutdown case**. The earlier audit conjectured an
+UnknownSession failure if another collector fully removes an inactive original
+between get_active and revoke. Full source inspection found that publication,
+revocation and final removal already tolerate missing records. No error fallback
+was added; no failing runtime reproduction or RED is claimed.
+
+The test `session_lifecycle::tests::reap_after_competing_cleanup_preserves_other_session_and_lease`
+uses real session/lease registries and the normal lifecycle manager. For each
+expired and explicitly revoked original, it observes inactivity, runs another
+collector to complete removal, then resumes the first collector's actual cleanup
+tail. The tail is privately factored without operation/order changes or a
+production test hook. Require the winner to remove the session and one lease,
+the resumed collector to return exactly the default report, original records to
+be absent, and another live session/lease to remain usable; active cleanup is
+still refused. No child process is created.
+
+This is a deterministic single-thread scheduled interleaving, not a natural
+scheduler race, parallel stress, a reaper waking during counted-admission drain,
+a quota/worktree/native-handle completion proof or a fix for earlier startup
+failures40940330506/41003133144. Existing schema7 Windows9/Unix4 physical gates and
+all original bounds remain unchanged. V1 NO-GO, no native Git/release activation.
+Exact-head and independent-main receipts belong to #436/#323; offline formatting
+alone is not behavioral evidence.
+
+First source candidate `7f4437bbbd1486e3486dc40e3264fff6622600e4` passed
+[CI41023248971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41023248971)
+4/4, attempt1, with the new test explicitly `ok` in both platform logs and
+complete schema7 Windows9/Unix4 reports. Applicable native preparation
+[41023249099](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41023249099)
+also passed on that exact head. These first-source results do not replace the
+final candidate and independent-main checks recorded in #436/#323.
+
 ## Test-only original-authority observer after concurrent reaping
 
 #434 headf4c8ba429cc49aefdbad48de0958f46f5adbb6bc passed [PR41004466674](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41004466674)
