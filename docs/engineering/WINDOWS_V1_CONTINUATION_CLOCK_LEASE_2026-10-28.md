@@ -1,5 +1,20 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — combine active Node and unread Bridge output (#437)
+
+Schema8 adds active-job-stalled-stdout, preserving all nine earlier Windows/four
+Unix cases. After original native image/token/Job/handle attestation, queue a fixed
+metadata batch without draining stdout and confirm Node remains alive; Ctrl+Break
+must yield Bridge exit1 and the same handle signaled within one existing5s window,
+with input/output reader open, ordered original cleanup/IO joins and normal Job reaping.
+First source997bd7333210128d4595fd057ac3a40bdc9afb52/CI41050193728 passed4/4
+attempt1, complete Windows10/Unix4 and17 observer tests. Require final-head and
+independent-main receipts, not reuse first-source success.
+[Contract/nonclaims](PHYSICAL_HOST_SHUTDOWN_PROOF.md): no runtime/generation or
+registry wait-policy change, sampled blocked-write/fullness, held-admission,
+uncertainty/resource/native Git/fence/platform or historical startup-fix claim.
+Windows V1 NO-GO, no release or protection relaxation.
+
 ## 30 October — competing-cleanup audit corrected (#436)
 
 The proposed inactive-observation/revoke error was contradicted by missing-record

@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current combined active-job/unread-output proof — 30 October (#437)
+
+Baseline436bcbf5fde9313ed48e405f8363711b5131c1db8df has independent
+CI41024581127 SUCCESS4/4. Schema8 adds a real isolated Node still running after
+Bridge stdout becomes queued/unread, then physical Ctrl+Break with both parent
+pipes open. The unchanged single5s gate covers root exit1 and retained native
+Node handle signal, with ordered cleanup/both joins and normal external Job empty.
+First997bd733/CI41050193728 passed4/4 attempt1, Windows10/Unix4 and17 observers.
+[Owning limits](PHYSICAL_HOST_SHUTDOWN_PROOF.md): queued output is not kernel-stack
+or strict fullness proof; held admissions/native Git remain explicitly unproved.
+No runtime/registry/error/generation/authority/budget change or startup fix.
+Require final exact-head/review/squash/independent main/#323 receipt. V1 NO-GO.
+
 ## Current competing-cleanup audit — 30 October (#436)
 
 Baseline main435dc199924690c54ab6be987f25e4e239ac8981477 has independent
