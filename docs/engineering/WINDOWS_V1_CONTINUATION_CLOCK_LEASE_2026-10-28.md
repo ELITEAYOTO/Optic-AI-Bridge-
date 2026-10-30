@@ -1,5 +1,22 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## Current 30 October continuation — prelaunch startup failure captured
+
+#433 headbfcf8f902d5c8f3752bb4af6e1160ac1bef1ac4f/CI41002570074 passed4/4,
+Windows9/Unix4 including actual original-session expiry and denied new start.
+Squashfc7f2b71352e7cee4938ca75907d769988426dd7 has identical tree, but its
+independent main41003133144 FAILED3/4. New bounded failure evidence shows listener
+registration timeout10s after read-authorities-provisioned (1ms), before process
+lease completion/server/listener and before Node launch. Expiry case not reached.
+Receipt6515093418 verified. Do not reuse the PR green as main acceptance.
+Next diagnostic increment records opt-in fixed path/pin/hash capture stages and
+process-lease entry; it does not skip any authority check, hash byte, pin or
+registry validation, increase a timeout, retry, or claim to fix the stall.
+Five targeted identity tests and Clippy pass. [Evidence](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Require exact-head/applicable checks/review/squash/independent main and #323 receipt.
+Held admissions, uncertain ownership, global launch fencing, native Git, security
+and installed Windows10/11 remain open; Windows V1 NO-GO, no release.
+
 ## 30 October continuation — original expiry with actual managed Node
 
 Latest verified baseline main01148008ce5a3b59c61961f6de0e6b98b691912c,

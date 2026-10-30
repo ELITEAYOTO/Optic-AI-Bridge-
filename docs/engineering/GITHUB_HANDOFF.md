@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current prelaunch identity-stage diagnostics — 30 October
+
+#433 is merged at fc7f2b71352e7cee4938ca75907d769988426dd7, but independent
+main41003133144 FAILED3/4 before Node launch. Read failure receipt6515093418.
+Last Bridge phase read-authorities-provisioned; worker exceeded10s waiting for
+host-shutdown-listening. The new original-expiry case was not reached on main.
+Next diagnostic-only increment adds fixed opt-in identity-capture stage markers
+and process-lease entry without changing validation/hashing/pins/deadlines.
+Five identity tests and app/runtime Clippy pass; exact-head/applicable-native and
+independent-main gates remain required. [Contract](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Do not classify a later green as a startup fix. No retry-to-green, native Git,
+protection relaxation or release; V1 NO-GO.
+
 ## Current original-session expiry increment — 30 October
 
 Baseline #432 main01148008ce5a3b59c61961f6de0e6b98b691912c has independent

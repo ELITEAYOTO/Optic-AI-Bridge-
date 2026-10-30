@@ -1,5 +1,17 @@
 # Current project status
 
+## Windows V1 — locate unfinished prelaunch identity capture
+
+#433 mainfc7f2b71352e7cee4938ca75907d769988426dd7 has a FAILED independent
+gate: CI41003133144 passed six Windows cases then timed out10s before OS listener
+registration. Bounded diagnostics end at read-authorities-provisioned (1ms),
+before process-lease completion and before any Node launch. The expiry case was
+not reached on main; PR evidence remains separate. Exact blocking operation is
+unproved. The next diagnostic increment adds opt-in fixed identity-capture stage
+records and process-lease entry, retaining all validation/pins/hashing/deadlines.
+Five targeted identity tests and app/runtime Clippy pass. [Evidence owner](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+V1 NO-GO; no startup fix, timeout increase, protection change or release claimed.
+
 ## Windows V1 — actual active Node on original session expiry
 
 Baseline main `01148008ce5a3b59c61961f6de0e6b98b691912c` has independent
