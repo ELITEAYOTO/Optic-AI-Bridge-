@@ -1,5 +1,37 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 30 October — failed watchdog completion with an actual suspended root
+
+Extend the existing private Job-list fixture with explicit scenario variants,
+preserving the original and preterminated-empty-Job cases. Two new cases create
+the same fixed system cmd.exe CREATE_SUSPENDED/CREATE_NO_WINDOW with kernel
+Job-list membership at creation, inherit no handles and never call ResumeThread.
+The original Job still has its existing one-process/256MiB/20%CPU limits.
+Before any failed stop, require actual membership, active1 and original root
+handle WAIT_TIMEOUT at zero wait.
+
+The actual NativeJobDeadline receives a QUERY-only noninheritable duplicate of
+that original Job, leaving the original full handle/ACL unchanged. Its real
+worker must finish after original stop or25ms expiry and retain ACCESS_DENIED.
+After joining/dropping that failed worker, require the same error receipt, both
+original/query-only kernel counts1 and the same original root handle still
+unsignaled. Thus a finished failed watchdog demonstrably is not root exit or
+Job-empty while actual native work exists. No mocked API or invalid handle.
+
+Only THEN use the trusted fixture's full original Job termination, require root
+handle signal within the existing5s wait and separately query kernel active0
+within the existing5s bound. Failure RAII remains a last-resort cleanup and
+cannot supply the passing observations. This is explicit external-fixture
+cleanup after failure, not implemented runtime uncertainty recovery. No root is
+resumed, no descendant or pipe EOF is observed, and no counted runtime owner is
+attached to this synthetic root. The earlier no-child runtime capacity proof
+and this real-root proof remain separate; do not compose them into live MCP
+acceptance. No product launch API, grant, timeout, retry, security protection or
+release/native Git activation changes. Local Clippy compiles all tests; actual
+new process execution is hosted Windows only. Require both new cases and both
+original cases in exact-head/main Windows logs, all applicable checks, review,
+authorized squash and independent-main receipt. Windows V1 NO-GO.
+
 ## 30 October — propagate the exact termination receipt and exercise native denial
 
 LeaseObservedNativeGitStatusCustody now forwards the retained original Job

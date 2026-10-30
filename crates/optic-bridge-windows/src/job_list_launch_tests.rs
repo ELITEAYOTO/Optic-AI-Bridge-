@@ -92,7 +92,7 @@ impl Drop for SuspendedFixtureProcess {
 
 #[test]
 fn suspended_root_is_in_configured_job_at_createprocess_return() -> Result<()> {
-    observe_suspended_job_list_creation(false)
+    observe_suspended_job_list_creation(SuspendedJobScenario::Original)
 }
 
 #[test]
@@ -100,10 +100,28 @@ fn terminating_empty_job_does_not_seal_later_suspended_creation() -> Result<()> 
     // Research-only negative authority witness: successful termination of an
     // empty Job must not be mistaken for a durable native launch/revoke fence.
     // The fixed system child stays suspended and is never allowed to execute.
-    observe_suspended_job_list_creation(true)
+    observe_suspended_job_list_creation(SuspendedJobScenario::TerminatedBeforeCreate)
 }
 
-fn observe_suspended_job_list_creation(terminate_before_creation: bool) -> Result<()> {
+#[test]
+fn denied_watchdog_stop_retains_live_suspended_root_and_nonempty_job() -> Result<()> {
+    observe_suspended_job_list_creation(SuspendedJobScenario::DeniedStop)
+}
+
+#[test]
+fn denied_watchdog_expiry_retains_live_suspended_root_and_nonempty_job() -> Result<()> {
+    observe_suspended_job_list_creation(SuspendedJobScenario::DeniedExpiry)
+}
+
+#[derive(Clone, Copy)]
+enum SuspendedJobScenario {
+    Original,
+    TerminatedBeforeCreate,
+    DeniedStop,
+    DeniedExpiry,
+}
+
+fn observe_suspended_job_list_creation(scenario: SuspendedJobScenario) -> Result<()> {
     // A disposable Windows system program is used only as a suspended root.
     // No arbitrary project executable, network, or Git command is launched.
     let system_root = std::env::var_os("SystemRoot")
@@ -117,7 +135,7 @@ fn observe_suspended_job_list_creation(terminate_before_creation: bool) -> Resul
 
     let job = OwnedJob::create(1, 256 * 1024 * 1024, 20)?;
     assert_eq!(job.active_processes()?, 0);
-    if terminate_before_creation {
+    if matches!(scenario, SuspendedJobScenario::TerminatedBeforeCreate) {
         job.terminate(73)?;
         assert_eq!(job.active_processes()?, 0);
     }
@@ -180,6 +198,61 @@ fn observe_suspended_job_list_creation(terminate_before_creation: bool) -> Resul
         WAIT_TIMEOUT,
         "the newly associated suspended root must still be alive"
     );
+
+    if matches!(
+        scenario,
+        SuspendedJobScenario::DeniedStop | SuspendedJobScenario::DeniedExpiry
+    ) {
+        use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
+        // Documented Win32 JOB_OBJECT_QUERY; fixture-only mask. The full
+        // original Job is still retained and its rights/ACL are never changed.
+        const JOB_OBJECT_QUERY: u32 = 0x0004;
+        let mut duplicate = HANDLE::default();
+        // SAFETY: duplicate our live original Job into this process with QUERY
+        // only and no inheritance. Ownership transfers exactly once below.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                job.raw(),
+                GetCurrentProcess(),
+                &mut duplicate,
+                JOB_OBJECT_QUERY,
+                false,
+                Default::default(),
+            )
+        }
+        .map_err(Error::other)?;
+        let query_only = OwnedJob(duplicate);
+        assert_eq!(query_only.active_processes()?, 1);
+        let stop_requested = matches!(scenario, SuspendedJobScenario::DeniedStop);
+        let watchdog = NativeJobDeadline::new(
+            &query_only,
+            if stop_requested { 30_000 } else { 25 },
+            vec![Arc::new(AtomicBool::new(stop_requested))],
+        )?;
+        let bound = Instant::now() + Duration::from_secs(5);
+        while !watchdog.worker.as_ref().unwrap().is_finished() {
+            if Instant::now() >= bound {
+                return Err(Error::other("denied watchdog did not return"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let denied = windows::core::HRESULT::from_win32(ERROR_ACCESS_DENIED.0).0;
+        assert_eq!(watchdog.termination_result.get(), Some(&Err(denied)));
+        assert_eq!(watchdog.expired.load(Ordering::Acquire), !stop_requested);
+        let receipt = Arc::clone(&watchdog.termination_result);
+        drop(watchdog); // Join a failed worker; this cannot supply termination.
+        assert_eq!(receipt.get(), Some(&Err(denied)));
+        assert_eq!(job.active_processes()?, 1, "failed stop left Job occupied");
+        assert_eq!(query_only.active_processes()?, 1);
+        // SAFETY: original retained root handle is still live, and the root
+        // has never been resumed. Failure must not masquerade as root exit.
+        assert_eq!(
+            unsafe { WaitForSingleObject(process.0.hProcess, 0) },
+            WAIT_TIMEOUT,
+            "root must remain alive after the failed watchdog was joined"
+        );
+    }
 
     // The test never resumes the root. A failed or delayed kernel termination
     // remains a test failure, not a fabricated Job-empty success.
