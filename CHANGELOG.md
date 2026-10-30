@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — empty Job termination versus later creation (#439)
+
+- Add a Windows-only kernel regression: terminate an empty configured Job, create
+  a fixed suspended system root via the original Job-list attribute, require real
+  membership/count1/unsignaled root handle, then terminate and confirm root/Job cleanup.
+- Share the existing suspended-root fixture without resuming either case. Preserve
+  original limits, handle inheritance policy, bounds and RAII failure cleanup.
+- No production/native launch authority change; this demonstrates a fence-design
+  prerequisite, not a watchdog/host/policy race or GitRead acceptance. V1 NO-GO.
+
 ## Unreleased — counted-worker OS pipe EOF evidence (#438)
 
 - Add a real OS-pipe component test for cancelled/timed-out MCP waiters: original

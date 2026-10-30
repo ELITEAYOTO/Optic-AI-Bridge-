@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 30 October — native fence prerequisite: kill is not future admission closure (#439)
+
+Keep successful Job termination and kernel-empty observation separate from closing
+future creation/resume authority. The hosted sequential fixture allows a later
+suspended system root in the same previously terminated empty Job, then performs
+positive root/Job cleanup. Future guardian design must account for in-flight and
+later native calls; repeating a stop receipt or snapshot alone is insufficient.
+This does not implement the shared host/policy/session/lease boundary, bound a
+blocked Win32 call or authorize native Git. No release; Windows V1 remains NO-GO.
+
 ## 30 October — physical pipe retention inside counted worker (#438)
 
 Record component evidence that waiter cancellation/timeout cannot release the

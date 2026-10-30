@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current native boundary prerequisite — 30 October (#439)
+
+Baseline4383363d5c has independent CI41061196369 SUCCESS4/4. New Windows fixture
+successfully terminates an empty configured Job, then creates a fixed suspended
+system root in that SAME original Job. Require membership/active1/unsignaled root,
+never resume it, then terminate and confirm root signal plus kernel Job-empty.
+[Owning audit and limits](ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md): a kill/empty
+receipt is not future launch closure; no service fence/watchdog race is proved.
+First2ba610ea/CI41063470571 and all three applicable native workflows pass; both
+kernel cases explicitly execute on ordinary Windows. Final-head/native and
+independent-main checks remain required. No product API/GitRead/release change,
+local test/build/process execution or installed-platform claim. V1 NO-GO.
+
 ## Current counted-worker real-pipe evidence — 30 October (#438)
 
 Baseline4371f69fceb has independent CI41052483408 SUCCESS4/4. New component test

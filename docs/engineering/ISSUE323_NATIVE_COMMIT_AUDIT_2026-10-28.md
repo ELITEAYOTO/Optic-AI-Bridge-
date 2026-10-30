@@ -1,5 +1,45 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 30 October — empty Job termination does not seal later creation (#439)
+
+Before treating a native stop/empty receipt as a launch/revoke boundary, test its
+actual kernel scope. [TerminateJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-terminatejobobject)
+terminates currently associated processes; its API contract is not a shared
+application authority issuer. The new fixture observes this sequential history:
+
+1. Create the original bounded Job (one process,256MiB,20% CPU), observe active0,
+   successfully terminate that empty Job, and observe active0 again.
+2. Keep its original handle and limits unchanged. Create only the fixed system
+   cmd.exe with CREATE_SUSPENDED/CREATE_NO_WINDOW and the original kernel
+   PROC_THREAD_ATTRIBUTE_JOB_LIST; inherit no handles and never call ResumeThread.
+3. Require IsProcessInJob true, original Job active1 and retained root handle
+   WAIT_TIMEOUT at zero wait. Thus prior successful termination did not prohibit
+   this later suspended creation or immediately terminate its root.
+4. Terminate the original Job again, require root handle signaled within the
+   existing5s wait and separately query kernel active0 within the existing5s bound.
+   Original RAII failure cleanup remains; it cannot supply a passing observation.
+
+The original no-pretermination test and this mode use one private helper. First
+exact source2ba610ea926e035404af0854384fc5d83b0f35f8,
+[CI41063470571](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41063470571)
+SUCCESS4/4 attempt1, Windows job124088771167 explicitly passes BOTH tests. Same-head
+[Owned Native Process Pipes41063470344](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41063470344),
+[Private Rust Compilation41063470166](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41063470166),
+and [Private Project Preparation41063470401](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41063470401)
+also pass. These workflows validate their own applicable compiled-source scopes;
+the explicit new-case execution is established by the ordinary Windows test log.
+Final exact-head and independent-main receipts remain required in #439/#323.
+
+Design implication: stop publication/termination/Job-empty alone cannot substitute
+for an issuer that controls subsequent create/resume intentions and retains
+ownership of in-flight Win32 work. This fixture does NOT exercise a concurrently
+blocked CreateProcessW/ResumeThread, an armed/expired original watchdog, session/
+TaskLease/policy/host ordering, a resumed root, descendants, stream EOF, native
+uncertainty or installed Windows10/11. It is not evidence of an enabled product
+bypass; no service launch API or live MCP GitRead is changed. No new retry loop,
+lock-across-Win32 scheme, deadline reset or guardian is supplied. Keep those
+separate design/proof obligations and all earlier failures open. Windows V1 NO-GO.
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.

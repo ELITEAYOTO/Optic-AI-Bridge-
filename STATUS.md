@@ -1,5 +1,20 @@
 # Current project status
 
+## 30 October — terminating an empty Job is not a launch seal (#439)
+
+A hosted Windows kernel fixture now confirms that successful TerminateJobObject
+on an empty configured Job does not seal that retained Job against later
+Job-list creation: a fixed system root can still be created suspended, already
+Job-associated and alive. It is never resumed; a second termination then requires
+root handle signal and separately observed kernel Job-empty. This is a narrow
+sequential observation, not a service launch/revoke fence or watchdog race proof.
+First source2ba610ea926e035404af0854384fc5d83b0f35f8 passed
+[CI41063470571](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41063470571)
+4/4 and all three applicable native workflows, attempt1; the new and original
+suspended-root tests explicitly pass. Existing schema8 Windows10/Unix4 remains.
+No product API, GitRead activation, project execution or release change.
+Windows V1 **NO-GO**; [owning authority audit](docs/engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## 30 October — counted MCP worker with real pipe EOF (#438)
 
 A generic admitted-worker component test now replaces the synthetic pause with
