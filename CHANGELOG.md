@@ -1,5 +1,16 @@
 # Changelog
 
+## 30 October — bind original process-owned host stop
+
+Trusted startup now owns an irreversible host-stop source, published on actual
+OS stop or service completion/error before the peer future is cancelled. The
+inert service-clock native owner requires and retains the original read-only
+watch; missing/closed/foreign hosts fail closed and the independent watchdog
+observes that original host as its fourth stop source. Legacy logical preflight
+remains inert. No native launcher or shared create/resume fence is enabled.
+Windows V1 **NO-GO**; [decision](docs/decisions/ADR-0039-ORIGINAL-HOST-STOP-PROVENANCE.md)
+and [owning audit](docs/engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## 30 October — denied watchdog with a live suspended root
 
 Two hosted Windows fixtures extend the original bounded Job-list proof: after

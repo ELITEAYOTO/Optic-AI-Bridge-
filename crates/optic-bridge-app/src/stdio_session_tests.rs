@@ -174,7 +174,7 @@ async fn stdio_host_shutdown_source_error_is_preserved() {
 
 #[tokio::test]
 async fn stdio_ready_host_shutdown_precedes_ready_service_result() {
-    let error = until_host_shutdown(async { Ok(()) }, async { Ok(()) })
+    let error = until_host_shutdown(&HostStopSource::new(), async { Ok(()) }, async { Ok(()) })
         .await
         .unwrap_err();
     assert_eq!(
@@ -308,7 +308,7 @@ impl Fixture {
         let clock = Arc::clone(&self.clock);
         let expires_at = self.expires_at;
         let owner = tokio::spawn(async move {
-            let result = until_host_shutdown(async {
+            let result = until_host_shutdown(&HostStopSource::new(), async {
                 let service = initialize_before_original_session_expiry(
                     server.serve(transport),
                     clock.as_ref(),
@@ -559,4 +559,69 @@ async fn stdio_eof_publishes_stop_but_holds_cleanup_until_original_admission_dra
     );
     fixture.sessions.register(replacement.clone()).unwrap();
     fixture.lifecycle.revoke(&replacement.handle).unwrap();
+}
+
+#[tokio::test]
+async fn host_stop_is_published_before_cancelling_either_service_peer() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct ObserveDrop {
+        watch: optic_bridge_runtime::HostStopWatch,
+        closed_at_drop: Arc<AtomicBool>,
+    }
+    impl Drop for ObserveDrop {
+        fn drop(&mut self) {
+            self.closed_at_drop
+                .store(self.watch.is_stop_requested(), Ordering::Release);
+        }
+    }
+    for source_error in [false, true] {
+        for host_wins in [true, false] {
+            let source = HostStopSource::new();
+            let closed_at_drop = Arc::new(AtomicBool::new(false));
+            let probe = ObserveDrop {
+                watch: source.watch(),
+                closed_at_drop: Arc::clone(&closed_at_drop),
+            };
+            let result = if host_wins {
+                until_host_shutdown(
+                    &source,
+                    async move {
+                        let _probe = probe;
+                        std::future::pending::<Result<(), Box<dyn Error + Send + Sync>>>().await
+                    },
+                    async {
+                        if source_error {
+                            Err(std::io::Error::other("host fixture failure"))
+                        } else {
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+            } else {
+                until_host_shutdown(
+                    &source,
+                    async {
+                        if source_error {
+                            Err(std::io::Error::other("service fixture failure").into())
+                        } else {
+                            Ok(())
+                        }
+                    },
+                    async move {
+                        let _probe = probe;
+                        std::future::pending::<std::io::Result<()>>().await
+                    },
+                )
+                .await
+            };
+            assert!(source.watch().is_stop_requested());
+            assert!(
+                closed_at_drop.load(Ordering::Acquire),
+                "host closed before losing future Drop"
+            );
+            assert!(!source.request_stop(), "closure remains irreversible");
+            assert_eq!(result.is_err(), host_wins || source_error);
+        }
+    }
 }
