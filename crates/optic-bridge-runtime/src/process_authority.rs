@@ -75,6 +75,7 @@ impl ProcessExecutableIdentity {
                     reader: pin.file_mut(),
                     started: &started,
                     calls: 0,
+                    read_elapsed: std::time::Duration::ZERO,
                     bytes: 0,
                     next_sample: IDENTITY_READ_SAMPLE_BYTES,
                 },
@@ -135,6 +136,7 @@ struct IdentityReadEvidence<'a, R> {
     reader: R,
     started: &'a Instant,
     calls: u64,
+    read_elapsed: std::time::Duration,
     bytes: u64,
     next_sample: u64,
 }
@@ -156,16 +158,19 @@ impl<R: Read> Read for IdentityReadEvidence<'_, R> {
         }
         // Exactly one original read, with the original buffer and error. The
         // unchanged bounded core reader remains responsible for hashing/limits.
+        let read_started = Instant::now();
         let result = self.reader.read(buffer);
+        self.read_elapsed = self.read_elapsed.saturating_add(read_started.elapsed());
         match &result {
             Ok(read) => {
                 self.bytes = self.bytes.saturating_add(*read as u64);
                 if sample || *read == 0 {
                     eprintln!(
-                        "OPTIC_PROCESS_IDENTITY_READ phase=read-returned call={} observed_bytes={} read_bytes={} elapsed_ms={}",
+                        "OPTIC_PROCESS_IDENTITY_READ phase=read-returned call={} observed_bytes={} read_bytes={} read_total_ms={} elapsed_ms={}",
                         self.calls,
                         self.bytes,
                         read,
+                        self.read_elapsed.as_millis(),
                         self.started.elapsed().as_millis(),
                     );
                 }
@@ -173,10 +178,11 @@ impl<R: Read> Read for IdentityReadEvidence<'_, R> {
             Err(error) => {
                 // Error KIND only, never a path-bearing native error message.
                 eprintln!(
-                    "OPTIC_PROCESS_IDENTITY_READ phase=read-error call={} observed_bytes={} kind={:?} elapsed_ms={}",
+                    "OPTIC_PROCESS_IDENTITY_READ phase=read-error call={} observed_bytes={} kind={:?} read_total_ms={} elapsed_ms={}",
                     self.calls,
                     self.bytes,
                     error.kind(),
+                    self.read_elapsed.as_millis(),
                     self.started.elapsed().as_millis(),
                 );
             }
@@ -304,6 +310,7 @@ mod tests {
             reader: io::Cursor::new(&data),
             started: &started,
             calls: 0,
+            read_elapsed: std::time::Duration::ZERO,
             bytes: 0,
             next_sample: IDENTITY_READ_SAMPLE_BYTES,
         };
@@ -314,6 +321,7 @@ mod tests {
             reader: io::Cursor::new(&data),
             started: &started,
             calls: 0,
+            read_elapsed: std::time::Duration::ZERO,
             bytes: 0,
             next_sample: IDENTITY_READ_SAMPLE_BYTES,
         };
