@@ -1,5 +1,18 @@
 # Delivery roadmap
 
+## 30 October — real active managed job at original session expiry
+
+Require operator lifetime10s without renewal, an attested active AppContainer
+Node before5s from Bridge birth, retained native-handle exit between10..20s,
+original session-reap marker and a live transport refusing another process_start
+with exact inactive-session error. Only then close input and require exit/joins
+within the existing5s EOF bound. Keep all eight prior Windows/four Unix cases
+and first-failure diagnostics. [Schema7](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md)
+owns limits; exact-head and independent-main validation remain mandatory.
+This is not held-admission, atomic launch-fence or resource-release acceptance.
+Then address those boundaries plus security/startup/installed-platform gates.
+V1 NO-GO, no release.
+
 ## 29 October — preserve the actual first host-stop failure
 
 Before another acceptance claim, preserve worker/Bridge diagnostics for early

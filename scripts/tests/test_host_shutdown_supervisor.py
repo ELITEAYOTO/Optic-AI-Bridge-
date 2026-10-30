@@ -71,6 +71,50 @@ class ManagedReadyTests(unittest.TestCase):
             self.assertFalse(path.with_name(path.name + ".pending").exists())
 
 
+class ExpiryEvidenceTests(unittest.TestCase):
+    def test_only_exact_inactive_authority_error_is_a_refusal(self):
+        response = {"error": {"code": -32600, "message": "optic.session_inactive"}}
+        active.require_inactive_rejection(response)
+        for invalid in [{"result": {}}, {"result": {}, **response},
+                        {"error": {"code": -32603, "message": "optic.session_inactive"}},
+                        {"error": {"code": -32600, "message": "optic.policy_denied"}}]:
+            with self.subTest(invalid=invalid), self.assertRaises(AssertionError):
+                active.require_inactive_rejection(invalid)
+
+    def test_session_reap_requires_complete_exact_one_session_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stderr.log"
+            marker = b"Optic AI Bridge session expiry cleanup reaped 1 session(s)"
+            for invalid in [marker, marker.replace(b"1", b"2") + b"\n", b"prefix " + marker + b"\n"]:
+                path.write_bytes(invalid)
+                self.assertFalse(active.session_reaped(path))
+            path.write_bytes(marker + b"\r\n")
+            self.assertTrue(active.session_reaped(path))
+
+    def test_session_reap_does_not_relax_log_size_bound(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stderr.log"
+            path.write_bytes(b"x" * 65537)
+            with self.assertRaises(AssertionError):
+                active.session_reaped(path)
+
+    def test_raw_rpc_error_observation_keeps_positive_receive_strict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stdout.log"
+            response = {"jsonrpc": "2.0", "id": 7,
+                        "error": {"code": -32600, "message": "optic.session_inactive"}}
+            path.write_text(supervisor.json.dumps(response) + "\n", encoding="utf-8")
+            self.assertEqual(supervisor.receive_response(path, 7, None), response)
+            with self.assertRaises(AssertionError):
+                supervisor.receive(path, 7, None)
+
+    def test_positive_rpc_response_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stdout.log"
+            path.write_text('{"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n', encoding="utf-8")
+            self.assertEqual(supervisor.receive(path, 7, None), {"ok": True})
+
+
 class FailureEvidenceTests(unittest.TestCase):
     def test_missing_log_does_not_mask_original_failure(self):
         with tempfile.TemporaryDirectory() as directory:

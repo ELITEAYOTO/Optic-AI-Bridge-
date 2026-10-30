@@ -1,5 +1,50 @@
 # Physical process signal to original stdio cleanup
 
+## Schema 7 — original session expiry with real active isolated Node
+
+Adds Windows `active-job-expiry`, keeping the eight previous Windows and four
+Unix cases. The existing operator CLI supplies `--session-lifetime-seconds 10`
+and no supervision/renewal. The Node program,30s job budget,256MiB memory,
+4096-byte output/process-count1/no-network grants and actual MCP path remain.
+The nonce/PID, operator image, actual AppContainer token, retained query/wait
+handle and original external Job membership checks are shared with earlier
+active cases. The managed Node must still be running before5s from Bridge birth;
+a cold/late start fails this precondition without extending any deadline.
+
+With stdin held open, no process_stop or host signal is sent. The SAME retained
+Node handle must signal between10..20s from original Bridge birth, followed by
+the complete exact `Optic AI Bridge session expiry cleanup reaped 1 session(s)`
+record within that same20s horizon. Birth is sampled before Popen, never reset
+at readiness. The original session Clock/expiry begins after process creation;
+the lower10s assertion rejects an early unrelated child death. The20s observer
+bound allows the existing5s reaper cadence; it does not modify production timing
+or any prior5s shutdown gate, and precedes the unchanged30s child budget.
+
+Bridge and stdin must remain alive through reaping. A second identical fixed
+Node process_start request must receive ONLY JSON-RPC error code-32600 and exact
+message `optic.session_inactive`, without a result. A generic failure, different
+policy/parameter error or accidental success cannot satisfy authority denial.
+Only then does the worker close input and require normal Bridge exit0, original
+cleanup and both IO joins within the original5s EOF bound. Final supervisor
+reaping/empty original external Job is still required before recovery closure.
+The45s worker and25s readiness-ownership bounds are unchanged. No fixture kill
+or retry can supply success; #432 bounded first-failure evidence is retained.
+
+The raw-response observer is split from the existing positive receive helper;
+all earlier positive callers still reject error frames. Sixteen offline tests
+include strict inactive error matching, complete exact single-session reaping,
+unchanged64KiB log guard and unchanged positive/error RPC separation. They do
+not launch Bridge or prove actual expiry. Final exact-head/main JSON receipts
+belong in the PR/#323; previous failed main40940330506's cause remains UNKNOWN.
+
+This observes an original session expiring with an actual MANAGED process,
+followed by denial after reaping. It does not prove a held counted admission,
+linearizable expiry-versus-launch race, pre-exit quota/profile/target-stream or
+product Job-empty cleanup, uncertain-stop recovery, production native Git,
+host/policy commit fencing or installed Windows10/11 acceptance. Flags for held
+admission/native Git remain false. No product, authority, protection, deadline
+or release change; Windows V1 NO-GO.
+
 ## Schema 6 failure-evidence supplement — first cause retained
 
 #431 final head `288b9ed03246034fcb9d009e643095370a4d8f62` passed

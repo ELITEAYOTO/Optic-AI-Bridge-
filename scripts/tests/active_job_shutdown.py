@@ -105,7 +105,68 @@ class ObservedProcess:
             self.handle = None
 
 
-def run_case(process, log, root, executable, send, receive, phases, wait_for, signal_stop=None):
+def session_reaped(log):
+    with log.open("rb") as stream:
+        value = stream.read(65537)
+    assert len(value) <= 65536, "fixture output exceeded bound"
+    marker = b"Optic AI Bridge session expiry cleanup reaped 1 session(s)"
+    return any(line in [marker + b"\n", marker + b"\r\n"]
+               for line in value.splitlines(keepends=True))
+
+
+def require_inactive_rejection(response):
+    error = response.get("error")
+    assert "result" not in response and isinstance(error, dict), "not an RPC refusal: " + json.dumps(response)
+    assert error.get("code") == -32600 and error.get("message") == "optic.session_inactive", "wrong refusal: " + json.dumps(response)
+
+
+def expiry_case(process, log, root, observed, started_at, request_id, arguments,
+                send, receive_response, phases, wait_for):
+    # This is the original real operator horizon, not a reset at readiness.
+    assert time.monotonic() - started_at < 5, "Node not ready well before original 10s session expiry"
+    deadline = started_at + 20
+    observed.require_exited(deadline - time.monotonic())
+    node_exit_at = time.monotonic()
+    assert node_exit_at - started_at >= 10, "Node exited before original session lifetime"
+    assert node_exit_at <= deadline, "original expiry observation exceeded 20s"
+
+    def reaped():
+        assert process.poll() is None, "Bridge exited before session-reap observation"
+        return session_reaped(log)
+
+    wait_for(reaped, max(0.001, deadline - time.monotonic()), "original session reaped")
+    assert time.monotonic() <= deadline, "session-reap observation exceeded original bound"
+    assert not process.stdin.closed
+    assert "host-stop-observed" not in phases(log)
+    assert "original-session-cleanup-complete" not in phases(log)
+    send(process, {"jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                   "params": {"name": "process_start", "arguments": arguments}})
+    require_inactive_rejection(receive_response(root / "stdout.log", request_id, process))
+    assert process.poll() is None and not process.stdin.closed
+    # Only AFTER real session reaping, Node kernel exit and denied new work.
+    stopped_at = time.monotonic()
+    process.stdin.close()
+    process.wait(timeout=5)
+    assert process.returncode == 0 and time.monotonic() - stopped_at <= 5
+    ordered = phases(log)
+    assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
+    assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
+    return dict(event="active-job-expiry", initialized=True, physical_signal=False,
+                session_lifetime_seconds=10, operator_renewal_enabled=False,
+                managed_job_running_before_expiry=True, readiness_nonce_matched=True,
+                native_image_matches_operator=True, native_appcontainer_token_verified=True,
+                original_outer_job_member=True, retained_process_handle_signaled=True,
+                node_exit_from_bridge_birth_ms=round((node_exit_at - started_at) * 1000),
+                session_reap_observed=True, bridge_alive_after_session_reap=True,
+                stdin_open_through_session_reap=True, new_start_denied_after_expiry=True,
+                denied_error="optic.session_inactive", natural_timeout_reached=False,
+                process_stop_rpc=False, eof_only_after_reap=True, bridge_exit_code=0,
+                stdin_reader_joined=True, stdout_writer_joined=True,
+                held_admission_proven=False, native_git_proven=False)
+
+
+def run_case(process, log, root, executable, send, receive, phases, wait_for, signal_stop=None,
+             expiry_started_at=None, receive_response=None):
     assert os.name == "nt", "Windows managed-job proof only"
     nonce = secrets.token_hex(16)
     next_id = 10
@@ -124,9 +185,10 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for, si
 
     launched_at = time.monotonic()
     script = node_program(nonce)
-    job_id = tool("process_start", dict(executable=str(executable), args=["-e", script],
+    start_arguments = dict(executable=str(executable), args=["-e", script],
                   cwd=None, env_allowlist=[], network=False, timeout_ms=30000,
-                  output_budget=4096, memory_bytes=268435456, process_count=1))["job_id"]
+                  output_budget=4096, memory_bytes=268435456, process_count=1)
+    job_id = tool("process_start", start_arguments)["job_id"]
     found = []
 
     def ready():
@@ -162,6 +224,10 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for, si
         assert json.loads((root / "active-owned.json").read_text(encoding="utf-8")) == dict(pid=pid, nonce=nonce)
         assert tool("process_result", dict(job_id=job_id))["status"] == "running"
         observed.require_running()
+        if expiry_started_at is not None:
+            assert signal_stop is None and receive_response is not None
+            return expiry_case(process, log, root, observed, expiry_started_at, next_id,
+                               start_arguments, send, receive_response, phases, wait_for)
         before_eof_ms = round((time.monotonic() - launched_at) * 1000)
         assert before_eof_ms < 20000, "insufficient distance from the 30s child budget"
         stopped_at = time.monotonic()
