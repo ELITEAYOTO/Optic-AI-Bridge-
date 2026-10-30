@@ -1513,6 +1513,172 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admitted_pipe_read_keeps_original_owners_after_waiter_cancel_or_timeout() {
+        use optic_bridge_runtime::{SessionLifecycleManager, TaskLeaseRegistryError};
+        use std::io::Read;
+
+        for interruption in ["cancel", "timeout"] {
+            let root = workspace("physical-pipe-drain");
+            let mut server = server(&root, &[Capability::FileRead]);
+            server.blocking_io = BlockingIoGovernor::new(1).expect("one blocking owner");
+            server.transport_guard = TransportGuard::new(TransportLimits {
+                max_request_duration_ms: if interruption == "timeout" {
+                    1_000
+                } else {
+                    5_000
+                },
+                ..TransportLimits::from(server.limits)
+            })
+            .expect("transport");
+            let now = server.clock.now();
+            let original_lease = server
+                .read_authorities
+                .lease_for(Capability::FileRead)
+                .unwrap()
+                .clone();
+            let mut other = server.sessions.get_active(&server.session, now).unwrap();
+            other.handle = SessionHandle::generate().unwrap();
+            server.sessions.register(other.clone()).unwrap();
+            let mut other_lease = server
+                .task_leases
+                .get_active(&original_lease, &server.session, now)
+                .unwrap();
+            other_lease.id = optic_bridge_core::TaskLeaseId::generate().unwrap();
+            other_lease.session = other.handle.clone();
+            server.task_leases.register(other_lease.clone()).unwrap();
+            let lifecycle = Arc::new(SessionLifecycleManager::new_with_approval_broker(
+                Arc::clone(&server.sessions),
+                Arc::clone(&server.task_leases),
+                Arc::clone(&server.processes),
+                Arc::clone(&server.approvals),
+            ));
+            let (mut pipe_reader, pipe_writer) = std::io::pipe().expect("real OS pipe");
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (finished_tx, mut finished_rx) = tokio::sync::oneshot::channel();
+            let reader = server.clone();
+            let request = tokio::spawn(async move {
+                reader
+                    .run_admitted_read(move |_, _, _| {
+                        // The generic worker owns the real admission/transport here.
+                        // This fixture is not the public fs_read path or a child process.
+                        entered_tx.send(()).expect("worker entered");
+                        let result = pipe_reader.read(&mut [0_u8; 1]);
+                        let completion = result.as_ref().copied().map_err(std::io::Error::kind);
+                        let _ = finished_tx.send(completion);
+                        result.map_err(|_| ErrorData::internal_error("test.pipe_read_failed", None))
+                    })
+                    .await
+            });
+            tokio::time::timeout(Duration::from_secs(5), entered_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            if interruption == "cancel" {
+                request.abort();
+                assert!(request.await.unwrap_err().is_cancelled());
+            } else {
+                assert_eq!(
+                    request.await.unwrap().unwrap_err().message,
+                    "optic.request_timeout"
+                );
+            }
+            let closer = Arc::clone(&lifecycle);
+            let original = server.session.clone();
+            let revoke = tokio::task::spawn_blocking(move || closer.revoke(&original));
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if matches!(
+                        server.sessions.get_active(&server.session, now),
+                        Err(SessionRegistryError::Revoked)
+                    ) && matches!(
+                        server
+                            .task_leases
+                            .get_active(&original_lease, &server.session, now),
+                        Err(TaskLeaseRegistryError::Revoked)
+                    ) {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("both original stops published");
+            assert!(
+                !revoke.is_finished(),
+                "admission must retain the original drain"
+            );
+            assert_eq!(server.transport_guard.active_requests(), 1);
+            assert!(matches!(
+                finished_rx.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), server.blocking_io.run(|| ()))
+                    .await
+                    .is_err(),
+                "cancelled waiter must not free blocking capacity"
+            );
+            server.sessions.get_active(&other.handle, now).unwrap();
+            server
+                .task_leases
+                .get_active(&other_lease.id, &other.handle, now)
+                .unwrap();
+
+            // This external peer close, NOT revocation, supplies physical EOF.
+            // Keeping this writer local also releases the read on test unwinding.
+            drop(pipe_writer);
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), finished_rx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
+            tokio::time::timeout(Duration::from_secs(5), revoke)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while server.transport_guard.active_requests() != 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("transport released after read completion");
+            tokio::time::timeout(Duration::from_secs(5), server.blocking_io.run(|| ()))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                server
+                    .run_admitted_read(|_, _, _| Ok(()))
+                    .await
+                    .unwrap_err()
+                    .message,
+                "optic.session_inactive"
+            );
+            let reaped = lifecycle.try_reap(&server.session, now).unwrap();
+            assert!(reaped.session_removed);
+            assert_eq!(reaped.removed_leases, 1);
+            server.sessions.get_active(&other.handle, now).unwrap();
+            server
+                .task_leases
+                .get_active(&other_lease.id, &other.handle, now)
+                .unwrap();
+            lifecycle.revoke(&other.handle).unwrap();
+            assert!(
+                lifecycle
+                    .try_reap(&other.handle, now)
+                    .unwrap()
+                    .session_removed
+            );
+            fs::remove_dir_all(root).expect("remove pipe-drain workspace");
+        }
+    }
+
+    #[tokio::test]
     async fn owned_read_worker_transfers_original_capacity_beyond_worker_completion() {
         use optic_bridge_runtime::NativeGitReadOwnedPermits;
 

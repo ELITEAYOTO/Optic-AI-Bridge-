@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — counted-worker OS pipe EOF evidence (#438)
+
+- Add a real OS-pipe component test for cancelled/timed-out MCP waiters: original
+  session/lease stops precede drainage, transport/blocking capacity remain owned,
+  peer EOF0 precedes reclamation and another live session/lease is preserved.
+- Run exactly this test before the unchanged full workspace gate so later
+  integration failures cannot prevent its evidence from being collected.
+- Preserve initial Windows Node-probe timeout41058447719; no cause/fix inferred
+  from later successes. No production code, grants, budgets, isolation or retry
+  policy changed. Existing physical schema8 remains Windows10/Unix4; V1 NO-GO.
+
 ## Unreleased — active isolated Node with unread stdout (#437)
 
 - Add Windows schema8 active-job-stalled-stdout: attest the real Node, queue a

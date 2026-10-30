@@ -47,6 +47,11 @@ jobs:
         run: ./scripts/tests/Test-ReleaseEvidence.ps1
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Prove counted pipe-read drainage before unrelated integration gates
+        timeout-minutes: 5
+        # Keep the focused evidence visible even if a later workspace test fails.
+        # This never replaces the complete Test gate below.
+        run: cargo test --locked -p optic-bridge-mcp --lib --all-features server::tests::admitted_pipe_read_keeps_original_owners_after_waiter_cancel_or_timeout -- --exact --nocapture --test-threads=1
       - name: Test
         id: workspace-tests
         timeout-minutes: 10

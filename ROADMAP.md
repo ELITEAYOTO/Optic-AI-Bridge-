@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 30 October — physical pipe retention inside counted worker (#438)
+
+Record component evidence that waiter cancellation/timeout cannot release the
+original admission, transport or blocking capacity while an OS-pipe read remains
+unfinished. The external fixture writer supplies EOF; this is not production
+I/O cancellation or an integrated host/stdio/file-read shutdown proof. Keep those
+acceptance gates, original-generation/fence, uncertainty/resource ordering,
+security and installed-platform work separate. The unchanged full CI gate stays
+required after an early focused one-test step; preserve first Windows probe
+failure41058447719 without attributing or hiding it. V1 NO-GO, no release/native Git.
+
 ## 30 October — combined managed-job/output stop proof (#437)
 
 Record the schema8 hosted active-Node plus unread-stdout case without replacing

@@ -1,5 +1,55 @@
 # Physical process signal to original stdio cleanup
 
+## Supplemental component — counted worker with OS-pipe EOF (#438)
+
+This test is not a new physical supervisor case and does not change schema8's
+Windows10/Unix4 criteria. It exercises the actual private run_admitted_read
+worker/admission/transport/governor with a fixture-owned anonymous OS pipe,
+using [Rust's pipe/EOF contract](https://doc.rust-lang.org/std/io/fn.pipe.html).
+It is not the public fs_read authorization/path implementation or a child process.
+The fixture uses its existing fixed logical clock; no service-clock provenance,
+original-horizon expiry or renewal behavior is proved by this test.
+
+One selected test runs two modes: abort the async request waiter, or await the
+helper's own1000ms timeout. After the operation's entry handshake, the worker
+attempts one-byte synchronous pipe Read; the peer sends no bytes and retains the
+sole writer. An entry handshake is not a sampled kernel-thread wait stack.
+Lifecycle revoke must publish original session and lease Revoked states but remain
+unfinished. Require transport active count1, no read completion and failure of a
+20ms probe to acquire the single blocking slot, while another session/lease stays
+active. Then the EXTERNAL TEST PEER closes the writer, require Read to return0,
+revocation to complete, transport count0/blocking slot usable, original new work
+refused and one original lease safely reaped without touching the other owner.
+The local writer's RAII drop also releases a read during test unwinding.
+
+EOF is supplied by the fixture, not revocation: no bounded production read-stop,
+pooled-thread termination, OS host-signal/stdio route, public file-read policy,
+native Git/root/Job/stream cleanup, uncertainty/resource/fence or installed
+Windows acceptance is inferred. Physical host evidence remains separate and its
+held_admission_proven field remains false. No runtime hooks/behavior changes.
+
+First head3e9c9ab66ce5948385d7103f43eabe0a275e8078,
+[CI41058447719](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41058447719)
+FAILED3/4 attempt1: Ubuntu explicitly passed this test; Windows aborted earlier
+at capability_free_appcontainer_denies_node_loopback_connection. Node target was
+resumed166ms, then observed TimedOut10052ms with no target stdout/JS readiness or
+network-attempt marker and accepted=None. MCP test/physical cases were not reached
+on Windows. No isolation breach or cause attribution is inferred. Three existing
+serialized diagnostic comparisons passed, without replacing the original red.
+[Failure receipt6523399321](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6523399321)
+remains retained. No blind same-head rerun or timeout/probe relaxation was added.
+
+An early focused exact one-test step now precedes the unchanged full workspace
+Test gate; it exposes this evidence even if a later integration aborts. Full Test
+still runs with its prior parallelism and remains required. This changes test
+execution order, not the product or the network test, and does not explain/fix
+the startup timeout. Source d092cb846ca76bde4468e74cff5e07ec88cb8935,
+[CI41059298644](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41059298644)
+SUCCESS4/4 attempt1: exactly1 selected/1 passed focused test on both OS, plus the
+same test explicitly passing in the full workspace; schema8 Windows10/Unix4
+reports complete. Final-head and independent-main receipts remain in #438/#323.
+Local fmt/diff checks only, no build/test/product execution. V1 NO-GO, no release.
+
 ## Schema8 — active isolated Node AND unread Bridge stdout (#437)
 
 Adds Windows active-job-stalled-stdout to the nine previous Windows cases; Unix
