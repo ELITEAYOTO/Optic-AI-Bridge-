@@ -166,7 +166,7 @@ def expiry_case(process, log, root, observed, started_at, request_id, arguments,
 
 
 def run_case(process, log, root, executable, send, receive, phases, wait_for, signal_stop=None,
-             expiry_started_at=None, receive_response=None):
+             expiry_started_at=None, receive_response=None, prepare_unread_stdout=None):
     assert os.name == "nt", "Windows managed-job proof only"
     nonce = secrets.token_hex(16)
     next_id = 10
@@ -225,9 +225,15 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for, si
         assert tool("process_result", dict(job_id=job_id))["status"] == "running"
         observed.require_running()
         if expiry_started_at is not None:
-            assert signal_stop is None and receive_response is not None
+            assert signal_stop is None and receive_response is not None and prepare_unread_stdout is None
             return expiry_case(process, log, root, observed, expiry_started_at, next_id,
                                start_arguments, send, receive_response, phases, wait_for)
+        unread_state = None
+        if prepare_unread_stdout is not None:
+            assert signal_stop is not None
+            unread_state = prepare_unread_stdout()
+            observed.require_running()  # Still live AFTER the output queue was observed.
+            assert not process.stdin.closed and not process.stdout.closed
         before_eof_ms = round((time.monotonic() - launched_at) * 1000)
         assert before_eof_ms < 20000, "insufficient distance from the 30s child budget"
         stopped_at = time.monotonic()
@@ -249,7 +255,7 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for, si
             assert ordered.index("host-stop-observed") < ordered.index("original-session-cleanup-complete")
         assert ordered.index("original-session-cleanup-complete") < ordered.index("stdin-reader-joined")
         assert ordered.index("stdin-reader-joined") < ordered.index("stdout-writer-joined")
-        return dict(event="active-job" if signal_stop is None else "active-job-signal",
+        result = dict(event="active-job" if signal_stop is None else "active-job-signal",
                     initialized=True, physical_signal=signal_stop is not None,
                     managed_job_running_before_shutdown=True, readiness_nonce_matched=True,
                     native_image_matches_operator=True, original_outer_job_member=True,
@@ -260,5 +266,12 @@ def run_case(process, log, root, executable, send, receive, phases, wait_for, si
                     stdin_held_open_through_exit=signal_stop is not None,
                     stdin_reader_joined=True, stdout_writer_joined=True,
                     held_admission_proven=False, native_git_proven=False)
+        if unread_state is not None:
+            assert not process.stdin.closed and not process.stdout.closed
+            result.update(event="active-job-stalled-stdout", stdout_before_stop=unread_state,
+                          managed_job_running_after_stdout_queue=True,
+                          stdout_reader_held_open_through_exit=True,
+                          stdout_drained_after_queue=False, released_by_stdout_reader_close=False)
+        return result
     finally:
         observed.close()  # No termination right requested or process kill issued.

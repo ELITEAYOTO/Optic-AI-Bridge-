@@ -71,6 +71,19 @@ class ManagedReadyTests(unittest.TestCase):
             self.assertFalse(path.with_name(path.name + ".pending").exists())
 
 
+class UnreadMetadataTests(unittest.TestCase):
+    def test_fixed_batch_is_bounded_unique_and_metadata_only(self):
+        batch = supervisor.unread_metadata_batch()
+        self.assertLessEqual(len(batch), 4096)
+        self.assertTrue(batch.endswith(b"\n"))
+        messages = [supervisor.json.loads(line) for line in batch.splitlines()]
+        self.assertEqual(len(messages), 32)
+        self.assertEqual({message["id"] for message in messages}, set(range(1000, 1032)))
+        for message in messages:
+            self.assertEqual(message, {"jsonrpc": "2.0", "id": message["id"],
+                "method": "tools/call", "params": {"name": "session_info", "arguments": {}}})
+
+
 class ExpiryEvidenceTests(unittest.TestCase):
     def test_only_exact_inactive_authority_error_is_a_refusal(self):
         response = {"error": {"code": -32600, "message": "optic.session_inactive"}}

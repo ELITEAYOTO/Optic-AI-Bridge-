@@ -176,6 +176,27 @@ def receive_pipe(process, request_id):
     return found[0]["result"]
 
 
+def unread_metadata_batch():
+    batch = b"".join((json.dumps({"jsonrpc": "2.0", "id": index,
+        "method": "tools/call", "params": {"name": "session_info", "arguments": {}}}) + "\n").encode("utf-8")
+        for index in range(1000, 1032))
+    assert len(batch) <= 4096, "metadata batch exceeded pipe input bound"
+    return batch
+
+
+def queue_unread_stdout(process):
+    # No reader runs after the preceding managed-process attestation RPCs.
+    batch = unread_metadata_batch()
+    assert process.stdin.write(batch) == len(batch), "partial metadata batch"
+    process.stdin.flush()
+    wait_for(lambda: stdout_pipe_state(process)["queued_bytes"] > 0, 10, "active unread output")
+    time.sleep(0.25)
+    state = stdout_pipe_state(process)
+    assert state["queued_bytes"] > 0
+    assert not process.stdin.closed and not process.stdout.closed
+    return state  # Observed queue, not a sampled kernel write or strict fullness claim.
+
+
 def stalled_stdout_case(command, root, deliver):
     """Require joined stdout and root exit while both unread pipe ends stay open."""
     process = None
@@ -258,7 +279,7 @@ def worker(args):
     if os.name == "nt" and args.event not in ["headless", "active-job", "active-job-expiry"]:
         deliver, callback = windows_console()
     command = [str(Path(args.bridge).resolve()), str(root)]
-    if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
+    if args.event in ["active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"]:
         node = Path(args.node).resolve(strict=True)
         assert node.name.lower() == "node.exe"
         command.extend(["--allow-executable=interpreter:" + str(node), "--allow-isolated-node=" + str(node)])
@@ -267,14 +288,20 @@ def worker(args):
     if args.event == "stalled-stdout":
         return stalled_stdout_case(command, root, deliver)
     environment = dict(os.environ, OPTIC_STARTUP_TIMING="1")
-    if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
+    if args.event in ["active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"]:
         environment["OPTIC_LAUNCHER_PHASES"] = "1"
+    unread = args.event == "active-job-stalled-stdout"
+
+    def receive_worker(path, request_id, process):
+        return receive_pipe(process, request_id) if unread else receive(path, request_id, process)
+
     process = None
     with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
         try:
             bridge_started_at = time.monotonic()
-            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
-                                       stderr=error, env=environment)
+            process = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE if unread else output,
+                                       stderr=error, env=environment, **({"bufsize": 0} if unread else {}))
             log = root / "stderr.log"
 
             def phase(name):
@@ -291,17 +318,18 @@ def worker(args):
                 send(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                     "protocolVersion": "2025-03-26", "capabilities": {},
                     "clientInfo": {"name": "physical-host-stop-proof", "version": "0"}}})
-                receive(root / "stdout.log", 1, process)
+                receive_worker(root / "stdout.log", 1, process)
                 send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
                 wait_for(lambda: phase("mcp-service-started"), 10, "initialized service")
                 send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
                     "name": "session_info", "arguments": {}}})
-                assert receive(root / "stdout.log", 2, process).get("isError") is not True
-            if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
-                result = active_proof().run_case(process, log, root, node, send, receive, phases, wait_for,
-                                               deliver if args.event == "active-job-signal" else None,
+                assert receive_worker(root / "stdout.log", 2, process).get("isError") is not True
+            if args.event in ["active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"]:
+                result = active_proof().run_case(process, log, root, node, send, receive_worker, phases, wait_for,
+                                               deliver if args.event in ["active-job-signal", "active-job-stalled-stdout"] else None,
                                                expiry_started_at=bridge_started_at if args.event == "active-job-expiry" else None,
-                                               receive_response=receive_response)
+                                               receive_response=receive_response,
+                                               prepare_unread_stdout=(lambda: queue_unread_stdout(process)) if unread else None)
             elif args.event == "headless":
                 process.stdin.close()
                 process.wait(timeout=5)
@@ -363,6 +391,8 @@ def worker(args):
                 process.wait(timeout=2)
                 if process.stdin and not process.stdin.closed:
                     process.stdin.close()
+                if process.stdout and not process.stdout.closed:
+                    process.stdout.close()  # After normal exit, or failure recovery only.
                 if os.name == "nt":
                     process._handle.Close()
 
@@ -383,7 +413,8 @@ def supervise(args):
         cases.append(("active-job", True))
         cases.append(("active-job-signal", True))
         cases.append(("active-job-expiry", True))
-    result = dict(schema_version=7, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+        cases.append(("active-job-stalled-stdout", True))
+    result = dict(schema_version=8, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
                   claim="Windows stdio and active isolated Node EOF/physical-stop/session-expiry; not held-admission/native Git acceptance; Unix characterization only")
@@ -398,7 +429,7 @@ def supervise(args):
                            "--bridge", str(bridge), "--root", str(root), "--event", event]
                 if initialized:
                     command.append("--initialized")
-                if event in ["active-job", "active-job-signal", "active-job-expiry"]:
+                if event in ["active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"]:
                     node = shutil.which("node.exe")
                     assert node, "hosted operator Node missing"
                     command.extend(["--node", str(Path(node).resolve(strict=True))])
@@ -421,7 +452,7 @@ def supervise(args):
                         (root / "go").write_text("owned", encoding="ascii")
                         if job:
                             worker_deadline = time.monotonic() + 45
-                            if event in ["active-job", "active-job-signal", "active-job-expiry"]:
+                            if event in ["active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"]:
                                 wait_for(lambda: (root / "active-ready.json").exists() or process.poll() is not None,
                                          25, "managed process readiness handoff")
                                 assert process.poll() is None, "active-job worker exited before ownership check"
@@ -490,7 +521,7 @@ if __name__ == "__main__":
     parser.add_argument("--output")
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--root")
-    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout", "active-job", "active-job-signal", "active-job-expiry"])
+    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout", "active-job", "active-job-signal", "active-job-expiry", "active-job-stalled-stdout"])
     parser.add_argument("--node")
     parser.add_argument("--initialized", action="store_true")
     options = parser.parse_args()
