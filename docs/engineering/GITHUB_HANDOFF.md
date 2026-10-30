@@ -1,5 +1,18 @@
 # GitHub-only project handoff
 
+## Current original-session expiry increment — 30 October
+
+Baseline #432 main01148008ce5a3b59c61961f6de0e6b98b691912c has independent
+CI40943437676 SUCCESS4/4 and final #323 receipt6506843047. The next schema7
+case adds actual isolated Node expiry under existing10s operator lifetime,
+without renewal, transport EOF or stop RPC supplying its termination. Require
+native handle exit, original session reaping and exact post-reap start denial
+while Bridge remains alive, then ordinary EOF exit/joins. Sixteen offline
+observer tests are supplemental; exact-head/main gates and factual #323 receipt
+remain required. [Owning proof](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Preserve unknown startup failure40940330506. Held admissions, native Git,
+resource-release/global launch fencing and V1 GO remain unaccepted.
+
 ## Current failure-evidence follow-up
 
 #431 is merged at `9af7232937525a5ba7c597027edeef267c4a80dc`, but independent

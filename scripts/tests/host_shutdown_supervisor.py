@@ -78,7 +78,7 @@ def phases(path):
     return observed
 
 
-def receive(path, request_id, process):
+def receive_response(path, request_id, process):
     found = []
 
     def ready():
@@ -93,8 +93,13 @@ def receive(path, request_id, process):
         return False
 
     wait_for(ready, 10, "MCP response")
-    assert "result" in found[0] and "error" not in found[0], "MCP request failed"
-    return found[0]["result"]
+    return found[0]
+
+
+def receive(path, request_id, process):
+    response = receive_response(path, request_id, process)
+    assert "result" in response and "error" not in response, "MCP request failed"
+    return response["result"]
 
 
 def send(process, message):
@@ -250,21 +255,24 @@ def worker(args):
     root = Path(args.root)
     wait_for(lambda: (root / "go").exists(), 10, "external ownership gate")
     deliver = callback = None
-    if os.name == "nt" and args.event not in ["headless", "active-job"]:
+    if os.name == "nt" and args.event not in ["headless", "active-job", "active-job-expiry"]:
         deliver, callback = windows_console()
     command = [str(Path(args.bridge).resolve()), str(root)]
-    if args.event in ["active-job", "active-job-signal"]:
+    if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
         node = Path(args.node).resolve(strict=True)
         assert node.name.lower() == "node.exe"
         command.extend(["--allow-executable=interpreter:" + str(node), "--allow-isolated-node=" + str(node)])
+    if args.event == "active-job-expiry":
+        command.extend(["--session-lifetime-seconds", "10"])
     if args.event == "stalled-stdout":
         return stalled_stdout_case(command, root, deliver)
     environment = dict(os.environ, OPTIC_STARTUP_TIMING="1")
-    if args.event in ["active-job", "active-job-signal"]:
+    if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
         environment["OPTIC_LAUNCHER_PHASES"] = "1"
     process = None
     with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
         try:
+            bridge_started_at = time.monotonic()
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
                                        stderr=error, env=environment)
             log = root / "stderr.log"
@@ -289,9 +297,11 @@ def worker(args):
                 send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
                     "name": "session_info", "arguments": {}}})
                 assert receive(root / "stdout.log", 2, process).get("isError") is not True
-            if args.event in ["active-job", "active-job-signal"]:
+            if args.event in ["active-job", "active-job-signal", "active-job-expiry"]:
                 result = active_proof().run_case(process, log, root, node, send, receive, phases, wait_for,
-                                               deliver if args.event == "active-job-signal" else None)
+                                               deliver if args.event == "active-job-signal" else None,
+                                               expiry_started_at=bridge_started_at if args.event == "active-job-expiry" else None,
+                                               receive_response=receive_response)
             elif args.event == "headless":
                 process.stdin.close()
                 process.wait(timeout=5)
@@ -372,10 +382,11 @@ def supervise(args):
         cases.append(("stalled-stdout", True))
         cases.append(("active-job", True))
         cases.append(("active-job-signal", True))
-    result = dict(schema_version=6, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
+        cases.append(("active-job-expiry", True))
+    result = dict(schema_version=7, sha=os.environ.get("OPTIC_SOURCE_SHA") or os.environ["GITHUB_SHA"],
                   checkout_sha=os.environ["GITHUB_SHA"], run=os.environ["GITHUB_RUN_ID"],
                   attempt=os.environ["GITHUB_RUN_ATTEMPT"], complete=False, cases=[],
-                  claim="Windows ordinary stdio and active isolated Node EOF/physical-stop exit; not held-admission/native Git acceptance; Unix characterization only")
+                  claim="Windows stdio and active isolated Node EOF/physical-stop/session-expiry; not held-admission/native Git acceptance; Unix characterization only")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -387,7 +398,7 @@ def supervise(args):
                            "--bridge", str(bridge), "--root", str(root), "--event", event]
                 if initialized:
                     command.append("--initialized")
-                if event in ["active-job", "active-job-signal"]:
+                if event in ["active-job", "active-job-signal", "active-job-expiry"]:
                     node = shutil.which("node.exe")
                     assert node, "hosted operator Node missing"
                     command.extend(["--node", str(Path(node).resolve(strict=True))])
@@ -397,7 +408,7 @@ def supervise(args):
                     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     startup.wShowWindow = 0
                     options.update(startupinfo=startup, creationflags=(
-                        subprocess.CREATE_NO_WINDOW if event in ["headless", "active-job"] else subprocess.CREATE_NEW_CONSOLE))
+                        subprocess.CREATE_NO_WINDOW if event in ["headless", "active-job", "active-job-expiry"] else subprocess.CREATE_NEW_CONSOLE))
                 job = guard.Job() if guard else None
                 process = None
                 completed = False
@@ -410,7 +421,7 @@ def supervise(args):
                         (root / "go").write_text("owned", encoding="ascii")
                         if job:
                             worker_deadline = time.monotonic() + 45
-                            if event in ["active-job", "active-job-signal"]:
+                            if event in ["active-job", "active-job-signal", "active-job-expiry"]:
                                 wait_for(lambda: (root / "active-ready.json").exists() or process.poll() is not None,
                                          25, "managed process readiness handoff")
                                 assert process.poll() is None, "active-job worker exited before ownership check"
@@ -479,7 +490,7 @@ if __name__ == "__main__":
     parser.add_argument("--output")
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--root")
-    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout", "active-job", "active-job-signal"])
+    parser.add_argument("--event", choices=["ctrl-c", "ctrl-break", "sigint", "sigterm", "headless", "stalled-stdout", "active-job", "active-job-signal", "active-job-expiry"])
     parser.add_argument("--node")
     parser.add_argument("--initialized", action="store_true")
     options = parser.parse_args()

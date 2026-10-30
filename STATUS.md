@@ -1,5 +1,17 @@
 # Current project status
 
+## Windows V1 — actual active Node on original session expiry
+
+Baseline main `01148008ce5a3b59c61961f6de0e6b98b691912c` has independent
+CI40943437676 SUCCESS4/4. The next hosted-only schema-7 case exercises the
+existing operator 10s session lifetime without renewal, with a real isolated
+Node running before expiry. It requires native process exit and the original
+session-reap record while Bridge/input remain alive, then exact inactive-session
+refusal of another process_start before client EOF. Prior eight Windows and
+four Unix cases remain strict. Sixteen offline observer tests pass; final
+exact-head/main evidence is required. [Contract and nonclaims](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Windows V1 NO-GO; no production code, deadline, permission or release change.
+
 ## Windows V1 — first-failure diagnostics after #431 main refusal
 
 Latest merged main `9af7232937525a5ba7c597027edeef267c4a80dc` has an OPEN

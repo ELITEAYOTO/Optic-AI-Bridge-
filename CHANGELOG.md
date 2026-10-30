@@ -1,5 +1,18 @@
 # Changelog
 
+## 30 October — physical original-session expiry with active isolated Node
+
+The hosted supervisor adds an actual active-Node session-expiry case using the
+existing operator lifetime10s without renewal. It retains operator image/token/
+original outer Job/native-handle checks, observes Node exit while Bridge/input
+stay live, then requires exact inactive-session rejection of another start.
+EOF is sent only afterward, with the unchanged5s exit/join requirement.
+Schema7 keeps all previous cases and bounded first-failure evidence. Sixteen
+offline tests cover exact complete reap records, authority-specific refusals
+and unchanged positive RPC handling. No runtime/grant/budget change; final
+exact-head/main evidence required. Earlier unknown startup failure and V1
+NO-GO remain; no release or native Git acceptance.
+
 ## 29 October — bounded host-stop first-failure evidence
 
 The physical supervisor now preserves optional failed-report diagnostics before

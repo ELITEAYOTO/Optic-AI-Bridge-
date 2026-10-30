@@ -1,5 +1,21 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October continuation — original expiry with actual managed Node
+
+Latest verified baseline main01148008ce5a3b59c61961f6de0e6b98b691912c,
+CI40943437676 SUCCESS4/4; #432 diagnostic integration receipt6506843047.
+The next test-only increment uses existing operator session lifetime10s without
+renewal. Native identity/actual AppContainer token/original external Job checks
+precede expiry; a retained handle must signal between10..20s from Bridge birth,
+with readiness before5s. Require original session reaping and exact denied new
+process_start while Bridge and input stay alive. Client EOF is sent only after
+these observations; the old5s root exit/both-join gate remains. [Schema7](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+Sixteen local observer tests are supplemental. Require exact-head CI, review,
+authorized squash, independent main CI and #323 receipt. No physical local run.
+The earlier40940330506 startup cause remains UNKNOWN; no retry-to-green or fix
+is claimed. This is managed-work expiry, not held admissions, atomic launch
+fencing, quota/profile/target-stream cleanup, native Git or V1 GO. No release.
+
 ## Current continuation — first-failure diagnostics after #431
 
 Main `9af7232937525a5ba7c597027edeef267c4a80dc`, tree
