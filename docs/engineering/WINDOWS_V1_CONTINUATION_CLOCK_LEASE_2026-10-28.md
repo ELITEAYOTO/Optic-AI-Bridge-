@@ -1,5 +1,17 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — denied watchdog with a live suspended root
+
+Two hosted Windows fixtures extend the original bounded Job-list proof: after
+actual watchdog ACCESS_DENIED on explicit stop or expiry, its worker is joined
+but the original root handle must remain unsignaled and kernel Job count1.
+Only subsequent trusted fixture termination using the unchanged full original
+Job may signal the root and separately reach kernel-empty. The fixed system
+root is never resumed; no handles are inherited. No product launcher/recovery
+or resource policy changes. Exact-head and independent-main evidence remain
+required; Windows V1 **NO-GO**.
+[Owning authority audit](ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## 30 October — original runtime owner observes native termination outcome
 
 The inert native Git status owner now exposes the original watchdog's retained
