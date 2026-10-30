@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 30 October — distinguish supervisor observation ages from producer timings
+
+The hosted fixture now keeps at most eight receiver-only startup ages from the
+unchanged pre-Popen monotonic origin: Popen return, listener wait start/failure,
+first observed entry/pin/hash completion and latest observed read boundaries.
+Only complete newly polled records count; the bounded snapshot is added to the
+first failure evidence before recovery. No producer-emission or kernel-stack
+inference, acceptance rule, deadline, case or schema8 success change. Earlier
+pin-opened failure41123153308 remains unexplained. Windows V1 **NO-GO**.
+[Owning proof](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
 ## 30 October — preserve first pin-opened startup failure and bounded read progress
 
 After host-stop binding, independent main41123153308 FAILED Windows active-job

@@ -128,6 +128,51 @@ class ExpiryEvidenceTests(unittest.TestCase):
             self.assertEqual(supervisor.receive(path, 7, None), {"ok": True})
 
 
+class StartupObservationTests(unittest.TestCase):
+    def test_partial_records_wait_and_repeated_poll_preserves_first_seen_age(self):
+        observer = supervisor.StartupObservation(100.0)
+        entry = b"OPTIC_STARTUP phase=entry elapsed_ms=0"
+        observer.observe(entry, 101.0)
+        self.assertEqual(observer.snapshot()["ages_ms"], {})
+        observer.observe(entry + b"\r\n", 102.0)
+        observer.observe(entry + b"\r\n", 109.0)
+        self.assertEqual(observer.snapshot()["ages_ms"], {"entry_first_seen_ms": 2000})
+        self.assertTrue(observer.snapshot()["receiver_observation_only"])
+
+    def test_late_batch_is_receiver_age_not_embedded_producer_elapsed(self):
+        observer = supervisor.StartupObservation(100.0)
+        observer.mark("popen_returned_ms", 101.0)
+        observer.mark("listener_wait_started_ms", 102.0)
+        data = (b"OPTIC_STARTUP phase=entry elapsed_ms=0\n"
+                b"OPTIC_PROCESS_IDENTITY_PHASE phase=pin-opened elapsed_ms=1\n"
+                b"OPTIC_PROCESS_IDENTITY_READ phase=read-started call=1 observed_bytes=0 elapsed_ms=1\n")
+        observer.observe(data, 110.0)
+        data += b"OPTIC_PROCESS_IDENTITY_READ phase=read-returned call=1 observed_bytes=64 read_bytes=64 elapsed_ms=2\n"
+        observer.observe(data, 111.0)
+        ages = observer.snapshot()["ages_ms"]
+        self.assertEqual(ages["popen_returned_ms"], 1000)
+        self.assertEqual(ages["pin_opened_first_seen_ms"], 10000)
+        self.assertEqual(ages["read_returned_last_seen_ms"], 11000)
+        self.assertEqual(len(ages), 6)
+
+    def test_clock_regression_or_oversized_rewritten_input_is_explicit(self):
+        observer = supervisor.StartupObservation(100.0)
+        observer.mark("failure_observed_ms", 99.0)
+        self.assertEqual(observer.snapshot()["observation_error"], "observer-clock-regressed")
+        self.assertEqual(observer.snapshot()["ages_ms"], {})
+        unknown = supervisor.StartupObservation(0.0)
+        unknown.mark("unbounded-external-name", 1.0)
+        self.assertEqual(unknown.snapshot()["ages_ms"], {})
+        self.assertIn("observation_error", unknown.snapshot())
+        other = supervisor.StartupObservation(0.0)
+        other.observe(b"x" * (supervisor.LIMIT + 1), 1.0)
+        self.assertIn("observation_error", other.snapshot())
+        rewritten = supervisor.StartupObservation(0.0)
+        rewritten.observe(b"ignored\n", 1.0)
+        rewritten.observe(b"", 2.0)
+        self.assertIn("observation_error", rewritten.snapshot())
+
+
 class FailureEvidenceTests(unittest.TestCase):
     def test_missing_log_does_not_mask_original_failure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -154,6 +199,7 @@ class FailureEvidenceTests(unittest.TestCase):
             root = Path(directory)
             (root / "worker.log").write_bytes(b"worker startup exception")
             (root / "stderr.log").write_bytes(b"original Bridge phase")
+            (root / "startup-observation.json").write_bytes(b'{"receiver_observation_only":true}')
             supervisor.remember_failure(result, root, "active-job", AssertionError("ownership"))
             supervisor.remember_failure(result, root, "active-job", OSError("later cleanup"))
         evidence = result["failure"]
@@ -161,6 +207,7 @@ class FailureEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["message"], "ownership")
         self.assertEqual(evidence["worker_log_tail"]["text"], "worker startup exception")
         self.assertEqual(evidence["bridge_stderr_tail"]["text"], "original Bridge phase")
+        self.assertIn("receiver_observation_only", evidence["startup_observation_tail"]["text"])
 
     def test_unreadable_diagnostic_does_not_replace_case_error(self):
         with tempfile.TemporaryDirectory() as directory:

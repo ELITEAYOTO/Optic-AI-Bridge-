@@ -1,5 +1,50 @@
 # Physical process signal to original stdio cleanup
 
+## 30 October — passive supervisor startup observation ages
+
+After diagnostic PR444, exact-head CI41124971175/preparation41124971285 and
+independent main41125877168 all passed at first attempt; main489a0ab tree7bd770c0
+is clean and verified complete schema8 Windows10/Unix4. New streaming digest/limit
+test explicitly passes on both platforms. [Receipt6533269036](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6533269036)
+preserves the earlier independent-main41123153308 pin-opened failure, without
+claiming these later green observations explain or fix it.
+
+A missing hash-complete after pin-opened with elapsed0/1ms does NOT establish that
+hashing occupied the whole10s listener budget. Producer-relative phases, process
+creation/loading, scheduling and observation delays are separate. Extend only
+the fixture evidence: keep the original monotonic sample immediately before
+Popen, record Popen-return and listener-wait-start ages, then timestamp complete
+new stderr records as they are seen by the EXISTING phase poll. No extra read,
+thread, clock reset, waiting budget or injected product signal is added.
+
+Eight allowlisted numeric keys at most: Popen return, listener wait start, failure
+observation, first entry/pin/hash-complete observation, latest read-start/read-return
+observation. Repeated polls do not retag old records, partial lines do not count,
+and clock regression/oversized input/observed truncation are diagnostic errors.
+This does not authenticate file identity or detect every possible rewrite. Receiver age is NOT
+producer emission time: late batches/descheduled observers can make several
+markers first appear together. Fields may be absent if a record was not seen by
+that poll; the original stderr tail remains separate. No age grants acceptance,
+classifies a blocked syscall or supplies a universal latency bound.
+
+On worker failure, save a small startup-observation.json before recovery; an IO
+failure saving it must not replace the original exception. Parent remember_failure
+retains its existing first-error rule and4096-byte tail bound for this optional
+file, alongside original worker/Bridge tails, before TemporaryDirectory cleanup.
+Success reports/cases remain unchanged schema8 Windows10/Unix4; this is additive
+failure evidence only. The existing strict phase parser is extracted over the
+same already-read bytes and keeps malformed/partial handling unchanged.
+
+Offline tests exercise late producer-relative0/1/2ms records seen at receiver10/11s,
+partial records, repeated polls, clock regression, oversized/shrunken snapshots,
+unknown key refusal and first-error evidence retention. Initial new test wrongly
+counted five rather than six intentionally observed fields; preserve that local
+assertion log, correct the arithmetic and require all20 tests. No physical host
+supervisor is run locally. Require exact-head hosted CI, both full reports,
+review/squash and independent main before claiming integration. Native Git stays
+disabled; V1 NO-GO, startup cause/held-admission/global issuer/security/platform
+and uncertainty gates remain open; no release, retry or protection relaxation.
+
 ## 30 October — first pin-opened startup failure; bounded identity read evidence
 
 Host-binding PR443 tested headfc278af9/CI41122187026 passed4/4, applicable
