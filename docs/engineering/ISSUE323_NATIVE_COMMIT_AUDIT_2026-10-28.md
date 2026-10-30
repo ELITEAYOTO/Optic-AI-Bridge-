@@ -1,5 +1,32 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 30 October — distinguish watchdog completion from native termination result
+
+The existing watchdog discarded the Windows result of TerminateJobObject.
+Retain one immutable result after that exact original-Job call returns, using
+OnceLock shared with the worker. The custody accessor returns None until a
+result is published, Some(Ok(())) after native success or Some(Err(HRESULT))
+after failure. No error is replaced with a successful stop receipt. This also
+preserves unknown/pending state if the call has not returned; it supplies no
+bound on a stalled Win32 call. Drop still cancels and joins before Job closure.
+
+The existing real empty-Job deadline test now waits separately for worker
+completion and requires actual native success. A new original-stop test requires
+success without expiry, and a cancellation test joins an unexpired no-stop
+watchdog and requires NO result. These are hosted Windows no-child fixtures;
+no injected termination-failure execution or live Git/root/descendant proof is
+claimed. Local formatting/diff checks are not hosted behavioral evidence.
+
+Only observability changes: polling, original stop flags, immutable horizon,
+termination invocation, ownership, limits and cleanup order remain unchanged.
+The AppContainer watchdog shares the recording mechanism but its behavior and
+acceptance are unchanged. HRESULT success is not kernel Job-empty, root signal,
+stream EOF or an authority fence; #439 explicitly shows later creation remains
+possible on a terminated retained Job. This does not implement uncertain-stop
+recovery, a service-wide issuer or future create/resume permission. Native Git
+remains disabled, Windows V1 NO-GO. Require exact-head applicable hosted CI,
+review, authorized squash and independent push/main before claiming integration.
+
 ## 30 October — empty Job termination does not seal later creation (#439)
 
 Before treating a native stop/empty receipt as a launch/revoke boundary, test its

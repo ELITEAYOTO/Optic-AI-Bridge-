@@ -1,5 +1,16 @@
 # Delivery roadmap
 
+## 30 October — retain the native watchdog termination result
+
+The inert native Job custody now retains the completed TerminateJobObject
+result: absent before an attempt returns, success only after native success,
+or the original Windows HRESULT on failure. Cancellation without a stop or
+expiry publishes no termination receipt. Deadline observation and worker
+completion remain separate; even successful termination is neither root exit,
+Job-empty, pipe EOF nor future launch closure (#439). No native Git activation.
+Hosted exact-head and independent-main validation remain required. Windows V1
+**NO-GO**. [Owning authority audit](docs/engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md).
+
 ## 30 October — native fence prerequisite: kill is not future admission closure (#439)
 
 Keep successful Job termination and kernel-empty observation separate from closing
