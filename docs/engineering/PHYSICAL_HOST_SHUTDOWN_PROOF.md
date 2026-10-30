@@ -1,5 +1,46 @@
 # Physical process signal to original stdio cleanup
 
+## Schema8 — active isolated Node AND unread Bridge stdout (#437)
+
+Adds Windows active-job-stalled-stdout to the nine previous Windows cases; Unix
+keeps four characterizations. This changes only the fixture/observer, not runtime
+code or operator authority. Initialization and real process_start/read/result RPCs
+use one unbuffered parent pipe reader for this case. Original Node image,
+actual AppContainer token, nonce/PID, retained query/synchronize-only handle and
+membership in the original external Job are attested as in the existing active case.
+
+After that attestation, send exactly32 bounded metadata-only session_info requests
+(ids1000..1031, input at most4096 bytes), stop consuming stdout, wait for queued
+bytes and settle250ms. Recheck that the same retained Node handle is still
+unsignaled and both parent pipe ends remain open. No further response read occurs.
+Send physical Ctrl+Break through the unchanged strict private-console inventory.
+One unchanged five-second deadline covers both ordinary Bridge exit1 and the
+retained Node handle becoming kernel-signaled. Require stop before original
+cleanup before stdin join before stdout join. Both parent input and the sole
+stdout reader must stay open through exit; close/drain cannot provide success.
+The original30s child budget must not be reached, no process_stop RPC is used,
+and failure-recovery kills cannot provide a passing result. Original45s worker,
+25s ownership, startup/readiness bounds and normal external Job-empty/reaping remain.
+
+First exact source `997bd7333210128d4595fd057ac3a40bdc9afb52`,
+[CI41050193728](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41050193728)
+SUCCESS4/4 attempt1, complete schema8 Windows10/Unix4,17 observer tests each.
+The combined case observed4140 queued bytes, reported pipe capacity4096, Node
+still live after the queue observation, and combined exit observation16ms after
+stop (integer-rounded sample). These are observations, not a strict fullness or
+capacity bound, a sampled kernel write stack, instantaneous exit or universal
+latency guarantee. Final candidate and independent-main receipts remain in #437/#323.
+
+The report explicitly retains held_admission_proven=false/native_git_proven=false:
+metadata calls and an already-started managed job do not prove physical work
+inside a still-counted admission. No uncertain-stop/pre-exit resource/profile/
+product-Job/target-stream cleanup, shared host/policy launch fence, startup-stall
+fix or installed Windows10/11 acceptance is inferred. Registry missing-state wait
+semantics are unchanged; existing compatibility tests require UnknownSession.
+Local17/17 observer tests and diff check are supplemental; the first sandboxed
+attempt had12 temporary-directory PermissionErrors and is not a product RED.
+No local Bridge/native fixture/build launch. V1 NO-GO; no release/tag/GitRead activation.
+
 ## Supplemental lifecycle regression — competing cleanup (#436)
 
 This is **not a new physical shutdown case**. The earlier audit conjectured an

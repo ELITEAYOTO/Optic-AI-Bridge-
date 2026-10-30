@@ -1,5 +1,17 @@
 # Delivery roadmap
 
+## 30 October — combined managed-job/output stop proof (#437)
+
+Record the schema8 hosted active-Node plus unread-stdout case without replacing
+any prior criterion: Windows10/Unix4, same five-second combined Bridge/Node gate,
+original console/Job/native identity and both IO joins, both parent pipes open.
+Next acceptance remains physical held counted work, safe uncertainty/resource
+ordering, shared host/policy native-launch fencing and installed Windows10/11.
+The registry wait-predicate compatibility currently rejects missing state; any
+original-generation/drain change needs its own evidence and contract review.
+Neither this conjunction nor #436 explains the historical startup stalls.
+Windows V1 remains NO-GO; no release or native Git activation.
+
 ## 30 October — close the narrow competing-cleanup hypothesis (#436)
 
 Record idempotence after another collector fully removes an already-observed

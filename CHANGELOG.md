@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — active isolated Node with unread stdout (#437)
+
+- Add Windows schema8 active-job-stalled-stdout: attest the real Node, queue a
+  fixed metadata-only batch, stop reading stdout, recheck Node alive, send physical
+  Ctrl+Break and require Bridge exit1/native handle signal within one existing5s window.
+- Keep parent input and output reader open through exit, ordered cleanup/IO joins
+  and normal external Job-empty/reaping; retain nine old Windows/four Unix cases.
+- Add a bounded metadata-batch observer regression;17 offline tests pass. Initial
+  sandbox temporary-directory errors are separate from the passing authorized run.
+- No runtime, authority, budget or protection changes; no held-admission/native
+  Git/startup-fix claim. Windows V1 NO-GO, no release/tag.
+
 ## Unreleased — cleanup interleaving regression (#436)
 
 - Cover expired and explicitly revoked original session/lease state removed by

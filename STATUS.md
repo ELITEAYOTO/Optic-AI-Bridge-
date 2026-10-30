@@ -1,5 +1,23 @@
 # Current project status
 
+## 30 October — active Node with unread stdout (#437)
+
+Schema8 adds a hosted Windows conjunction of two previous proofs: an actual
+isolated Node remains alive after unread Bridge output is queued, then physical
+Ctrl+Break must stop Bridge and signal the retained Node handle inside the same
+unchanged five-second window. Parent stdin and the sole unread stdout reader stay
+open through exit; original cleanup, both IO joins and normal external Job-empty
+reaping remain required. First exact source `997bd7333210128d4595fd057ac3a40bdc9afb52`
+passed [CI41050193728](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41050193728)
+4/4 attempt1, complete Windows10/Unix4 and17 observer tests per platform.
+
+No runtime code changes. Queued output is not a sampled blocked write/fullness
+proof; the case explicitly retains held_admission_proven=false and
+native_git_proven=false. Admission-drain/generation policy, resource/uncertainty/
+launch-fence/security/platform gates and earlier unexplained startup failures
+remain separate. Windows V1 **NO-GO**, no release/tag/native GitRead activation.
+[Owning proof](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
 ## 30 October — competing session cleanup regression (#436)
 
 The initial audit's proposed error between inactivity observation and revocation
