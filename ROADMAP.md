@@ -1,5 +1,15 @@
 # Delivery roadmap
 
+## 30 October — close the narrow competing-cleanup hypothesis (#436)
+
+Record idempotence after another collector fully removes an already-observed
+inactive original; do not add a speculative UnknownSession fallback. Both expired
+and revoked cases must preserve the other live session/lease and deny active
+cleanup. This closes only that audit question. Reaping during admission drainage,
+held physical IO, uncertainty/resource ordering and shared host/policy/native Git
+launch fencing remain separate work, as do the unproved startup stalls and
+installed Windows10/11 acceptance. V1 NO-GO; no release.
+
 ## 30 October — keep terminal cleanup observation race-correct
 
 Preserve main41005173901's Ubuntu EOF observer failure (Windows9 succeeded).

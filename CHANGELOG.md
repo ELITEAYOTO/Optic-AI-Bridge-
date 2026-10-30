@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — cleanup interleaving regression (#436)
+
+- Cover expired and explicitly revoked original session/lease state removed by
+  another collector between eligibility observation and cleanup continuation.
+  Require exactly one removal, an empty repeat report and another live owner intact.
+- Extract the existing cleanup tail privately with unchanged order/logic. The
+  earlier audit hypothesis was contradicted by already-idempotent primitives;
+  this adds no runtime error fallback or claimed behavioral fix.
+- Preserve all physical schema7 cases, drainage, deadlines and NO-GO/release gates.
+
 ## 30 October — stdio terminal-authority test observer
 
 The test-only original_closed helper now accepts each original authority as

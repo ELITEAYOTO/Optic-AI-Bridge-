@@ -1,5 +1,19 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — competing-cleanup audit corrected (#436)
+
+The proposed inactive-observation/revoke error was contradicted by missing-record
+primitives already returning no-op success. Add deterministic real-registry
+expired/revoked interleavings with a fully completed competing collector, an empty
+repeat report and another live session/lease preserved. A private extraction
+keeps the exact cleanup tail; no new error handling or authority rule is needed.
+See [the supplemental proof and nonclaims](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+This does not cover collectors waking during admission drainage or attribute the
+historical prelaunch stalls. Held physical admission/global launch fencing/native
+Git/resource/security/platform gates remain open. Require exact-head Windows/
+Ubuntu and applicable native checks, honest review, squash, independent main and
+#323 receipts. V1 NO-GO; no release or protection change.
+
 ## Current 30 October continuation — terminal observer race
 
 #434 headf4c8ba429cc49aefdbad48de0958f46f5adbb6bc/CI41004466674 passed4/4,

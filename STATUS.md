@@ -1,5 +1,22 @@
 # Current project status
 
+## 30 October — competing session cleanup regression (#436)
+
+The initial audit's proposed error between inactivity observation and revocation
+was not reproduced: the existing missing-record primitives are already idempotent.
+A deterministic real-registry regression now covers both expired and revoked
+originals fully removed by another collector before cleanup resumes. Only the
+winner reports removal; the resumed collector returns an empty report, while a
+second session and its lease remain live and active cleanup remains denied.
+A private extraction preserves the cleanup operations and ordering; no new
+exception suppression, authority or deadline rule is introduced.
+
+This is one scheduled interleaving without an OS child, not a general concurrent
+reaper or admission-drain proof. Existing physical schema7 Windows9/Unix4 gates
+remain separate. Startup failures40940330506/41003133144 remain unexplained;
+Windows V1 remains **NO-GO**, no release/tag/native GitRead activation.
+See [the proof limits](docs/engineering/PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
 ## Windows V1 — terminal-state observer after concurrent reaping
 
 Baseline main317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314 has failed independent

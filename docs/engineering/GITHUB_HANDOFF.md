@@ -1,5 +1,17 @@
 # GitHub-only project handoff
 
+## Current competing-cleanup audit — 30 October (#436)
+
+Baseline main435dc199924690c54ab6be987f25e4e239ac8981477 has independent
+CI41007262279 SUCCESS4/4, complete schema7 Windows9/Unix4. The next regression
+corrects the audit hypothesis: already-removed original session state is tolerated
+by the existing cleanup primitives, so no speculative runtime fallback is added.
+Privately extract the unchanged cleanup tail and test expired/revoked interleavings
+after a competing collector finishes, preserving another active session/lease.
+[Proof limits](PHYSICAL_HOST_SHUTDOWN_PROOF.md): no parallel/drain-wakeup/physical
+held-admission or startup-fix claim. Require this candidate's exact-head hosted
+checks and independent main, with receipts in #436/#323. V1 NO-GO, no release.
+
 ## Current stdio terminal observer correction — 30 October
 
 #434 main317c4f1ae8c5fcc8580dfdeaed52e3262a4ed314 has CI41005173901 FAILED3/4:
