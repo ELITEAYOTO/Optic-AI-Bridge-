@@ -1,5 +1,19 @@
 # Windows V1 continuation — clock provenance and original lease stop
 
+## 30 October — distinguish empty-Job kill from native launch closure (#439)
+
+Hosted sequential kernel evidence: after successful termination of an empty
+bounded Job, a later fixed system root can still be created suspended via the
+same original Job-list handle and remain alive. Never resume this root; a second
+termination must produce real root handle signal and separate kernel Job-empty.
+First source2ba610ea/CI41063470571 SUCCESS4/4 plus three native workflows green,
+with both new/original tests explicitly passing on ordinary Windows.
+[Owning authority audit](ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md) records scopes.
+No concurrent blocked syscall/watchdog/session/lease/host/policy fence, resumed
+execution, native Git or OS matrix acceptance is inferred. Future design must
+control later intentions and retain in-flight native ownership; no product change
+implements that here. Require final-head and independent-main evidence; V1 NO-GO.
+
 ## 30 October — counted worker owns unfinished real pipe read (#438)
 
 New component evidence uses the actual generic MCP admitted blocking worker,
