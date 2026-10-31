@@ -289,6 +289,33 @@ mod tests {
     }
 
     #[test]
+    fn expired_original_deadline_is_rejected_before_os_spawn_attempt() {
+        // This real runner seam receives the nonrenewable start from the
+        // public API. A working directory is an absolute but non-executable
+        // target on both platforms: attempting spawn would return an I/O
+        // error instead of the expected deadline error.
+        let runner = HardenedCommandRunner::new(Duration::from_millis(200)).unwrap();
+        let cwd = std::env::current_dir().expect("working directory");
+        let spec = HardenedCommandSpec {
+            executable: cwd.clone(),
+            cwd,
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            output_limit: 1,
+        };
+        let started = Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .expect("subtract bounded elapsed fixture time");
+        assert!(
+            matches!(
+                runner.run_inner(&spec, None, started),
+                Err(HardenedCommandError::TimedOut)
+            ),
+            "an already expired caller must not attempt OS process creation"
+        );
+    }
+
+    #[test]
     fn invalid_specs_fail_before_spawn() {
         let runner = HardenedCommandRunner::new(Duration::from_millis(1)).expect("runner");
         let relative_executable = HardenedCommandSpec {
