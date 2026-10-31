@@ -1,5 +1,48 @@
 # Changelog
 
+## 31 October 2026 — integrated PRs #450–#453; V1 remains NO-GO
+
+- [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450) —
+  **inert** in-flight Create/Resume tracker, non-blocking stop publication,
+  stop-denied future registrations. Squash `f907ab462704`;
+  [independent main CI #41191950148](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41191950148) SUCCESS 4/4.
+  Prior formatting red was corrected on a new head, not hidden.
+- [#451](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/451) —
+  original session, TaskLease-generation, Job and host stop signals
+  plus original nonrenewable Instant bound to the nonexecuting tracker
+  **after original native watchdog arm**. Squash `9a3b9b070320`;
+  [independent main #41193687286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41193687286) SUCCESS 4/4.
+  Earlier rustfmt/private-field compilation errors preserved in PR logs.
+- [#452](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/452) —
+  eliminate detachable call-count ticket ownership via Rust borrow
+  `TrackedNativeCall<'_>` and scoped concurrent stop fixture, preserving
+  original custody for the ticket's lifetime. Still no OS child.
+  Squash `1d7934de9410`;
+  [independent main #41194832125](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41194832125) SUCCESS 4/4.
+- [#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453) —
+  **live `HardenedCommandRunner` deadline-classification correction**:
+  capture original time at public API entry, before process spawn,
+  input copy and pipe setup. Regression injects an already-expired
+  start and must return `TimedOut`. Squash
+  `bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`;
+  [independent main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+  SUCCESS 4/4 on exact SHA, Windows runtime **424 passed/0 failed/11 ignored**.
+  [Dedicated #317 #41195558883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558883)
+  Windows and Ubuntu **11/11 each**, native preparation
+  [#41195558899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558899)
+  successful. Schema8 physical reports complete Windows10/Unix4.
+
+All four PRs had exact-head validation, reviewed (self-review not peer
+approval), squash merges, identical Git source trees, independent post-squash
+`push/main` CI SUCCESS 4/4, and receipts in PR/#323. They **do not** prove
+bounded legacy pipe joins or launch/revoke native GitRead and terminal
+root/Job/EOF ownership. #185/#319/#176/#182 remain separate issues;
+#323 is OPEN, **Windows 10/11 V1 NO-GO**. No release, no operator-PC actions.
+[Detailed technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md).
+
+---
+
+
 ## 31 October — four complete solidification PRs #445–#448 (Windows V1 still NO-GO)
 
 - [#445](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/445): bound receiver-only startup ages/cumulative pinned-executable read wall duration and reject same-length stderr rewrites that rewind the observer. Squash `6cc47415`; [independent main #41185358982](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41185358982) SUCCESS4/4. Historical Windows startup failures [#41123153308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41123153308) and [#41127771145](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41127771145) remain unexplained.
