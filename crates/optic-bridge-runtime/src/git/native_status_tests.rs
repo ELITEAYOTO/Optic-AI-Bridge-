@@ -1592,10 +1592,9 @@ fn original_watchdog_rejects_expiry_observed_only_after_arming() {
     // Deterministic post-arm horizon: the private observation is invoked
     // only AFTER the original Job watchdog is armed, never to mint authority.
     // No child is created and no real-time sleep can mask a stale clock read.
-    let result = owner.arm_original_watchdog_with_post_arm_clock(
-        &fixture.trusted(),
-        |_| MonotonicTime::from_millis(10_000),
-    );
+    let result = owner.arm_original_watchdog_with_post_arm_clock(&fixture.trusted(), |_| {
+        MonotonicTime::from_millis(10_000)
+    });
     assert!(matches!(
         result,
         Err(crate::NativeGitStatusSnapshotError::StopRequired)
@@ -1619,7 +1618,10 @@ fn original_watchdog_rejects_expiry_observed_only_after_arming() {
         0
     );
     assert_eq!(
-        manager.result(&fixture.envelope.session, &job).unwrap().status,
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
         crate::ProcessStatus::Failed
     );
 }
