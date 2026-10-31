@@ -574,6 +574,71 @@ fn precreated_native_git_status_custody_holds_job_pipes_and_original_permits() {
 
 #[cfg(windows)]
 #[test]
+fn clocked_native_custody_rejects_expiry_after_job_precreation_and_releases_capacity() {
+    let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap();
+    let job = registered.job_id();
+
+    // The callback is invoked after actual Windows Job/pipe allocation, not
+    // before resource creation. No real-time sleep and no executable launch.
+    let outcome = registered.precreate_native_custody_with_post_creation_clock(
+        MonotonicTime::from_millis(11),
+        |original| {
+            assert!(
+                original.identity().matches(&clock),
+                "post-creation observation must keep the original service clock"
+            );
+            assert_eq!(transport.active_requests(), 1);
+            assert_eq!(
+                manager
+                    .active_session_job_count(&fixture.envelope.session)
+                    .unwrap(),
+                1
+            );
+            MonotonicTime::from_millis(10_000)
+        },
+    );
+    assert!(matches!(
+        outcome,
+        Err(crate::NativeGitStatusCustodyError::StopRequired)
+    ));
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+}
+
+#[cfg(windows)]
+#[test]
 fn revoked_native_status_cannot_precreate_kernel_custody() {
     let fixture = Fixture::new();
     let transport = guard(1_000);
