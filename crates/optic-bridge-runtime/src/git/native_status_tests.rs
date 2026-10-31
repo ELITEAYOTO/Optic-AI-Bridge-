@@ -1664,7 +1664,10 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             .unwrap()
             .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
             .unwrap();
-        assert!(owner.call_tracking.is_none(), "unarmed owner is not tracked");
+        assert!(
+            owner.call_tracking.is_none(),
+            "unarmed owner is not tracked"
+        );
         owner.arm_original_watchdog(&fixture.trusted()).unwrap();
         let calls = owner
             .call_tracking
