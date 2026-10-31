@@ -20,6 +20,12 @@ sessions must inspect live PRs/heads rather than assume a dated inventory persis
 
 ## Change lifecycle
 
+### Completion rule for stabilization PRs (31 October 2026)
+
+A PR is **not complete** after merely pushing a commit or obtaining a green PR badge. One active technical PR at a time: verify `main` live, define one measurable fix and regression, commit and push, inspect **exact final-head** regular and applicable specialized CI (including real Windows test logs and physical evidence), review diff, preserve original red attempts, **squash merge**, compare the integrated Git tree to the tested final head, then verify a **separate push/main 4/4 CI** on the exact squash SHA and record the receipt in the PR and [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323). Only then start the next. Never claim a self-authored review as independent approval. If any required check fails, leave the PR open and explain why. See [31 October handoff](HANDOFF_WINDOWS_V1_2026-10-31.md).
+
+No Windows V1 GO without owner acceptance. Do not update branch protections, issue state, credentials, releases or local operator machines without explicit permission; GitHub-hosted runners only.
+
 1. Start from the actual target branch. One coherent change per branch/PR; do not
    create a long stack of public drafts for every internal development step.
 2. State the concrete behavior, validation and remaining limits. Security or

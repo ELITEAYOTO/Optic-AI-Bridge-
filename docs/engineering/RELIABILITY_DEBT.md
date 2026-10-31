@@ -1,5 +1,16 @@
 # Reliability and implementation debt
 
+## Active P0 debt — 31 October 2026 after fully verified #448
+
+Production pre-doc snapshot `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` and [independent main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4. PRs #445–#448 are merged, not draft candidates. The new post-sensitive-verify deadline check and both original-clock post-arm/post-Job-precreation checks are **narrow bounded improvements**, not the actual native GitRead completion.
+
+**Highest remaining P0:** a true coordinated/revocation-linearizable authorization issuer across **session, original TaskLease generation, policy/epoch, host-stop, pinned executable/repository and Windows process create/resume**; cover in-flight OS calls and later launch. Separate revocation/clock snapshots are not authority. #355's deliberate real Git post-revoke spawn RED and #439 empty Job + later creation evidence rule out treating watchdog/Job-empty as launch seal. Once a safe issuer is proven, migrate one fixed native GitRead command with counted Job/root/stdin/stdout/stderr custody; verify **all** terminal/EOF proof and crash/uncertainty before capacity release. Test against real execution only after authorization chain is established.
+
+**Other open release blockers:** #176/#182 sensitive read provenance; #319 MCP first-response 30s; #185 AppContainer/Node; installed Windows10/11 and release settings. Preserve first reds [#41123153308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41123153308) and [#41127771145](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41127771145), no causal extrapolation from read progress. #317 issue is administratively closed, but #323's behavioral acceptance OPEN. Research #327/#353/#355/#358 separate. Full [31 Oct handoff](HANDOFF_WINDOWS_V1_2026-10-31.md). Historical 25 Oct candidate priorities below are not current integration state.
+
+---
+
+
 ## P0 sequencing — 25 October 2026 after five research PRs
 
 **Verified production `main=d7d4d50adf95b6a3cf4a5df0ef06a6ba526d6810`**, independent [CI #40173338835](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40173338835) 4/4 green. Merged #356/#357 typed common GitRead command construction only; native owner is **NOT live**. #317/#323 remain open, V1 NO-GO.

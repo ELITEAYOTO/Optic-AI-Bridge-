@@ -1,5 +1,12 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## REPRISE PRIORITAIRE — 31 octobre 2026 après #448
+
+**Prompt ACTIF à copier : [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).** Lire aussi la [passation vérifiée](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md). Anciennes sections « active » ci-dessous = **archives datées**. Snapshot avant cette PR documentaire : `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [CI indépendante #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4 first attempt. #445–#448 **push, revue, squash, CI indépendante** terminés ; 4 PR de recherche #327/#353/#355/#358 ouvertes mais non fusionnées ; #317 CLOSED administratif, #323/#185/#319/#176/#182 OPEN, Windows V1 NO-GO. **Même méthode à poursuivre : une PR complète à la fois jusqu'au squash et à la CI push/main sur le merge SHA.** Aucun accès PC, runner auto-hébergé, Desktop, REL, tag, release ou assouplissement sécurité. Vérifier le vrai `main` après cette PR de docs.
+
+---
+
+
 ## REPRISE ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
 Lire la [passation Windows V1 pour Chat classique](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)

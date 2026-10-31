@@ -1,5 +1,20 @@
 # Delivery roadmap
 
+## Active Windows V1 hardening order — 31 October 2026
+
+Verified source checkpoint before this docs PR: `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 SUCCESS attempt 1. Four PRs #445–#448 are **fully merged and independently checked**, but **Windows V1 remains NO-GO** under [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323).
+
+1. **P0 #317 acceptance tracked in #323:** design/prove a synchronized original session + TaskLease + typed policy/epoch + original host-stop issuer controlling both in-flight and future Win32 `CreateProcessW`/`ResumeThread` and revoke. The now-integrated clocked native candidate and watchdog are **non-executing** and are NOT a launch fence. #355 is research-red for post-revoke spawn; #439 proves empty-Job termination is not a future seal.
+2. **P0 owned physical lifecycle:** native owner before spawn; original counted admission/quota/Job/root/stdin/stdout/stderr retained through root exit, native Job-empty, both EOFs and verified no pending create/resume; native HRESULT/uncertainty, crash restart and stop-before-drain failure paths. Do not simply migrate from legacy pipe joins with a timeout assertion.
+3. **P0 security:** #176/#182 content + Git read provenance/alias/metadata safety or explicit runtime exclusion of affected project paths. No generalized real-project remote access.
+4. **P1 reliability:** root-cause/defend first MCP response #319 and separate AppContainer Node #185 without timeout inflation, network/containment weakening or retry-to-green. Preserve original red run evidence.
+5. **V1 release proof:** installed Windows 10/11 acceptance and rollback/update/uninstall, bounded soak and fault injection, reviewed GitHub branch/release credentials and final explicit owner sign-off. No tag while NO-GO.
+
+**Execution:** one narrowly scoped PR at a time, exact-head Windows/Ubuntu + specialized checks, review, **push + squash**, compare Git tree, verify independent push/main 4/4 and physical source evidence **before** next PR. [Full handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md).
+
+---
+
+
 ## 30 October — first receiver-age failure and cumulative read-call duration
 
 PR445 first head443b2aff/CI41127771145 FAILED Windows after20 offline tests and

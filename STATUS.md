@@ -1,5 +1,18 @@
 # Current project status
 
+## Current verified integration — 31 October 2026 after PR #448
+
+**Snapshot before this docs update:** `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [independent CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) **SUCCESS 4/4 attempt 1** on the exact integrated SHA; `main.protected=false`. Windows V1 **NO-GO**, release gate [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN. Recheck live `main` after this documentation PR.
+
+**Four complete squash integrations (#445–#448):** diagnostics #445 ([main #41185358982](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41185358982)); MCP GitRead original response deadline after confidential review #446 ([main #41186369040](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41186369040)); native watchdog **post-arm** original-clock check #447 ([main #41188103927](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188103927)); native Job/stdio **post-precreation** original-clock check #448 ([main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407)). All four exact-source PR CIs and independent post-squash main CIs were 4/4 SUCCESS, attempt 1 on their **final** tested heads/merged commits. Relevant native workflows green. #448 raw physical schema8 reports complete Windows10/Unix4, 21 offline supervisor tests per OS, and targeted native Windows regression passed on exact merged main.
+
+**No readiness promotion:** native GitRead remains **unwired/non-executing**. There is no synchronized session/TaskLease/policy/Host create/resume gate, proof of future-launch closure or physical live GitRead root/Job/pipe EOF, nor fixed legacy descendant-held joins. Historic pre-listener red [#41123153308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41123153308), [#41127771145](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41127771145) remain unexplained (no disk/Defender/CPU cause established). The research revoke-before-spawn [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) remains intentionally negative/unmerged. Separate active issues [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319), [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176), [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182) remain OPEN. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) is administratively CLOSED but its release acceptance stays in #323; four open research PRs #327/#353/#355/#358 must not be bulk merged.
+
+**Owners:** [canonical 31 Oct handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) with exact SHA/run matrix, [current successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md) and [native authority audit](docs/engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md). The dated 30 Oct material below is historical as of this checkpoint.
+
+---
+
+
 ## 30 October — first receiver-age failure and cumulative read-call duration
 
 PR445 first head443b2aff/CI41127771145 FAILED Windows after20 offline tests and

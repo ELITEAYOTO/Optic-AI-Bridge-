@@ -1,5 +1,16 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 31 October — integrated original-clock checks are NOT a native launch fence
+
+At the pre-documentation checkpoint, `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` passed [independent push/main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 first attempt. Consecutive PRs [#447](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/447) and [#448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/448) validate the same retained service clock **after** (respectively) actual original empty-Job watchdog arming and original Windows Job/pipe precreation, instead of using a stale pre-operation time. Dedicated Windows-only tests use deterministic injected post-operation observations, no executable child, and check preserved counted custody and safe no-child release on expiry; #448 native prep [#41188629411](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188629411) and ordinary CI [#41188629382](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188629382) passed. Both exact-head Git trees are equal to their final squash trees.
+
+[#445](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/445) and [#446](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/446) add, respectively, bounded startup diagnostics/cursor integrity and a final original GitRead response deadline check after sensitive-path review. These additions do not affect native CreateProcess permission.
+
+**Design consequence:** An empty Job with completed TerminateJobObject (even success) **does not close future create/resume authority** (#439). Separate session, lease, policy and host mutexes/stops do not give an atomic cancellation/launch boundary. The future service-owned issuer must synchronize/reject **in-flight** as well as future `CreateProcessW` and `ResumeThread` operations; maintain original pin, verified TaskLease/sensitive-read scope and same-generation cancellation; never hold authority locks during unbounded OS I/O. Retain Job, pipes, root and quota until **physical terminal/EOF** and outstanding launch closure are proved. Research #355 post-revoke Git spawn remains a negative test, not a green acceptance. #323 OPEN, Windows V1 **NO-GO**. [Full current handoff](HANDOFF_WINDOWS_V1_2026-10-31.md). The 30 October audit below is historical.
+
+---
+
+
 ## 30 October — original host-stop source binding
 
 [ADR-0039](../decisions/ADR-0039-ORIGINAL-HOST-STOP-PROVENANCE.md) defines the
