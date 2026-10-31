@@ -1,4 +1,23 @@
-# Optic AI Bridge — prompt intégral de reprise après PR #453 (31 octobre 2026)
+# Optic AI Bridge — prompt intégral de reprise après PR #457 (31 octobre 2026)
+
+## Point de reprise vérifié — après PR #457, avant nouvelle PR documentaire
+
+`main=291c152cdd132753668563031cf34bcfe0810940` **before the current documentation PR**, with independent [push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, first attempt** on exact integrated SHA and checkout. Windows runtime **428 passed/0 failed/11 ignored**. Schema8 physical reports `complete=true`, **10 Windows/4 Unix** scenarios/characterizations, SHA/run/attempt concordant and artifacts saved. This is a historical verified checkpoint, not an immutable current branch: always requery GitHub after this docs PR.
+
+| PR | Final verified scope | Squash main | Independent push/main |
+| --- | --- | --- | --- |
+| [#454](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/454) | Docs after #453; not runtime acceptance | `50607a1b72373c6058a46c74968f80fc6165335d` | [#41197559450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41197559450) 4/4 |
+| [#455](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/455) | Live `HardenedCommandRunner`: reject known expired original deadline **before spawn** | `0bdf3621afdccb812d2165021a4788128b4f989f` | [#41202989935](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41202989935) 4/4 |
+| [#456](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/456) | Live stdout/stderr reader: stop **new** reads after shared output ceiling | `ef403d14890dc15127431560ebda1fdfb7cdc8d0` | [#41224958029](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224958029) 4/4 |
+| [#457](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/457) | Inert native call tracker: poisoned mutex implies stop-required, counter remains unknown | `291c152cdd132753668563031cf34bcfe0810940` | [#41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) 4/4 |
+
+**Tests and distinctions:** #455 final [PR #41202575165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41202575165) 4/4, specialized [#41202575174](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41202575174) 11/11 each OS; its test-only CI was **cancelled before regression ran** (no observed behavioral RED). #456 **genuine test-only Windows/Ubuntu RED** [#41223798735](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41223798735), two assertions on each OS; intermediate #317 [#41224075957](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224075957) RED due to an obsolete fixture requiring a long wait after overflow. Final [PR #41224435690](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224435690) 4/4 and [#317 #41224435710](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224435710) **12/12 each OS**; the final fixture retains a quiet descendant's stdout but isolates stderr, expects early output-limit classification. #457 first unformatted test-only CI stopped at **rustfmt**, not behavioral failure; formatted test-only [#41225740874](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41225740874) observed **Windows RED 427 passed/1 failed/11 ignored** on poisoned-ledger stop; final [PR #41226054364](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226054364) 4/4, Windows 428/0/11; [Private Preparation #41226054503](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226054503) success. All final PR-head/temporary merge/squash **Git trees identical**, independent `push/main` attempt1 4/4 and physical reports preserved; self-reviews were COMMENT, never independent approval. Reuse [PR #455 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/455#issuecomment-6543659921), [#456 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/456#issuecomment-6546840125), [#457 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/457#issuecomment-6547082325), and their #323 audit comments.
+
+**Not GO:** production `GitReadService::status()` continues using `HardenedCommandRunner`. Known expired deadlines now fail before spawn, but no atomic create/revoke fence or interruption of blocked `spawn`, `wait` or pipe `.join()`. Post-overflow read-stop does not cancel another reader already blocked on an inherited handle. The native GitRead owner/Job/watchdog/stop-tracker remains **non-executing**, does not issue native launch authority, and poison-as-stop is only unknown-accounting fail-closed. A durable service guardian needs joint original session/TaskLease generation/policy epoch/host/pinned-target *future and in-flight* CreateProcessW/ResumeThread synchronization and independent proof of root exit, kernel Job-empty, stdout and stderr EOF, no future spawn, crash/revocation uncertainty and retained quotas. Research [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) demonstrates negative **real Git spawn after revoke**; #327/#353/#355/#358 remain unmerged. #323 OPEN / Windows V1 **NO-GO**; #319/#185/#176/#182 distinct. No tag, release, native switch, security changes, self-hosted runner or user-PC commands without new authorization.
+
+**Instruction prioritaire pour le prochain chat :** vérifier d'abord le HEAD GitHub et la CI `push/main` actuels, puis avancer une seule PR complète à la fois sur un véritable défaut P0, de préférence une garantie concrète de coordination create/resume/revoke plutôt qu'une nouvelle jauge inerte. Ne jamais basculer GitRead natif sans chaîne originale session/TaskLease/policy/hôte/targets et guardian durable, ni publier de V1 sans un GO explicite sur #323. Conserver le test RED de la recherche #355. Revue du diff, exact-head Windows/Ubuntu, preuves physiques, squash, arbres identiques, CI push/main indépendante et reçus sont obligatoires. Aucun accès au PC, runner auto-hébergé ou assouplissement de sécurité.
+
+---
 
 > **À utiliser dans le nouveau chat** : continue réellement l'ingénierie du dépôt
 > GitHub ci-dessous, de manière autonome, une PR complète à la fois. Ne reste pas
@@ -26,7 +45,7 @@ contrôles de contenu, ni les mécanismes de stop pour obtenir des tests verts.
 Ne contourne pas les contraintes de cybersécurité/Codex. Privilégie
 le **connecteur GitHub** et des runners Windows/Ubuntu GitHub-hosted.
 
-## Point de reprise exact — dernière technique validée
+## Point historique de reprise après #453 (remplacé ci-dessus)
 
 Au checkpoint du 31/10/2026, **avant la PR documentaire** :
 `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`.
