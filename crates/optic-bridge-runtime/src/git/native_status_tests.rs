@@ -1558,6 +1558,76 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 
 #[cfg(windows)]
 #[test]
+fn original_watchdog_rejects_expiry_observed_only_after_arming() {
+    let clock = crate::StdClock::new();
+    let fixture = Fixture::new_on_clock(&clock);
+    let transport = guard(1_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let registered = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap();
+    let job = registered.job_id();
+    let mut owner = registered
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+
+    // Deterministic post-arm horizon: the private observation is invoked
+    // only AFTER the original Job watchdog is armed, never to mint authority.
+    // No child is created and no real-time sleep can mask a stale clock read.
+    let result = owner.arm_original_watchdog_with_post_arm_clock(&fixture.trusted(), |_| {
+        MonotonicTime::from_millis(10_000)
+    });
+    assert!(matches!(
+        result,
+        Err(crate::NativeGitStatusSnapshotError::StopRequired)
+    ));
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    assert_eq!(transport.active_requests(), 1);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        1
+    );
+    // A second attempt must never reset the same original watchdog horizon.
+    assert!(owner.arm_original_watchdog(&fixture.trusted()).is_err());
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+    assert_eq!(
+        manager
+            .active_session_job_count(&fixture.envelope.session)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        manager
+            .result(&fixture.envelope.session, &job)
+            .unwrap()
+            .status,
+        crate::ProcessStatus::Failed
+    );
+}
+
+#[cfg(windows)]
+#[test]
 fn original_watchdog_rejects_expiry_before_arm_without_resetting_original_horizon() {
     let clock = crate::StdClock::new();
     let fixture = Fixture::new_on_clock(&clock);
