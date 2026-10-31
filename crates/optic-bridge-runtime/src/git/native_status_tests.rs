@@ -1673,6 +1673,23 @@ fn armed_native_owner_observes_internal_ledger_stop_without_original_revoke() {
         "the retained native owner must not report healthy when its ledger is sealed"
     );
     assert!(calls.track(NativeCallPhase::Resume).is_none());
+    // The original Job watchdog must also observe the ledger's internal
+    // fail-closed signal, without needing a session/lease/host/Job revocation
+    // or waiting for the five-second absolute deadline.
+    let stop_bound = std::time::Instant::now() + Duration::from_secs(2);
+    while !owner.watchdog_stop_observed() && std::time::Instant::now() < stop_bound {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        owner.watchdog_stop_observed(),
+        "internal native ledger stop must wake the original Job watchdog"
+    );
+    assert!(!owner.watchdog_deadline_expired(), "stop must precede expiry");
+    assert_eq!(
+        owner.watchdog_termination_result(),
+        Some(Ok(())),
+        "the original kernel Job termination call must actually complete"
+    );
     assert_eq!(
         calls.in_flight(),
         Some(InFlightNativeCalls {
