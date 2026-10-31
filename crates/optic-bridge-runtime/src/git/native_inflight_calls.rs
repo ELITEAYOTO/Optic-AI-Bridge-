@@ -31,10 +31,31 @@ struct CallCounts {
     resumes: usize,
 }
 
+/// Four retained, original and irreversible stop sources: session generation,
+/// TaskLease generation, counted Job and process-owned host.
+struct OriginalNativeStops {
+    signals: [Arc<AtomicBool>; 4],
+    deadline: std::time::Instant,
+}
+
 #[derive(Default)]
 struct Shared {
     stop_requested: AtomicBool,
     counts: Mutex<CallCounts>,
+    original: Option<OriginalNativeStops>,
+}
+
+impl Shared {
+    fn is_stop_required(&self) -> bool {
+        self.stop_requested.load(Ordering::Acquire)
+            || self.original.as_ref().is_some_and(|original| {
+                std::time::Instant::now() >= original.deadline
+                    || original
+                        .signals
+                        .iter()
+                        .any(|signal| signal.load(Ordering::Acquire))
+            })
+    }
 }
 
 /// This accounting gate is deliberately not attached to the live MCP or native
@@ -55,8 +76,23 @@ pub(crate) struct TrackedNativeCall {
 }
 
 impl NativeCallStopTracker {
+    // A source-free tracker is confined to the unit-only concurrency fixture.
+    // The real precreated owner must bind its ORIGINAL stop signals and horizon.
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn with_original_stops(
+        signals: [Arc<AtomicBool>; 4],
+        deadline: std::time::Instant,
+    ) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                original: Some(OriginalNativeStops { signals, deadline }),
+                ..Shared::default()
+            }),
+        }
     }
 
     /// Register potential in-flight work, not permission to launch. The second
@@ -64,11 +100,11 @@ impl NativeCallStopTracker {
     /// A concurrent stop after that check makes this an already-admitted call
     /// which the eventual guardian must reconcile or forcibly terminate.
     pub(crate) fn track(&self, phase: NativeCallPhase) -> Option<TrackedNativeCall> {
-        if self.shared.stop_requested.load(Ordering::Acquire) {
+        if self.shared.is_stop_required() {
             return None;
         }
         let mut counts = self.shared.counts.lock().ok()?;
-        if self.shared.stop_requested.load(Ordering::Acquire) {
+        if self.shared.is_stop_required() {
             return None;
         }
         let counter = match phase {
@@ -88,8 +124,10 @@ impl NativeCallStopTracker {
         self.shared.stop_requested.store(true, Ordering::Release);
     }
 
+    /// Original revoke and original absolute expiry close future admission,
+    /// even if nobody explicitly called request_stop on this tracker.
     pub(crate) fn stop_requested(&self) -> bool {
-        self.shared.stop_requested.load(Ordering::Acquire)
+        self.shared.is_stop_required()
     }
 
     /// None on poisoned accounting state is unknown, NOT an empty ledger.
