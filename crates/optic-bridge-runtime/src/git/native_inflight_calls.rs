@@ -123,7 +123,14 @@ impl NativeCallStopTracker {
             NativeCallPhase::CreateSuspended => &mut counts.creates,
             NativeCallPhase::Resume => &mut counts.resumes,
         };
-        *counter = counter.checked_add(1)?;
+        let Some(next) = counter.checked_add(1) else {
+            // An exhausted ledger cannot safely admit another call. Seal
+            // admission permanently, even if counts subsequently decrease.
+            // This is not an OS launch/revocation synchronization barrier.
+            self.request_stop();
+            return None;
+        };
+        *counter = next;
         Some(TrackedNativeCall {
             shared: &self.shared,
             phase,
