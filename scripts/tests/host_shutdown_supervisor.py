@@ -85,6 +85,11 @@ class StartupObservation:
             self.error = self.error or "stderr-observation-bound-or-rewrite"
             return
         end = data.rfind(b"\n") + 1
+        # A same-length rewrite can move the final newline backwards without
+        # shrinking the byte count. Never rewind into previously seen records.
+        if end < self.offset:
+            self.error = self.error or "stderr-observation-bound-or-rewrite"
+            return
         # Only new complete records count; a repeated poll never retags them.
         for line in data[self.offset:end].splitlines():
             for prefix, name, first_only in (

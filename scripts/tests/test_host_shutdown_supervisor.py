@@ -155,6 +155,31 @@ class StartupObservationTests(unittest.TestCase):
         self.assertEqual(ages["read_returned_last_seen_ms"], 11000)
         self.assertEqual(len(ages), 6)
 
+    def test_same_length_partial_rewrite_cannot_retimestamp_prior_records(self):
+        observer = supervisor.StartupObservation(100.0)
+        entry = b"OPTIC_STARTUP phase=entry elapsed_ms=0\n"
+        read = b"OPTIC_PROCESS_IDENTITY_READ phase=read-started call=1 observed_bytes=0 elapsed_ms=0\n"
+        complete = entry + read
+        observer.observe(complete, 101.0)
+        original_offset = observer.offset
+        original_ages = dict(observer.snapshot()["ages_ms"])
+        self.assertEqual(original_offset, len(complete))
+        self.assertIn("read_started_last_seen_ms", original_ages)
+
+        # File content changes but its total length stays the same; its final
+        # complete newline is now behind the last consumed record boundary.
+        partial_rewrite = entry + b"x" * len(read)
+        self.assertEqual(len(partial_rewrite), len(complete))
+        observer.observe(partial_rewrite, 102.0)
+        self.assertEqual(observer.offset, original_offset)
+        self.assertEqual(observer.snapshot()["observation_error"],
+                         "stderr-observation-bound-or-rewrite")
+
+        # Reappearance of the original bytes must not redate an old record.
+        observer.observe(complete, 103.0)
+        self.assertEqual(observer.offset, original_offset)
+        self.assertEqual(observer.snapshot()["ages_ms"], original_ages)
+
     def test_clock_regression_or_oversized_rewritten_input_is_explicit(self):
         observer = supervisor.StartupObservation(100.0)
         observer.mark("failure_observed_ms", 99.0)
