@@ -322,6 +322,71 @@ mod tests {
         );
     }
 
+    // A bounded reader must not keep consuming inherited stdout/stderr
+    // after the shared ceiling has been crossed. No external child is needed.
+    struct CountingOutput {
+        reads: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Read for CountingOutput {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let call = self.reads.fetch_add(1, Ordering::AcqRel);
+            if call == 0 {
+                buf[..2].copy_from_slice(b"ab");
+                Ok(2)
+            } else {
+                Ok(0)
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_reader_stops_without_waiting_for_eof_after_output_limit() {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let exceeded = Arc::new(AtomicBool::new(false));
+        let captured = spawn_bounded_reader(
+            CountingOutput {
+                reads: Arc::clone(&reads),
+            },
+            Arc::new(AtomicU64::new(0)),
+            Arc::clone(&exceeded),
+            1,
+        )
+        .join()
+        .expect("reader thread did not panic")
+        .expect("read succeeded");
+        assert_eq!(captured, b"a");
+        assert!(exceeded.load(Ordering::Acquire));
+        assert_eq!(
+            reads.load(Ordering::Acquire),
+            1,
+            "an exceeded output ceiling must end this reader without another potentially blocking read"
+        );
+    }
+
+    #[test]
+    fn bounded_reader_does_not_enter_read_after_peer_exceeded_shared_limit() {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let exceeded = Arc::new(AtomicBool::new(true));
+        let captured = spawn_bounded_reader(
+            CountingOutput {
+                reads: Arc::clone(&reads),
+            },
+            Arc::new(AtomicU64::new(1)),
+            exceeded,
+            1,
+        )
+        .join()
+        .expect("reader thread did not panic")
+        .expect("read succeeded");
+        assert!(captured.is_empty());
+        assert_eq!(
+            reads.load(Ordering::Acquire),
+            0,
+            "a peer's published output ceiling must prevent a new blocking read"
+        );
+    }
+
     #[test]
     fn invalid_specs_fail_before_spawn() {
         let runner = HardenedCommandRunner::new(Duration::from_millis(1)).expect("runner");
