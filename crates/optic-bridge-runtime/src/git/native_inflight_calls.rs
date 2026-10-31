@@ -191,7 +191,11 @@ mod tests {
         let tracker = NativeCallStopTracker::new();
         let other_observer = tracker.clone();
         tracker.request_stop();
-        assert!(other_observer.track(NativeCallPhase::CreateSuspended).is_none());
+        assert!(
+            other_observer
+                .track(NativeCallPhase::CreateSuspended)
+                .is_none()
+        );
         assert!(other_observer.track(NativeCallPhase::Resume).is_none());
     }
 }
