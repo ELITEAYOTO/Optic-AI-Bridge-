@@ -1,5 +1,46 @@
 # Delivery roadmap
 
+## Current delivery order — 31 October 2026, after #453
+
+Verified **pre-documentation** `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`,
+independent [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+SUCCESS **4/4 attempt 1**. [#450–#453](HANDOFF_WINDOWS_V1_2026-10-31.md)
+are all squash-integrated, with identical trees and independently verified CI.
+The first three establish only **inert Windows native owner call accounting**;
+#453 closes a genuine legacy **post-spawn timeout-accounting classification**
+defect, **not** its potentially unbounded joins.
+
+1. **P0 live liveness / native launch authority:** preserve #317 negative
+   descendant-held pipe cases; prevent a legacy `.join()` from silently
+   becoming a 'bounded' promise or abandoning OS handles. Design a guardian
+   that can synchronize original session, TaskLease generation, typed policy
+   epoch, host stop and *actual* Win32 CreateProcessW/ResumeThread in-flight
+   and future issuance. Stop must publish without waiting for blocked OS
+   calls; keep uncertainty and original custody until reconciliation.
+2. **P0 physical terminal proof:** retained pins, capacity and owner handles
+   through real Git root exit, native kernel Job-empty, both stdout+stderr
+   EOFs, and no future launches; stop-before-drain and owner-loss recovery.
+   #355 is still research-negative; an empty Job/watchdog success is no seal.
+   No live native GitRead activation on independent green fixtures.
+3. **P0 security:** close sensitive-content, alias and Git provenance
+   issues #176/#182 before remote real-project exposure.
+4. **P1 reliability:** investigate actual first MCP response #319 and
+   AppContainer Node #185 without timeout increases, retry-to-green or
+   weakening network/security.
+5. **V1 release acceptance:** supervised Windows 10/11 operator-machine
+   evidence only with explicit permission, installer/update/uninstall
+   rollback, crash/soak, authentic provenance, reviewed branch/release
+   safeguards and explicit owner GO. **Do not tag or release while #323 OPEN.**
+
+Follow [31 Oct canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md),
+and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).
+Method: **one complete tested PR at a time** → exact HEAD tests and specialized
+CI → review → squash → Git-tree match → independent push/main 4/4 and physical
+reports → comment receipt in PR and #323. **Windows V1 NO-GO.**
+
+---
+
+
 ## Active Windows V1 hardening order — 31 October 2026
 
 Verified source checkpoint before this docs PR: `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 SUCCESS attempt 1. Four PRs #445–#448 are **fully merged and independently checked**, but **Windows V1 remains NO-GO** under [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323).
