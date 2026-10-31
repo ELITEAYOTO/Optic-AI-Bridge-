@@ -1,5 +1,30 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 31 October — owner-scoped native in-flight tickets, no detached OS calls
+
+The inert Windows tracker used by the original native custody is no longer
+`Clone` or `Default`; production construction requires the **original four
+stop sources and absolute watchdog horizon**. The `TrackedNativeCall<'_>`
+ticket now **borrows** the private tracker rather than holding a detached
+`Arc` to its counter. Its lifetime is structurally tied to the owner containing
+the tracker: an outstanding native-call ticket prevents that owner from being
+dropped in safe Rust through the borrowed API. The dedicated modelled blocked
+call runs inside `std::thread::scope`, preserving concurrent stop publication
+without extending the ticket past the tracker. The Windows original-owner test
+also borrows directly, retaining the counted Job/transport through the ticket.
+
+**Important boundary:** this is *compile-time resource lifetime safety for
+the synchronous tracked call*, not proof that a native child or descendant has
+terminated. Completing `CreateProcessW` or `ResumeThread` and dropping its
+ticket would NOT justify releasing the Job, root handles, quotas or pipes:
+those must remain under a durable guardian until independent physical
+root/descendant Job-empty and stdout/stderr EOF evidence. A stop can still be
+published between a successful admission check and entry to an OS API.
+There is no synchronized policy/session/lease/host launch issuer, no live
+native GitRead, and the #355 revoke-before-spawn research acceptance remains
+negative. **#323 stays OPEN / Windows V1 NO-GO.**
+
+
 ## 31 October — original-stop-bound inert native call tracker (next P0 slice)
 
 The non-executing `LeaseObservedNativeGitStatusCustody` now attaches its
