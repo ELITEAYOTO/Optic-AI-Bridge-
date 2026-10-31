@@ -150,6 +150,20 @@ impl NativeCallStopTracker {
         Arc::clone(&self.shared.stop_requested)
     }
 
+    /// Deterministic poison of the real ledger mutex without creating an OS
+    /// call, exposed only to hosted Rust test builds.
+    #[cfg(test)]
+    pub(crate) fn poison_ledger_for_test(&self) {
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                let _guard = self.shared.counts.lock().expect("fresh ledger");
+                panic!("intentional test-only native ledger poison");
+            });
+            assert!(worker.join().is_err(), "fixture must poison the ledger");
+        });
+        assert!(self.shared.counts.is_poisoned());
+    }
+
     /// Original revoke and original absolute expiry close future admission,
     /// even if nobody explicitly called request_stop on this tracker.
     pub(crate) fn stop_requested(&self) -> bool {
