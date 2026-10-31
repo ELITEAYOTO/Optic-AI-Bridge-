@@ -68,7 +68,10 @@ fn fixture_output_limit_root_exits() {
         return;
     }
     let mut descendant = synthetic_command("fixture_stdout_descendant");
-    descendant.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    // Retain inherited stdout beyond the root, but not stderr: a peer reader
+    // already blocked on an unrelated inherited pipe cannot be interrupted
+    // by the shared overflow flag and would make this timing test racy.
+    descendant.stdout(Stdio::inherit()).stderr(Stdio::null());
     let _synthetic_descendant = descendant.spawn().expect("spawn synthetic pipe holder");
     // Emit past the byte ceiling *after* opening the descendant's inherited
     // handles. An over-limit reader must now stop without waiting for EOF.
