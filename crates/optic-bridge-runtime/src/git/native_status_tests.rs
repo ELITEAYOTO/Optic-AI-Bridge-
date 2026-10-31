@@ -1623,6 +1623,70 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 
 #[cfg(windows)]
 #[test]
+fn original_native_job_watchdog_observes_poisoned_ledger_without_external_revoke() {
+    let clock = crate::StdClock::new();
+    let mut fixture = Fixture::new_on_clock(&clock);
+    fixture.envelope.resources.timeout_ms = 5_000;
+    fixture.lease.resource_ceiling.timeout_ms = 5_000;
+    assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+    assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+    fixture
+        .leases
+        .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+        .unwrap();
+    let transport = guard(10_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let mut owner = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap()
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+    let calls = owner.native_call_tracking_for_test().unwrap();
+    assert!(!owner.is_stop_required_at(crate::Clock::now(&clock)));
+    calls.poison_ledger_for_test();
+    assert_eq!(calls.in_flight(), None, "poison means unknown, never zero");
+    assert!(
+        owner.is_stop_required_at(crate::Clock::now(&clock)),
+        "poison must fail closed for the original native owner"
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !owner.watchdog_stop_observed() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        owner.watchdog_stop_observed(),
+        "poison observation must stop the original Windows Job watchdog"
+    );
+    assert!(!owner.watchdog_deadline_expired());
+    assert_eq!(owner.watchdog_termination_result(), Some(Ok(())));
+    assert_eq!(calls.in_flight(), None, "poison must remain unknown");
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    assert_eq!(transport.active_requests(), 1);
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+}
+
+#[cfg(windows)]
+#[test]
 fn armed_native_owner_observes_internal_ledger_stop_without_original_revoke() {
     use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
 
