@@ -1623,6 +1623,80 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 
 #[cfg(windows)]
 #[test]
+fn armed_native_owner_observes_internal_ledger_stop_without_original_revoke() {
+    use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
+
+    let clock = crate::StdClock::new();
+    let mut fixture = Fixture::new_on_clock(&clock);
+    fixture.envelope.resources.timeout_ms = 5_000;
+    fixture.lease.resource_ceiling.timeout_ms = 5_000;
+    assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+    assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+    fixture
+        .leases
+        .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+        .unwrap();
+    let transport = guard(10_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let mut owner = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap()
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+    let calls = owner.native_call_tracking_for_test().unwrap();
+    let ticket = calls.track(NativeCallPhase::CreateSuspended).unwrap();
+    let now = crate::Clock::now(&clock);
+    assert!(!owner.is_stop_required_at(now));
+    calls.request_stop(); // Model internal accounting failure, not registry revoke.
+    assert!(calls.stop_requested());
+    assert!(
+        owner.is_stop_required_at(crate::Clock::now(&clock)),
+        "the retained native owner must not report healthy when its ledger is sealed"
+    );
+    assert!(calls.track(NativeCallPhase::Resume).is_none());
+    assert_eq!(
+        calls.in_flight(),
+        Some(InFlightNativeCalls {
+            creates: 1,
+            resumes: 0,
+        })
+    );
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    assert_eq!(transport.active_requests(), 1);
+    drop(ticket);
+    assert_eq!(
+        calls.in_flight(),
+        Some(InFlightNativeCalls {
+            creates: 0,
+            resumes: 0,
+        })
+    );
+    assert!(owner.is_stop_required_at(crate::Clock::now(&clock)));
+    drop(owner);
+    assert_eq!(transport.active_requests(), 0);
+}
+
+#[cfg(windows)]
+#[test]
 fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watchdog_arm() {
     use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
 
