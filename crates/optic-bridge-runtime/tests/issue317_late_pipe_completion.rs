@@ -51,6 +51,16 @@ fn fixture_stdout_descendant() {
 }
 
 #[test]
+fn fixture_quiet_stdout_holder() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    // Keep the inherited stdout handle open until the known finite expiry.
+    // Do not write after the runner deliberately closes an over-limit reader.
+    thread::sleep(DESCENDANT_DELAY);
+}
+
+#[test]
 fn fixture_stdout_root_exits() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
@@ -67,11 +77,14 @@ fn fixture_output_limit_root_exits() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
     }
-    let mut descendant = synthetic_command("fixture_stdout_descendant");
-    descendant.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    let mut descendant = synthetic_command("fixture_quiet_stdout_holder");
+    // Retain inherited stdout beyond the root, but not stderr: a peer reader
+    // already blocked on an unrelated inherited pipe cannot be interrupted
+    // by the shared overflow flag and would make this timing test racy.
+    descendant.stdout(Stdio::inherit()).stderr(Stdio::null());
     let _synthetic_descendant = descendant.spawn().expect("spawn synthetic pipe holder");
     // Emit past the byte ceiling *after* opening the descendant's inherited
-    // handles: the output-limit reason must survive its late EOF.
+    // handles. An over-limit reader must now stop without waiting for EOF.
     println!("{}", "x".repeat(512));
     io::stdout().flush().expect("flush over-budget output");
     std::process::exit(0);
@@ -157,7 +170,7 @@ fn fixture_assert_late_stdin_is_not_success() {
 }
 
 #[test]
-fn fixture_assert_late_output_limit_is_not_reclassified() {
+fn fixture_assert_overflow_does_not_wait_for_descendant_eof() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
     }
@@ -167,19 +180,23 @@ fn fixture_assert_late_output_limit_is_not_reclassified() {
     let started = Instant::now();
     let result = runner.run(&command_spec);
     let elapsed = started.elapsed();
+    // The quiet synthetic descendant holds inherited stdout for 1.6s;
+    // stderr is isolated so a separate blocked read cannot skew this check.
+    // Crossing the output ceiling must now reject before that late EOF,
+    // rather than continuing to drain an already unacceptable stream.
     assert!(
-        elapsed > Duration::from_millis(800) && elapsed < Duration::from_secs(10),
-        "synthetic descendant must hold the pipe after output overflow; elapsed={elapsed:?}"
+        elapsed < Duration::from_millis(800),
+        "over-limit output must be rejected without waiting for descendant EOF; elapsed={elapsed:?}"
     );
     assert!(
         matches!(
             result,
             Err(HardenedCommandError::OutputLimitExceeded { limit: 128 })
         ),
-        "output overflow must not be mislabeled as the subsequent late EOF; got {result:?}"
+        "output overflow must retain its specific error even with inherited pipes; got {result:?}"
     );
     println!(
-        "ISSUE317_LATE_OVERFLOW_PRESERVED elapsed_ms={}",
+        "ISSUE317_OVERFLOW_EARLY_REJECTED elapsed_ms={}",
         elapsed.as_millis()
     );
 }
@@ -227,10 +244,10 @@ fn late_stdout_completion_must_not_be_success() {
 }
 
 #[test]
-fn late_output_limit_remains_specific() {
+fn output_limit_stops_early_and_remains_specific() {
     supervise(
-        "fixture_assert_late_output_limit_is_not_reclassified",
-        "ISSUE317_LATE_OVERFLOW_PRESERVED",
+        "fixture_assert_overflow_does_not_wait_for_descendant_eof",
+        "ISSUE317_OVERFLOW_EARLY_REJECTED",
     );
 }
 
