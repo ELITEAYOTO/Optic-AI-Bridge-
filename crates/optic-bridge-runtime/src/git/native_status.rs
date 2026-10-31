@@ -6,7 +6,10 @@ use optic_bridge_core::{ActionEnvelope, ActionId, MonotonicTime, ResourceBudget,
 use thiserror::Error;
 
 #[cfg(windows)]
-use crate::{Clock, NativeGitReadLeaseError, verify_registered_native_git_read_preflight};
+use crate::{
+    Clock, NativeGitReadLeaseError, native_inflight_calls::NativeCallStopTracker,
+    verify_registered_native_git_read_preflight,
+};
 
 use crate::{
     GitReadError, GitReadService, HardenedCommandSpec, NativeGitReadAdmissionError,
@@ -480,6 +483,7 @@ impl SessionCommittedNativeGitStatusCustody {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         Ok(LeaseObservedNativeGitStatusCustody {
+            call_tracking: None,
             session_owner: self,
             lease_commit,
         })
@@ -493,6 +497,9 @@ impl SessionCommittedNativeGitStatusCustody {
 #[must_use = "retain both original stop witnesses and native custody"]
 #[allow(dead_code)] // No CreateProcessW path can consume this research stage.
 pub(crate) struct LeaseObservedNativeGitStatusCustody {
+    // Inert and not a native launch ticket. No actual OS call may consume it
+    // until a guardian also owns all outstanding calls and physical cleanup.
+    call_tracking: Option<NativeCallStopTracker>,
     session_owner: SessionCommittedNativeGitStatusCustody,
     lease_commit: crate::task_lease_registry::TaskLeaseNativeOwnerCommit,
 }
@@ -551,20 +558,35 @@ impl LeaseObservedNativeGitStatusCustody {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         let unstarted = &mut self.session_owner.unstarted;
-        let mut stops = unstarted
-            .registered
-            .prepared
-            .admission
-            .native_stop_signals();
-        stops.push(unstarted.registered.record.stop_signal());
+        let [session_stop, lease_stop]: [std::sync::Arc<std::sync::atomic::AtomicBool>; 2] =
+            unstarted
+                .registered
+                .prepared
+                .admission
+                .native_stop_signals()
+                .try_into()
+                .map_err(|_| NativeGitStatusSnapshotError::OriginalStopSourcesMissing)?;
         let host = unstarted
             .registered
             .prepared
             .host_stop
             .as_ref()
             .ok_or(NativeGitStatusSnapshotError::HostOriginMismatch)?;
-        stops.push(host.stop_signal());
-        unstarted.native.arm_watchdog_until(until, stops)?;
+        let original_stops = [
+            session_stop,
+            lease_stop,
+            unstarted.registered.record.stop_signal(),
+            host.stop_signal(),
+        ];
+        // Both independent observers share these exact original generations
+        // and the same nonrenewable absolute service-clock horizon.
+        unstarted
+            .native
+            .arm_watchdog_until(until, original_stops.to_vec())?;
+        self.call_tracking = Some(NativeCallStopTracker::with_original_stops(
+            original_stops,
+            until,
+        ));
         // The pre-arm time cannot certify expiry AFTER kernel handle
         // duplication and independent worker startup. Retain the armed
         // watchdog on rejection; this remains no-child custody only.
@@ -612,6 +634,8 @@ pub enum NativeGitStatusSnapshotError {
     HostOriginMismatch,
     #[error("native watchdog requires preparation on the original service clock")]
     ClockRequired,
+    #[error("native original session or TaskLease stop sources are missing")]
+    OriginalStopSourcesMissing,
     #[error("native watchdog could not be armed: {0}")]
     Watchdog(#[from] std::io::Error),
     #[error("original native Git status admission is revoked or expired")]
