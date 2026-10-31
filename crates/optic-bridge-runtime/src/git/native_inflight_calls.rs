@@ -316,6 +316,38 @@ mod tests {
     }
 
     #[test]
+    fn exhausted_native_call_counter_closes_all_future_admission() {
+        // Model the integer boundary without creating any native process or
+        // attempting an impractical number of tracked calls.
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let tracker = NativeCallStopTracker::new();
+            {
+                let mut counts = tracker.shared.counts.lock().unwrap();
+                match phase {
+                    NativeCallPhase::CreateSuspended => counts.creates = usize::MAX,
+                    NativeCallPhase::Resume => counts.resumes = usize::MAX,
+                }
+            }
+            assert!(tracker.track(phase).is_none(), "counter cannot wrap");
+            assert!(
+                tracker.stop_requested(),
+                "exhausted call accounting must fail closed as stop required"
+            );
+            // Even after a subsequent count decrease the original owner
+            // must not reopen admission once capacity was exhausted.
+            {
+                let mut counts = tracker.shared.counts.lock().unwrap();
+                match phase {
+                    NativeCallPhase::CreateSuspended => counts.creates = 0,
+                    NativeCallPhase::Resume => counts.resumes = 0,
+                }
+            }
+            assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+            assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        }
+    }
+
+    #[test]
     fn original_absolute_deadline_denies_new_calls_without_manual_stop() {
         let signals: [Arc<AtomicBool>; 4] =
             std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
