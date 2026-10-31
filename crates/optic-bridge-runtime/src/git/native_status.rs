@@ -511,14 +511,22 @@ impl LeaseObservedNativeGitStatusCustody {
         &mut self,
         trusted: &NativeGitReadTrustedContext<'_>,
     ) -> Result<(), NativeGitStatusSnapshotError> {
-        self.arm_original_watchdog_with_post_arm_clock(trusted, |clock| clock.now())
+        self.arm_original_watchdog_inner(trusted, |clock| clock.now())
     }
 
-    // Keep the final clock read AFTER the OS watchdog arm. The injectable
-    // observer exists only to test a deadline crossing that exact boundary
-    // without sleeping or depending on Windows runner scheduling. Production
-    // always reads the immutable original service clock above.
+    // The injected clock observation exists ONLY in test builds. Production
+    // has no alternate path to supply a caller-chosen post-arm clock value.
+    #[cfg(test)]
     pub(crate) fn arm_original_watchdog_with_post_arm_clock(
+        &mut self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        read_post_arm_clock: impl FnOnce(&crate::StdClock) -> MonotonicTime,
+    ) -> Result<(), NativeGitStatusSnapshotError> {
+        self.arm_original_watchdog_inner(trusted, read_post_arm_clock)
+    }
+
+    // The final original-clock read happens only after the OS watchdog arm.
+    fn arm_original_watchdog_inner(
         &mut self,
         trusted: &NativeGitReadTrustedContext<'_>,
         read_post_arm_clock: impl FnOnce(&crate::StdClock) -> MonotonicTime,
