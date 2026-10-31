@@ -624,7 +624,17 @@ impl LeaseObservedNativeGitStatusCustody {
     }
 
     pub(crate) fn is_stop_required_at(&self, now: MonotonicTime) -> bool {
-        self.session_owner.is_stop_required_at(now) || self.lease_commit.is_stop_required_at(now)
+        self.session_owner.is_stop_required_at(now)
+            || self.lease_commit.is_stop_required_at(now)
+            // The original in-flight ledger can fail closed independently of
+            // external session, lease, Job and host revoke sources. A sealed
+            // ledger must never leave its retained owner reporting healthy.
+            // This observation remains neither launch authority nor
+            // physical terminal/EOF proof.
+            || self
+                .call_tracking
+                .as_ref()
+                .is_some_and(NativeCallStopTracker::stop_requested)
     }
 
     pub(crate) fn native_active_processes(&self) -> std::io::Result<u32> {
