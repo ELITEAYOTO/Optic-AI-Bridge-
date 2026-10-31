@@ -55,6 +55,10 @@ impl Shared {
 
     fn is_stop_required(&self) -> bool {
         self.stop_requested.load(Ordering::Acquire)
+            // A poisoned counter is unknown custody, never an all-clear.
+            // This read does not lock or repair the counter, nor prove
+            // native OS quiescence or revoke an already tracked call.
+            || self.counts.is_poisoned()
             || self.original.as_ref().is_some_and(|original| {
                 std::time::Instant::now() >= original.deadline
                     || original
