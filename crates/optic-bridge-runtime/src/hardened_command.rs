@@ -260,7 +260,6 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
 mod tests {
     use super::*;
 
- 
     #[test]
     fn deadline_consumed_before_spawn_cannot_be_refreshed_after_child_exit() {
         // Model time spent before completion of Command::spawn using an old
