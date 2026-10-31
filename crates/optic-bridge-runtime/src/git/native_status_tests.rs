@@ -1684,7 +1684,10 @@ fn armed_native_owner_observes_internal_ledger_stop_without_original_revoke() {
         owner.watchdog_stop_observed(),
         "internal native ledger stop must wake the original Job watchdog"
     );
-    assert!(!owner.watchdog_deadline_expired(), "stop must precede expiry");
+    assert!(
+        !owner.watchdog_deadline_expired(),
+        "stop must precede expiry"
+    );
     assert_eq!(
         owner.watchdog_termination_result(),
         Some(Ok(())),
