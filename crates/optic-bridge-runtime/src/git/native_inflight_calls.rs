@@ -268,7 +268,11 @@ mod tests {
         assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
         assert!(tracker.track(NativeCallPhase::Resume).is_none());
         drop(pending);
-        assert_eq!(tracker.in_flight(), None, "poison remains unknown after drop");
+        assert_eq!(
+            tracker.in_flight(),
+            None,
+            "poison remains unknown after drop"
+        );
         tracker.request_stop();
         assert!(tracker.stop_requested());
     }
