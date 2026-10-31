@@ -246,6 +246,12 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
         let mut captured = Vec::new();
         let mut buffer = [0_u8; PIPE_READ_CHUNK_BYTES];
         loop {
+            // Once either pipe has crossed the shared limit, do not enter
+            // another potentially blocking read. A read already in progress
+            // on the other pipe is not interruptible by this flag alone.
+            if exceeded.load(Ordering::Acquire) {
+                break;
+            }
             let read = reader.read(&mut buffer)?;
             if read == 0 {
                 break;
@@ -257,6 +263,9 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
             captured.extend_from_slice(&buffer[..accepted]);
             if read_u64 > remaining {
                 exceeded.store(true, Ordering::Release);
+                // The result is already an output-limit error. Keeping this
+                // handle open to drain until EOF could hang on descendants.
+                break;
             }
         }
         Ok(captured)
