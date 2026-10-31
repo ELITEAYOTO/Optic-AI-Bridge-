@@ -55,10 +55,11 @@ impl Shared {
 
     fn is_stop_required(&self) -> bool {
         self.stop_requested.load(Ordering::Acquire)
-            // A poisoned counter is unknown custody, never an all-clear.
-            // This read does not lock or repair the counter, nor prove
-            // native OS quiescence or revoke an already tracked call.
-            || self.counts.is_poisoned()
+            // A poisoned counter is unknown custody. Publish the same
+            // irreversible internal stop which the already-armed original
+            // Job watchdog observes; true as a return value alone is not
+            // enough to request native termination.
+            || self.stop_if_poisoned()
             || self.original.as_ref().is_some_and(|original| {
                 std::time::Instant::now() >= original.deadline
                     || original
@@ -66,6 +67,15 @@ impl Shared {
                         .iter()
                         .any(|signal| signal.load(Ordering::Acquire))
             })
+    }
+
+    fn stop_if_poisoned(&self) -> bool {
+        if self.counts.is_poisoned() {
+            self.stop_requested.store(true, Ordering::Release);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -115,7 +125,14 @@ impl NativeCallStopTracker {
         if self.shared.is_stop_required() {
             return None;
         }
-        let mut counts = self.shared.counts.lock().ok()?;
+        let mut counts = match self.shared.counts.lock() {
+            Ok(counts) => counts,
+            Err(_) => {
+                // Poison can win after the first pre-lock stop check.
+                self.request_stop();
+                return None;
+            }
+        };
         if self.shared.is_stop_required() {
             return None;
         }
@@ -173,7 +190,14 @@ impl NativeCallStopTracker {
     /// None on poisoned accounting state is unknown, NOT an empty ledger.
     /// Even Some(0, 0) says nothing about live children, Job or pipe EOF.
     pub(crate) fn in_flight(&self) -> Option<InFlightNativeCalls> {
-        let counts = self.shared.counts.lock().ok()?;
+        let counts = match self.shared.counts.lock() {
+            Ok(counts) => counts,
+            Err(_) => {
+                // Unknown custody must also notify the original Job watchdog.
+                self.request_stop();
+                return None;
+            }
+        };
         Some(InFlightNativeCalls {
             creates: counts.creates,
             resumes: counts.resumes,
