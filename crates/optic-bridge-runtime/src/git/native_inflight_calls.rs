@@ -55,10 +55,11 @@ impl Shared {
 
     fn is_stop_required(&self) -> bool {
         self.stop_requested.load(Ordering::Acquire)
-            // A poisoned counter is unknown custody, never an all-clear.
-            // This read does not lock or repair the counter, nor prove
-            // native OS quiescence or revoke an already tracked call.
-            || self.counts.is_poisoned()
+            // A poisoned counter is unknown custody. Publish the same
+            // irreversible internal stop which the already-armed original
+            // Job watchdog observes; true as a return value alone is not
+            // enough to request native termination.
+            || self.stop_if_poisoned()
             || self.original.as_ref().is_some_and(|original| {
                 std::time::Instant::now() >= original.deadline
                     || original
@@ -66,6 +67,15 @@ impl Shared {
                         .iter()
                         .any(|signal| signal.load(Ordering::Acquire))
             })
+    }
+
+    fn stop_if_poisoned(&self) -> bool {
+        if self.counts.is_poisoned() {
+            self.stop_requested.store(true, Ordering::Release);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -115,7 +125,14 @@ impl NativeCallStopTracker {
         if self.shared.is_stop_required() {
             return None;
         }
-        let mut counts = self.shared.counts.lock().ok()?;
+        let mut counts = match self.shared.counts.lock() {
+            Ok(counts) => counts,
+            Err(_) => {
+                // Poison can win after the first pre-lock stop check.
+                self.request_stop();
+                return None;
+            }
+        };
         if self.shared.is_stop_required() {
             return None;
         }
@@ -150,6 +167,20 @@ impl NativeCallStopTracker {
         Arc::clone(&self.shared.stop_requested)
     }
 
+    /// Deterministic poison of the real ledger mutex without creating an OS
+    /// call, exposed only to hosted Rust test builds.
+    #[cfg(test)]
+    pub(crate) fn poison_ledger_for_test(&self) {
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                let _guard = self.shared.counts.lock().expect("fresh ledger");
+                panic!("intentional test-only native ledger poison");
+            });
+            assert!(worker.join().is_err(), "fixture must poison the ledger");
+        });
+        assert!(self.shared.counts.is_poisoned());
+    }
+
     /// Original revoke and original absolute expiry close future admission,
     /// even if nobody explicitly called request_stop on this tracker.
     pub(crate) fn stop_requested(&self) -> bool {
@@ -159,7 +190,14 @@ impl NativeCallStopTracker {
     /// None on poisoned accounting state is unknown, NOT an empty ledger.
     /// Even Some(0, 0) says nothing about live children, Job or pipe EOF.
     pub(crate) fn in_flight(&self) -> Option<InFlightNativeCalls> {
-        let counts = self.shared.counts.lock().ok()?;
+        let counts = match self.shared.counts.lock() {
+            Ok(counts) => counts,
+            Err(_) => {
+                // Unknown custody must also notify the original Job watchdog.
+                self.request_stop();
+                return None;
+            }
+        };
         Some(InFlightNativeCalls {
             creates: counts.creates,
             resumes: counts.resumes,
@@ -268,6 +306,8 @@ mod tests {
     #[test]
     fn poisoned_inflight_ledger_requires_stop_and_never_reports_empty() {
         let tracker = NativeCallStopTracker::new();
+        let watchdog_stop = tracker.internal_stop_signal();
+        assert!(!watchdog_stop.load(Ordering::Acquire));
         // Poison the actual accounting mutex while retaining a native-call
         // ticket. This is a local model: no process or Windows API is called.
         let pending = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
@@ -282,6 +322,10 @@ mod tests {
             tracker.stop_requested(),
             "unknown/poisoned accounting must fail closed as stop required"
         );
+        assert!(
+            watchdog_stop.load(Ordering::Acquire),
+            "observed poison must irreversibly signal the original native Job watchdog"
+        );
         assert_eq!(tracker.in_flight(), None, "unknown is never zero");
         assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
         assert!(tracker.track(NativeCallPhase::Resume).is_none());
@@ -292,6 +336,21 @@ mod tests {
             "poison remains unknown after drop"
         );
         tracker.request_stop();
+        assert!(tracker.stop_requested());
+    }
+
+    #[test]
+    fn poisoned_ledger_inflight_observation_seals_original_watchdog_stop() {
+        let tracker = NativeCallStopTracker::new();
+        let watchdog_stop = tracker.internal_stop_signal();
+        tracker.poison_ledger_for_test();
+        assert!(!watchdog_stop.load(Ordering::Acquire));
+        assert_eq!(tracker.in_flight(), None, "unknown is never zero");
+        assert!(
+            watchdog_stop.load(Ordering::Acquire),
+            "first poisoned accounting read must publish the original Job stop"
+        );
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
         assert!(tracker.stop_requested());
     }
 
