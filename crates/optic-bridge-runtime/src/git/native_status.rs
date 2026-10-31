@@ -511,6 +511,13 @@ impl LeaseObservedNativeGitStatusCustody {
         self.session_owner.job_id()
     }
 
+    // The ledger can only issue simulated call tickets in the Windows test
+    // module; it is not a launch authority exported to the live runtime.
+    #[cfg(test)]
+    pub(crate) fn native_call_tracking_for_test(&self) -> Option<&NativeCallStopTracker> {
+        self.call_tracking.as_ref()
+    }
+
     /// Arm once using ONLY retained original authorities and the original
     /// absolute horizon. These independent receipts are not a launch fence.
     /// No registry lock is held while the kernel watchdog is created.
