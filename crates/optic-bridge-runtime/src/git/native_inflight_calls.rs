@@ -248,6 +248,32 @@ mod tests {
     }
 
     #[test]
+    fn poisoned_inflight_ledger_requires_stop_and_never_reports_empty() {
+        let tracker = NativeCallStopTracker::new();
+        // Poison the actual accounting mutex while retaining a native-call
+        // ticket. This is a local model: no process or Windows API is called.
+        let pending = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                let _guard = tracker.shared.counts.lock().unwrap();
+                panic!("intentional test-only accounting poison");
+            });
+            assert!(worker.join().is_err());
+        });
+        assert!(
+            tracker.stop_requested(),
+            "unknown/poisoned accounting must fail closed as stop required"
+        );
+        assert_eq!(tracker.in_flight(), None, "unknown is never zero");
+        assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        drop(pending);
+        assert_eq!(tracker.in_flight(), None, "poison remains unknown after drop");
+        tracker.request_stop();
+        assert!(tracker.stop_requested());
+    }
+
+    #[test]
     fn original_generation_stop_keeps_admitted_call_counted_after_reuse() {
         let signals: [Arc<AtomicBool>; 4] =
             std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
