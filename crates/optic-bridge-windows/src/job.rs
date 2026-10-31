@@ -302,7 +302,8 @@ impl PrecreatedNativeReadCustody {
     /// Install a nonrenewable watchdog on this *original* private kernel Job,
     /// before any future native launcher is allowed to use it. Its separate
     /// worker holds a noninheritable duplicate of the exact Job handle and
-    /// observes at most four already-owner-bound stop flags.
+    /// observes up to four original authority flags, plus the native owner's
+    /// separately retained internal fail-closed stop when explicitly bound.
     ///
     /// This type still cannot create, resume or admit a process. An armed
     /// watchdog is neither a cross-registry launch grant nor proof that a
@@ -320,16 +321,52 @@ impl PrecreatedNativeReadCustody {
     }
 
     /// Preserve a service-owned absolute horizon through handle duplication and
-    /// worker startup. An expired deadline cannot be restarted at arm time.
+    /// worker startup. The existing caller-owned interface still rejects more
+    /// than four original authority stops.
     pub fn arm_watchdog_until(
         &mut self,
         until: std::time::Instant,
         stop_flags: Vec<Arc<AtomicBool>>,
     ) -> Result<()> {
-        if until <= std::time::Instant::now() || stop_flags.len() > 4 || self.deadline.is_some() {
+        if stop_flags.len() > 4 {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
-                "native read watchdog requires one future horizon and at most four original stop flags",
+                "native read watchdog accepts at most four original stop flags",
+            ));
+        }
+        self.arm_watchdog_until_owned(until, stop_flags)
+    }
+
+    /// The inert native GitRead owner supplies exactly its four retained
+    /// original authority stops plus one private internal ledger stop. This
+    /// fifth signal can only request original Job termination, not launch.
+    /// The ordinary watchdog interface above keeps its existing four-source
+    /// limit, so no unrelated caller gains a detached stop-source slot.
+    pub fn arm_watchdog_until_with_internal_stop(
+        &mut self,
+        until: std::time::Instant,
+        mut original_stops: Vec<Arc<AtomicBool>>,
+        internal_stop: Arc<AtomicBool>,
+    ) -> Result<()> {
+        if original_stops.len() != 4 {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "native read internal watchdog requires exactly four original stop flags",
+            ));
+        }
+        original_stops.push(internal_stop);
+        self.arm_watchdog_until_owned(until, original_stops)
+    }
+
+    fn arm_watchdog_until_owned(
+        &mut self,
+        until: std::time::Instant,
+        stop_flags: Vec<Arc<AtomicBool>>,
+    ) -> Result<()> {
+        if until <= std::time::Instant::now() || self.deadline.is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "native read watchdog requires an unarmed Job and a future horizon",
             ));
         }
         self.deadline = Some(NativeJobDeadline::new_until(&self.job, until, stop_flags)?);

@@ -585,15 +585,17 @@ impl LeaseObservedNativeGitStatusCustody {
             unstarted.registered.record.stop_signal(),
             host.stop_signal(),
         ];
-        // Both independent observers share these exact original generations
-        // and the same nonrenewable absolute service-clock horizon.
-        unstarted
-            .native
-            .arm_watchdog_until(until, original_stops.to_vec())?;
-        self.call_tracking = Some(NativeCallStopTracker::with_original_stops(
-            original_stops,
+        // Retain the original four authority generations and the same
+        // nonrenewable absolute horizon. The fifth watchdog stop is a private
+        // reference to this exact ledger's irreversible fail-closed signal.
+        // It requests original Job termination but does not fence OS launch.
+        let calls = NativeCallStopTracker::with_original_stops(original_stops.clone(), until);
+        unstarted.native.arm_watchdog_until_with_internal_stop(
             until,
-        ));
+            original_stops.to_vec(),
+            calls.internal_stop_signal(),
+        )?;
+        self.call_tracking = Some(calls);
         // The pre-arm time cannot certify expiry AFTER kernel handle
         // duplication and independent worker startup. Retain the armed
         // watchdog on rejection; this remains no-child custody only.
