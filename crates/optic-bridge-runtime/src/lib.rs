@@ -28,6 +28,10 @@ mod git_integration_authority;
 mod git_merge_commit;
 #[path = "git/merge_plan.rs"]
 mod git_merge_plan;
+#[cfg(windows)]
+#[allow(dead_code)] // Future guardian prerequisite; not a launch permit or live MCP path.
+#[path = "git/native_inflight_calls.rs"]
+mod native_inflight_calls;
 #[path = "git/native_status.rs"]
 mod git_native_status;
 #[path = "git/read.rs"]
