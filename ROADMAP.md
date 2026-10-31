@@ -4,7 +4,7 @@
 
 Verified **pre-documentation** `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`,
 independent [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
-SUCCESS **4/4 attempt 1**. [#450–#453](HANDOFF_WINDOWS_V1_2026-10-31.md)
+SUCCESS **4/4 attempt 1**. [#450–#453](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
 are all squash-integrated, with identical trees and independently verified CI.
 The first three establish only **inert Windows native owner call accounting**;
 #453 closes a genuine legacy **post-spawn timeout-accounting classification**
