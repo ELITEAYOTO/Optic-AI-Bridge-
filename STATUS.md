@@ -1,5 +1,52 @@
 # Current project status
 
+## Latest verified technical checkpoint — 31 Oct 2026 after PR #453
+
+**Pre-documentation baseline:** `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`.
+Independent [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+**SUCCESS 4/4, attempt 1**, with source and checkout exactly the integrated
+squash SHA. Windows runtime **424 passed/0 failed/11 ignored**; schema8
+physical reports `complete=true` (10 Windows cases, 4 Unix characterizations),
+matched SHAs/run/attempt and persisted artifacts. Requery `main` and the
+latest `push/main` CI after this documentation-only PR merges.
+
+| PR | Technical change (actual scope) | Integrated `main` | Independent CI |
+| --- | --- | --- | --- |
+| [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450) | Inert native Create/Resume call accounting and stop publication | `f907ab462704` | [#41191950148](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41191950148), 4/4 |
+| [#451](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/451) | Original session/TaskLease/Job/host stops and nonrenewable deadline bound to inert counter | `9a3b9b070320` | [#41193687286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41193687286), 4/4 |
+| [#452](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/452) | Borrowed call tickets tied to original owner lifetime; no detached Clone/Default | `1d7934de9410` | [#41194832125](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41194832125), 4/4 |
+| [#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453) | **Live legacy runner** starts original timeout at API entry, BEFORE spawn/input copy/pipe setup | `bfcd9dcba0f7` | [#41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444), 4/4 |
+
+All four final tested PR Git trees exactly equal their squash Git trees.
+[#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453) also passed
+[dedicated #317 pipe CI #41195558883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558883)
+**11/11 on Windows and Ubuntu**, and
+[native preparation #41195558899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558899).
+The final HEAD `7354f5b0d847861bd6d5b3add611bb8ca603a91e`
+and squash share Git tree `b89c232b7038771a73596d3bbc8a7ea8447b1974`.
+Preserve red heads/candidate logs in earlier PRs; green CI never erases an earlier red.
+
+**Not fixed:** original session/lease/policy/host Win32 `CreateProcessW`/`ResumeThread`
+launch/revocation fence; process ownership after uncertain calls; physical
+live GitRead root/Job-empty/both EOF; **potentially unbounded legacy reader
+joins** even after #453; intermittent first MCP initialize [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319),
+AppContainer [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185),
+sensitive-content [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176)/[#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182).
+[#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317)
+closed *administratively*; [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323)
+OPEN. Research PRs #327/#353/#355/#358 remain unmerged; #355
+intentionally preserves a real post-revoke Git-spawn negative.
+**Windows 10/11 V1 NO-GO, no release or PC changes.**
+
+[Current technical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+and [new-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md)
+supersede the historical after-#448 snapshot below. Follow one complete PR
+through exact-head CI, squash/tree equality, independent push/main verification
+and receipts in PR/#323 before any next technical PR.
+
+---
+
+
 ## Current verified integration — 31 October 2026 after PR #448
 
 **Snapshot before this docs update:** `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [independent CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) **SUCCESS 4/4 attempt 1** on the exact integrated SHA; `main.protected=false`. Windows V1 **NO-GO**, release gate [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN. Recheck live `main` after this documentation PR.
