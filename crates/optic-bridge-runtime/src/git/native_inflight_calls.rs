@@ -340,6 +340,21 @@ mod tests {
     }
 
     #[test]
+    fn poisoned_ledger_inflight_observation_seals_original_watchdog_stop() {
+        let tracker = NativeCallStopTracker::new();
+        let watchdog_stop = tracker.internal_stop_signal();
+        tracker.poison_ledger_for_test();
+        assert!(!watchdog_stop.load(Ordering::Acquire));
+        assert_eq!(tracker.in_flight(), None, "unknown is never zero");
+        assert!(
+            watchdog_stop.load(Ordering::Acquire),
+            "first poisoned accounting read must publish the original Job stop"
+        );
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        assert!(tracker.stop_requested());
+    }
+
+    #[test]
     fn original_generation_stop_keeps_admitted_call_counted_after_reuse() {
         let signals: [Arc<AtomicBool>; 4] =
             std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
