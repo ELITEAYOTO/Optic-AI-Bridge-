@@ -1,5 +1,17 @@
 # Changelog
 
+## 31 October 2026 — integrated #454–#457; Windows V1 remains NO-GO
+
+`main=291c152cdd132753668563031cf34bcfe0810940` before this docs PR; [independent push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, attempt 1**, Windows Rust **428 passed / 0 failed / 11 ignored**, schema8 physical reports `complete=true` (**10 Windows / 4 Unix**) on exact source/checkout with retained artifacts. This is a dated checkpoint: requery live GitHub after the docs merge.
+
+[#454](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/454) refreshed the previous handoff; [#455](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/455) rejects already-expired deadlines **before** the legacy runner attempts `Command::spawn`; [#456](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/456) stops new stdout/stderr reads after a shared output ceiling, but does **not** cancel a pipe reader already blocked; [#457](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/457) fails closed on poisoned accounting in an **inert** Windows native call tracker. Each was squash-merged only after exact-head CI and had independent push/main success 4/4: [#41197559450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41197559450), [#41202989935](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41202989935), [#41224958029](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224958029), [#41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) respectively.
+
+#455 corrected pre-spawn expired-deadline rejection without proving a revoke fence. #456 achieved two test-first Windows/Ubuntu failures before changing the production reader, and its final [#317 specialized CI](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224435710) passed 12/12 on each OS with an actual inherited-stdout descriptor held by a quiet synthetic descendant; it does not interrupt other blocked readers or prove physical descendant cleanup. #457 preserved a real test-first Windows RED ([#41225740874](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41225740874), 427 pass/1 fail/11 ignored); corrected Windows runtime now 428/0/11. Earlier #457 rustfmt failure was not behavioral. All final HEAD and squash Git trees matched. No production native GitRead migration.
+
+**Windows V1 NO-GO / [#323 OPEN](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323).** Production MCP `git_status` still uses the legacy `HardenedCommandRunner`; native GitRead/Job/watchdog/stop-tracker remain **non-executing**. No synchronized session/TaskLease generation/policy epoch/host and pinned-target CreateProcessW/ResumeThread launch/revocation issuer, no durable native guardian or independent root-exit + Job-empty + stdout/stderr EOF + no-future-launch proof. Inherited pipes, OS calls and joins can still block. [Research #355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) contains a genuine *negative* Git spawn-after-revoke observation and must remain outside production. #327/#353/#355/#358 research PRs remain unmerged; #319/#185/#176/#182 are separate gates. No security relaxation, native enablement, V1 release, operator-PC execution or self-hosted runners.
+
+---
+
 ## 31 October 2026 — integrated PRs #450–#453; V1 remains NO-GO
 
 - [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450) —

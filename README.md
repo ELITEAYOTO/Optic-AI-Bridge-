@@ -6,7 +6,19 @@ policy authorizes effects and Windows isolation contains supported processes.
 
 **Pre-alpha. No production-supported release is available.**
 
-## Windows 10/11 V1 — état vérifié au 31 octobre 2026 (après #453)
+## Windows 10/11 V1 — verified checkpoint after PR #457 (31 October 2026)
+
+`main=291c152cdd132753668563031cf34bcfe0810940` before this docs PR; [independent push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, attempt 1**, Windows Rust **428 passed / 0 failed / 11 ignored**, schema8 physical reports `complete=true` (**10 Windows / 4 Unix**) on exact source/checkout with retained artifacts. This is a dated checkpoint: requery live GitHub after the docs merge.
+
+[#454](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/454) refreshed the previous handoff; [#455](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/455) rejects already-expired deadlines **before** the legacy runner attempts `Command::spawn`; [#456](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/456) stops new stdout/stderr reads after a shared output ceiling, but does **not** cancel a pipe reader already blocked; [#457](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/457) fails closed on poisoned accounting in an **inert** Windows native call tracker. Each was squash-merged only after exact-head CI and had independent push/main success 4/4: [#41197559450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41197559450), [#41202989935](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41202989935), [#41224958029](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41224958029), [#41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) respectively.
+
+**Windows V1 NO-GO / [#323 OPEN](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323).** Production MCP `git_status` still uses the legacy `HardenedCommandRunner`; native GitRead/Job/watchdog/stop-tracker remain **non-executing**. No synchronized session/TaskLease generation/policy epoch/host and pinned-target CreateProcessW/ResumeThread launch/revocation issuer, no durable native guardian or independent root-exit + Job-empty + stdout/stderr EOF + no-future-launch proof. Inherited pipes, OS calls and joins can still block. [Research #355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) contains a genuine *negative* Git spawn-after-revoke observation and must remain outside production. #327/#353/#355/#358 research PRs remain unmerged; #319/#185/#176/#182 are separate gates. No security relaxation, native enablement, V1 release, operator-PC execution or self-hosted runners.
+
+Authoritative details: [current canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [STATUS](STATUS.md).
+
+---
+
+## Historical checkpoint after #453 (superseded by the section above)
 
 **Pré-alpha : Windows V1 NO-GO. Aucune release ni installation annoncée prête.**
 Le dernier `main` technique vérifié **avant cette PR documentaire** est
