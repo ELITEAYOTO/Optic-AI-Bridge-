@@ -171,6 +171,10 @@ impl ReadonlyMcpServer {
             let output = operation(service).map_err(map_git_read_error)?;
             server.ensure_read_deadline(&permit)?;
             verify(server, grant, &output)?;
+            // A slow sensitive-path policy check must not publish bytes after
+            // the original transport deadline. The worker still owns both
+            // admission and transport capacity through this final check.
+            server.ensure_read_deadline(&permit)?;
             Ok(output)
         })
         .await
@@ -392,6 +396,16 @@ mod tests {
     impl Clock for FixedClock {
         fn now(&self) -> MonotonicTime {
             self.0
+        }
+    }
+
+    /// Deterministic worker clock for a deadline crossing inside policy review.
+    #[derive(Debug)]
+    struct AdvancingClock(std::sync::atomic::AtomicU64);
+
+    impl Clock for AdvancingClock {
+        fn now(&self) -> MonotonicTime {
+            MonotonicTime::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
         }
     }
 
@@ -863,6 +877,31 @@ mod tests {
             String::from_utf8_lossy(&STANDARD.decode(result.data_base64).expect("base64"))
                 .contains("fixture key only")
         );
+    }
+
+    #[tokio::test]
+    async fn git_read_denies_output_if_original_deadline_expires_during_verification() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        let fixture = RepoFixture::new("deadline-after-review");
+        let mut server = fixture.server(&[Capability::GitRead]);
+        let clock = Arc::new(AdvancingClock(AtomicU64::new(10)));
+        server.clock = clock.clone();
+        let reviewer_clock = Arc::clone(&clock);
+
+        let error = server
+            .run_git_read_checked(
+                |_service| Ok::<_, GitReadError>(b"synthetic-private-output".to_vec()),
+                move |_server, _grant, _output| {
+                    // The operation was within its transport deadline; only
+                    // the review crosses it. No OS sleeping or real Git needed.
+                    reviewer_clock.0.store(40_000, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .expect_err("completed verification must not outlive the original deadline");
+        assert_eq!(error.message, "optic.request_timeout");
     }
 
     #[tokio::test]
