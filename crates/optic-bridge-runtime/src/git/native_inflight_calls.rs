@@ -31,10 +31,31 @@ struct CallCounts {
     resumes: usize,
 }
 
+/// Four retained, original and irreversible stop sources: session generation,
+/// TaskLease generation, counted Job and process-owned host.
+struct OriginalNativeStops {
+    signals: [Arc<AtomicBool>; 4],
+    deadline: std::time::Instant,
+}
+
 #[derive(Default)]
 struct Shared {
     stop_requested: AtomicBool,
     counts: Mutex<CallCounts>,
+    original: Option<OriginalNativeStops>,
+}
+
+impl Shared {
+    fn is_stop_required(&self) -> bool {
+        self.stop_requested.load(Ordering::Acquire)
+            || self.original.as_ref().is_some_and(|original| {
+                std::time::Instant::now() >= original.deadline
+                    || original
+                        .signals
+                        .iter()
+                        .any(|signal| signal.load(Ordering::Acquire))
+            })
+    }
 }
 
 /// This accounting gate is deliberately not attached to the live MCP or native
@@ -55,8 +76,23 @@ pub(crate) struct TrackedNativeCall {
 }
 
 impl NativeCallStopTracker {
+    // A source-free tracker is confined to the unit-only concurrency fixture.
+    // The real precreated owner must bind its ORIGINAL stop signals and horizon.
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn with_original_stops(
+        signals: [Arc<AtomicBool>; 4],
+        deadline: std::time::Instant,
+    ) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                original: Some(OriginalNativeStops { signals, deadline }),
+                ..Shared::default()
+            }),
+        }
     }
 
     /// Register potential in-flight work, not permission to launch. The second
@@ -64,11 +100,11 @@ impl NativeCallStopTracker {
     /// A concurrent stop after that check makes this an already-admitted call
     /// which the eventual guardian must reconcile or forcibly terminate.
     pub(crate) fn track(&self, phase: NativeCallPhase) -> Option<TrackedNativeCall> {
-        if self.shared.stop_requested.load(Ordering::Acquire) {
+        if self.shared.is_stop_required() {
             return None;
         }
         let mut counts = self.shared.counts.lock().ok()?;
-        if self.shared.stop_requested.load(Ordering::Acquire) {
+        if self.shared.is_stop_required() {
             return None;
         }
         let counter = match phase {
@@ -88,8 +124,10 @@ impl NativeCallStopTracker {
         self.shared.stop_requested.store(true, Ordering::Release);
     }
 
+    /// Original revoke and original absolute expiry close future admission,
+    /// even if nobody explicitly called request_stop on this tracker.
     pub(crate) fn stop_requested(&self) -> bool {
-        self.shared.stop_requested.load(Ordering::Acquire)
+        self.shared.is_stop_required()
     }
 
     /// None on poisoned accounting state is unknown, NOT an empty ledger.
@@ -197,5 +235,71 @@ mod tests {
                 .is_none()
         );
         assert!(other_observer.track(NativeCallPhase::Resume).is_none());
+    }
+
+    #[test]
+    fn original_generation_stop_keeps_admitted_call_counted_after_reuse() {
+        let signals: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        let original = NativeCallStopTracker::with_original_stops(
+            signals.clone(),
+            std::time::Instant::now() + Duration::from_secs(5),
+        );
+        let entered = original.track(NativeCallPhase::CreateSuspended).unwrap();
+        // The original TaskLease generation is revoked; replacing the public
+        // ID with an unrelated fresh flag must not redeem the old owner.
+        signals[1].store(true, Ordering::Release);
+        let fresh_lease_generation = Arc::new(AtomicBool::new(false));
+        assert!(!fresh_lease_generation.load(Ordering::Acquire));
+        assert!(original.stop_requested());
+        assert!(original.track(NativeCallPhase::Resume).is_none());
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 1,
+                resumes: 0,
+            })
+        );
+        drop(entered);
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            })
+        );
+        assert!(original.stop_requested());
+    }
+
+    #[test]
+    fn original_absolute_deadline_denies_new_calls_without_manual_stop() {
+        let signals: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        let original = NativeCallStopTracker::with_original_stops(
+            signals,
+            std::time::Instant::now() + Duration::from_millis(200),
+        );
+        let entered = original.track(NativeCallPhase::Resume).unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(
+            original.stop_requested(),
+            "the original horizon cannot renew"
+        );
+        assert!(original.track(NativeCallPhase::CreateSuspended).is_none());
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 1,
+            })
+        );
+        drop(entered);
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            })
+        );
     }
 }

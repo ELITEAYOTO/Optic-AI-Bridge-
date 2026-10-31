@@ -1,5 +1,37 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 31 October — original-stop-bound inert native call tracker (next P0 slice)
+
+The non-executing `LeaseObservedNativeGitStatusCustody` now attaches its
+in-flight call tracker **only after its real original Job watchdog is armed**.
+The ledger and watchdog retain the same four original `Arc<AtomicBool>`
+stop sources (session registration, TaskLease generation, counted Job, trusted
+process host) and the same *absolute* service-clock `Instant` deadline. A
+source-free tracker constructor is confined to unit tests. Any original stop
+or deadline expiry denies subsequent ticket admission even if the tracker is
+never manually stopped; a previously admitted ticket remains counted through
+stop until its owning call exits.
+
+Tests assert real original registry/owner revocation sources after native Job
+precreation and watchdog arm: direct session stop, original lease revocation
+followed by same-ID registration, Job stop and process-owned host stop. The
+original transport permit and counted Job remain held until the inert owner
+drops. Separate ledger tests cover original generation reuse and the absolute
+nonrenewable deadline. **No child is launched** and no new MCP execution path
+is enabled.
+
+**This is not a synchronized launch/revocation fence.** Four independently
+published stop flags can change between a successful ticket check and a real
+Win32 call; a ticket admitted before stop may enter `CreateProcessW` or
+`ResumeThread` after stop. The modelled tracker does not retain the owning
+Job/admission on behalf of a detached or abandoned native call. Do not wire a
+real API to it without a durable guardian that owns ticket, pinned targets,
+suspended root/thread, Job/stdio/capacity and reconciles uncertainty before
+physical terminal proof. Typed policy/epoch and actual OS-call serialization
+remain unbound. This does not repair the research RED #355, legacy pipe joins
+or #185/#319. **#323 OPEN / Windows V1 NO-GO.**
+
+
 ## 31 October — native-call in-flight accounting precursor (research, not issuer)
 
 The Windows-only internal module `crates/optic-bridge-runtime/src/git/native_inflight_calls.rs`

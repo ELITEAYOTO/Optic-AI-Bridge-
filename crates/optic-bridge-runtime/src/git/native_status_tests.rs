@@ -1623,6 +1623,137 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
 
 #[cfg(windows)]
 #[test]
+fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watchdog_arm() {
+    use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
+
+    for source in ["session", "lease-reused-id", "job", "host"] {
+        let clock = crate::StdClock::new();
+        let mut fixture = Fixture::new_on_clock(&clock);
+        fixture.envelope.resources.timeout_ms = 5_000;
+        fixture.lease.resource_ceiling.timeout_ms = 5_000;
+        fixture.leases.revoke(&fixture.lease.id).unwrap();
+        fixture.leases.remove_revoked(&fixture.lease.id).unwrap();
+        fixture
+            .leases
+            .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+            .unwrap();
+        let transport = guard(10_000);
+        let manager = crate::ProcessManager::new(
+            &fixture.repository,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .unwrap();
+        let prepared = fixture
+            .service()
+            .prepare_native_status_on_clock(
+                &fixture.trusted(),
+                fixture.owned_on_clock(&transport, &clock),
+                &fixture.envelope,
+                &clock,
+            )
+            .unwrap();
+        let registered = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+            .unwrap();
+        let job = registered.job_id();
+        let mut owner = registered
+            .precreate_native_custody(MonotonicTime::from_millis(11))
+            .unwrap()
+            .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap()
+            .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap();
+        assert!(
+            owner.native_call_tracking_for_test().is_none(),
+            "unarmed owner is not tracked"
+        );
+        owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+        let calls = owner
+            .native_call_tracking_for_test()
+            .expect("only armed original custody binds the tracker")
+            .clone();
+        let in_flight = calls
+            .track(NativeCallPhase::CreateSuspended)
+            .expect("no child: simulated in-flight Win32 create");
+        assert_eq!(
+            calls.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 1,
+                resumes: 0,
+            })
+        );
+        match source {
+            "session" => {
+                fixture
+                    .sessions
+                    .publish_revocation_before_drain(&fixture.envelope.session)
+                    .unwrap();
+            }
+            "lease-reused-id" => {
+                fixture.leases.revoke(&fixture.lease.id).unwrap();
+                fixture.leases.remove_revoked(&fixture.lease.id).unwrap();
+                fixture.leases.register(fixture.lease.clone()).unwrap();
+            }
+            "job" => {
+                assert!(manager.stop(&fixture.envelope.session, &job).unwrap());
+            }
+            "host" => {
+                assert!(fixture.host.request_stop());
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            calls.stop_requested(),
+            "original {source} stop must deny a new tracked call"
+        );
+        assert!(calls.track(NativeCallPhase::CreateSuspended).is_none());
+        assert!(calls.track(NativeCallPhase::Resume).is_none());
+        assert_eq!(
+            calls.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 1,
+                resumes: 0,
+            }),
+            "revocation must not erase a counted operation"
+        );
+        assert_eq!(owner.native_active_processes().unwrap(), 0);
+        assert_eq!(transport.active_requests(), 1);
+        assert_eq!(
+            manager
+                .active_session_job_count(&fixture.envelope.session)
+                .unwrap(),
+            1
+        );
+        drop(in_flight);
+        assert_eq!(
+            calls.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            })
+        );
+        assert_eq!(transport.active_requests(), 1, "owner still holds quota");
+        drop(owner);
+        assert_eq!(transport.active_requests(), 0);
+        assert_eq!(
+            manager
+                .active_session_job_count(&fixture.envelope.session)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            manager
+                .result(&fixture.envelope.session, &job)
+                .unwrap()
+                .status,
+            crate::ProcessStatus::Failed
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
 fn original_watchdog_rejects_expiry_observed_only_after_arming() {
     let clock = crate::StdClock::new();
     let fixture = Fixture::new_on_clock(&clock);
