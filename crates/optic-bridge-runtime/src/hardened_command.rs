@@ -58,7 +58,9 @@ impl HardenedCommandRunner {
         &self,
         spec: &HardenedCommandSpec,
     ) -> Result<HardenedCommandOutput, HardenedCommandError> {
-        self.run_inner(spec, None)
+        // Include spec preparation, process creation and pipe setup in the
+        // same non-renewable deadline as child execution and pipe drainage.
+        self.run_inner(spec, None, Instant::now())
     }
 
     pub fn run_with_input(
@@ -67,18 +69,23 @@ impl HardenedCommandRunner {
         input: &[u8],
         input_limit: u64,
     ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        let started = Instant::now();
         let input_len = u64::try_from(input.len()).unwrap_or(u64::MAX);
         if input_limit == 0 || input_len > input_limit {
             return Err(HardenedCommandError::InputLimitExceeded { limit: input_limit });
         }
-        self.run_inner(spec, Some(input.to_vec()))
+        self.run_inner(spec, Some(input.to_vec()), started)
     }
 
     fn run_inner(
         &self,
         spec: &HardenedCommandSpec,
         input: Option<Vec<u8>>,
+        started: Instant,
     ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        // This start point is owned by the caller before any potentially
+        // blocking Command::spawn or setup. It is never refreshed after spawn.
+        // It cannot interrupt an OS call or join that never returns (#317).
         spec.validate()?;
 
         let mut command = Command::new(&spec.executable);
@@ -127,7 +134,6 @@ impl HardenedCommandRunner {
         let stderr_reader =
             spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), spec.output_limit);
 
-        let started = Instant::now();
         let mut timed_out = false;
         let status = loop {
             if exceeded.load(Ordering::Acquire) {
@@ -170,10 +176,11 @@ impl HardenedCommandRunner {
                 limit: spec.output_limit,
             });
         }
-        // The direct child can exit before descendants release inherited stdio.
-        // Finishing a blocking pipe join after the deadline is not success.
-        // This corrects the eventual result only: bounding the joins still
-        // requires owned process-tree/pipe lifetimes (issue #317).
+        // Even a direct child that succeeds after a slow spawn/pipe setup is
+        // beyond the original call deadline. A descendant may then keep pipes
+        // open after that child exits. Neither case can be reported as success.
+        // This corrects the eventual result only: bounding spawn, waits and
+        // joins still requires owned process-tree/pipe lifetimes (issue #317).
         if started.elapsed() >= self.timeout {
             return Err(HardenedCommandError::TimedOut);
         }
@@ -252,6 +259,34 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deadline_consumed_before_spawn_cannot_be_refreshed_after_child_exit() {
+        // Model time spent before completion of Command::spawn using an old
+        // original start. This is a classification regression, not a test
+        // proving Windows process creation or pipe joins are interruptible.
+        let runner = HardenedCommandRunner::new(Duration::from_millis(200)).unwrap();
+        let spec = HardenedCommandSpec {
+            executable: std::env::current_exe().expect("harness executable"),
+            cwd: std::env::current_dir().expect("working directory"),
+            args: vec![
+                "--exact".into(),
+                "hardened_command::tests::invalid_specs_fail_before_spawn".into(),
+            ],
+            env: BTreeMap::new(),
+            output_limit: 16 * 1024,
+        };
+        let started = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("subtract bounded elapsed fixture time");
+        assert!(
+            matches!(
+                runner.run_inner(&spec, None, started),
+                Err(HardenedCommandError::TimedOut)
+            ),
+            "the original call deadline must not restart after OS spawn"
+        );
+    }
 
     #[test]
     fn invalid_specs_fail_before_spawn() {
