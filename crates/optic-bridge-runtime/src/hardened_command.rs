@@ -101,6 +101,13 @@ impl HardenedCommandRunner {
         }
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
+        // Fail closed if spec/input preparation has already exhausted the
+        // original nonrenewable call deadline. This avoids entering OS
+        // process creation after known expiry; it is not an atomic
+        // create/revoke fence and cannot interrupt spawn once entered.
+        if started.elapsed() >= self.timeout {
+            return Err(HardenedCommandError::TimedOut);
+        }
         let mut child = command.spawn()?;
         let input_writer = if let Some(input) = input {
             let mut stdin = child
@@ -262,9 +269,9 @@ mod tests {
 
     #[test]
     fn deadline_consumed_before_spawn_cannot_be_refreshed_after_child_exit() {
-        // Model time spent before completion of Command::spawn using an old
-        // original start. This is a classification regression, not a test
-        // proving Windows process creation or pipe joins are interruptible.
+        // Model time already spent before Command::spawn using an old
+        // original start. This now proves early expiry rejection; it does
+        // not prove post-spawn joins or Windows calls are interruptible.
         let runner = HardenedCommandRunner::new(Duration::from_millis(200)).unwrap();
         let spec = HardenedCommandSpec {
             executable: std::env::current_exe().expect("harness executable"),
