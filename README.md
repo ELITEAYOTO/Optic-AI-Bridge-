@@ -6,13 +6,48 @@ policy authorizes effects and Windows isolation contains supported processes.
 
 **Pre-alpha. No production-supported release is available.**
 
-## Windows V1 release status — 31 October 2026
+## Windows 10/11 V1 — état vérifié au 31 octobre 2026 (après #453)
 
-**Windows 10/11 V1: NO-GO; no production release/tag.** At the last verified pre-handoff snapshot, `main=7f1de707c130` passed [independent push/main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) **4/4 on attempt 1**. Technical PRs [#445](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/445)–[#448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/448) were squash-merged and verified independently. These reinforce startup diagnostics, GitRead response deadlines and **non-executing** Windows native Job/watchdog deadline checks; they **do not** switch production MCP GitRead to a native owner or resolve all V1 blockers.
+**Pré-alpha : Windows V1 NO-GO. Aucune release ni installation annoncée prête.**
+Le dernier `main` technique vérifié **avant cette PR documentaire** est
+`bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6` : la
+[CI indépendante push/main #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+a terminé **SUCCESS 4/4, tentative 1**, sur le SHA intégré exact.
+Vérifier à nouveau la branche et les Actions après cette mise à jour documentaire.
 
-The critical next task is a synchronized session/TaskLease/policy/Host **native launch and revocation fence** plus terminal Job/root/pipe proof. [V1 gate #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) is open; cold-start [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319), AppContainer [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), sensitive-read [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) / [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182) also remain open. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) is administratively closed, not sufficient evidence of live GitRead readiness.
+Les quatre étapes de stabilisation [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450)
+à [#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453) ont été
+**commitées, testées, squash-fusionnées, puis validées indépendamment** :
+comptabilité des appels natifs non exécutants, témoin d'arrêt original,
+tickets liés à la durée de vie du propriétaire, puis **correction du délai
+sur le `HardenedCommandRunner` réel** (le chronomètre commence avant
+`Command::spawn` et la préparation des pipes). La dernière CI Windows donne
+**424 tests runtime réussis, 0 échec, 11 ignorés**, avec preuves physiques
+schema 8 complètes (10 cas Windows / 4 Unix). Les tests spécialisés #317
+sont verts sur Windows/Ubuntu (11/11 chacun). Les détails, SHAs et rapports
+sont dans la [passation vérifiée](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md).
 
-**Resume the exact PR-by-PR workflow:** [31 Oct verified handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [copy-ready successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Requery GitHub before acting: this is a dated snapshot, not a pinned current `main`.
+**Aucune preuve de GO :** le GitRead natif reste non exécutant et non relié
+au MCP de production. La synchronisation de lancement/révocation
+session/TaskLease/policy/hôte et les preuves réelles root/Job/EOF manquent.
+Le runner legacy peut toujours **bloquer sur les `.join()` des pipes hérités** :
+la PR #453 corrige la classification du dépassement de temps, **pas** l'arrêt
+borné des descendants. [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323)
+reste ouverte ; [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319),
+[#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185),
+[#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176)
+et [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182)
+restent des blocages indépendants. Les PR de recherche #327/#353/#355/#358
+ne doivent pas être fusionnées en bloc ; #355 garde un test négatif réel.
+
+**Reprendre sans perte de méthode :** consulter le
+[handoff technique](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+et le [prompt du prochain chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).
+Une seule PR ciblée : GitHub branch/push → tests Windows/Ubuntu sur HEAD exact
+→ revue → squash si vert → égalité des arbres Git → **CI `push/main`
+indépendante 4/4 sur le squash** → reçus dans PR et #323 → PR suivante.
+Pas d'action sur le PC utilisateur, aucun runner auto-hébergé, aucune relaxation
+de sécurité ou modification de release/protection sans autorisation précise.
 
 ## Choose the right track
 

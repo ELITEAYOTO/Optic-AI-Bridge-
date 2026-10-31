@@ -1,4 +1,136 @@
-# Windows V1 — canonical GitHub handoff (31 October 2026, after #448)
+# Windows V1 — canonical GitHub handoff (31 October 2026, after #453)
+
+> This is a dated, verified **pre-documentation PR** checkpoint. The docs
+> merge will advance `main`. Always requery live GitHub main SHA, PRs, issues,
+> workflow conclusions and artifacts before implementing any next change.
+> Do not reset a branch to this SHA.
+
+## Most recent integrated technical state (after #453)
+
+- **Repository:** https://github.com/ELITEAYOTO/Optic-AI-Bridge-
+- **Confirmed technical `main`:**
+  `bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`. Its *independent*
+  [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+  completed **SUCCESS 4/4, attempt 1** on exact squash SHA/checkout.
+  Windows runtime **424 passed, 0 failed, 11 ignored**; original schema8
+  `OPTIC_PHYSICAL_HOST_STOP` reports are `complete=true` with **10
+  Windows** scenarios and **4 Unix** characterizations, matching source,
+  checkout, run and attempt, artifacts attached.
+- **Branch security observation:** `main.protected=false` at the checkpoint.
+  Do **not** modify branch protections, security settings, credentials,
+  reviews, releases or workflow permissions without owner approval.
+- **Current release gate:** [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323)
+  OPEN / **Windows 10/11 V1 NO-GO**. #317 closed *administratively*, not
+  proven live liveness; #185, #319, #176, #182 OPEN. Open research PRs
+  **#327 / #353 / #355 / #358** remain deliberately outside `main`;
+  #355 has a negative real Git spawn-after-revoke observation.
+- **Scope:** Windows-first Rust/MCP core stabilization. Ubuntu CI remains
+  required, but no Ubuntu V1 release. No operator-PC access, new local
+  grants, self-hosted runners, Optic Desktop, REL, tag, production native
+  GitRead switch or security relaxation.
+
+### Proven completed technical PR sequence — #450–#453
+
+All four PRs were branched/committed/pushed, validated on **exact final head**,
+self-reviewed (explicitly **not** independent peer approval), **squash-merged
+only after checks**, and compared with the **identical original HEAD Git tree**.
+Their independently triggered **push/main CI** completed SUCCESS 4/4 at
+attempt 1 on the exact integrated SHA.
+
+| PR | Final tested HEAD | Exact-head CI | Specialized applicable check | Squash `main` | Independent push/main CI |
+| --- | --- | --- | --- | --- | --- |
+| [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450) | `fa9e9232a923eba53bf034c7f54b6fc4ac22229b` | [41191441197](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41191441197) 4/4 | [native #41191441170](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41191441170) | `f907ab462704bc7c67c2780f6f9ef2b9bf351f1b` | [41191950148](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41191950148) 4/4 |
+| [#451](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/451) | `4e4e9c8698f7cef41465086e0df1022b7273f84e` | [41193250500](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41193250500) 4/4 | [native #41193250425](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41193250425) | `9a3b9b070320d8dd13f8440c0af44be4a90f7d9e` | [41193687286](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41193687286) 4/4 |
+| [#452](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/452) | `b0fd540f893fcf62e6fdd5eec6185f5092f313d1` | [41194430564](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41194430564) 4/4 | [native #41194430569](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41194430569) | `1d7934de941041afdfa8a347110001221268f94a` | [41194832125](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41194832125) 4/4 |
+| [#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453) | `7354f5b0d847861bd6d5b3add611bb8ca603a91e` | [41195558970](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558970) 4/4 | [#317 late-pipe #41195558883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558883) **11/11 per OS**; [native #41195558899](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195558899) | `bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6` | [41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444) 4/4 |
+
+- **#450:** introduced inert CreateSuspended/Resume in-flight call tickets and
+  irreversible stop publication without waiting on blocked modeled calls.
+  The first candidate's rustfmt failure was fixed on another head.
+- **#451:** the nonexecuting owner binds the tracker to its **original**
+  session, TaskLease generation, counted Job and host stop flags and
+  nonrenewable absolute `Instant` after watchdog arm. An earlier rustfmt
+  failure and separate test-only private-field E0616 failure are preserved.
+  This is not an atomic CreateProcessW/ResumeThread fence.
+- **#452:** `TrackedNativeCall<'_>` now borrows its tracker inside original
+  owner lifetime rather than holding a detachable `Arc` clone; scoped
+  concurrent stop test passes. This is *call lifetime*, not physical root/
+  descendant termination, retained Job/EOF or an OS launch permission.
+- **#453:** actual MCP legacy `HardenedCommandRunner` now captures the
+  original `Instant` *before* `Command::spawn()`, input copy and pipe
+  setup. No post-spawn timer reset. A real disposable test-child with an
+  already elapsed injected start must return `TimedOut`. Windows+Ubuntu
+  pass. Tested HEAD and squash have identical Git tree
+  `b89c232b7038771a73596d3bbc8a7ea8447b1974`.
+  The dedicated #317 pipeline reproduces its controlled late pipe cases
+  (11/11 on both systems), **but this does NOT bound joins or prove native
+  descendant termination**.
+
+Detailed [#453 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453#issuecomment-6542696895)
+and [#323 checkpoint](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6542697249).
+Preserve previous red CI sources; green reruns are not an explanation of
+intermittent Node/AppContainer or first-response failure.
+
+### Blocking acceptance that none of these PRs establishes
+
+**No GO for native GitRead**: the real MCP `git_status` still executes
+`HardenedCommandRunner`, whose stdout/stderr `.join()` and stdin writer
+may remain blocked if descendants inherit pipes. Capturing the earlier
+start in #453 changes the **eventual timeout result**, not the wall-clock
+bound during an uninterruptible `spawn`, `wait`, or pipe join.
+The inert `git/native_status.rs` + `git/native_inflight_calls.rs`
+and native Job/watchdog do not issue actual Git child execution.
+Separate session/TaskLease/policy/host snapshots, revoke flags, stop
+watchdog and even stopped empty Job cannot seal future Win32 creation or
+resume. A call ticket admitted before revoke can still reach the kernel
+after revoke. #355 proves a real post-revoke Git spawn on research source.
+
+The next true P0 must supply a **durable service guardian** with original
+session/lease generation/typed policy epoch/host authority, original pinned
+executable/repository, synchronized future and in-flight CreateProcessW
+and ResumeThread admission/stop, with no cross-authority locks held during
+potentially blocking Win32 or I/O. Retain original permit/Job/root/thread/
+stdio/quotas until separately observing **physical root exit, kernel
+Job-empty, both physical pipe EOFs and no future launches**; preserve
+native HRESULT/uncertainty and crash/abandoned-caller reconciliation.
+Security #176/#182, real startup #319 and AppContainer #185 remain
+independent gates; do not inflate timeouts or relax containment.
+
+### Mandatory successor method
+
+1. Read `AGENTS.md`, `AI_HANDOFF.md`, `README.md`, `STATUS.md`,
+   `ROADMAP.md`, `CHANGELOG.md`, this handoff,
+   [current successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md),
+   `ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md`, `RELIABILITY_DEBT.md`,
+   `REPOSITORY_WORKFLOW.md` and relevant source/tests/ADRs.
+2. Query **live GitHub** main, merged/open PRs, issue statuses, branch
+   protection, final runs and exact source/tree/physical evidence. Do
+   not assume this docs SHA remains HEAD.
+3. Choose one narrow **real behavioral** defect and deterministic
+   regression. Avoid stacking inert markers in lieu of native launch
+   authority. Branch from actual main, code, commit/push, open ONE PR.
+4. Verify exact final-head CI Windows/Ubuntu fmt, strict Clippy, runtime/
+   workspace tests, dependency/release and applicable specialized native/
+   #317 workflows. Read logs and physical report source/run/attempt, not
+   badges alone. Preserve any red head, correct on a new commit; never
+   retry-to-green or lower assertions.
+5. Review the entire diff, branch base, permissions and safety scope.
+   Auto-review is not independent peer approval. Squash only if all
+   applicable checks pass and the head/base are verified.
+6. Compare HEAD and squash Git **tree IDs**, then check a **separate**
+   `push/main` CI on the exact integrated SHA (all four jobs and
+   applicable physical artifacts). Comment complete receipts in PR and
+   #323; **only then start the next PR**.
+7. If anything cannot be safely proven, leave the PR open and describe
+   the blocker. No operator PC, self-hosted runner, settings/protection,
+   permission or release change without fresh explicit approval.
+
+**Windows V1 remains NO-GO.**
+
+---
+
+## Previous pre-#449 technical checkpoint — historical only
+
 
 > **Snapshot before this documentation PR.** Live GitHub `main`, open PRs, issues, Actions, and branch rules must be rechecked before any next change. This SHA is evidence, not a checkout/reset instruction.
 

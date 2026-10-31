@@ -1,5 +1,41 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## REPRISE ACTUELLE — 31 octobre 2026 après PR #453
+
+**Prompt canonique :**
+[NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).
+**Passation technique et preuves :**
+[HANDOFF_WINDOWS_V1_2026-10-31.md](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md).
+Les références « actives » plus bas sont historiques.
+
+Checkpoint technique **avant PR documentaire** :
+`main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`,
+[CI push/main #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+**SUCCESS 4/4 tentative 1**, tests Windows runtime **424 réussis / 0
+échec / 11 ignorés**, rapports physiques schema8 complets
+(Windows10 / Unix4). [#450](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/450)
+à [#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453)
+entièrement intégrées : HEAD exact testé, squash, arbres Git identiques
+et CI push/main indépendante verte. #453 mesure la deadline du
+`HardenedCommandRunner` de production **avant** spawn et préparation des pipes,
+mais **ne rend pas les joins bornés**. Le propriétaire GitRead Windows natif
+reste **non exécutant**. Pas de barrière synchronisée CreateProcessW/ResumeThread
+session/TaskLease/policy/host, ni preuve physique root/Job/EOF.
+#323 OPEN, #317 CLOSED administratif, #319/#185/#176/#182 OPEN;
+#355 garde le résultat de recherche négatif. Windows V1 **NO-GO**.
+
+Le prochain chat doit **re-vérifier GitHub après cette PR documentaire**
+et réaliser **une PR technique complète à la fois** : branche depuis main,
+implémentation + régression, push/PR, CI exact-head Windows/Ubuntu/natif,
+revue (auto-revue ≠ approval indépendant), squash uniquement si tous
+les checks sont verts, comparaison des Git tree SHA, CI indépendante
+push/main sur squash et reçu dans PR + #323 **avant** la PR suivante.
+Aucun PC opérateur, runner auto-hébergé, Desktop/REL, réseau/isolation/
+permission/timeout/release/branch-protection modifiés sans consentement.
+
+---
+
+
 ## REPRISE PRIORITAIRE — 31 octobre 2026 après #448
 
 **Prompt ACTIF à copier : [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).** Lire aussi la [passation vérifiée](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md). Anciennes sections « active » ci-dessous = **archives datées**. Snapshot avant cette PR documentaire : `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [CI indépendante #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4 first attempt. #445–#448 **push, revue, squash, CI indépendante** terminés ; 4 PR de recherche #327/#353/#355/#358 ouvertes mais non fusionnées ; #317 CLOSED administratif, #323/#185/#319/#176/#182 OPEN, Windows V1 NO-GO. **Même méthode à poursuivre : une PR complète à la fois jusqu'au squash et à la CI push/main sur le merge SHA.** Aucun accès PC, runner auto-hébergé, Desktop, REL, tag, release ou assouplissement sécurité. Vérifier le vrai `main` après cette PR de docs.

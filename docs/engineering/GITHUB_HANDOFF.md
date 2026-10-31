@@ -1,5 +1,36 @@
 # GitHub-only project handoff
 
+## Verified continuation after PR #453 — 31 October 2026
+
+**Canonical:** [current 31 October Windows V1 handoff](HANDOFF_WINDOWS_V1_2026-10-31.md)
+and [full successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).
+Pre-doc main `bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6` has
+[push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+SUCCESS 4/4 first attempt. #450 (inert call accounting), #451
+(original stop and deadline witnesses), #452 (owner-borrowed tickets)
+and #453 (production legacy timeout begins before spawn) are all
+squash-integrated with exact-head, identical-tree and independent
+post-merge CI proofs. The #453 Windows runtime suite has 424 passed,
+0 failed, 11 ignored; schema8 physical Windows10/Unix4 complete and
+specialized #317 Windows/Ubuntu 11/11 success.
+
+**Do not promote:** original `HardenedCommandRunner` may still block
+on descendant-held pipe joins despite proper elapsed-time classification;
+native GitRead remains inert/non-executing, with no synchronized
+session/TaskLease/policy/host Win32 CreateProcessW/ResumeThread
+launch/revoke fence or live Git root/Job/EOF terminal proof.
+#323 OPEN, Windows V1 **NO-GO**; #355 remains research-negative,
+#327/#353/#355/#358 not production. Separate #185/#319/#176/#182 open.
+Do not erase historic red checks or claim root cause from diagnostic timing.
+
+Resume only with current GitHub refs, one tested PR to full squash and
+independent push/main CI per iteration. No operator PC, self-hosted runners,
+policy/security or release changes. Historical 'current' sections below
+are superseded by this checkpoint; documentation merge can advance main.
+
+---
+
+
 ## Canonical current handoff — 31 October 2026 (after #448)
 
 **Read [HANDOFF_WINDOWS_V1_2026-10-31.md](HANDOFF_WINDOWS_V1_2026-10-31.md) first**, and copy the full [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Snapshot before this documentation PR: `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 SUCCESS attempt1. Four technical PRs #445–#448 delivered with exact-head CI, squash and independently verified push/main CI; Windows-only native work remains **inert**, with no live GitRead native launcher.
