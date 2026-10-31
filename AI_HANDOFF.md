@@ -1,5 +1,34 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+## Active handoff after PR #453 — 31 October 2026
+
+GitHub-verified pre-documentation `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`;
+independent [push/main #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+SUCCESS 4/4 attempt1. [PR #453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453)
+is merged after earlier #450/#451/#452; all exact-head and post-squash CIs
+verified with identical trees. New [canonical handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md)
+**supersede** earlier after-#448 and after-#412 'latest' labels below.
+
+Actual live command runner timeout now starts before process spawn and pipe
+preparation, but its descendant-held `.join()` and other native OS stalls
+are still **potentially unbounded**. Inert Git status owner/Job/watchdog
+and stop trackers **do not execute Git or grant launch/revoke permission**.
+No cross-authority session/TaskLease/policy/host CreateProcessW/ResumeThread
+linearization or root/Job/both-EOF proof. #323 OPEN, Windows V1 NO-GO;
+#317 administratively closed, #355 negative research, #185/#319/#176/#182 open.
+
+Apply single-PR GitHub-only workflow: source verification, regression,
+commit/push, exact-head Windows/Ubuntu and specialized CI, self-review
+labeled as such, squash if green, Git-tree equivalence, separate push/main
+CI on squash and receipt in PR/#323. Preserve red runs. No PC access
+without fresh explicit authorization; no self-hosted CI, release, security
+relaxation, Desktop/REL changes. Requery current GitHub state after this
+docs PR, not a dated SHA.
+
+---
+
+
 ## CURRENT PRIORITY — 31 October 2026 (supersedes dated continuation links)
 
 Read [canonical 31 Oct handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [copy-ready GitHub-only prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Pre-doc baseline `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [independent main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4 attempt1; #445–#448 squash-integrated. Native GitRead is **NOT live**; P0 synchronized create/resume/revoke ownership, physical Job/root/pipe EOF and legacy joins still block V1. #317 administratively CLOSED, #323/#185/#319/#176/#182 OPEN, Windows V1 NO-GO. One **complete** targeted PR at a time through exact-head checks, squash and independent main CI. No standing authorization for local operator-PC work: earlier task-specific permissions are NOT transferable. Historical sections below are not the latest `main`.
