@@ -1,5 +1,32 @@
 # Repository entry point for coding agents
 
+## Current canonical continuation — after technical PR #453 (31 October 2026)
+
+**Requery GitHub first:** snapshot `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`,
+independent [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+SUCCESS 4/4 attempt1 on exact integrated SHA (before this documentation PR).
+PRs [#450–#453](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+are fully reviewed, squash-merged and checked on **independent main CI**;
+[#453](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/453)
+fixes only the **production runner's original elapsed-time classification**
+before spawn/stdio setup. It does **NOT** bound inherited descendant pipe
+`.join()`, make native GitRead live, seal create/resume against revoke,
+or resolve #319/#185/#176/#182.
+
+**Read the [current full handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+and [next-chat prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md)
+before changing code.** Keep #323 **OPEN / Windows V1 NO-GO**; #355
+is intentionally research-negative. Old 'current' headings below are dated
+history, not permission to use old branches or enable native execution.
+One PR all the way through exact-head hosted CI, correct review, squash,
+Git tree match, independent push/main 4/4 and receipts in PR/#323
+**before another PR**. No local operator-PC access, self-hosted runners,
+security/protection changes, Desktop/REL work or V1 tag/release without
+fresh explicit approval. Auto-authored comments are not peer approval.
+
+---
+
+
 **Active 31 October 2026 checkpoint:** [current handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md) supersede earlier 'current' snapshots below. Before the documentation PR, `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` passed [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 first attempt following fully completed technical PRs #445–#448. #317 CLOSED administratively; #323/#176/#182/#185/#319 OPEN; V1 NO-GO. Non-executing native Job/clock preparations **must not be called production GitRead**, and neither watchdog nor registry snapshots authorize native create/resume. One PR through push, exact-head CI, review, squash, Git tree comparison, independent push/main CI **before** starting the next. **No standing local operator-PC authorization**; old per-task permission references do not apply to this new chat.
 
 ---
