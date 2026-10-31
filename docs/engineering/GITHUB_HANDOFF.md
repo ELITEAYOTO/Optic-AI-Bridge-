@@ -1,5 +1,28 @@
 # GitHub-only project handoff
 
+## 30 October — first receiver-age failure and cumulative read-call duration
+
+PR445 first head443b2aff/CI41127771145 FAILED Windows after20 offline tests and
+six physical cases. Receiver entry/pin first seen15ms, failure10015ms; original
+reads progress16MiB+64KiB at926ms,32MiB+64KiB at3730ms and48MiB+64KiB at6646ms.
+No ready listener/Node launch. This is progressing executable observation, not
+proof of a specific IO/CPU/filter cause. Preserve receipt6533512780 and original
+failed report. The same diagnostic PR now accumulates wall duration inside the
+unchanged original Read calls under the existing opt-in. Cumulative read time
+includes descheduling inside calls; the rest includes path/pin/hash/log/loop and
+scheduling, not pure CPU. No deadline/hash/pin/authority change. V1 **NO-GO**.
+
+## 30 October — distinguish supervisor observation ages from producer timings
+
+The hosted fixture now keeps at most eight receiver-only startup ages from the
+unchanged pre-Popen monotonic origin: Popen return, listener wait start/failure,
+first observed entry/pin/hash completion and latest observed read boundaries.
+Only complete newly polled records count; the bounded snapshot is added to the
+first failure evidence before recovery. No producer-emission or kernel-stack
+inference, acceptance rule, deadline, case or schema8 success change. Earlier
+pin-opened failure41123153308 remains unexplained. Windows V1 **NO-GO**.
+[Owning proof](PHYSICAL_HOST_SHUTDOWN_PROOF.md).
+
 ## 30 October — preserve first pin-opened startup failure and bounded read progress
 
 After host-stop binding, independent main41123153308 FAILED Windows active-job

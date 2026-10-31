@@ -56,6 +56,61 @@ def failure_tail(path):
         return dict(text="", read_error=type(error).__name__)
 
 
+class StartupObservation:
+    """Bounded RECEIVER observation ages, never producer timestamps or gates."""
+    _NAMES = frozenset({
+        "popen_returned_ms", "listener_wait_started_ms", "failure_observed_ms",
+        "entry_first_seen_ms", "pin_opened_first_seen_ms", "hash_complete_first_seen_ms",
+        "read_started_last_seen_ms", "read_returned_last_seen_ms",
+    })
+
+    def __init__(self, started):
+        self.started = started
+        self.ages = {}
+        self.offset = 0
+        self.error = None
+
+    def mark(self, name, observed_at):
+        if name not in self._NAMES:
+            self.error = self.error or "unknown-observation-name"
+            return
+        age = observed_at - self.started
+        if age < 0:
+            self.error = self.error or "observer-clock-regressed"
+            return
+        self.ages[name] = int(age * 1000)
+
+    def observe(self, data, observed_at):
+        if len(data) > LIMIT or len(data) < self.offset:
+            self.error = self.error or "stderr-observation-bound-or-rewrite"
+            return
+        end = data.rfind(b"\n") + 1
+        # A same-length rewrite can move the final newline backwards without
+        # shrinking the byte count. Never rewind into previously seen records.
+        if end < self.offset:
+            self.error = self.error or "stderr-observation-bound-or-rewrite"
+            return
+        # Only new complete records count; a repeated poll never retags them.
+        for line in data[self.offset:end].splitlines():
+            for prefix, name, first_only in (
+                (b"OPTIC_STARTUP phase=entry ", "entry_first_seen_ms", True),
+                (b"OPTIC_PROCESS_IDENTITY_PHASE phase=pin-opened ", "pin_opened_first_seen_ms", True),
+                (b"OPTIC_PROCESS_IDENTITY_PHASE phase=hash-complete ", "hash_complete_first_seen_ms", True),
+                (b"OPTIC_PROCESS_IDENTITY_READ phase=read-started ", "read_started_last_seen_ms", False),
+                (b"OPTIC_PROCESS_IDENTITY_READ phase=read-returned ", "read_returned_last_seen_ms", False),
+            ):
+                if line.startswith(prefix) and (not first_only or name not in self.ages):
+                    self.mark(name, observed_at)
+        self.offset = end
+
+    def snapshot(self):
+        value = dict(origin="pre-popen-monotonic", receiver_observation_only=True,
+                     ages_ms=dict(self.ages))
+        if self.error:
+            value["observation_error"] = self.error
+        return value
+
+
 def remember_failure(result, root, event, error):
     # Capture before recovery/TemporaryDirectory cleanup. A later recovery
     # failure must not replace the original case failure with less evidence.
@@ -63,12 +118,17 @@ def remember_failure(result, root, event, error):
         result["failure"] = dict(event=event, error_type=type(error).__name__,
                                  message=str(error)[-1024:],
                                  worker_log_tail=failure_tail(root / "worker.log"),
-                                 bridge_stderr_tail=failure_tail(root / "stderr.log"))
+                                 bridge_stderr_tail=failure_tail(root / "stderr.log"),
+                                 startup_observation_tail=failure_tail(root / "startup-observation.json"))
 
 
 def phases(path):
+    return phases_from_bytes(bounded_read(path))
+
+
+def phases_from_bytes(data):
     observed = []
-    for line in bounded_read(path).decode("utf-8", errors="replace").splitlines(keepends=True):
+    for line in data.decode("utf-8", errors="replace").splitlines(keepends=True):
         # stderr formatting may use several writes. A prefix is not a complete
         # timing record, and must neither crash this observer nor satisfy a gate.
         if line.endswith("\n") and line.startswith("OPTIC_STARTUP phase="):
@@ -296,16 +356,21 @@ def worker(args):
         return receive_pipe(process, request_id) if unread else receive(path, request_id, process)
 
     process = None
+    observation = None
     with (root / "stderr.log").open("wb") as error, (root / "stdout.log").open("wb") as output:
         try:
             bridge_started_at = time.monotonic()
+            observation = StartupObservation(bridge_started_at)
             process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE if unread else output,
                                        stderr=error, env=environment, **({"bufsize": 0} if unread else {}))
+            observation.mark("popen_returned_ms", time.monotonic())
             log = root / "stderr.log"
 
             def phase(name):
-                current = phases(log)
+                data = bounded_read(log)
+                observation.observe(data, time.monotonic())
+                current = phases_from_bytes(data)
                 if name in current:
                     return True
                 if process.poll() is not None:
@@ -313,6 +378,7 @@ def worker(args):
                     return True
                 return False
 
+            observation.mark("listener_wait_started_ms", time.monotonic())
             wait_for(lambda: phase("host-shutdown-listening"), 10, "OS listener registration")
             if args.initialized or args.event == "headless":
                 send(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -381,6 +447,14 @@ def worker(args):
                                   exit_after_input_close=process.returncode)
             (root / "result.json").write_text(json.dumps(result), encoding="utf-8")
         except BaseException:
+            # Extra evidence must never replace the original case exception.
+            if observation is not None:
+                try:
+                    observation.mark("failure_observed_ms", time.monotonic())
+                    (root / "startup-observation.json").write_text(
+                        json.dumps(observation.snapshot()), encoding="utf-8")
+                except OSError as evidence_error:
+                    print("STARTUP_OBSERVATION_SAVE_ERROR " + type(evidence_error).__name__, file=sys.stderr)
             detail = bounded_read(root / "stderr.log").decode("utf-8", errors="replace")
             print("BRIDGE_STDERR " + detail.replace(str(root), "<fixture>")[-2000:], file=sys.stderr)
             raise
