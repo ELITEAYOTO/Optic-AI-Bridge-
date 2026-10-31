@@ -268,7 +268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deadline_consumed_before_spawn_cannot_be_refreshed_after_child_exit() {
+    fn deadline_consumed_before_spawn_rejects_expired_original_clock() {
         // Model time already spent before Command::spawn using an old
         // original start. This now proves early expiry rejection; it does
         // not prove post-spawn joins or Windows calls are interruptible.
