@@ -1,5 +1,30 @@
 # Reliability and implementation debt
 
+## 31 October 2026 — production legacy command deadline includes spawn/setup
+
+The live `HardenedCommandRunner` previously began its elapsed-time
+measurement only after `Command::spawn()` and the stdin/stdout/stderr worker
+setup. A slow process creation or pipe setup therefore consumed wall time
+without consuming the advertised operation timeout. The runner now captures
+one `Instant` on entry to `run` or `run_with_input` (including input
+validation and copy), before command construction and launch; the same
+`Instant` is passed into `run_inner` and is never restarted. Poll and final
+post-join classification both use this original instant. The regression
+injects an already consumed start into the private runner with an actual
+disposable test-harness child, proving a later child success cannot result
+in successful command classification after the original deadline.
+
+**This is timeout *classification*, not a hard time bound.** A blocked OS
+`spawn()`, direct-child `wait()`, or inherited-pipe `join()` can still
+prevent the caller from returning before the timeout (issue #317). We do not
+detach readers, abandon handles or falsely report root/Job/EOF physical
+quiescence. The real MCP GitRead remains on this legacy runner; no native
+GitRead switch and no change to command/environment, network/sandbox
+permissions, public errors, process-tree owner or timeout configuration.
+The original scope for #319's intermittent first-MCP-response deadline is
+not proven fixed. **#323 remains OPEN / Windows V1 NO-GO.**
+
+
 ## Active P0 debt — 31 October 2026 after fully verified #448
 
 Production pre-doc snapshot `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` and [independent main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4. PRs #445–#448 are merged, not draft candidates. The new post-sensitive-verify deadline check and both original-clock post-arm/post-Job-precreation checks are **narrow bounded improvements**, not the actual native GitRead completion.
