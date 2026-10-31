@@ -6,7 +6,17 @@ policy authorizes effects and Windows isolation contains supported processes.
 
 **Pre-alpha. No production-supported release is available.**
 
-## Windows 10/11 V1 — verified checkpoint after PR #457 (31 October 2026)
+## Windows 10/11 V1 — latest verified checkpoint after documentation PR #458
+
+**Verified GitHub checkpoint before this additional documentation PR:** `main=a9b6de0467fe2cdb0d9a74276e0ea0ec1fc40b8a` (Git tree `6d4988c300740f3cc0aefec285b9284a83169366`). [PR #458](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458) is squash-merged: eight README/status/handoff/reliability Markdown files only; final PR-head CI [#41228285220](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228285220) **SUCCESS 4/4** and identical tested/merged trees. Independent [push/main CI #41228767639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228767639) **SUCCESS 4/4, attempt 1, exact integrated source and checkout SHA**, hosted Windows **428 passed / 0 failed / 11 ignored**, Ubuntu **318 passed**, physical schema8 `complete=true` **10 Windows + 4 Unix** cases/characterizations, original evidence artifacts retained. This SHA is a dated **pre-this-PR checkpoint**; always requery `main` and CI after any documentation merge. See [PR #458 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458#issuecomment-6547380732) and [#323 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6547381263).
+
+**Technical state:** #455 makes the *live legacy* runner deny already-expired original deadlines **before spawn**, without interrupting blocked OS calls or atomically fencing revoke. #456 stops **future** output-reader reads once the shared ceiling is crossed, but an already blocked peer, `wait()`, `join()` or inherited stdin can still hold the operation. #457 fails closed on a poisoned ledger in the **inert** Windows-native call tracker; this is not an issuer or Git process launch. Native GitRead/Job/watchdog are still unconnected to real MCP `GitReadService::status()`. The verified next P0 is a service-owned, original-generation revocation-linearizable authorization/guardian for session, TaskLease, policy epoch, host stop, pinned repo/exe, **in-flight and future** Win32 CreateProcessW/ResumeThread, followed by actual root exit + kernel Job empty + both physical stdout/stderr EOF + no future spawn + crash/unknown custody reconciliation. Research [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) preserves a real **Git spawned after revoke** negative and must not be treated as passed; #327/#353/#355/#358 remain unmerged. Issue [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN; #176/#182 sensitive read authority, #185 Node/AppContainer and #319 first MCP response also OPEN. **Windows V1 NO-GO.** No GitRead native activation, release/tag, policy/security relaxation, user-PC commands, self-hosted runner, Desktop or REL changes.
+
+The next-chat handoff is linked in [AGENTS.md](AGENTS.md) and [canonical documentation](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md). No Windows V1 production-supported release is available.
+
+---
+
+## Historical verified checkpoint after PR #457 (superseded)
 
 `main=291c152cdd132753668563031cf34bcfe0810940` before this docs PR; [independent push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, attempt 1**, Windows Rust **428 passed / 0 failed / 11 ignored**, schema8 physical reports `complete=true` (**10 Windows / 4 Unix**) on exact source/checkout with retained artifacts. This is a dated checkpoint: requery live GitHub after the docs merge.
 
