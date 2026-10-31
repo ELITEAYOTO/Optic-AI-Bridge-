@@ -1,5 +1,20 @@
 # Documentation map
 
+## Latest GitHub-only Windows V1 checkpoint
+
+- [Canonical 31 October technical handoff after PR #453](engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
+- [Complete next-chat prompt, updated after PR #453](engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md)
+- [Current #323 native authority audit](engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md)
+- [Live legacy runner liveness/timeout debt](engineering/RELIABILITY_DEBT.md)
+
+Pre-documentation source `main=bfcd9dcba0f73bf6d8aa4d148fc5c654c819edf6`
+has independent [push/main CI #41195919444](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41195919444)
+SUCCESS 4/4; recheck main after this documentation PR. Windows 10/11
+V1 stays **NO-GO**, no release. All #450–#453 are already integrated,
+but the native GitRead launch fence, physical terminal evidence and
+legacy pipe-join liveness remain unresolved.
+
+
 ## Current project entry points
 
 - [Reusable new-chat prompt](../PROJECT_CONTINUITY_PROMPT.md)
