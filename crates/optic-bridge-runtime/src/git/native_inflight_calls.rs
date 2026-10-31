@@ -39,7 +39,7 @@ struct OriginalNativeStops {
 }
 
 struct Shared {
-    stop_requested: AtomicBool,
+    stop_requested: Arc<AtomicBool>,
     counts: Mutex<CallCounts>,
     original: Option<OriginalNativeStops>,
 }
@@ -47,7 +47,7 @@ struct Shared {
 impl Shared {
     fn new(original: Option<OriginalNativeStops>) -> Self {
         Self {
-            stop_requested: AtomicBool::new(false),
+            stop_requested: Arc::new(AtomicBool::new(false)),
             counts: Mutex::new(CallCounts::default()),
             original,
         }
@@ -141,6 +141,13 @@ impl NativeCallStopTracker {
     /// NOT synchronously stop an already admitted OS call or complete revoke.
     pub(crate) fn request_stop(&self) {
         self.shared.stop_requested.store(true, Ordering::Release);
+    }
+
+    /// Private stop source for the original Job watchdog, not a launch grant.
+    /// Cloning the Arc retains the exact internal fail-closed event; the
+    /// independent watchdog cannot outlive its original Job custody.
+    pub(crate) fn internal_stop_signal(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.shared.stop_requested)
     }
 
     /// Original revoke and original absolute expiry close future admission,
