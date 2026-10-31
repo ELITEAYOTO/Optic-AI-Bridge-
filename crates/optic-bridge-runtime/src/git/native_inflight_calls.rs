@@ -281,7 +281,10 @@ mod tests {
         );
         let entered = original.track(NativeCallPhase::Resume).unwrap();
         std::thread::sleep(Duration::from_millis(250));
-        assert!(original.stop_requested(), "the original horizon cannot renew");
+        assert!(
+            original.stop_requested(),
+            "the original horizon cannot renew"
+        );
         assert!(original.track(NativeCallPhase::CreateSuspended).is_none());
         assert_eq!(
             original.in_flight(),
