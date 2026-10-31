@@ -1665,13 +1665,12 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
             .unwrap();
         assert!(
-            owner.call_tracking.is_none(),
+            owner.native_call_tracking_for_test().is_none(),
             "unarmed owner is not tracked"
         );
         owner.arm_original_watchdog(&fixture.trusted()).unwrap();
         let calls = owner
-            .call_tracking
-            .as_ref()
+            .native_call_tracking_for_test()
             .expect("only armed original custody binds the tracker")
             .clone();
         let in_flight = calls
