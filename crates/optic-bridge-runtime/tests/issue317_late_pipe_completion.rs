@@ -180,7 +180,8 @@ fn fixture_assert_overflow_does_not_wait_for_descendant_eof() {
     let started = Instant::now();
     let result = runner.run(&command_spec);
     let elapsed = started.elapsed();
-    // The synthetic descendant still holds inherited stdout/stderr for 1.6s.
+    // The quiet synthetic descendant holds inherited stdout for 1.6s;
+    // stderr is isolated so a separate blocked read cannot skew this check.
     // Crossing the output ceiling must now reject before that late EOF,
     // rather than continuing to drain an already unacceptable stream.
     assert!(
