@@ -55,6 +55,10 @@ impl Shared {
 
     fn is_stop_required(&self) -> bool {
         self.stop_requested.load(Ordering::Acquire)
+            // A poisoned counter is unknown custody, never an all-clear.
+            // This read does not lock or repair the counter, nor prove
+            // native OS quiescence or revoke an already tracked call.
+            || self.counts.is_poisoned()
             || self.original.as_ref().is_some_and(|original| {
                 std::time::Instant::now() >= original.deadline
                     || original
@@ -245,6 +249,36 @@ mod tests {
                 .is_none()
         );
         assert!(other_observer.track(NativeCallPhase::Resume).is_none());
+    }
+
+    #[test]
+    fn poisoned_inflight_ledger_requires_stop_and_never_reports_empty() {
+        let tracker = NativeCallStopTracker::new();
+        // Poison the actual accounting mutex while retaining a native-call
+        // ticket. This is a local model: no process or Windows API is called.
+        let pending = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                let _guard = tracker.shared.counts.lock().unwrap();
+                panic!("intentional test-only accounting poison");
+            });
+            assert!(worker.join().is_err());
+        });
+        assert!(
+            tracker.stop_requested(),
+            "unknown/poisoned accounting must fail closed as stop required"
+        );
+        assert_eq!(tracker.in_flight(), None, "unknown is never zero");
+        assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        drop(pending);
+        assert_eq!(
+            tracker.in_flight(),
+            None,
+            "poison remains unknown after drop"
+        );
+        tracker.request_stop();
+        assert!(tracker.stop_requested());
     }
 
     #[test]
