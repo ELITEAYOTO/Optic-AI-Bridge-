@@ -1,5 +1,35 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
+## 31 October — native-call in-flight accounting precursor (research, not issuer)
+
+The Windows-only internal module `crates/optic-bridge-runtime/src/git/native_inflight_calls.rs`
+introduces a deliberately **inert** stop-and-in-flight ledger. A call ticket can
+record either a suspended CreateProcessW or ResumeThread attempt; the
+**irreversible stop request publishes without waiting for that ticket**. Future
+registrations are denied; already registered calls remain counted until their
+owning thread returns. A poisoned counter is **unknown**, never zero. Three
+Windows tests model an outstanding create and resume, an independent stop
+request and denial of later registration; none executes Windows API calls.
+
+**Linearization scope:** registration's last stop check under the short count
+mutex precedes a competing atomic stop publication, or registration is denied.
+A stop after successful registration leaves a pending native call, even if that
+call enters the kernel after the stop request. No mutex is held across caller
+work, kernel calls or I/O. A stop request is **NOT a completed revocation**;
+zero pending calls is **NOT root exit, empty Job, EOF or termination receipt**.
+
+**Crucial limitation:** this tracker is **not connected** to session, TaskLease,
+policy epoch, host-stop, the retained Job, CreateProcessW/ResumeThread, the
+guarding owner or the production MCP path. It neither mints native launch
+permission nor guarantees a stopped child cannot run. Before any integration,
+the actual guardian must bind all original revoke sources and target identity,
+keep the suspended root/Job and quota through uncertain native calls, define
+completion only after physical termination/EOF, and test the real Windows
+create/revoke/resume race. The research-negative #355 remains valid; #323
+stays **OPEN / Windows V1 NO-GO**. The new modeled tests do not establish
+native GitRead readiness, a fix to #319/#185 or release safety.
+
+
 ## 31 October — integrated original-clock checks are NOT a native launch fence
 
 At the pre-documentation checkpoint, `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` passed [independent push/main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 first attempt. Consecutive PRs [#447](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/447) and [#448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/448) validate the same retained service clock **after** (respectively) actual original empty-Job watchdog arming and original Windows Job/pipe precreation, instead of using a stale pre-operation time. Dedicated Windows-only tests use deterministic injected post-operation observations, no executable child, and check preserved counted custody and safe no-child release on expiry; #448 native prep [#41188629411](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188629411) and ordinary CI [#41188629382](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188629382) passed. Both exact-head Git trees are equal to their final squash trees.
