@@ -38,7 +38,6 @@ struct OriginalNativeStops {
     deadline: std::time::Instant,
 }
 
-#[derive(Default)]
 struct Shared {
     stop_requested: AtomicBool,
     counts: Mutex<CallCounts>,
@@ -46,6 +45,14 @@ struct Shared {
 }
 
 impl Shared {
+    fn new(original: Option<OriginalNativeStops>) -> Self {
+        Self {
+            stop_requested: AtomicBool::new(false),
+            counts: Mutex::new(CallCounts::default()),
+            original,
+        }
+    }
+
     fn is_stop_required(&self) -> bool {
         self.stop_requested.load(Ordering::Acquire)
             || self.original.as_ref().is_some_and(|original| {
@@ -59,19 +66,21 @@ impl Shared {
 }
 
 /// This accounting gate is deliberately not attached to the live MCP or native
-/// owner. A future guardian must bind every original revoke source and retain
-/// native custody after calls finish; this tracker alone cannot do either.
-#[derive(Clone, Default)]
+/// execution path. Production construction requires the original stop sources.
+/// It is neither Clone nor Default: a detached copy cannot issue new tickets.
 pub(crate) struct NativeCallStopTracker {
-    shared: Arc<Shared>,
+    shared: Shared,
 }
 
-/// Retained by the thread actually performing an OS call. The ticket does not
-/// authorize that call. In particular, a stop can win after admission and
-/// before an already admitted CreateProcessW/ResumeThread enters the kernel.
-#[must_use = "keep the call counted until the native API returns"]
-pub(crate) struct TrackedNativeCall {
-    shared: Arc<Shared>,
+/// A call accounting ticket BORROWS its tracker. A future guardian must keep
+/// this tracker inside its uniquely owned native custody until the OS call
+/// returns; a tracked call cannot outlive that Rust owner via this API.
+///
+/// This is NOT launch authorization or OS termination/EOF proof. Stop can
+/// still win between a tracked admission and the actual kernel entry.
+#[must_use = "keep the borrowed call ticket until the native API returns"]
+pub(crate) struct TrackedNativeCall<'a> {
+    shared: &'a Shared,
     phase: NativeCallPhase,
 }
 
@@ -80,7 +89,9 @@ impl NativeCallStopTracker {
     // The real precreated owner must bind its ORIGINAL stop signals and horizon.
     #[cfg(test)]
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self {
+            shared: Shared::new(None),
+        }
     }
 
     pub(crate) fn with_original_stops(
@@ -88,10 +99,7 @@ impl NativeCallStopTracker {
         deadline: std::time::Instant,
     ) -> Self {
         Self {
-            shared: Arc::new(Shared {
-                original: Some(OriginalNativeStops { signals, deadline }),
-                ..Shared::default()
-            }),
+            shared: Shared::new(Some(OriginalNativeStops { signals, deadline })),
         }
     }
 
@@ -99,7 +107,7 @@ impl NativeCallStopTracker {
     /// stop check under the short mutex closes admission after a prior stop.
     /// A concurrent stop after that check makes this an already-admitted call
     /// which the eventual guardian must reconcile or forcibly terminate.
-    pub(crate) fn track(&self, phase: NativeCallPhase) -> Option<TrackedNativeCall> {
+    pub(crate) fn track(&self, phase: NativeCallPhase) -> Option<TrackedNativeCall<'_>> {
         if self.shared.is_stop_required() {
             return None;
         }
@@ -113,7 +121,7 @@ impl NativeCallStopTracker {
         };
         *counter = counter.checked_add(1)?;
         Some(TrackedNativeCall {
-            shared: Arc::clone(&self.shared),
+            shared: &self.shared,
             phase,
         })
     }
@@ -141,7 +149,7 @@ impl NativeCallStopTracker {
     }
 }
 
-impl Drop for TrackedNativeCall {
+impl Drop for TrackedNativeCall<'_> {
     fn drop(&mut self) {
         // Never substitute a successful quiescence receipt if the mutex was
         // poisoned. The observer then sees None rather than false zero.
@@ -169,27 +177,29 @@ mod tests {
         let create = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
-        let worker = std::thread::spawn(move || {
-            // Model an in-flight, arbitrarily delayed native call without
-            // creating a child or holding the authority/count mutex.
-            entered_tx.send(()).unwrap();
-            release_rx.recv().unwrap();
-            drop(create);
+        std::thread::scope(|scope| {
+            // Scoped thread may borrow the uniquely retained ticket; it must
+            // complete before the tracker can be destroyed by its owner.
+            let worker = scope.spawn(move || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                drop(create);
+            });
+            entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            tracker.request_stop();
+            assert!(tracker.stop_requested());
+            assert_eq!(
+                tracker.in_flight(),
+                Some(InFlightNativeCalls {
+                    creates: 1,
+                    resumes: 0,
+                })
+            );
+            assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+            assert!(tracker.track(NativeCallPhase::Resume).is_none());
+            release_tx.send(()).unwrap();
+            worker.join().unwrap();
         });
-        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-        tracker.request_stop();
-        assert!(tracker.stop_requested());
-        assert_eq!(
-            tracker.in_flight(),
-            Some(InFlightNativeCalls {
-                creates: 1,
-                resumes: 0,
-            })
-        );
-        assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
-        assert!(tracker.track(NativeCallPhase::Resume).is_none());
-        release_tx.send(()).unwrap();
-        worker.join().unwrap();
         assert_eq!(
             tracker.in_flight(),
             Some(InFlightNativeCalls {
@@ -227,7 +237,7 @@ mod tests {
     #[test]
     fn stop_before_call_registration_is_irreversible() {
         let tracker = NativeCallStopTracker::new();
-        let other_observer = tracker.clone();
+        let other_observer = &tracker;
         tracker.request_stop();
         assert!(
             other_observer

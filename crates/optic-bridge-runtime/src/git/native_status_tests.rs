@@ -1669,10 +1669,11 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             "unarmed owner is not tracked"
         );
         owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+        // Borrow the tracker from the uniquely owned native custody: this
+        // simulated call ticket cannot outlive the retained Job and permits.
         let calls = owner
             .native_call_tracking_for_test()
-            .expect("only armed original custody binds the tracker")
-            .clone();
+            .expect("only armed original custody binds the tracker");
         let in_flight = calls
             .track(NativeCallPhase::CreateSuspended)
             .expect("no child: simulated in-flight Win32 create");
