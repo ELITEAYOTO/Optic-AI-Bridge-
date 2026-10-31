@@ -1,5 +1,14 @@
 # GitHub-only project handoff
 
+## Canonical current handoff — 31 October 2026 (after #448)
+
+**Read [HANDOFF_WINDOWS_V1_2026-10-31.md](HANDOFF_WINDOWS_V1_2026-10-31.md) first**, and copy the full [NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Snapshot before this documentation PR: `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 SUCCESS attempt1. Four technical PRs #445–#448 delivered with exact-head CI, squash and independently verified push/main CI; Windows-only native work remains **inert**, with no live GitRead native launcher.
+
+Four open research PRs #327/#353/#355/#358 must not be bulk merged; #355 preserves a negative post-revoke spawn proof. #317 CLOSED administratively; #323, #176, #182, #185, #319 OPEN; Windows V1 **NO-GO**. Preserve historical #319/#185 and pre-listener startup reds, do not claim a specific root cause. **Required workflow: one complete PR through push, exact-head/native CI, review, squash, Git tree match and independently green main CI before starting the next.** Do not execute on operator PC or use self-hosted runners, and do not change GitHub settings, protections or releases without owner consent. The 30 Oct entries below are dated history.
+
+---
+
+
 ## 30 October — first receiver-age failure and cumulative read-call duration
 
 PR445 first head443b2aff/CI41127771145 FAILED Windows after20 offline tests and

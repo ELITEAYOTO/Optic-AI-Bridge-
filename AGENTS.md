@@ -1,5 +1,10 @@
 # Repository entry point for coding agents
 
+**Active 31 October 2026 checkpoint:** [current handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md) supersede earlier 'current' snapshots below. Before the documentation PR, `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8` passed [push/main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) 4/4 first attempt following fully completed technical PRs #445–#448. #317 CLOSED administratively; #323/#176/#182/#185/#319 OPEN; V1 NO-GO. Non-executing native Job/clock preparations **must not be called production GitRead**, and neither watchdog nor registry snapshots authorize native create/resume. One PR through push, exact-head CI, review, squash, Git tree comparison, independent push/main CI **before** starting the next. **No standing local operator-PC authorization**; old per-task permission references do not apply to this new chat.
+
+---
+
+
 **Current continuation (29 October 2026, clock/lease and stdio service close):** [current code/evidence and next host/policy boundary](docs/engineering/WINDOWS_V1_CONTINUATION_CLOCK_LEASE_2026-10-28.md). Read live main and latest #323 receipts; historical checkpoints below are not the current SHA. Windows V1 NO-GO, hosted CI integration gate, one PR at a time. Local execution requires explicit task-specific owner authorization; the 29 October task has it, as recorded in the continuation.
 
 ## 28 octobre 2026 — jalon #412 : watchdog natif précréé, V1 toujours NO-GO

@@ -1,5 +1,12 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+## CURRENT PRIORITY — 31 October 2026 (supersedes dated continuation links)
+
+Read [canonical 31 Oct handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [copy-ready GitHub-only prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Pre-doc baseline `main=7f1de707c130d61f8a6878728ec2ba8bd6ac23a8`, [independent main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4 attempt1; #445–#448 squash-integrated. Native GitRead is **NOT live**; P0 synchronized create/resume/revoke ownership, physical Job/root/pipe EOF and legacy joins still block V1. #317 administratively CLOSED, #323/#185/#319/#176/#182 OPEN, Windows V1 NO-GO. One **complete** targeted PR at a time through exact-head checks, squash and independent main CI. No standing authorization for local operator-PC work: earlier task-specific permissions are NOT transferable. Historical sections below are not the latest `main`.
+
+---
+
+
 ## REPRISE ACTIVE — CHAT CLASSIQUE — 27 octobre 2026
 
 Lire la [passation Windows V1 pour Chat classique](docs/engineering/HANDOFF_WINDOWS_V1_CHAT_2026-10-27.md)

@@ -1,5 +1,17 @@
 # Changelog
 
+## 31 October — four complete solidification PRs #445–#448 (Windows V1 still NO-GO)
+
+- [#445](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/445): bound receiver-only startup ages/cumulative pinned-executable read wall duration and reject same-length stderr rewrites that rewind the observer. Squash `6cc47415`; [independent main #41185358982](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41185358982) SUCCESS4/4. Historical Windows startup failures [#41123153308](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41123153308) and [#41127771145](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41127771145) remain unexplained.
+- [#446](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/446): check the original MCP GitRead request deadline again after sensitive-output policy verification, with deterministic worker-clock test. Squash `198c33b8`; [main #41186369040](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41186369040) SUCCESS4/4.
+- [#447](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/447): non-executing native original-clock check **after** real Windows Job watchdog arming; deterministic post-arm expiry test. Squash `b0b68dd1`; [main #41188103927](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188103927) SUCCESS4/4.
+- [#448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/448): non-executing native original-clock check **after** Job/pipe precreation, fail-closed no-child capacity release; targeted Windows test. Squash `7f1de707`; [main #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) SUCCESS4/4. [#448 native preparation #41188629411](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188629411) SUCCESS, physical schema8 Windows10/Unix4 complete on exact integrated main.
+
+All four: exact-final-head CI, reviewed changed files (no independent approval claimed), squash with identical Git source tree and first-attempt independent post-merge CI; **not** proof of native GitRead execution, cross-registry launch fence, physical Git child termination, resolved #185/#319, or V1 release readiness. [Details](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md).
+
+---
+
+
 ## 30 October — first receiver-age failure and cumulative read-call duration
 
 PR445 first head443b2aff/CI41127771145 FAILED Windows after20 offline tests and

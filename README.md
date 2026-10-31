@@ -6,6 +6,14 @@ policy authorizes effects and Windows isolation contains supported processes.
 
 **Pre-alpha. No production-supported release is available.**
 
+## Windows V1 release status — 31 October 2026
+
+**Windows 10/11 V1: NO-GO; no production release/tag.** At the last verified pre-handoff snapshot, `main=7f1de707c130` passed [independent push/main CI #41188920407](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41188920407) **4/4 on attempt 1**. Technical PRs [#445](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/445)–[#448](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/448) were squash-merged and verified independently. These reinforce startup diagnostics, GitRead response deadlines and **non-executing** Windows native Job/watchdog deadline checks; they **do not** switch production MCP GitRead to a native owner or resolve all V1 blockers.
+
+The critical next task is a synchronized session/TaskLease/policy/Host **native launch and revocation fence** plus terminal Job/root/pipe proof. [V1 gate #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) is open; cold-start [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319), AppContainer [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), sensitive-read [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176) / [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182) also remain open. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) is administratively closed, not sufficient evidence of live GitRead readiness.
+
+**Resume the exact PR-by-PR workflow:** [31 Oct verified handoff](docs/engineering/HANDOFF_WINDOWS_V1_2026-10-31.md) and [copy-ready successor prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md). Requery GitHub before acting: this is a dated snapshot, not a pinned current `main`.
+
 ## Choose the right track
 
 | Track | Location | What it provides |
