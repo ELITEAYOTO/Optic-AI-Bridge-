@@ -48,6 +48,10 @@ mod mutation;
 mod mutation_authority;
 mod native_git_read_preflight;
 #[cfg(windows)]
+#[allow(dead_code)] // Future guardian prerequisite; not a launch permit or live MCP path.
+#[path = "git/native_inflight_calls.rs"]
+mod native_inflight_calls;
+#[cfg(windows)]
 mod private_node_task;
 mod private_project_stage;
 #[cfg(windows)]
