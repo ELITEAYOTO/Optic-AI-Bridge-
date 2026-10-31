@@ -268,6 +268,8 @@ mod tests {
     #[test]
     fn poisoned_inflight_ledger_requires_stop_and_never_reports_empty() {
         let tracker = NativeCallStopTracker::new();
+        let watchdog_stop = tracker.internal_stop_signal();
+        assert!(!watchdog_stop.load(Ordering::Acquire));
         // Poison the actual accounting mutex while retaining a native-call
         // ticket. This is a local model: no process or Windows API is called.
         let pending = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
@@ -281,6 +283,10 @@ mod tests {
         assert!(
             tracker.stop_requested(),
             "unknown/poisoned accounting must fail closed as stop required"
+        );
+        assert!(
+            watchdog_stop.load(Ordering::Acquire),
+            "observed poison must irreversibly signal the original native Job watchdog"
         );
         assert_eq!(tracker.in_flight(), None, "unknown is never zero");
         assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
