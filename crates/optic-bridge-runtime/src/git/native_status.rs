@@ -518,7 +518,7 @@ impl LeaseObservedNativeGitStatusCustody {
     // observer exists only to test a deadline crossing that exact boundary
     // without sleeping or depending on Windows runner scheduling. Production
     // always reads the immutable original service clock above.
-    fn arm_original_watchdog_with_post_arm_clock(
+    pub(crate) fn arm_original_watchdog_with_post_arm_clock(
         &mut self,
         trusted: &NativeGitReadTrustedContext<'_>,
         read_post_arm_clock: impl FnOnce(&crate::StdClock) -> MonotonicTime,
@@ -531,6 +531,9 @@ impl LeaseObservedNativeGitStatusCustody {
             .watchdog_clock
             .as_ref()
             .ok_or(NativeGitStatusSnapshotError::ClockRequired)?;
+        // Own the original clock identity before mutably arming the Job.
+        // Cloning retains the same origin, not a fresh deadline.
+        let clock = clock.clone();
         let now = clock.now();
         let until = *until;
         self.session_owner
@@ -557,7 +560,7 @@ impl LeaseObservedNativeGitStatusCustody {
         // The pre-arm time cannot certify expiry AFTER kernel handle
         // duplication and independent worker startup. Retain the armed
         // watchdog on rejection; this remains no-child custody only.
-        if self.is_stop_required_at(read_post_arm_clock(clock)) {
+        if self.is_stop_required_at(read_post_arm_clock(&clock)) {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         Ok(())
