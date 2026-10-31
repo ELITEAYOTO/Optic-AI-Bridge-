@@ -236,4 +236,67 @@ mod tests {
         );
         assert!(other_observer.track(NativeCallPhase::Resume).is_none());
     }
+
+    #[test]
+    fn original_generation_stop_keeps_admitted_call_counted_after_reuse() {
+        let signals: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        let original = NativeCallStopTracker::with_original_stops(
+            signals.clone(),
+            std::time::Instant::now() + Duration::from_secs(5),
+        );
+        let entered = original.track(NativeCallPhase::CreateSuspended).unwrap();
+        // The original TaskLease generation is revoked; replacing the public
+        // ID with an unrelated fresh flag must not redeem the old owner.
+        signals[1].store(true, Ordering::Release);
+        let fresh_lease_generation = Arc::new(AtomicBool::new(false));
+        assert!(!fresh_lease_generation.load(Ordering::Acquire));
+        assert!(original.stop_requested());
+        assert!(original.track(NativeCallPhase::Resume).is_none());
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 1,
+                resumes: 0,
+            })
+        );
+        drop(entered);
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            })
+        );
+        assert!(original.stop_requested());
+    }
+
+    #[test]
+    fn original_absolute_deadline_denies_new_calls_without_manual_stop() {
+        let signals: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        let original = NativeCallStopTracker::with_original_stops(
+            signals,
+            std::time::Instant::now() + Duration::from_millis(200),
+        );
+        let entered = original.track(NativeCallPhase::Resume).unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(original.stop_requested(), "the original horizon cannot renew");
+        assert!(original.track(NativeCallPhase::CreateSuspended).is_none());
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 1,
+            })
+        );
+        drop(entered);
+        assert_eq!(
+            original.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            })
+        );
+    }
 }
