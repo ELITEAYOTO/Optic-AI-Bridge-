@@ -405,9 +405,7 @@ mod tests {
 
     impl Clock for AdvancingClock {
         fn now(&self) -> MonotonicTime {
-            MonotonicTime::from_millis(
-                self.0.load(std::sync::atomic::Ordering::SeqCst),
-            )
+            MonotonicTime::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
         }
     }
 
