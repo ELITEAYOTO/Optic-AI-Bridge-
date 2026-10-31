@@ -660,6 +660,17 @@ impl RegisteredNativeGitStatus {
         self,
         now: MonotonicTime,
     ) -> Result<PrecreatedNativeGitStatusCustody, NativeGitStatusCustodyError> {
+        self.precreate_native_custody_with_post_creation_clock(now, Clock::now)
+    }
+
+    // The optional original service clock belongs to the clock-issued owner.
+    // Test-only callers may inject an expiry observation precisely after OS
+    // resource creation. Neither path permits a Git child to be launched.
+    pub(crate) fn precreate_native_custody_with_post_creation_clock(
+        self,
+        now: MonotonicTime,
+        post_creation_now: impl FnOnce(&crate::StdClock) -> MonotonicTime,
+    ) -> Result<PrecreatedNativeGitStatusCustody, NativeGitStatusCustodyError> {
         if self.is_stop_required_at(now) {
             return Err(NativeGitStatusCustodyError::StopRequired);
         }
@@ -681,10 +692,19 @@ impl RegisteredNativeGitStatus {
         if self.is_stop_required_at(now) {
             return Err(NativeGitStatusCustodyError::StopRequired);
         }
+        // Retain the exact service clock before moving the original registered
+        // owner into custody. Clone preserves its origin, never its deadline.
+        let original_clock = self
+            .prepared
+            .watchdog_clock
+            .as_ref()
+            .map(|(clock, _)| clock.clone());
         let native = optic_bridge_windows::PrecreatedNativeReadCustody::new(self.record.limits)?;
-        // A revocation racing OS handle creation still cannot turn this
-        // unstarted owner into spawn authority or fresh deadline.
-        if self.is_stop_required_at(now) {
+        // The caller's precreation timestamp may now be stale. Use the
+        // original clock AFTER OS Job/pipe allocation when one was issued.
+        // A rejected no-child owner drops the Job, pins and counted permits.
+        let post_now = original_clock.as_ref().map_or(now, post_creation_now);
+        if self.is_stop_required_at(post_now) {
             return Err(NativeGitStatusCustodyError::StopRequired);
         }
         Ok(PrecreatedNativeGitStatusCustody {
