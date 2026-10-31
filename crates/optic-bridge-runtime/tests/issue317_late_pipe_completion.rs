@@ -51,6 +51,16 @@ fn fixture_stdout_descendant() {
 }
 
 #[test]
+fn fixture_quiet_stdout_holder() {
+    if env::var_os(FIXTURE_ENV).is_none() {
+        return;
+    }
+    // Keep the inherited stdout handle open until the known finite expiry.
+    // Do not write after the runner deliberately closes an over-limit reader.
+    thread::sleep(DESCENDANT_DELAY);
+}
+
+#[test]
 fn fixture_stdout_root_exits() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
@@ -67,7 +77,7 @@ fn fixture_output_limit_root_exits() {
     if env::var_os(FIXTURE_ENV).is_none() {
         return;
     }
-    let mut descendant = synthetic_command("fixture_stdout_descendant");
+    let mut descendant = synthetic_command("fixture_quiet_stdout_holder");
     // Retain inherited stdout beyond the root, but not stderr: a peer reader
     // already blocked on an unrelated inherited pipe cannot be interrupted
     // by the shared overflow flag and would make this timing test racy.
