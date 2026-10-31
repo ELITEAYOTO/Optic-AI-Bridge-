@@ -511,6 +511,18 @@ impl LeaseObservedNativeGitStatusCustody {
         &mut self,
         trusted: &NativeGitReadTrustedContext<'_>,
     ) -> Result<(), NativeGitStatusSnapshotError> {
+        self.arm_original_watchdog_with_post_arm_clock(trusted, |clock| clock.now())
+    }
+
+    // Keep the final clock read AFTER the OS watchdog arm. The injectable
+    // observer exists only to test a deadline crossing that exact boundary
+    // without sleeping or depending on Windows runner scheduling. Production
+    // always reads the immutable original service clock above.
+    fn arm_original_watchdog_with_post_arm_clock(
+        &mut self,
+        trusted: &NativeGitReadTrustedContext<'_>,
+        read_post_arm_clock: impl FnOnce(&crate::StdClock) -> MonotonicTime,
+    ) -> Result<(), NativeGitStatusSnapshotError> {
         let (clock, until) = self
             .session_owner
             .unstarted
@@ -542,9 +554,10 @@ impl LeaseObservedNativeGitStatusCustody {
             .ok_or(NativeGitStatusSnapshotError::HostOriginMismatch)?;
         stops.push(host.stop_signal());
         unstarted.native.arm_watchdog_until(until, stops)?;
-        // Revocation racing arm remains attached to the independent worker.
-        // Failure is still no-child custody; callers must dispose it.
-        if self.is_stop_required_at(now) {
+        // The pre-arm time cannot certify expiry AFTER kernel handle
+        // duplication and independent worker startup. Retain the armed
+        // watchdog on rejection; this remains no-child custody only.
+        if self.is_stop_required_at(read_post_arm_clock(clock)) {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
         Ok(())
