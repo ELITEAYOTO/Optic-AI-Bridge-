@@ -45,6 +45,8 @@ jobs:
           $Probe = Join-Path $env:RUNNER_TEMP 'optic-owned-native-process/optic-owned-native-process.exe'
           & $Probe --exact appcontainer::tests::contained_appcontainer_binds_before_resume_and_confirms_its_tree --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'owned native tree proof failed' }
+          & $Probe --exact job::job_list_launch_tests::original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'live original Job watchdog and physical EOF proof failed' }
           & $Probe --exact output_pipe::tests::bounded_pipe_distinguishes_idle_data_and_confirmed_eof --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'bounded native pipe proof failed' }
           & $Probe --exact file::tests::exclusive_state_file_never_truncates_and_rejects_aliases --nocapture

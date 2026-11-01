@@ -656,6 +656,222 @@ fn resumed_job_root_produces_two_physical_pipe_eofs() -> Result<()> {
 }
 
 #[test]
+fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> Result<()> {
+    // Integration proof on a real Windows kernel Job and a *running* fixed
+    // system child. Unlike the empty-Job watchdog tests, this deliberately
+    // holds stdout busy and observes four separate physical stop facts.
+    // This is still a synthetic fixture, NOT a GitRead launch or revoke fence.
+    fn inheritable_copy(handle: HANDLE) -> Result<OwnedHandle> {
+        let mut duplicate = HANDLE::default();
+        // SAFETY: source is a live handle owned by this fixture, and the
+        // destination receives one uniquely owned inheritable duplicate.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                handle,
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                true,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: successful duplication transfers ownership of the handle.
+        Ok(unsafe { OwnedHandle::from_raw_handle(duplicate.0) })
+    }
+
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::other("SystemRoot unavailable to hosted Windows test"))?;
+    let system_directory = PathBuf::from(system_root).join("System32");
+    let executable = system_directory.join("cmd.exe");
+    if !executable.is_file() {
+        return Err(Error::other("fixed Windows system image unavailable"));
+    }
+    let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
+    let working_directory: Vec<u16> = system_directory
+        .as_os_str()
+        .encode_wide()
+        .chain([0])
+        .collect();
+    let mut fixed_command = OsString::from("\"");
+    fixed_command.push(executable.as_os_str());
+    // /D suppresses AutoRun. FOR and ECHO are built-ins: no project input,
+    // external tools, network, or new child is needed. The long FOR loop fills
+    // stdout until the independent watchdog kills the live Job.
+    fixed_command.push(
+        "\" /D /Q /C \"echo OPTIC_NATIVE_RUNNING & echo OPTIC_NATIVE_STDERR 1>&2 & for /L %i in (1,1,2147483647) do @echo OPTIC_NATIVE_FILL\"",
+    );
+    let mut command_line: Vec<u16> = fixed_command.encode_wide().chain([0]).collect();
+
+    let mut custody =
+        PrecreatedNativeReadCustody::new(LimitedJobObject::new(1, 256 * 1024 * 1024, 20)?)?;
+    let original_stops: Vec<_> = (0..4).map(|_| Arc::new(AtomicBool::new(false))).collect();
+    let internal_stop = Arc::new(AtomicBool::new(false));
+    custody.arm_watchdog_until_with_internal_stop(
+        Instant::now() + Duration::from_secs(20),
+        original_stops.clone(),
+        internal_stop,
+    )?;
+    assert_eq!(custody.active_processes()?, 0);
+
+    let child_stdin = inheritable_copy(HANDLE(custody._stdin.as_raw_handle()))?;
+    let child_stdout = inheritable_copy(HANDLE(custody._stdout.writer_handle()?.as_raw_handle()))?;
+    let child_stderr = inheritable_copy(HANDLE(custody._stderr.writer_handle()?.as_raw_handle()))?;
+    let inherited = [
+        HANDLE(child_stdin.as_raw_handle()),
+        HANDLE(child_stdout.as_raw_handle()),
+        HANDLE(child_stderr.as_raw_handle()),
+    ];
+    let jobs = [custody.job.raw()];
+    let mut attributes = AttributeList::new(2)?;
+    // SAFETY: both arrays remain live and stable through CreateProcessW.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+            Some(jobs.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+    // SAFETY: the three explicitly inheritable stdio copies are live.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(inherited.as_ptr().cast::<c_void>()),
+            size_of::<HANDLE>() * inherited.len(),
+            None,
+            None,
+        )
+    }
+    .map_err(Error::other)?;
+
+    let mut startup = STARTUPINFOEXW::default();
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = inherited[0];
+    startup.StartupInfo.hStdOutput = inherited[1];
+    startup.StartupInfo.hStdError = inherited[2];
+    startup.lpAttributeList = attributes.raw();
+    let mut info = PROCESS_INFORMATION::default();
+    // SAFETY: the fixed executable, command buffer, job, aligned attribute
+    // list and stdio handles remain valid for the whole suspended creation.
+    unsafe {
+        CreateProcessW(
+            PCWSTR(application.as_ptr()),
+            Some(PWSTR(command_line.as_mut_ptr())),
+            None,
+            None,
+            true,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+            None,
+            PCWSTR(working_directory.as_ptr()),
+            &startup.StartupInfo,
+            &mut info,
+        )
+    }
+    .map_err(Error::other)?;
+    let process = SuspendedFixtureProcess(info);
+    let mut belongs = BOOL(0);
+    // SAFETY: original process and Job handles are still owned by this test.
+    unsafe { IsProcessInJob(process.0.hProcess, Some(custody.job.raw()), &mut belongs) }
+        .map_err(Error::other)?;
+    assert!(
+        belongs.as_bool(),
+        "suspended root must be in the original Job"
+    );
+    assert_eq!(custody.active_processes()?, 1);
+
+    // Parent copies would prevent EOF even after an otherwise successful kill.
+    custody._stdout.close_parent_writer();
+    custody._stderr.close_parent_writer();
+    drop((child_stdin, child_stdout, child_stderr));
+    // SAFETY: resume the exact newly created suspended primary thread once.
+    let previous = unsafe { ResumeThread(process.0.hThread) };
+    if previous == u32::MAX {
+        return Err(Error::last_os_error());
+    }
+    assert!(previous > 0, "fixture must really start its root");
+
+    let until = Instant::now() + Duration::from_secs(5);
+    let mut output = Vec::new();
+    let mut errors = Vec::new();
+    while !output
+        .windows(b"OPTIC_NATIVE_RUNNING".len())
+        .any(|v| v == b"OPTIC_NATIVE_RUNNING")
+        || !errors
+            .windows(b"OPTIC_NATIVE_STDERR".len())
+            .any(|v| v == b"OPTIC_NATIVE_STDERR")
+    {
+        output.extend(custody._stdout.try_read(1024)?.bytes);
+        errors.extend(custody._stderr.try_read(1024)?.bytes);
+        if Instant::now() >= until {
+            return Err(Error::other("running root never published both markers"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // SAFETY: a zero-wait probes the original root handle without replacing it.
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 0) },
+        WAIT_TIMEOUT,
+        "the synthetic root must still be alive before original stop"
+    );
+    // The real system fixture may create a second associated Job process.
+    // Do not assume one active PID: prove the pinned root remains alive above,
+    // preserve the configured Job limits, and require kernel count ZERO after
+    // original watchdog termination below.
+    let active_before_stop = custody.active_processes()?;
+    eprintln!("OPTIC_NATIVE_ORIGINAL_JOB_ACTIVE_BEFORE_STOP={active_before_stop}");
+    assert!(
+        active_before_stop >= 1,
+        "the running original root must still occupy its kernel Job"
+    );
+
+    original_stops[0].store(true, Ordering::Release);
+    let until = Instant::now() + Duration::from_secs(5);
+    while !custody.watchdog_stop_observed() {
+        if Instant::now() >= until {
+            return Err(Error::other("original native watchdog did not finish"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(custody.watchdog_termination_result(), Some(Ok(())));
+    // SAFETY: the original process handle remains owned until the fixture ends.
+    assert_eq!(
+        unsafe { WaitForSingleObject(process.0.hProcess, 5000) },
+        WAIT_OBJECT_0,
+        "native watchdog did not physically stop the real root"
+    );
+
+    let until = Instant::now() + Duration::from_secs(5);
+    let mut stdout_eof = false;
+    let mut stderr_eof = false;
+    while custody.active_processes()? != 0 || !stdout_eof || !stderr_eof {
+        if !stdout_eof {
+            let chunk = custody._stdout.try_read(4096)?;
+            stdout_eof = chunk.eof;
+        }
+        if !stderr_eof {
+            let chunk = custody._stderr.try_read(4096)?;
+            stderr_eof = chunk.eof;
+        }
+        if Instant::now() >= until {
+            return Err(Error::other(
+                "root stop did not imply original Job empty AND both physical pipe EOFs",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+#[test]
 fn descendant_keeps_both_pipes_open_after_root_exit_until_job_termination() -> Result<()> {
     // Hosted-Windows research fixture, not a GitRead service launcher. A
     // fixed cmd.exe root uses START /B to spawn a long-lived system PowerShell
