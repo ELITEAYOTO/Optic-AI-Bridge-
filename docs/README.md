@@ -2,6 +2,10 @@
 
 ## Latest GitHub-only Windows V1 checkpoint
 
+- **[Post-#470 / 1 November 2026 current handoff, evidence and safe replay](engineering/HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md)** — verified merged #469/#470, draft #471, #317 RED 3/3, 38 inert native/kernel tests PASS, isolated Cargo build and zero-test false-positive warning. **Windows V1 NO-GO**. Re-query live main and CI after any documentation merge.
+- [Prior canonical 1 November 2026 handoff](engineering/HANDOFF_WINDOWS_V1_2026-11-01.md) — historical checkpoint after #464.
+- [Next-chat prompt (earlier checkpoint)](engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) — reconcile against the newer handoff before proceeding.
+
 - [Canonical 31 October technical handoff after PR #453](engineering/HANDOFF_WINDOWS_V1_2026-10-31.md)
 - [Complete next-chat prompt, updated after PR #453](engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md)
 - [Current #323 native authority audit](engineering/ISSUE323_NATIVE_COMMIT_AUDIT_2026-10-28.md)

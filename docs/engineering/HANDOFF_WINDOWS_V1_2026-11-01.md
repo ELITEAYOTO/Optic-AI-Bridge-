@@ -1,5 +1,7 @@
 # Windows V1 — passation canonique Optic AI Bridge (1 novembre 2026)
 
+> **Mise à jour :** ce document décrit le jalon antérieur #464. Pour la reprise effective après les PR #469/#470, l'état de la PR #471 et le test #317 réel sur PC Windows 10, lire d'abord **[HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md](HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md)**. Les SHAs ci-dessous sont conservés comme historique, pas comme `main` actuel.
+
 > **Jalon vérifié AVANT la présente PR de documentation.** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre Git `7dd56c6a08f49866a250178af43e9a5b472628b9`. La [PR #464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) est intégrée et la [CI indépendante push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) est **SUCCESS 4/4 sur le commit source=checkout exact, tentative 1**. Dès que cette PR documentaire sera squash-fusionnée, le SHA de `main` changera : **rechercher le SHA et le nouveau run push/main réel, sans substituer ce jalon pré-doc**.
 
 ## Résultats réellement reçus

@@ -1,5 +1,12 @@
 # Optic AI Bridge
 
+## Point de reprise prioritaire — 1 novembre 2026 (après #470)
+
+**Dernier `main` vérifié avant cette mise à jour documentaire :** `bd121996ce38757362e35c85d3113dda089aefd1`; [CI push/main #41332810883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41332810883) **SUCCESS 4/4**. Les PR #469 et #470 sont intégrées. La [PR #471](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/471) est **DRAFT / non fusionnée**, CI [#41335658243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41335658243) **4/4 SUCCESS** ; elle propose un changement incompatible de l'accès aux patchs Git, **soumis à décision opérateur**.
+
+**P0 #317 sur vrai Windows 10 :** test de Git lancé après révocation **RED 3/3 sur compilation Cargo isolée** ; préparation native **33 PASS**, Job Windows **5 PASS** mais pas de lanceur natif branché. Un ancien `cargo test` à zéro test, obtenu avec compilation partagée, est **INVALIDE**. Le détail testable et le plan de poursuite sont dans la **[nouvelle passation post-#470](docs/engineering/HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md)**. L'[issue #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) demeure **OPEN, Windows V1 NO-GO**. Après fusion documentaire, recontrôler le nouveau SHA de `main` et sa CI indépendante.
+
+
 ## État Windows V1 vérifié — 1 novembre 2026 (après PR #464)
 
 **Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**
