@@ -264,10 +264,6 @@ impl Drop for OwnedJob {
     }
 }
 
-/// Inert Windows GitRead custody: real kernel Job, bounded anonymous pipes and
-/// a nulled stdin are opened *before* any root could exist. This type has no
-/// create/spawn/resume method and is never proof of a completed child.
-#[must_use = "retain native handles until unstarted cleanup or later terminal proof"]
 /// A service-pinned original root HANDLE, not a PID lookup or a launch grant.
 struct PinnedOriginalRoot {
     handle: OwnedHandle,
@@ -306,6 +302,10 @@ impl NativePhysicalStopReceipt {
     }
 }
 
+/// Inert Windows GitRead custody: real kernel Job, bounded anonymous pipes
+/// and nulled stdin are opened before any root exists. There is no process
+/// create/spawn/resume method and no independent execution authorization.
+#[must_use = "retain native handles until unstarted cleanup or later terminal proof"]
 pub struct PrecreatedNativeReadCustody {
     // Disarm and join the independent watchdog before closing the owned Job.
     // A watchdog is optional until a future trusted native launch owner arms it.
