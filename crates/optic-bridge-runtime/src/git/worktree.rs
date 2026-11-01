@@ -138,7 +138,7 @@ pub(crate) fn git_path_arg(path: &Path) -> OsString {
 pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString> {
     let mut hooks = OsString::from("core.hooksPath=");
     hooks.push(git_path_arg(disabled_hooks_root));
-    vec![
+    let args = vec![
         OsString::from("--no-pager"),
         OsString::from("--literal-pathspecs"),
         OsString::from("-c"),
@@ -149,7 +149,17 @@ pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString
         hooks,
         OsString::from("-c"),
         OsString::from("commit.gpgSign=false"),
-    ]
+    ];
+    // Keep this process-local: Git for Windows otherwise cannot create its
+    // owned .git/worktrees/<action-id> entry beneath a deep TEMP path.
+    // Do not alter machine/user Git configuration or enable hooks.
+    #[cfg(windows)]
+    let args = {
+        let mut windows_args = args;
+        windows_args.extend([OsString::from("-c"), OsString::from("core.longpaths=true")]);
+        windows_args
+    };
+    args
 }
 
 pub(crate) fn git_mutation_environment() -> BTreeMap<OsString, OsString> {
@@ -173,6 +183,25 @@ mod tests {
     use std::ffi::OsStr;
 
     use super::*;
+
+    #[test]
+    fn mutation_git_args_enable_windows_long_paths_only_for_this_process() {
+        let arguments = git_mutation_base_args(Path::new("fixture-hooks-disabled"));
+        let enabled = arguments.windows(2).any(|pair| {
+            pair[0] == OsStr::new("-c") && pair[1] == OsStr::new("core.longpaths=true")
+        });
+        assert_eq!(
+            enabled,
+            cfg!(windows),
+            "Windows must support deep owned worktree paths without editing user Git config"
+        );
+        assert!(
+            arguments
+                .iter()
+                .any(|arg| arg.to_string_lossy().starts_with("core.hooksPath=")),
+            "disabling Git hooks must remain mandatory"
+        );
+    }
 
     #[test]
     fn porcelain_z_parser_is_bounded_and_detects_lock() {
