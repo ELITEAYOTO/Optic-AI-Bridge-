@@ -212,7 +212,74 @@ impl OwnedJob {
         }
         .map_err(Error::other)?;
 
+        // SetInformationJobObject succeeding is not proof that the kernel
+        // retained our requested hard caps. Independently query the exact
+        // Job *before* returning the private owner, when no root can exist.
+        // A missing/looser or differently configured cap is fail-closed.
+        job.verify_configured_limits(active_process_limit, job_memory_limit, cpu_percent)?;
         Ok(job)
+    }
+
+    /// Read back the actual original kernel Job policy rather than inferring
+    /// it from SetInformationJobObject returning success. This verifies the
+    /// configuration, not the number/identity of future live processes.
+    /// A Job may later report more active processes than this requested
+    /// limit: that is distinct evidence requiring a real OS investigation.
+    fn verify_configured_limits(
+        &self,
+        expected_active_processes: u32,
+        expected_memory_bytes: usize,
+        expected_cpu_percent: u32,
+    ) -> Result<()> {
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        // SAFETY: the concrete JobObjectExtendedLimitInformation structure is
+        // fully initialized, correctly sized, and the original Job stays owned.
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.raw()),
+                JobObjectExtendedLimitInformation,
+                (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast::<c_void>(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(job_query_io_error)?;
+        let expected_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | JOB_OBJECT_LIMIT_JOB_MEMORY;
+        if limits.BasicLimitInformation.LimitFlags != expected_flags
+            || limits.BasicLimitInformation.ActiveProcessLimit != expected_active_processes
+            || limits.JobMemoryLimit != expected_memory_bytes
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "original native Job hard-limit policy differs from requested kernel caps",
+            ));
+        }
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        // SAFETY: the information class, buffer size and live original Job
+        // match and no user-controlled pointers or executable data are read.
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.raw()),
+                JobObjectCpuRateControlInformation,
+                (&mut cpu as *mut JOBOBJECT_CPU_RATE_CONTROL_INFORMATION).cast::<c_void>(),
+                size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(job_query_io_error)?;
+        if cpu.ControlFlags
+            != (JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP)
+            // SAFETY: CpuRate is the active union field under HARD_CAP.
+            || unsafe { cpu.Anonymous.CpuRate } != expected_cpu_percent * 100
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "original native Job CPU hard cap differs from requested kernel rate",
+            ));
+        }
+        Ok(())
     }
 
     const fn raw(&self) -> HANDLE {
@@ -1116,6 +1183,53 @@ mod tests {
     #[test]
     fn accepts_nonzero_limits() {
         assert!(LimitedJobObject::new(1, 64 * 1024 * 1024, 25).is_ok());
+    }
+
+    #[test]
+    fn kernel_readback_attests_all_three_native_limits_and_hard_cpu_cap() {
+        let job = OwnedJob::create(1, 256 * 1024 * 1024, 20).expect("create verified Job");
+        job.verify_configured_limits(1, 256 * 1024 * 1024, 20)
+            .expect("query exact original kernel policy");
+        assert_eq!(job.active_processes().expect("empty prelaunch Job"), 0);
+        assert!(matches!(
+            job.verify_configured_limits(2, 256 * 1024 * 1024, 20),
+            Err(ref error) if error.kind() == ErrorKind::InvalidData
+        ));
+        assert!(matches!(
+            job.verify_configured_limits(1, 512 * 1024 * 1024, 20),
+            Err(ref error) if error.kind() == ErrorKind::InvalidData
+        ));
+        assert!(matches!(
+            job.verify_configured_limits(1, 256 * 1024 * 1024, 25),
+            Err(ref error) if error.kind() == ErrorKind::InvalidData
+        ));
+    }
+
+    #[test]
+    fn changed_original_kernel_active_process_limit_fails_closed() {
+        let job = OwnedJob::create(1, 256 * 1024 * 1024, 20).expect("original Job");
+        let mut changed = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        changed.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | JOB_OBJECT_LIMIT_JOB_MEMORY;
+        changed.BasicLimitInformation.ActiveProcessLimit = 2; // Deliberately loosen the cap.
+        changed.JobMemoryLimit = 256 * 1024 * 1024;
+        // SAFETY: this is a fresh, empty test-only kernel Job, with the same
+        // valid buffer and size as the production setter. No root is started.
+        unsafe {
+            SetInformationJobObject(
+                job.raw(),
+                JobObjectExtendedLimitInformation,
+                (&changed as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast::<c_void>(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .expect("fixture must genuinely change kernel Job policy");
+        assert!(matches!(
+            job.verify_configured_limits(1, 256 * 1024 * 1024, 20),
+            Err(ref error) if error.kind() == ErrorKind::InvalidData
+        ));
+        assert_eq!(job.active_processes().expect("still no actual root"), 0);
     }
 
     #[test]

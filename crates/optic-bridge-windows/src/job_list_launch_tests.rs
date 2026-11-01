@@ -714,6 +714,11 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
         internal_stop,
     )?;
     assert_eq!(custody.active_processes()?, 0);
+    // Attest actual kernel policy after original watchdog setup, rather than
+    // inferring an enforced limit from a successful SetInformationJobObject.
+    custody
+        .job
+        .verify_configured_limits(1, 256 * 1024 * 1024, 20)?;
 
     let child_stdin = inheritable_copy(HANDLE(custody._stdin.as_raw_handle()))?;
     let child_stdout = inheritable_copy(HANDLE(custody._stdout.writer_handle()?.as_raw_handle()))?;
@@ -833,6 +838,15 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
     // original watchdog termination below.
     let active_before_stop = custody.active_processes()?;
     eprintln!("OPTIC_NATIVE_ORIGINAL_JOB_ACTIVE_BEFORE_STOP={active_before_stop}");
+    // This distinguishes a genuine kernel accounting mismatch from a failure
+    // to apply the configured hard cap. Count=2 despite read-back cap=1 is
+    // preserved as UNKNOWN; it is never interpreted as successful enforcement.
+    custody
+        .job
+        .verify_configured_limits(1, 256 * 1024 * 1024, 20)?;
+    eprintln!(
+        "OPTIC_NATIVE_JOB_KERNEL_POLICY active_limit=1 memory_limit_bytes=268435456 cpu_percent=20 observed_active={active_before_stop}"
+    );
     assert!(
         active_before_stop >= 1,
         "the running original root must still occupy its kernel Job"
