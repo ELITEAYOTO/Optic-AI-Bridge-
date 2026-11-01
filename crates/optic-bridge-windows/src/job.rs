@@ -279,10 +279,31 @@ struct PinnedOriginalRoot {
 /// The counts are bytes discarded while completing *cleanup*, never command
 /// output exposed to an MCP caller. This is NOT a no-future-create/resume fence.
 #[derive(Debug)]
+#[must_use = "retain the completed physical observations with their original custody"]
 pub struct NativePhysicalStopReceipt {
-    pub root_pid: u32,
-    pub discarded_stdout_bytes: u64,
-    pub discarded_stderr_bytes: u64,
+    // An external caller must not be able to construct an arbitrary success
+    // receipt by filling in public fields. Only the four-fact OS observation
+    // inside PrecreatedNativeReadCustody may construct this type.
+    root_pid: u32,
+    discarded_stdout_bytes: u64,
+    discarded_stderr_bytes: u64,
+}
+
+impl NativePhysicalStopReceipt {
+    #[must_use]
+    pub fn root_pid(&self) -> u32 {
+        self.root_pid
+    }
+
+    #[must_use]
+    pub fn discarded_stdout_bytes(&self) -> u64 {
+        self.discarded_stdout_bytes
+    }
+
+    #[must_use]
+    pub fn discarded_stderr_bytes(&self) -> u64 {
+        self.discarded_stderr_bytes
+    }
 }
 
 pub struct PrecreatedNativeReadCustody {
