@@ -138,7 +138,7 @@ pub(crate) fn git_path_arg(path: &Path) -> OsString {
 pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString> {
     let mut hooks = OsString::from("core.hooksPath=");
     hooks.push(git_path_arg(disabled_hooks_root));
-    let mut args = vec![
+    let args = vec![
         OsString::from("--no-pager"),
         OsString::from("--literal-pathspecs"),
         OsString::from("-c"),
@@ -154,7 +154,11 @@ pub(crate) fn git_mutation_base_args(disabled_hooks_root: &Path) -> Vec<OsString
     // owned .git/worktrees/<action-id> entry beneath a deep TEMP path.
     // Do not alter machine/user Git configuration or enable hooks.
     #[cfg(windows)]
-    args.extend([OsString::from("-c"), OsString::from("core.longpaths=true")]);
+    let args = {
+        let mut windows_args = args;
+        windows_args.extend([OsString::from("-c"), OsString::from("core.longpaths=true")]);
+        windows_args
+    };
     args
 }
 
