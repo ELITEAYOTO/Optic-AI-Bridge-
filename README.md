@@ -1,5 +1,14 @@
 # Optic AI Bridge
 
+## Reprise Windows V1 — vérification du 1er novembre 2026, après #475
+
+La [PR #473](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/473) et la [PR #475](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/475) sont intégrées à `main`. L’[issue #474](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/474) est résolue : la vérification des worktrees profonds ne nécessite plus de démarrer Git depuis un `cwd` Windows dépassant `MAX_PATH`. La CI de fusion #475 [41344202374](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41344202374) est **SUCCESS dès la première tentative**.
+
+Le blocage critique **#317 reste présent** : la GitRead de production utilise encore `HardenedCommandRunner`, et le test de révocation avant lancement reste rouge. La preuve native Windows, avec un véritable processus synthétique suspendu, un Job et **les deux EOF physiques**, est documentée dans [ISSUE317_NATIVE_REAL_ROOT_EOF_2026-11-01.md](docs/engineering/ISSUE317_NATIVE_REAL_ROOT_EOF_2026-11-01.md). Ce test prouve le comportement de la **custody** Windows, **pas** la clôture de la course révocation/`CreateProcessW` ni l'activation du lanceur Git.
+
+**Windows V1 : NO-GO**, [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) toujours ouverte. Aucun installateur, release ou changement du Bridge quotidien. Les SHA de ce paragraphe sont un jalon daté, pas une référence permanente : vérifier `main` et ses CI avant la prochaine PR.
+
+
 ## Point de reprise prioritaire — 1 novembre 2026 (après #470)
 
 **Dernier `main` vérifié avant cette mise à jour documentaire :** `bd121996ce38757362e35c85d3113dda089aefd1`; [CI push/main #41332810883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41332810883) **SUCCESS 4/4**. Les PR #469 et #470 sont intégrées. La [PR #471](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/471) est **DRAFT / non fusionnée**, CI [#41335658243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41335658243) **4/4 SUCCESS** ; elle propose un changement incompatible de l'accès aux patchs Git, **soumis à décision opérateur**.

@@ -770,6 +770,174 @@ mod precreated_native_read_tests {
         ));
     }
 
+    /// Only the selected synthetic child process performs IO and waits.
+    /// Normal cargo test runs execute this as a zero-effect fixture.
+    #[test]
+    fn native_317_physical_stop_fixture_child() {
+        use std::io::Write;
+        if std::env::var("OPTIC_317_SYNTHETIC_CHILD").as_deref() != Ok("real-native-job-child-v1") {
+            return;
+        }
+        std::io::stdout()
+            .write_all(b"OPTIC_317_REAL_STDOUT\n")
+            .expect("fixture writes stdout");
+        std::io::stdout().flush().expect("flush stdout");
+        std::io::stderr()
+            .write_all(b"OPTIC_317_REAL_STDERR\n")
+            .expect("fixture writes stderr");
+        std::io::stderr().flush().expect("flush stderr");
+        // Parent must terminate via its actual Job, not via this fixture.
+        std::thread::sleep(Duration::from_secs(20));
+    }
+
+    /// This is a native containment/cleanup proof, NOT a Git launch owner
+    /// or a revocation-vs-CreateProcessW linearization claim.
+    #[test]
+    fn native_317_real_suspended_root_job_and_both_physical_pipe_eofs() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            process::{Command as NativeCommand, Stdio},
+        };
+
+        fn child_writer(pipe: &CapturedOutputPipe) -> File {
+            let mut duplicate = HANDLE::default();
+            // SAFETY: the pre-created writer belongs to the retained custody,
+            // and the duplicated writer is explicitly inheritable for std
+            // Command's child stdio. Parent closes each duplicate on spawn.
+            unsafe {
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    HANDLE(pipe.writer_handle().expect("live writer").as_raw_handle()),
+                    GetCurrentProcess(),
+                    &mut duplicate,
+                    0,
+                    true,
+                    DUPLICATE_SAME_ACCESS,
+                )
+            }
+            .expect("duplicate the *original* writer for the synthetic child");
+            // SAFETY: DuplicateHandle succeeded and the returned handle is uniquely owned.
+            File::from(unsafe { OwnedHandle::from_raw_handle(duplicate.0) })
+        }
+
+        let limits = LimitedJobObject::new(1, 256 * 1024 * 1024, 100).expect("real job limits");
+        let mut owner = PrecreatedNativeReadCustody::new(limits).expect("private job and pipes");
+        let stop = Arc::new(AtomicBool::new(false));
+        owner
+            .arm_watchdog(15_000, vec![Arc::clone(&stop)])
+            .expect("independent original watchdog");
+        let executable = std::env::current_exe().expect("test binary only");
+        let mut command = NativeCommand::new(executable);
+        command
+            .arg("native_317_physical_stop_fixture_child")
+            .arg("--nocapture")
+            .env("OPTIC_317_SYNTHETIC_CHILD", "real-native-job-child-v1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(child_writer(&owner._stdout)))
+            .stderr(Stdio::from(child_writer(&owner._stderr)))
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0);
+        let mut root = command.spawn().expect("create suspended synthetic root");
+        // Release the test parent's original Stdio duplicates immediately;
+        // they must not hold EOF open after Job termination.
+        drop(command);
+        // SAFETY: the original std::process::Child owns a live process handle.
+        let process = HANDLE(root.as_raw_handle());
+        // SAFETY: a suspended root and original job are live and owned.
+        unsafe { AssignProcessToJobObject(owner.job.raw(), process) }
+            .expect("assign before resume");
+        // SAFETY: raw handle is borrowed only for the immediately following call.
+        owner
+            .pin_original_job_root(unsafe { BorrowedHandle::borrow_raw(root.as_raw_handle()) })
+            .expect("pin the exact live root and job identity");
+        assert_eq!(owner.active_processes().expect("real job active"), 1);
+        assert!(matches!(
+            owner.confirm_post_watchdog_physical_stop(
+                Instant::now() + Duration::from_millis(100),
+                64 * 1024
+            ),
+            Err(ref error) if error.kind() == ErrorKind::PermissionDenied
+        ));
+        resume_process_threads(process).expect("resume only after assignment and pin");
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let ready_until = Instant::now() + Duration::from_secs(8);
+        while !stdout
+            .windows(b"OPTIC_317_REAL_STDOUT\n".len())
+            .any(|part| part == b"OPTIC_317_REAL_STDOUT\n")
+            || !stderr
+                .windows(b"OPTIC_317_REAL_STDERR\n".len())
+                .any(|part| part == b"OPTIC_317_REAL_STDERR\n")
+        {
+            assert!(
+                Instant::now() < ready_until,
+                "root never wrote both original pipes"
+            );
+            stdout.extend(owner._stdout.try_read(8 * 1024).expect("read stdout").bytes);
+            stderr.extend(owner._stderr.try_read(8 * 1024).expect("read stderr").bytes);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(root.try_wait().expect("root still alive").is_none());
+        // Simulate an independently retained pipe writer. A completed Job
+        // termination must NOT be reported as full physical EOF while this
+        // original-pipe duplicate is still open in the parent.
+        let retained_writer = child_writer(&owner._stdout);
+        let retained_stderr_writer = child_writer(&owner._stderr);
+        stop.store(true, Ordering::Release);
+        let stopped_until = Instant::now() + Duration::from_secs(5);
+        while !owner.watchdog_stop_observed() {
+            assert!(Instant::now() < stopped_until, "watchdog failed to stop");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(owner.watchdog_termination_result(), Some(Ok(())));
+        assert_eq!(owner.active_processes().expect("Job physically empty"), 0);
+        assert!(root.try_wait().expect("original root exit").is_some());
+        assert!(
+            matches!(
+                owner.confirm_post_watchdog_physical_stop(
+                    Instant::now() + Duration::from_millis(120),
+                    64 * 1024,
+                ),
+                Err(ref error) if error.kind() == ErrorKind::TimedOut
+            ),
+            "Job-empty plus root exit MUST NOT substitute for a missing stdout EOF"
+        );
+        drop(retained_writer);
+        assert!(
+            matches!(
+                owner.confirm_post_watchdog_physical_stop(
+                    Instant::now() + Duration::from_millis(120),
+                    64 * 1024,
+                ),
+                Err(ref error) if error.kind() == ErrorKind::TimedOut
+            ),
+            "stdout EOF alone MUST NOT substitute for missing stderr EOF"
+        );
+        drop(retained_stderr_writer);
+        let receipt = owner
+            .confirm_post_watchdog_physical_stop(Instant::now() + Duration::from_secs(5), 64 * 1024)
+            .expect("pinned root exit, original Job empty and both physical EOFs");
+        assert_eq!(receipt.root_pid(), root.id());
+        assert_eq!(owner.active_processes().expect("post-stop Job"), 0);
+        let ended = root.wait().expect("reap original root");
+        assert!(
+            !ended.success(),
+            "Job termination must kill the sleeping root"
+        );
+        // The original stdio bytes were observed through custody's actual pipes,
+        // not an independent or mocked output stream.
+        assert!(
+            stdout
+                .windows(b"OPTIC_317_REAL_STDOUT\n".len())
+                .any(|part| part == b"OPTIC_317_REAL_STDOUT\n")
+        );
+        assert!(
+            stderr
+                .windows(b"OPTIC_317_REAL_STDERR\n".len())
+                .any(|part| part == b"OPTIC_317_REAL_STDERR\n")
+        );
+    }
+
     #[test]
     fn watchdog_retains_real_access_denied_for_stop_and_expiry() {
         use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
