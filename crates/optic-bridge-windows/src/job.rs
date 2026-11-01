@@ -216,11 +216,7 @@ impl OwnedJob {
         // retained our requested hard caps. Independently query the exact
         // Job *before* returning the private owner, when no root can exist.
         // A missing/looser or differently configured cap is fail-closed.
-        job.verify_configured_limits(
-            active_process_limit,
-            job_memory_limit,
-            cpu_percent,
-        )?;
+        job.verify_configured_limits(active_process_limit, job_memory_limit, cpu_percent)?;
         Ok(job)
     }
 
