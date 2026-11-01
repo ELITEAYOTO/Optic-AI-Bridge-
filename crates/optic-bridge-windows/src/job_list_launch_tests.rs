@@ -704,14 +704,9 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
     );
     let mut command_line: Vec<u16> = fixed_command.encode_wide().chain([0]).collect();
 
-    let mut custody = PrecreatedNativeReadCustody::new(LimitedJobObject::new(
-        1,
-        256 * 1024 * 1024,
-        20,
-    )?)?;
-    let original_stops: Vec<_> = (0..4)
-        .map(|_| Arc::new(AtomicBool::new(false)))
-        .collect();
+    let mut custody =
+        PrecreatedNativeReadCustody::new(LimitedJobObject::new(1, 256 * 1024 * 1024, 20)?)?;
+    let original_stops: Vec<_> = (0..4).map(|_| Arc::new(AtomicBool::new(false))).collect();
     let internal_stop = Arc::new(AtomicBool::new(false));
     custody.arm_watchdog_until_with_internal_stop(
         Instant::now() + Duration::from_secs(20),
@@ -787,7 +782,10 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
     // SAFETY: original process and Job handles are still owned by this test.
     unsafe { IsProcessInJob(process.0.hProcess, Some(custody.job.raw()), &mut belongs) }
         .map_err(Error::other)?;
-    assert!(belongs.as_bool(), "suspended root must be in the original Job");
+    assert!(
+        belongs.as_bool(),
+        "suspended root must be in the original Job"
+    );
     assert_eq!(custody.active_processes()?, 1);
 
     // Parent copies would prevent EOF even after an otherwise successful kill.
@@ -804,8 +802,12 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
     let until = Instant::now() + Duration::from_secs(5);
     let mut output = Vec::new();
     let mut errors = Vec::new();
-    while !output.windows(b"OPTIC_NATIVE_RUNNING".len()).any(|v| v == b"OPTIC_NATIVE_RUNNING")
-        || !errors.windows(b"OPTIC_NATIVE_STDERR".len()).any(|v| v == b"OPTIC_NATIVE_STDERR")
+    while !output
+        .windows(b"OPTIC_NATIVE_RUNNING".len())
+        .any(|v| v == b"OPTIC_NATIVE_RUNNING")
+        || !errors
+            .windows(b"OPTIC_NATIVE_STDERR".len())
+            .any(|v| v == b"OPTIC_NATIVE_STDERR")
     {
         output.extend(custody._stdout.try_read(1024)?.bytes);
         errors.extend(custody._stderr.try_read(1024)?.bytes);
