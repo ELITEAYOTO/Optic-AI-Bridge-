@@ -1,5 +1,14 @@
 # Current project status
 
+## Reprise vérifiée — 1 novembre 2026 (après PR #470)
+
+Instantané pré-documentation : `main=bd121996ce38757362e35c85d3113dda089aefd1`, [CI indépendante push/main #41332810883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41332810883) **4/4 SUCCESS** après fusion des corrections #469 (classification API key) et #470 (Git worktree longpaths Windows, configuration Git locale au processus). [PR #471](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/471) **DRAFT / NON MERGED**, [CI #41335658243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41335658243) **4/4 SUCCESS**, décision de compatibilité GitDiff encore requise. Aucun GO de publication V1.
+
+Test comportemental de révocation GitRead #317 : **RED 3/3**, avec `running 1 test` et l'assertion réelle `ISSUE317_POST_REVOKE_GIT_SPAWN` dans une compilation isolée sur Windows 10 ; **33/33** préparation native et **5/5** Job Windows sont PASS mais ne couvrent pas un GitRead natif exécutant. Un essai initial de `cargo test` à **zéro test** avec target partagé est **invalide** ; ne pas considérer son exit 0 comme succès. Voir la [passation post-#470 et procédure de test](docs/engineering/HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md), et le [reçu #323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6562060813).
+
+**#323 OPEN : Windows 10/11 V1 NO-GO.** Native CreateProcessW/ResumeThread, Job et EOF restent à raccorder réellement avant tout GO. Après fusion de ce document, vérifier le nouveau SHA et la CI `push/main`, plutôt que réutiliser l'instantané ci-dessus.
+
+
 ## Situation canonique — 1 novembre 2026 après #464
 
 **Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**
