@@ -1,6 +1,21 @@
 # Repository entry point for coding agents
 
-## Current canonical continuation — after documentation PR #458 (31 October 2026)
+## REPRISE ACTUELLE — 1 novembre 2026 (après PR #464)
+
+**Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**
+
+**Portée :** [#460](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/460) à [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) ont solidifié le registre d'appels **natifs inertes** (dépassement compteurs, arrêt interne, propagation vers watchdog Job original, mutex empoisonné observé, ticket `Drop` premier observateur). #464 : test-only [RED Windows #41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165) 32/1 ; [HEAD CI #41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189) 4/4 et [native #41287184201](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184201) 33/33 ; [squash/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) 4/4. **Ce ne sont ni une activation de GitRead natif ni une clôture de la course CreateProcessW/ResumeThread.**
+
+**Blocage V1 :** [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) **OPEN / Windows 10-11 V1 NO-GO** ; MCP GitRead utilise encore le legacy `HardenedCommandRunner`. Pas de révocation-linéarisable sur original session/TaskLease/policy/host et Win32 create/resume déjà en cours ou futurs ; pas de vraie preuve root exit + Job-empty + EOF physiques stdout/stderr + no future spawn. Recherche [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) **négative**, PR #327/#353/#355/#358 non fusionnées ; issues #176/#182/#185/#319 toujours ouvertes. Aucun GO, release, activation, self-hosted CI, modification sécurité, PC opérateur, Desktop ou REL.
+
+**Reprise obligatoire :** [passation canonique 2026-11-01](docs/engineering/HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md). Une PR complète à la fois : test-only behavioral RED quand faisable, correction minimale, CI final HEAD Windows/Ubuntu & workflows spécialisés, schema8/artefacts, revue COMMENT, squash exact, arbres identiques, nouvelle CI `push/main` 4/4, reçus PR + #323.
+
+**Règles agent :** vérifier `main` live, n'entreprendre qu'une PR complète, lire exact HEAD+logs+schema8, COMMENT uniquement pour l'auto-revue, squash guarded `expected_head_sha`, comparer arbres Git et contrôler CI `push/main` indépendante avant autre PR. **Les rubriques datées ci-dessous sont historiques.**
+
+---
+
+
+## Historical / superseded checkpoint — Current canonical continuation — after documentation PR #458 (31 October 2026)
 
 **Verified GitHub checkpoint before this additional documentation PR:** `main=a9b6de0467fe2cdb0d9a74276e0ea0ec1fc40b8a` (Git tree `6d4988c300740f3cc0aefec285b9284a83169366`). [PR #458](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458) is squash-merged: eight README/status/handoff/reliability Markdown files only; final PR-head CI [#41228285220](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228285220) **SUCCESS 4/4** and identical tested/merged trees. Independent [push/main CI #41228767639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228767639) **SUCCESS 4/4, attempt 1, exact integrated source and checkout SHA**, hosted Windows **428 passed / 0 failed / 11 ignored**, Ubuntu **318 passed**, physical schema8 `complete=true` **10 Windows + 4 Unix** cases/characterizations, original evidence artifacts retained. This SHA is a dated **pre-this-PR checkpoint**; always requery `main` and CI after any documentation merge. See [PR #458 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458#issuecomment-6547380732) and [#323 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6547381263).
 

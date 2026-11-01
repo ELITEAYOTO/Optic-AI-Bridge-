@@ -1,6 +1,15 @@
 # Reliability and implementation debt
 
-## Current P0 reliability debt — 31 October 2026 after PR #457
+## Latest P0 debt — 1 November 2026
+
+**Pré-PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf` ; [CI indépendante push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **4/4 SUCCESS tentative1**, Windows 433/0/11, Ubuntu318/0, schema8 complete 10 Windows + 4 Unix. Après fusion documentaire, **re-vérifier SHA et CI**. Les PR [#460–#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) concernent la garde **inerte** native ; [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) réveille le watchdog Job original sur ticket `Drop` rencontrant un ledger empoisonné (RED [#41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165), green [#41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189)). **#323 OPEN, Windows V1 NO-GO**, GitRead MCP toujours legacy, aucun CreateProcessW/ResumeThread synchronisé ni preuve de Job/root/2 EOF. Lire [passation canonique 2026-11-01](HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) ; les anciens checkpoints ci-dessous sont archivés.
+
+**Still unproved:** synchronized future and in-flight native OS CreateProcessW/ResumeThread vs original authority revocation; durable root/Job/dual-EOF/no-future-spawn and crash reconciliation. #463/#464 poisoning results apply only on **observed poison**, not spontaneous unknown state; inherited pipes and `HardenedCommandRunner` joins are still possible blockers. See [passation canonique 2026-11-01](HANDOFF_WINDOWS_V1_2026-11-01.md) and [prompt du prochain chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md).
+
+---
+
+
+## Historical / superseded checkpoint — Current P0 reliability debt — 31 October 2026 after PR #457
 
 `main=291c152cdd132753668563031cf34bcfe0810940` **before the current documentation PR**, with independent [push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, first attempt** on exact integrated SHA and checkout. Windows runtime **428 passed/0 failed/11 ignored**. Schema8 physical reports `complete=true`, **10 Windows/4 Unix** scenarios/characterizations, SHA/run/attempt concordant and artifacts saved. This is a historical verified checkpoint, not an immutable current branch: always requery GitHub after this docs PR.
 

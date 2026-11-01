@@ -1,6 +1,17 @@
 # Changelog
 
-## 31 October 2026 — integrated #454–#457; Windows V1 remains NO-GO
+## 1 novembre 2026 — #460 à #464 intégrées, V1 toujours NO-GO
+
+**Pré-PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf` ; [CI indépendante push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **4/4 SUCCESS tentative1**, Windows 433/0/11, Ubuntu318/0, schema8 complete 10 Windows + 4 Unix. Après fusion documentaire, **re-vérifier SHA et CI**. Les PR [#460–#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) concernent la garde **inerte** native ; [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) réveille le watchdog Job original sur ticket `Drop` rencontrant un ledger empoisonné (RED [#41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165), green [#41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189)). **#323 OPEN, Windows V1 NO-GO**, GitRead MCP toujours legacy, aucun CreateProcessW/ResumeThread synchronisé ni preuve de Job/root/2 EOF. Lire [passation canonique 2026-11-01](docs/engineering/HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) ; les anciens checkpoints ci-dessous sont archivés.
+
+- #460 fail-closed sur compteurs natifs inertes ; #461 propriétaire rapporte arrêt interne ; #462 cinquième source d'arrêt vers watchdog kernel Job original ; #463 premier constat d'un mutex empoisonné par lecture/inscription ; #464 ticket emprunté dont le `Drop` constate le mutex empoisonné et publie l'arrêt.
+- [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) test-only RED [#41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165) 32/1, CI final HEAD [#41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189) 4/4, spécialisée [#41287184201](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184201) 33/33, indépendante post-squash [#41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) 4/4.
+- Le vrai MCP GitRead est encore legacy ; les changements natifs ne ferment pas les courses OS create/revoke ou les EOF descendants.
+
+---
+
+
+## Historical / superseded checkpoint — 31 October 2026 — integrated #454–#457; Windows V1 remains NO-GO
 
 `main=291c152cdd132753668563031cf34bcfe0810940` before this docs PR; [independent push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, attempt 1**, Windows Rust **428 passed / 0 failed / 11 ignored**, schema8 physical reports `complete=true` (**10 Windows / 4 Unix**) on exact source/checkout with retained artifacts. This is a dated checkpoint: requery live GitHub after the docs merge.
 

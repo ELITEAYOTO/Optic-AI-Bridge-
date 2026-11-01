@@ -1,6 +1,13 @@
 # Optic AI Bridge — prompt intégral de reprise après PR #458 (31 octobre 2026)
 
-## Reprise active après PR #458, avant finalisation de cette PR documentaire
+## Archive notice — 1 November 2026
+
+**Prompt 31 octobre dépassé :** utiliser le [prompt du prochain chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) et la [passation canonique 2026-11-01](HANDOFF_WINDOWS_V1_2026-11-01.md). La PR #464 est intégrée ; `main=a22d32e94b742eaece9321d7991208ce89edd9cf` est le jalon **avant** la PR documentaire actuelle, non une autorité permanente. La V1 reste NO-GO.
+
+---
+
+
+## Historical / superseded checkpoint — Reprise active après PR #458, avant finalisation de cette PR documentaire
 
 **Point vérifié avant cette PR documentaire :** `main=a9b6de0467fe2cdb0d9a74276e0ea0ec1fc40b8a`, arbre Git `6d4988c300740f3cc0aefec285b9284a83169366`. [PR #458](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458) a mis à jour huit documents et été squash-fusionnée. [CI du HEAD #41228285220](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228285220) **4/4** ; [CI indépendante post-fusion #41228767639](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41228767639) **4/4, tentative 1, source=checkout=squash**. Windows : **428 tests OK / 0 échec / 11 ignorés** ; Ubuntu **318 OK**. Rapports physiques schema8 `complete=true`, **10 cas Windows et 4 Unix**, même SHA/run/attempt, artefacts conservés. Reçus : [PR #458](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/458#issuecomment-6547380732) et [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6547381263). **Ce SHA est historique** : rechercher le nouveau `main` après fusion de la présente PR documentaire.
 
