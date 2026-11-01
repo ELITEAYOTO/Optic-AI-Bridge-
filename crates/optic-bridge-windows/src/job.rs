@@ -31,18 +31,17 @@ use windows::{
             },
             JobObjects::{
                 AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
-                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
-                JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-                JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
-                JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
-                QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+                JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+                JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JobObjectBasicAccountingInformation, JobObjectCpuRateControlInformation,
+                JobObjectExtendedLimitInformation, QueryInformationJobObject,
+                SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
                 CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
-                WaitForSingleObject,
-                ResumeThread, THREAD_SUSPEND_RESUME,
+                ResumeThread, THREAD_SUSPEND_RESUME, WaitForSingleObject,
             },
         },
     },
@@ -434,7 +433,8 @@ impl PrecreatedNativeReadCustody {
     /// launcher must separately synchronize original generation revocation
     /// before it can resume even a successfully pinned child.
     pub fn pin_original_job_root(&mut self, root: BorrowedHandle<'_>) -> Result<()> {
-        if self.original_root.is_some() || self.deadline.is_none() || self.watchdog_stop_observed() {
+        if self.original_root.is_some() || self.deadline.is_none() || self.watchdog_stop_observed()
+        {
             return Err(Error::new(
                 ErrorKind::PermissionDenied,
                 "native root requires an unbound owner with its original armed watchdog",
@@ -503,10 +503,16 @@ impl PrecreatedNativeReadCustody {
         discard_limit: u64,
     ) -> Result<NativePhysicalStopReceipt> {
         if discard_limit == 0 || cleanup_until <= Instant::now() {
-            return Err(Error::new(ErrorKind::InvalidInput, "invalid native cleanup budget"));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "invalid native cleanup budget",
+            ));
         }
         let root = self.original_root.as_ref().ok_or_else(|| {
-            Error::new(ErrorKind::PermissionDenied, "no original root HANDLE pinned")
+            Error::new(
+                ErrorKind::PermissionDenied,
+                "no original root HANDLE pinned",
+            )
         })?;
         if self.watchdog_termination_result() != Some(Ok(())) {
             return Err(Error::new(

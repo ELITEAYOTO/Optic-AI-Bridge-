@@ -862,7 +862,9 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
         16 * 1024 * 1024,
     )?;
     // SAFETY: original owned PROCESS_INFORMATION still holds this root handle.
-    assert_eq!(receipt.root_pid, unsafe { GetProcessId(process.0.hProcess) });
+    assert_eq!(receipt.root_pid, unsafe {
+        GetProcessId(process.0.hProcess)
+    });
     eprintln!(
         "OPTIC_NATIVE_PHYSICAL_STOP root={} stdout_discarded={} stderr_discarded={}",
         receipt.root_pid, receipt.discarded_stdout_bytes, receipt.discarded_stderr_bytes
