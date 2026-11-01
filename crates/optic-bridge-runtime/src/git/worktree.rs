@@ -13,6 +13,9 @@ const NULL_CONFIG_PATH: &str = "/dev/null";
 pub(crate) struct RegisteredWorktree {
     pub(crate) path: PathBuf,
     pub(crate) locked: bool,
+    pub(crate) detached: bool,
+    pub(crate) prunable: bool,
+    pub(crate) head: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,9 +70,29 @@ fn parse_worktree_record(fields: &[&[u8]]) -> Result<RegisteredWorktree, Worktre
     let locked = fields[1..]
         .iter()
         .any(|field| *field == b"locked" || field.starts_with(b"locked "));
+    let detached = fields[1..].contains(&b"detached".as_slice());
+    let prunable = fields[1..]
+        .iter()
+        .any(|field| *field == b"prunable" || field.starts_with(b"prunable "));
+    let mut head = None;
+    for field in &fields[1..] {
+        if let Some(raw) = field.strip_prefix(b"HEAD ") {
+            if head.is_some() || raw.is_empty() {
+                return Err(WorktreeListError::Malformed);
+            }
+            head = Some(
+                std::str::from_utf8(raw)
+                    .map_err(|_| WorktreeListError::Malformed)?
+                    .to_owned(),
+            );
+        }
+    }
     Ok(RegisteredWorktree {
         path: PathBuf::from(path),
         locked,
+        detached,
+        prunable,
+        head,
     })
 }
 
@@ -210,9 +233,28 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].path, PathBuf::from("/tmp/a"));
         assert!(parsed[0].locked);
+        assert!(parsed[0].detached);
+        assert_eq!(parsed[0].head.as_deref(), Some("0123"));
         assert_eq!(
             parse_worktree_list(bytes, 0).expect_err("zero bound must reject entry"),
             WorktreeListError::EntryLimitExceeded
+        );
+    }
+
+    #[test]
+    fn porcelain_z_rejects_duplicate_or_empty_head_records() {
+        assert_eq!(
+            parse_worktree_list(
+                b"worktree /tmp/owned\0HEAD abc\0HEAD def\0detached\0locked\0\0",
+                2
+            )
+            .expect_err("duplicate HEAD is not a unique identity"),
+            WorktreeListError::Malformed
+        );
+        assert_eq!(
+            parse_worktree_list(b"worktree /tmp/owned\0HEAD \0detached\0locked\0\0", 2)
+                .expect_err("empty HEAD is not a valid record"),
+            WorktreeListError::Malformed
         );
     }
 

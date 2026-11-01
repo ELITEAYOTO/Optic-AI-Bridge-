@@ -479,11 +479,27 @@ impl GitIntegrationService {
         if !canonical.starts_with(&self.integration_root) {
             return Err(GitIntegrationError::WorktreeEscapedIntegrationRoot);
         }
-        let observed = self.resolve_commit(&canonical, "HEAD")?;
-        if &observed != expected {
-            return Err(GitIntegrationError::WorktreeHeadMismatch);
+        // Git for Windows cannot use a >MAX_PATH worktree as CreateProcessW
+        // current_dir (ERROR_DIRECTORY=267), and even 'git -C' fails to chdir.
+        // Read the *original registered worktree* metadata from the pinned
+        // repository instead. A matching path, detached HEAD, original lock
+        // and exact expected commit are all mandatory; ambiguity fails closed.
+        let (status, bytes) = self.run_capture_bounded(
+            &self.repository_root,
+            [
+                OsString::from("worktree"),
+                OsString::from("list"),
+                OsString::from("--porcelain"),
+                OsString::from("-z"),
+            ],
+            self.recovery_output_limit,
+        )?;
+        if !status.success() {
+            return Err(GitIntegrationError::GitCommandFailed);
         }
-        Ok(())
+        let registered = parse_worktree_list(&bytes, self.recovery_entry_limit)
+            .map_err(|_| GitIntegrationError::WorktreeHeadMismatch)?;
+        verify_registered_owned_head(&registered, &canonical, expected)
     }
 
     fn remove_owned_worktree(&self, worktree_path: &Path) -> Result<(), GitIntegrationError> {
@@ -584,6 +600,31 @@ impl GitIntegrationService {
         let output = self.runner.run(&spec).map_err(map_runner_error)?;
         Ok((output.status, output.stdout))
     }
+}
+
+/// Fail closed if the original owned, detached and locked worktree does not
+/// appear exactly once with the expected HEAD in Git's bounded porcelain
+/// snapshot. Never treat a different worktree's commit as proof of this one.
+fn verify_registered_owned_head(
+    entries: &[RegisteredWorktree],
+    canonical: &Path,
+    expected: &GitObjectId,
+) -> Result<(), GitIntegrationError> {
+    let mut matching = entries
+        .iter()
+        .filter(|entry| paths_lexically_equal(&entry.path, canonical));
+    let one = matching
+        .next()
+        .ok_or(GitIntegrationError::WorktreeHeadMismatch)?;
+    if matching.next().is_some()
+        || !one.locked
+        || !one.detached
+        || one.prunable
+        || one.head.as_deref() != Some(expected.as_str())
+    {
+        return Err(GitIntegrationError::WorktreeHeadMismatch);
+    }
+    Ok(())
 }
 
 fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
@@ -934,6 +975,101 @@ mod tests {
             ["worktree", "list", "--porcelain"],
         );
         assert!(!String::from_utf8_lossy(&worktrees).contains(&action.to_token()));
+    }
+
+    #[test]
+    fn owned_worktree_head_proof_refuses_ambiguity_or_incomplete_metadata() {
+        let target = PathBuf::from(if cfg!(windows) {
+            r"C:\optic-fixture\owned"
+        } else {
+            "/tmp/optic-fixture/owned"
+        });
+        let expected = GitObjectId::parse("a".repeat(40)).expect("oid");
+        let complete = RegisteredWorktree {
+            path: target.clone(),
+            locked: true,
+            detached: true,
+            prunable: false,
+            head: Some(expected.as_str().to_owned()),
+        };
+        assert!(
+            verify_registered_owned_head(std::slice::from_ref(&complete), &target, &expected)
+                .is_ok()
+        );
+        let denied = |entries: &[RegisteredWorktree]| {
+            assert!(matches!(
+                verify_registered_owned_head(entries, &target, &expected),
+                Err(GitIntegrationError::WorktreeHeadMismatch)
+            ));
+        };
+        denied(&[]);
+        denied(&[complete.clone(), complete.clone()]);
+        denied(&[RegisteredWorktree {
+            locked: false,
+            ..complete.clone()
+        }]);
+        denied(&[RegisteredWorktree {
+            detached: false,
+            ..complete.clone()
+        }]);
+        denied(&[RegisteredWorktree {
+            prunable: true,
+            ..complete.clone()
+        }]);
+        denied(&[RegisteredWorktree {
+            head: None,
+            ..complete.clone()
+        }]);
+        denied(&[RegisteredWorktree {
+            head: Some("b".repeat(40)),
+            ..complete.clone()
+        }]);
+        denied(&[RegisteredWorktree {
+            path: target.with_file_name("foreign"),
+            ..complete
+        }]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn deep_owned_worktree_head_is_verified_without_long_win32_current_dir() {
+        let Some(git) = find_git_executable() else {
+            return;
+        };
+        let fixture = RepoFixture::new(git, "deep-owned-head");
+        // Force a >MAX_PATH linked worktree even with a short CI TEMP.
+        // The root itself stays short enough for Git's worktree creation;
+        // no machine or user Git longpaths setting is changed.
+        let extra = 225_usize
+            .saturating_sub(fixture.base.to_string_lossy().len() + 1)
+            .clamp(10, 200);
+        let deep_root = fixture.base.join("d".repeat(extra));
+        fs::create_dir_all(&deep_root).expect("owned deep root");
+        let service = GitIntegrationService::from_hard_limits(
+            &fixture.repo,
+            &fixture.git,
+            &deep_root,
+            TARGET_REF,
+            HardLimits::default(),
+        )
+        .expect("deep root integration service");
+        let action = ActionId::generate().expect("action");
+        let worktree_path = deep_root.join(action.to_token());
+        assert!(
+            worktree_path.to_string_lossy().len() > 260,
+            "test must exceed the Win32 legacy directory limit"
+        );
+        let workspace_head = head(&fixture.git, &fixture.repo);
+        let response = service
+            .integrate_fast_forward(&action, &fixture.source, &fixture.initial)
+            .expect("deep worktree must have verified detached locked HEAD");
+        assert_eq!(response.new_target_head, fixture.source);
+        assert_eq!(
+            ref_head(&fixture.git, &fixture.repo, TARGET_REF),
+            fixture.source
+        );
+        assert_eq!(head(&fixture.git, &fixture.repo), workspace_head);
+        assert!(!worktree_path.exists(), "owned worktree must be removed");
     }
 
     fn add_locked_owned_worktree(fixture: &RepoFixture, action: &ActionId) -> PathBuf {
