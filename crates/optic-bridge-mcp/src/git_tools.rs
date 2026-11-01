@@ -699,6 +699,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_key_name_requires_sensitive_scope_for_git_status_and_staged_diff() {
+        let fixture = RepoFixture::new("ak");
+        fs::write(fixture.repo.join("api-key.json"), b"synthetic fake value\n").expect("fixture");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("api-key.json")],
+        );
+        fs::write(fixture.repo.join("tracked.txt"), b"ordinary change\n")
+            .expect("ordinary fixture");
+
+        let ordinary = fixture.server(&[Capability::GitRead]);
+        assert_eq!(
+            ordinary
+                .git_status()
+                .await
+                .err()
+                .expect("API key name denied")
+                .message,
+            "optic.policy_denied"
+        );
+        let request = |name: &str| GitDiffRequest {
+            path: Some(name.to_owned()),
+            staged: Some(true),
+            max_bytes: Some(16 * 1024),
+        };
+        assert_eq!(
+            ordinary
+                .git_diff(Parameters(request("api-key.json")))
+                .await
+                .err()
+                .expect("staged API key patch denied")
+                .message,
+            "optic.policy_denied"
+        );
+
+        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let status = granted.git_status().await.expect("authorized status").0;
+        let raw = STANDARD
+            .decode(status.porcelain_v2_base64)
+            .expect("base64 status");
+        assert!(
+            raw.windows(b"api-key.json".len())
+                .any(|w| w == b"api-key.json")
+        );
+        let patch = granted
+            .git_diff(Parameters(request("api-key.json")))
+            .await
+            .expect("authorized synthetic patch")
+            .0;
+        assert!(
+            STANDARD
+                .decode(patch.data_base64)
+                .expect("base64 patch")
+                .windows(b"synthetic fake value".len())
+                .any(|w| w == b"synthetic fake value")
+        );
+        let public_patch = ordinary
+            .git_diff(Parameters(GitDiffRequest {
+                path: Some("tracked.txt".to_owned()),
+                staged: Some(false),
+                max_bytes: Some(16 * 1024),
+            }))
+            .await
+            .expect("ordinary diff remains authorized")
+            .0;
+        assert!(
+            STANDARD
+                .decode(public_patch.data_base64)
+                .expect("base64 ordinary")
+                .windows(b"ordinary change".len())
+                .any(|w| w == b"ordinary change")
+        );
+    }
+
+    #[tokio::test]
     async fn direnv_private_filename_requires_extra_authority_for_status_and_diff() {
         let fixture = RepoFixture::new("direnv-sensitive-read");
         fs::write(fixture.repo.join(".envrc.private"), b"fixture first\n").expect("fixture");

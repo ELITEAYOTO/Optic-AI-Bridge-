@@ -107,6 +107,12 @@ pub fn requires_sensitive_authority(path: &WorkspacePath) -> bool {
         ) || name.starts_with(".envrc.")
             || name == ".env"
             || name.starts_with(".env.")
+            // Explicit API-key artifact names are sensitive across filesystem
+            // reads, Git status and Git diffs. Do not deny ordinary source or
+            // documentation names such as api_key_parser.rs or api-key-guide.md.
+            || ["api-key", "api_key", "apikey", "api.key"]
+                .iter()
+                .any(|stem| name == *stem || name.strip_prefix(stem).is_some_and(|rest| rest.starts_with('.')))
             || name.contains("secret")
             || name.contains("credential")
             || name == "token"
@@ -195,6 +201,34 @@ mod tests {
             assert!(
                 !requires_sensitive_authority(&path(candidate)),
                 "ordinary path unexpectedly classified: {candidate}"
+            );
+        }
+    }
+
+    #[test]
+    fn api_key_file_names_require_sensitive_authority_but_docs_stay_ordinary() {
+        for name in [
+            "api-key.json",
+            "API_KEY.yml",
+            "apikey.txt",
+            "api.key",
+            "nested/apiKey.json",
+            "config/API.KEY.yaml",
+        ] {
+            assert!(
+                requires_sensitive_authority(&path(name)),
+                "API key file could bypass sensitive-read authority: {name}"
+            );
+        }
+        for name in [
+            "docs/api-key-guide.md",
+            "src/api_key_parser.rs",
+            "docs/apikey-usage.md",
+            "README.md",
+        ] {
+            assert!(
+                !requires_sensitive_authority(&path(name)),
+                "ordinary documentation or code was overclassified: {name}"
             );
         }
     }
