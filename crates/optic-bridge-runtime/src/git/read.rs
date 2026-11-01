@@ -302,7 +302,13 @@ impl GitReadService {
         max_bytes: u64,
     ) -> Result<HardenedCommandSpec, GitReadError> {
         let limit = self.requested_byte_limit(Some(max_bytes))?;
-        self.command_spec(&git_status_args(), limit)
+        // Only Git status receives this Windows long-path switch. Do not
+        // broaden git_diff patch-content reach while #182/#471 is undecided.
+        let mut args = Vec::new();
+        #[cfg(windows)]
+        args.extend(os_args(["-c", "core.longpaths=true"]));
+        args.extend(git_status_args());
+        self.command_spec(&args, limit)
     }
 
     pub(crate) fn command_spec(
@@ -808,6 +814,33 @@ mod tests {
         WorkspacePath::parse(value).expect("workspace path")
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn git_status_can_read_untracked_content_beyond_windows_max_path() {
+        let fixture = RepoFixture::new("windows-deep-status");
+        // This must exceed MAX_PATH regardless of the ordinary CI TEMP root.
+        // Use only a disposable repository, with no real project or secret.
+        let relative = PathBuf::from("deep".repeat(25))
+            .join("nested".repeat(17))
+            .join("long.txt");
+        let file = fixture.repo.join(&relative);
+        assert!(file.to_string_lossy().len() > 260);
+        fs::create_dir_all(file.parent().expect("parent")).expect("deep directories");
+        fs::write(&file, b"synthetic\n").expect("deep synthetic file");
+
+        let snapshot = fixture
+            .service()
+            .status_with_max_bytes(16 * 1024)
+            .expect("status can observe the deep untracked path without changing global config");
+        assert!(
+            snapshot
+                .porcelain_v2
+                .windows(b"long.txt".len())
+                .any(|part| part == b"long.txt"),
+            "actual Git porcelain-v2 output must include the deep synthetic path"
+        );
+    }
+
     #[test]
     fn typed_status_command_spec_rejects_limits_and_has_only_fixed_arguments() {
         let fixture = RepoFixture::new("typed-native-status-spec");
@@ -817,23 +850,27 @@ mod tests {
             .expect("typed application-owned status spec");
         assert_eq!(spec.executable, service.git_executable());
         assert_eq!(spec.cwd, service.repository_root());
-        assert_eq!(
-            spec.args,
-            os_args([
-                "--no-pager",
-                "--literal-pathspecs",
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.untrackedCache=false",
-                "status",
-                "--porcelain=v2",
-                "-z",
-                "--branch",
-                "--untracked-files=all",
-                "--ignore-submodules=all",
-            ])
-        );
+        let expected = os_args([
+            "--no-pager",
+            "--literal-pathspecs",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+            "--ignore-submodules=all",
+        ]);
+        #[cfg(windows)]
+        let expected = {
+            let mut expected = expected;
+            expected.splice(6..6, os_args(["-c", "core.longpaths=true"]));
+            expected
+        };
+        assert_eq!(spec.args, expected);
         assert_eq!(spec.env, git_read_environment());
         assert_eq!(spec.output_limit, 8192);
         assert!(matches!(
@@ -865,22 +902,20 @@ mod tests {
 
         assert_eq!(spec.executable, service.git_executable());
         assert_eq!(spec.cwd, service.repository_root());
-        assert_eq!(
-            spec.args,
-            os_args([
-                "--no-pager",
-                "--literal-pathspecs",
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.untrackedCache=false",
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--",
-                "-literal-user-controlled-name",
-            ])
-        );
+        let expected = os_args([
+            "--no-pager",
+            "--literal-pathspecs",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--",
+            "-literal-user-controlled-name",
+        ]);
+        assert_eq!(spec.args, expected);
         assert_eq!(spec.env, git_read_environment());
         assert_eq!(spec.output_limit, 4096);
         for disallowed in [

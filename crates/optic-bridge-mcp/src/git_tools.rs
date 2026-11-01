@@ -540,6 +540,11 @@ mod tests {
 
     fn run_git<const N: usize>(git: &Path, repo: Option<&Path>, args: [&OsStr; N]) {
         let mut command = Command::new(git);
+        // Git for Windows can otherwise reject synthetic repositories under a
+        // deep, operator-owned temporary root with "Filename too long".
+        // Keep the opt-in strictly process-local; never mutate global config.
+        #[cfg(windows)]
+        command.args(["-c", "core.longpaths=true"]);
         if let Some(repo) = repo {
             command.arg("-C").arg(repo);
         }
