@@ -3,6 +3,8 @@ use std::{fmt, io::Read};
 use thiserror::Error;
 
 const VERSION_READ_BUFFER_BYTES: usize = 64 * 1024;
+// Reserved for the pinned executable identity, not ordinary mutation reads.
+const IDENTITY_VERSION_READ_BUFFER_BYTES: usize = 1024 * 1024;
 const CONTENT_VERSION_HEX_BYTES: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,32 +36,53 @@ impl ContentVersion {
     /// At most `max_bytes + 1` bytes are read: the extra byte is used only to
     /// prove that the source exceeds the authorized observation ceiling.
     pub fn from_reader_bounded(
+        reader: impl Read,
+        max_bytes: u64,
+    ) -> Result<Self, ContentVersionReadError> {
+        Self::hash_bounded_with_buffer(reader, max_bytes, VERSION_READ_BUFFER_BYTES)
+    }
+
+    /// Hashes ALL bytes with the same BLAKE3 and exact max+1 ceiling, with a
+    /// larger, fixed read request for originally pinned executable identity.
+    /// Fewer OS calls are an evidence-based hypothesis for #467's slow
+    /// 64-KiB Windows reads; this does not promise bounded disk latency.
+    pub fn from_reader_bounded_large_chunks(
+        reader: impl Read,
+        max_bytes: u64,
+    ) -> Result<Self, ContentVersionReadError> {
+        Self::hash_bounded_with_buffer(reader, max_bytes, IDENTITY_VERSION_READ_BUFFER_BYTES)
+    }
+
+    fn hash_bounded_with_buffer(
         mut reader: impl Read,
         max_bytes: u64,
+        capacity: usize,
     ) -> Result<Self, ContentVersionReadError> {
         if max_bytes == 0 {
             return Err(ContentVersionReadError::LimitExceeded);
         }
 
+        // The identity chunk must live on the heap: a 1-MiB stack array can
+        // overflow Windows worker stacks. Both capacities are fixed constants.
+        let mut buffer = vec![0_u8; capacity];
         let mut hasher = blake3::Hasher::new();
-        let mut buffer = [0_u8; VERSION_READ_BUFFER_BYTES];
         let mut total = 0_u64;
 
         loop {
             let remaining = max_bytes.saturating_sub(total);
-            let request = if remaining >= VERSION_READ_BUFFER_BYTES as u64 {
-                VERSION_READ_BUFFER_BYTES
+            let request = if remaining >= capacity as u64 {
+                capacity
             } else {
                 usize::try_from(remaining)
-                    .expect("remaining bounded read bytes must fit the fixed buffer")
+                    .expect("bounded remainder fits the fixed buffer")
                     .saturating_add(1)
             };
-
+            // No prefetch, cache, skipped hash, unpinned replacement or
+            // observation beyond the original max_bytes+1 security ceiling.
             let read = reader.read(&mut buffer[..request])?;
             if read == 0 {
                 break;
             }
-
             total = total
                 .checked_add(
                     u64::try_from(read).map_err(|_| ContentVersionReadError::LimitExceeded)?,
@@ -70,7 +93,6 @@ impl ContentVersion {
             }
             hasher.update(&buffer[..read]);
         }
-
         Ok(Self(*hasher.finalize().as_bytes()))
     }
 
@@ -165,6 +187,79 @@ mod tests {
         )
         .expect("stream hash");
         assert_eq!(streamed, ContentVersion::from_bytes(&content));
+    }
+
+    #[test]
+    fn large_identity_chunks_keep_full_hash_with_far_fewer_reads() {
+        use std::cell::Cell;
+        struct Count<'a> {
+            source: Cursor<Vec<u8>>,
+            calls: &'a Cell<usize>,
+        }
+        impl Read for Count<'_> {
+            fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+                self.calls.set(self.calls.get() + 1);
+                self.source.read(output)
+            }
+        }
+        let input = vec![0x5a; 4 * 1024 * 1024 + 17];
+        let large_calls = Cell::new(0);
+        let old_calls = Cell::new(0);
+        let old = ContentVersion::from_reader_bounded(
+            Count {
+                source: Cursor::new(input.clone()),
+                calls: &old_calls,
+            },
+            input.len() as u64,
+        )
+        .expect("legacy full digest");
+        let large = ContentVersion::from_reader_bounded_large_chunks(
+            Count {
+                source: Cursor::new(input.clone()),
+                calls: &large_calls,
+            },
+            input.len() as u64,
+        )
+        .expect("large-chunk full digest");
+        assert_eq!(old, ContentVersion::from_bytes(&input));
+        assert_eq!(large, old);
+        assert_eq!(large_calls.get(), 6, "four full reads, short tail and EOF");
+        assert!(old_calls.get() > large_calls.get() * 10);
+    }
+
+    #[test]
+    fn large_identity_chunks_keep_max_plus_one_and_short_read_guarantees() {
+        struct OneByte {
+            next: u8,
+            end: u8,
+        }
+        impl Read for OneByte {
+            fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+                if self.next == self.end {
+                    return Ok(0);
+                }
+                output[0] = self.next;
+                self.next += 1;
+                Ok(1)
+            }
+        }
+        let input = vec![0x45; 2 * 1024 * 1024 + 13];
+        let limit = (input.len() - 1) as u64;
+        assert!(matches!(
+            ContentVersion::from_reader_bounded_large_chunks(Cursor::new(&input), limit),
+            Err(ContentVersionReadError::LimitExceeded)
+        ));
+        let one =
+            ContentVersion::from_reader_bounded_large_chunks(OneByte { next: 0, end: 47 }, 47)
+                .expect("short reads and exact EOF");
+        assert_eq!(
+            one,
+            ContentVersion::from_bytes(&(0_u8..47).collect::<Vec<_>>())
+        );
+        assert!(matches!(
+            ContentVersion::from_reader_bounded_large_chunks(Cursor::new(b"anything"), 0),
+            Err(ContentVersionReadError::LimitExceeded)
+        ));
     }
 
     #[test]
