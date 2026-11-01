@@ -206,13 +206,21 @@ mod tests {
         let large_calls = Cell::new(0);
         let old_calls = Cell::new(0);
         let old = ContentVersion::from_reader_bounded(
-            Count { source: Cursor::new(input.clone()), calls: &old_calls },
+            Count {
+                source: Cursor::new(input.clone()),
+                calls: &old_calls,
+            },
             input.len() as u64,
-        ).expect("legacy full digest");
+        )
+        .expect("legacy full digest");
         let large = ContentVersion::from_reader_bounded_large_chunks(
-            Count { source: Cursor::new(input.clone()), calls: &large_calls },
+            Count {
+                source: Cursor::new(input.clone()),
+                calls: &large_calls,
+            },
             input.len() as u64,
-        ).expect("large-chunk full digest");
+        )
+        .expect("large-chunk full digest");
         assert_eq!(old, ContentVersion::from_bytes(&input));
         assert_eq!(large, old);
         assert_eq!(large_calls.get(), 6, "four full reads, short tail and EOF");
@@ -241,10 +249,13 @@ mod tests {
             ContentVersion::from_reader_bounded_large_chunks(Cursor::new(&input), limit),
             Err(ContentVersionReadError::LimitExceeded)
         ));
-        let one = ContentVersion::from_reader_bounded_large_chunks(
-            OneByte { next: 0, end: 47 }, 47,
-        ).expect("short reads and exact EOF");
-        assert_eq!(one, ContentVersion::from_bytes(&(0_u8..47).collect::<Vec<_>>()));
+        let one =
+            ContentVersion::from_reader_bounded_large_chunks(OneByte { next: 0, end: 47 }, 47)
+                .expect("short reads and exact EOF");
+        assert_eq!(
+            one,
+            ContentVersion::from_bytes(&(0_u8..47).collect::<Vec<_>>())
+        );
         assert!(matches!(
             ContentVersion::from_reader_bounded_large_chunks(Cursor::new(b"anything"), 0),
             Err(ContentVersionReadError::LimitExceeded)
