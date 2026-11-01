@@ -99,7 +99,7 @@ That last point is important: for processes, the security gate is exact applicat
 Stop the bridge, then restart it with an absolute Git path:
 
 ```powershell
-& $Bridge --git-executable="C:\Program Files\Git\cmd\git.exe" $SmokeRepo
+& $Bridge --git-executable="C:\Program Files\Git\cmd\git.exe" --allow-git-diff-content $SmokeRepo
 ```
 
 Adjust the Git path to the real canonical executable on the machine.
@@ -107,7 +107,7 @@ Adjust the Git path to the real canonical executable on the machine.
 Expected MCP behavior:
 
 - `git_status` is present and returns bounded porcelain-v2 data as base64;
-- after editing `tracked.txt`, `git_diff` returns a bounded diff;
+- without `--allow-git-diff-content`, `git_diff` is listed but **refuses patch bytes** with `optic.policy_denied`, even for ordinary paths; with the explicit opt-in above, an ordinary synthetic `tracked.txt` patch is returned within its byte budget;
 - `git_log` returns bounded commit metadata and a server-validated cursor;
 - the caller cannot provide another repository path or Git executable;
 - Git-read-only configuration does not expose `git_integrate` or `git_integration_status`; those remain conditional on separate explicit Git integration authority.

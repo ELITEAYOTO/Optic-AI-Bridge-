@@ -394,7 +394,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         git_integration_service,
         git_integration_authorities,
     )?
-    .with_read_authorities(read_authorities);
+    .with_read_authorities(read_authorities)
+    .with_operator_git_diff_content_approval(args.allow_git_diff_content);
     startup_timing.mark("server-created");
     let git_integrate_authority_ready = server.git_integration_authority_ready();
 
@@ -885,6 +886,7 @@ struct AppArgs {
     directory_scopes: BTreeSet<LeaseScope>,
     mutation_state_dir: Option<PathBuf>,
     git_executable: Option<PathBuf>,
+    allow_git_diff_content: bool,
     git_integration_executable: Option<PathBuf>,
     allow_git_integrate: bool,
     git_integration_root: Option<PathBuf>,
@@ -922,6 +924,7 @@ impl AppArgs {
         let mut directory_scopes = BTreeSet::new();
         let mut mutation_state_dir = None;
         let mut git_executable = None;
+        let mut allow_git_diff_content = false;
         let mut git_integration_executable = None;
         let mut allow_git_integrate = false;
         let mut git_integration_root = None;
@@ -1078,6 +1081,13 @@ impl AppArgs {
                     )
                 })?;
                 set_git_executable(&mut git_executable, PathBuf::from(value))?;
+            } else if arg == "--allow-git-diff-content" {
+                if std::mem::replace(&mut allow_git_diff_content, true) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "--allow-git-diff-content may be supplied only once",
+                    ));
+                }
             } else if arg == "--git-integration-executable" {
                 let value = args.next().ok_or_else(|| {
                     std::io::Error::new(
@@ -1175,6 +1185,12 @@ impl AppArgs {
                 "mutation authority requires --mutation-state-dir",
             ));
         }
+        if allow_git_diff_content && git_executable.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--allow-git-diff-content requires --git-executable",
+            ));
+        }
         let integration_parts = usize::from(git_integration_executable.is_some())
             + usize::from(git_integration_root.is_some())
             + usize::from(git_integration_ref.is_some());
@@ -1220,6 +1236,7 @@ impl AppArgs {
             directory_scopes,
             mutation_state_dir,
             git_executable,
+            allow_git_diff_content,
             git_integration_executable,
             allow_git_integrate,
             git_integration_root,
@@ -2357,6 +2374,35 @@ mod tests {
     fn git_read_authority_is_absent_by_default() {
         let parsed = AppArgs::parse_from(args(&["workspace"])).expect("args");
         assert!(parsed.git_executable.is_none());
+    }
+
+    #[test]
+    fn git_patch_content_requires_one_explicit_operator_opt_in_with_a_git_runtime() {
+        let disabled = AppArgs::parse_from(args(&["workspace"])).expect("default args");
+        assert!(!disabled.allow_git_diff_content);
+        assert!(
+            AppArgs::parse_from(args(&["--allow-git-diff-content", "workspace"])).is_err(),
+            "no Git runtime must not silently authorize patch visibility"
+        );
+        assert!(
+            AppArgs::parse_from(args(&[
+                "--allow-git-diff-content",
+                "--allow-git-diff-content",
+                "workspace"
+            ]))
+            .is_err(),
+            "duplicate opt-in must fail"
+        );
+        let git = std::env::temp_dir().join("optic-git-content-explicit-fixture");
+        let enabled = AppArgs::parse_from(vec![
+            OsString::from("--git-executable"),
+            git.into_os_string(),
+            OsString::from("--allow-git-diff-content"),
+            OsString::from("workspace"),
+        ])
+        .expect("only a trusted CLI opt-in and fixed git can enable diff");
+        assert!(enabled.allow_git_diff_content);
+        assert!(enabled.git_executable.is_some());
     }
 
     #[test]

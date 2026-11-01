@@ -26,6 +26,7 @@ impl ReadonlyMcpServer {
         let snapshot = self
             .run_git_read_checked(
                 move |service| service.status_with_max_bytes(max_bytes),
+                |_, _| Ok(()),
                 |server, grant, snapshot| {
                     for path in &snapshot.sensitive_paths {
                         server.ensure_sensitive_metadata_authorized(
@@ -49,7 +50,7 @@ impl ReadonlyMcpServer {
 
     #[tool(
         name = "git_diff",
-        description = "Return a bounded literal-path Git diff from the operator-owned repository. External diff/textconv and submodule traversal are disabled."
+        description = "Return a bounded literal-path Git diff only when the local operator explicitly opted in to high-trust Git patch content. Git index blobs may outlive worktree paths; external diff/textconv and submodules are disabled."
     )]
     pub async fn git_diff(
         &self,
@@ -77,7 +78,9 @@ impl ReadonlyMcpServer {
         let diff = self
             .run_git_read_checked(
                 move |service| service.diff(path.as_ref(), staged, Some(max_bytes)),
+                |server, grant| server.require_operator_git_diff_content_approval(grant),
                 |server, grant, diff| {
+                    server.require_operator_git_diff_content_approval(grant)?;
                     for path in &diff.sensitive_paths {
                         // A patch discloses content, not only a filename.
                         // Do not let GitRead substitute for either FileRead
@@ -150,21 +153,30 @@ impl ReadonlyMcpServer {
         T: Send + 'static,
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
     {
-        self.run_git_read_checked(operation, |_, _, _| Ok(())).await
+        self.run_git_read_checked(operation, |_, _| Ok(()), |_, _, _| Ok(()))
+            .await
     }
 
     /// Validate sensitive metadata before dropping admission and returning
     /// bytes to the caller. Revocation must drain this entire decision.
-    async fn run_git_read_checked<T, F, V>(&self, operation: F, verify: V) -> Result<T, ErrorData>
+    async fn run_git_read_checked<T, F, P, V>(
+        &self,
+        operation: F,
+        preflight: P,
+        verify: V,
+    ) -> Result<T, ErrorData>
     where
         T: Send + 'static,
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
+        P: FnOnce(&Self, &SessionGrant) -> Result<(), ErrorData> + Send + 'static,
         V: FnOnce(&Self, &SessionGrant, &T) -> Result<(), ErrorData> + Send + 'static,
     {
         self.run_owned_admitted_read(move |server, admission, permit| {
             let grant = admission.grant();
             server.ensure_read_deadline(&permit)?;
             server.authorize_git_read(grant, server.clock.now())?;
+            preflight(server, grant)?;
+            server.ensure_read_deadline(&permit)?;
             let service = server.git_service.as_ref().cloned().ok_or_else(|| {
                 ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
             })?;
@@ -735,7 +747,9 @@ mod tests {
             "optic.policy_denied"
         );
 
-        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let granted = fixture
+            .server_with_sensitive_read(ReadSensitiveScope::all())
+            .with_operator_git_diff_content_approval(true);
         let status = granted.git_status().await.expect("authorized status").0;
         let raw = STANDARD
             .decode(status.porcelain_v2_base64)
@@ -756,14 +770,24 @@ mod tests {
                 .windows(b"synthetic fake value".len())
                 .any(|w| w == b"synthetic fake value")
         );
-        let public_patch = ordinary
-            .git_diff(Parameters(GitDiffRequest {
-                path: Some("tracked.txt".to_owned()),
-                staged: Some(false),
-                max_bytes: Some(16 * 1024),
-            }))
+        let ordinary_request = || GitDiffRequest {
+            path: Some("tracked.txt".to_owned()),
+            staged: Some(false),
+            max_bytes: Some(16 * 1024),
+        };
+        assert_eq!(
+            ordinary
+                .git_diff(Parameters(ordinary_request()))
+                .await
+                .err()
+                .expect("GitRead alone must not publish ordinary-path patch bytes")
+                .message,
+            "optic.policy_denied"
+        );
+        let public_patch = granted
+            .git_diff(Parameters(ordinary_request()))
             .await
-            .expect("ordinary diff remains authorized")
+            .expect("explicit operator diff approval permits ordinary patch")
             .0;
         assert!(
             STANDARD
@@ -788,7 +812,9 @@ mod tests {
                 .message,
             "optic.policy_denied"
         );
-        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let granted = fixture
+            .server_with_sensitive_read(ReadSensitiveScope::all())
+            .with_operator_git_diff_content_approval(true);
         let status = granted.git_status().await.expect("authorized status").0;
         let raw = STANDARD.decode(status.porcelain_v2_base64).expect("base64");
         assert!(
@@ -842,7 +868,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn git_diff_requires_sensitive_content_authority_but_preserves_ordinary_diff() {
+    async fn git_diff_requires_operator_opt_in_even_for_ordinary_paths() {
         let fixture = RepoFixture::new("sensitive-diff");
         fs::write(fixture.repo.join(".env"), b"first dummy only\n").expect("fixture");
         run_git(
@@ -886,10 +912,22 @@ mod tests {
                 .message,
             "optic.policy_denied"
         );
-        let source = normal
+        assert_eq!(
+            normal
+                .git_diff(Parameters(request(Some("tracked.txt"), false)))
+                .await
+                .err()
+                .expect("Git index provenance cannot be inferred from an ordinary path")
+                .message,
+            "optic.policy_denied"
+        );
+        let granted = fixture
+            .server_with_sensitive_read(ReadSensitiveScope::all())
+            .with_operator_git_diff_content_approval(true);
+        let source = granted
             .git_diff(Parameters(request(Some("tracked.txt"), false)))
             .await
-            .expect("ordinary source diff remains accessible")
+            .expect("explicit operator diff approval permits ordinary source diff")
             .0;
         assert!(
             String::from_utf8_lossy(&STANDARD.decode(source.data_base64).expect("base64"))
@@ -907,7 +945,6 @@ mod tests {
                 .message,
             "optic.policy_denied"
         );
-        let granted = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
         let patch = granted
             .git_diff(Parameters(request(None, false)))
             .await
@@ -916,6 +953,94 @@ mod tests {
         assert!(
             String::from_utf8_lossy(&STANDARD.decode(patch.data_base64).expect("base64"))
                 .contains("second dummy only")
+        );
+    }
+
+    #[tokio::test]
+    async fn staged_git_object_provenance_requires_explicit_operator_opt_in() {
+        let fixture = RepoFixture::new("prov");
+        fs::write(fixture.repo.join(".gitignore"), b".env\n").expect("ignored source");
+        fs::write(
+            fixture.repo.join(".env"),
+            b"FAKE_SYNTHETIC_PROVENANCE_ONLY\n",
+        )
+        .expect("synthetic source");
+        fs::hard_link(
+            fixture.repo.join(".env"),
+            fixture.repo.join("ordinary-alias.txt"),
+        )
+        .expect("synthetic same-inode alias");
+        run_git(
+            &fixture.git,
+            Some(&fixture.repo),
+            [OsStr::new("add"), OsStr::new("ordinary-alias.txt")],
+        );
+        let request = || GitDiffRequest {
+            path: Some("ordinary-alias.txt".to_owned()),
+            staged: Some(true),
+            max_bytes: Some(16 * 1024),
+        };
+        let ordinary = fixture.server(&[Capability::FileRead, Capability::GitRead]);
+        assert_eq!(
+            ordinary
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("staged hardlink alias must be refused")
+                .message,
+            "optic.policy_denied"
+        );
+
+        // Even after unlinking the alias, Git index/blob retains its data.
+        fs::remove_file(fixture.repo.join("ordinary-alias.txt"))
+            .expect("erase worktree alias after Git staged the blob");
+        assert_eq!(
+            ordinary
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("staged-only blob must still be refused")
+                .message,
+            "optic.policy_denied"
+        );
+
+        let partial = fixture.server_with_sensitive_read(ReadSensitiveScope::prefix(
+            WorkspacePath::parse("ordinary-alias.txt").expect("scope"),
+        ));
+        assert_eq!(
+            partial
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("a matching pathname prefix is not a content provenance proof")
+                .message,
+            "optic.policy_denied"
+        );
+        let privileged_but_not_opted_in =
+            fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        assert_eq!(
+            privileged_but_not_opted_in
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("sensitive file grants alone do not grant Git object provenance")
+                .message,
+            "optic.policy_denied"
+        );
+        let elevated = fixture
+            .server(&[Capability::GitRead])
+            .with_operator_git_diff_content_approval(true);
+        let patch = elevated
+            .git_diff(Parameters(request()))
+            .await
+            .expect("explicit high-trust Git diff operator opt-in")
+            .0;
+        assert!(
+            STANDARD
+                .decode(patch.data_base64)
+                .expect("base64 patch")
+                .windows(b"FAKE_SYNTHETIC_PROVENANCE_ONLY".len())
+                .any(|w| w == b"FAKE_SYNTHETIC_PROVENANCE_ONLY")
         );
     }
 
@@ -943,7 +1068,21 @@ mod tests {
                 .message,
             "optic.policy_denied"
         );
-        let authorized = fixture.server_with_sensitive_read(ReadSensitiveScope::all());
+        let operator_only = fixture
+            .server(&[Capability::GitRead])
+            .with_operator_git_diff_content_approval(true);
+        assert_eq!(
+            operator_only
+                .git_diff(Parameters(request()))
+                .await
+                .err()
+                .expect("operator diff approval must not bypass sensitive filename authorization")
+                .message,
+            "optic.policy_denied"
+        );
+        let authorized = fixture
+            .server_with_sensitive_read(ReadSensitiveScope::all())
+            .with_operator_git_diff_content_approval(true);
         let result = authorized
             .git_diff(Parameters(request()))
             .await
@@ -968,6 +1107,7 @@ mod tests {
         let error = server
             .run_git_read_checked(
                 |_service| Ok::<_, GitReadError>(b"synthetic-private-output".to_vec()),
+                |_, _| Ok(()),
                 move |_server, _grant, _output| {
                     // The operation was within its transport deadline; only
                     // the review crosses it. No OS sleeping or real Git needed.
