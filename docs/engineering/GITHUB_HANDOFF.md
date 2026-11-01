@@ -1,6 +1,15 @@
 # GitHub-only project handoff
 
-## Verified continuation after PR #453 — 31 October 2026
+## Active GitHub-only handoff — 1 November 2026
+
+**Pré-PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf` ; [CI indépendante push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **4/4 SUCCESS tentative1**, Windows 433/0/11, Ubuntu318/0, schema8 complete 10 Windows + 4 Unix. Après fusion documentaire, **re-vérifier SHA et CI**. Les PR [#460–#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) concernent la garde **inerte** native ; [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) réveille le watchdog Job original sur ticket `Drop` rencontrant un ledger empoisonné (RED [#41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165), green [#41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189)). **#323 OPEN, Windows V1 NO-GO**, GitRead MCP toujours legacy, aucun CreateProcessW/ResumeThread synchronisé ni preuve de Job/root/2 EOF. Lire [passation canonique 2026-11-01](HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) ; les anciens checkpoints ci-dessous sont archivés.
+
+**One bounded PR to completion, not a stack:** actual test-only behavior RED if possible, minimal fix, exact-head hosted Windows/Ubuntu/policy/evidence and appropriate specialty, schema8/retained artifacts, complete COMMENT-only self-review, guarded squash with identical Git trees, independent `event=push branch=main` 4/4 attempt1 and dated receipts in PR + #323. Never assume any old SHA remains current. Older sections below are historical.
+
+---
+
+
+## Historical / superseded checkpoint — Verified continuation after PR #453 — 31 October 2026
 
 **Canonical:** [current 31 October Windows V1 handoff](HANDOFF_WINDOWS_V1_2026-10-31.md)
 and [full successor prompt](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-10-31.md).

@@ -1,6 +1,15 @@
 # Windows V1 — native GitRead authority and launch race audit (#323)
 
-## 31 October — owner-scoped native in-flight tickets, no detached OS calls
+## 1 November 2026 — observed poisoned ticket retirement stops original watchdog (#464)
+
+**Pré-PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf` ; [CI indépendante push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **4/4 SUCCESS tentative1**, Windows 433/0/11, Ubuntu318/0, schema8 complete 10 Windows + 4 Unix. Après fusion documentaire, **re-vérifier SHA et CI**. Les PR [#460–#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) concernent la garde **inerte** native ; [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) réveille le watchdog Job original sur ticket `Drop` rencontrant un ledger empoisonné (RED [#41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165), green [#41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189)). **#323 OPEN, Windows V1 NO-GO**, GitRead MCP toujours legacy, aucun CreateProcessW/ResumeThread synchronisé ni preuve de Job/root/2 EOF. Lire [passation canonique 2026-11-01](HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md) ; les anciens checkpoints ci-dessous sont archivés.
+
+**New precise boundary:** `TrackedNativeCall::drop` now seals `stop_requested` on a poisoned accounting lock even when ticket retirement is the FIRST observer, without fabricating zero counts or waiting for a later owner read. The original Windows kernel Job watchdog sees that private stop; hosted real original **empty** Job test is green. #463 covered other observing paths; #462 originally wired same fifth signal. No automatic detection of unobserved poison, no native Git child, no launch/revocation linearization and no root/descendants/dual-EOF terminal proof. The actual P0 remains the cross-registry and kernel call fence plus guardian. See [PR #464 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464#issuecomment-6555424175) and [#323 receipt](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323#issuecomment-6555424681).
+
+---
+
+
+## Historical / superseded checkpoint — 31 October — owner-scoped native in-flight tickets, no detached OS calls
 
 The inert Windows tracker used by the original native custody is no longer
 `Clone` or `Default`; production construction requires the **original four

@@ -1,6 +1,19 @@
 # Current project status
 
-## Latest verified technical checkpoint — 31 Oct 2026 after PR #457
+## Situation canonique — 1 novembre 2026 après #464
+
+**Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**
+
+**Portée :** [#460](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/460) à [#464](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/464) ont solidifié le registre d'appels **natifs inertes** (dépassement compteurs, arrêt interne, propagation vers watchdog Job original, mutex empoisonné observé, ticket `Drop` premier observateur). #464 : test-only [RED Windows #41287059165](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287059165) 32/1 ; [HEAD CI #41287184189](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184189) 4/4 et [native #41287184201](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287184201) 33/33 ; [squash/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) 4/4. **Ce ne sont ni une activation de GitRead natif ni une clôture de la course CreateProcessW/ResumeThread.**
+
+**Blocage V1 :** [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) **OPEN / Windows 10-11 V1 NO-GO** ; MCP GitRead utilise encore le legacy `HardenedCommandRunner`. Pas de révocation-linéarisable sur original session/TaskLease/policy/host et Win32 create/resume déjà en cours ou futurs ; pas de vraie preuve root exit + Job-empty + EOF physiques stdout/stderr + no future spawn. Recherche [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) **négative**, PR #327/#353/#355/#358 non fusionnées ; issues #176/#182/#185/#319 toujours ouvertes. Aucun GO, release, activation, self-hosted CI, modification sécurité, PC opérateur, Desktop ou REL.
+
+**Reprise obligatoire :** [passation canonique 2026-11-01](docs/engineering/HANDOFF_WINDOWS_V1_2026-11-01.md) et [prompt du prochain chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_2026-11-01.md). Une PR complète à la fois : test-only behavioral RED quand faisable, correction minimale, CI final HEAD Windows/Ubuntu & workflows spécialisés, schema8/artefacts, revue COMMENT, squash exact, arbres identiques, nouvelle CI `push/main` 4/4, reçus PR + #323.
+
+---
+
+
+## Historical / superseded checkpoint — Latest verified technical checkpoint — 31 Oct 2026 after PR #457
 
 `main=291c152cdd132753668563031cf34bcfe0810940` before this docs PR; [independent push/main #41226531396](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41226531396) **SUCCESS 4/4, attempt 1**, Windows Rust **428 passed / 0 failed / 11 ignored**, schema8 physical reports `complete=true` (**10 Windows / 4 Unix**) on exact source/checkout with retained artifacts. This is a dated checkpoint: requery live GitHub after the docs merge.
 
