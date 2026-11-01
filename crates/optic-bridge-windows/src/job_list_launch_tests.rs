@@ -787,6 +787,11 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
         "suspended root must be in the original Job"
     );
     assert_eq!(custody.active_processes()?, 1);
+    // SAFETY: retain a non-inheritable duplicate of the exact returned kernel
+    // process handle; the original PROCESS_INFORMATION remains owned by fixture.
+    custody.pin_original_job_root(unsafe {
+        std::os::windows::io::BorrowedHandle::borrow_raw(process.0.hProcess.0)
+    })?;
 
     // Parent copies would prevent EOF even after an otherwise successful kill.
     custody._stdout.close_parent_writer();
@@ -849,25 +854,19 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
         "native watchdog did not physically stop the real root"
     );
 
-    let until = Instant::now() + Duration::from_secs(5);
-    let mut stdout_eof = false;
-    let mut stderr_eof = false;
-    while custody.active_processes()? != 0 || !stdout_eof || !stderr_eof {
-        if !stdout_eof {
-            let chunk = custody._stdout.try_read(4096)?;
-            stdout_eof = chunk.eof;
-        }
-        if !stderr_eof {
-            let chunk = custody._stderr.try_read(4096)?;
-            stderr_eof = chunk.eof;
-        }
-        if Instant::now() >= until {
-            return Err(Error::other(
-                "root stop did not imply original Job empty AND both physical pipe EOFs",
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    // The PRODUCTION custody now owns the four-way physical proof: a real
+    // pinned root, the exact Job, and independent EOFs for both original pipes.
+    // No future-create/resume authority is inferred from this receipt.
+    let receipt = custody.confirm_post_watchdog_physical_stop(
+        Instant::now() + Duration::from_secs(5),
+        16 * 1024 * 1024,
+    )?;
+    // SAFETY: original owned PROCESS_INFORMATION still holds this root handle.
+    assert_eq!(receipt.root_pid, unsafe { GetProcessId(process.0.hProcess) });
+    eprintln!(
+        "OPTIC_NATIVE_PHYSICAL_STOP root={} stdout_discarded={} stderr_discarded={}",
+        receipt.root_pid, receipt.discarded_stdout_bytes, receipt.discarded_stderr_bytes
+    );
     Ok(())
 }
 

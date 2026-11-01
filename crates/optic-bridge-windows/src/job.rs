@@ -12,7 +12,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::output_pipe::CapturedOutputPipe;
@@ -22,6 +22,7 @@ use windows::{
     Win32::{
         Foundation::{
             CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_NO_MORE_FILES, HANDLE,
+            WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         System::{
             Diagnostics::ToolHelp::{
@@ -29,7 +30,8 @@ use windows::{
                 Thread32Next,
             },
             JobObjects::{
-                AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+                AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
                 JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
                 JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
                 JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
@@ -39,11 +41,12 @@ use windows::{
             },
             Threading::{
                 CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
+                WaitForSingleObject,
                 ResumeThread, THREAD_SUSPEND_RESUME,
             },
         },
     },
-    core::HRESULT,
+    core::{BOOL, HRESULT},
 };
 
 const JOB_EMPTY_POLL: Duration = Duration::from_millis(10);
@@ -266,12 +269,30 @@ impl Drop for OwnedJob {
 /// a nulled stdin are opened *before* any root could exist. This type has no
 /// create/spawn/resume method and is never proof of a completed child.
 #[must_use = "retain native handles until unstarted cleanup or later terminal proof"]
+/// A service-pinned original root HANDLE, not a PID lookup or a launch grant.
+struct PinnedOriginalRoot {
+    handle: OwnedHandle,
+    pid: u32,
+}
+
+/// Success certifies only four physically observed facts for the pinned root:
+/// root exit, kernel Job empty, physical stdout EOF and physical stderr EOF.
+/// The counts are bytes discarded while completing *cleanup*, never command
+/// output exposed to an MCP caller. This is NOT a no-future-create/resume fence.
+#[derive(Debug)]
+pub struct NativePhysicalStopReceipt {
+    pub root_pid: u32,
+    pub discarded_stdout_bytes: u64,
+    pub discarded_stderr_bytes: u64,
+}
+
 pub struct PrecreatedNativeReadCustody {
     // Disarm and join the independent watchdog before closing the owned Job.
     // A watchdog is optional until a future trusted native launch owner arms it.
     deadline: Option<NativeJobDeadline>,
     // The Job uses KILL_ON_JOB_CLOSE. No process can be added through this API.
     job: OwnedJob,
+    original_root: Option<PinnedOriginalRoot>,
     _stdin: File,
     _stdout: CapturedOutputPipe,
     _stderr: CapturedOutputPipe,
@@ -293,6 +314,7 @@ impl PrecreatedNativeReadCustody {
         Ok(Self {
             deadline: None,
             job,
+            original_root: None,
             _stdin: stdin,
             _stdout: stdout,
             _stderr: stderr,
@@ -403,6 +425,153 @@ impl PrecreatedNativeReadCustody {
             .is_some_and(|deadline| deadline.expired.load(Ordering::Acquire))
     }
 
+    /// Retain the exact root HANDLE at its first verified Job-associated,
+    /// still-alive observation. The caller owns the original CreateProcessW
+    /// handles; this owner holds a noninheritable duplicate until Drop.
+    ///
+    /// This method NEVER issues CreateProcessW/ResumeThread, permits execution
+    /// or makes a post-revocation suspended creation safe. A future service
+    /// launcher must separately synchronize original generation revocation
+    /// before it can resume even a successfully pinned child.
+    pub fn pin_original_job_root(&mut self, root: BorrowedHandle<'_>) -> Result<()> {
+        if self.original_root.is_some() || self.deadline.is_none() || self.watchdog_stop_observed() {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "native root requires an unbound owner with its original armed watchdog",
+            ));
+        }
+        let process = HANDLE(root.as_raw_handle());
+        let mut belongs = BOOL(0);
+        // SAFETY: root is borrowed and the exact configured Job is retained.
+        unsafe { IsProcessInJob(process, Some(self.job.raw()), &mut belongs) }
+            .map_err(Error::other)?;
+        if !belongs.as_bool() {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "native root is not a member of its original Job",
+            ));
+        }
+        // SAFETY: zero-duration wait interrogates the borrowed HANDLE only.
+        if unsafe { WaitForSingleObject(process, 0) } != WAIT_TIMEOUT {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "native root is not a verified live Job member",
+            ));
+        }
+        // SAFETY: the same borrowed HANDLE remains valid throughout this call.
+        let pid = unsafe { GetProcessId(process) };
+        if pid == 0 {
+            return Err(Error::last_os_error());
+        }
+        let mut duplicate = HANDLE::default();
+        // SAFETY: duplicate into the current process, explicitly noninheritable.
+        // The original root HANDLE cannot be substituted by PID reuse.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                process,
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(Error::other)?;
+        // SAFETY: a successful DuplicateHandle provides one unique owned value.
+        self.original_root = Some(PinnedOriginalRoot {
+            handle: unsafe { OwnedHandle::from_raw_handle(duplicate.0) },
+            pid,
+        });
+        Ok(())
+    }
+
+    /// After the ORIGINAL Job watchdog reports a successful termination call,
+    /// independently observe the retained root handle, kernel active count and
+    /// each original pipe's physical EOF. Discard output in bounded chunks,
+    /// never joining potentially stuck reader threads or buffering unbounded
+    /// bytes. This method adds NO execution grace: the supplied cleanup horizon
+    /// is absolute and cannot be renewed internally.
+    ///
+    /// Failures preserve ownership for the caller's fail-closed cleanup/Drop.
+    /// In particular a completed TerminateJobObject call, an empty Job, an
+    /// already signaled *foreign* root or only one EOF are never sufficient.
+    /// Future CreateProcessW/ResumeThread must be sealed by a separate issuer.
+    pub fn confirm_post_watchdog_physical_stop(
+        &mut self,
+        cleanup_until: Instant,
+        discard_limit: u64,
+    ) -> Result<NativePhysicalStopReceipt> {
+        if discard_limit == 0 || cleanup_until <= Instant::now() {
+            return Err(Error::new(ErrorKind::InvalidInput, "invalid native cleanup budget"));
+        }
+        let root = self.original_root.as_ref().ok_or_else(|| {
+            Error::new(ErrorKind::PermissionDenied, "no original root HANDLE pinned")
+        })?;
+        if self.watchdog_termination_result() != Some(Ok(())) {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "original watchdog has not reported successful Job termination",
+            ));
+        }
+        // Parent-held writer duplicates would prevent physical EOF even after
+        // a successful kill. Closing them here is safe only after watchdog stop.
+        self._stdout.close_parent_writer();
+        self._stderr.close_parent_writer();
+        let mut stdout_eof = false;
+        let mut stderr_eof = false;
+        let mut stdout_bytes = 0_u64;
+        let mut stderr_bytes = 0_u64;
+        loop {
+            // SAFETY: a duplicated original root HANDLE stays valid for this
+            // whole method; no PID lookup or substituted process is involved.
+            let wait = unsafe { WaitForSingleObject(HANDLE(root.handle.as_raw_handle()), 0) };
+            let root_exited = match wait {
+                WAIT_OBJECT_0 => true,
+                WAIT_TIMEOUT => false,
+                _ => return Err(Error::last_os_error()),
+            };
+            let job_empty = self.job.active_processes()? == 0;
+            if !stdout_eof {
+                let chunk = self._stdout.try_read(8 * 1024)?;
+                stdout_eof = chunk.eof;
+                stdout_bytes = stdout_bytes
+                    .checked_add(u64::try_from(chunk.bytes.len()).unwrap_or(u64::MAX))
+                    .ok_or_else(|| Error::other("native stdout accounting overflow"))?;
+            }
+            if !stderr_eof {
+                let chunk = self._stderr.try_read(8 * 1024)?;
+                stderr_eof = chunk.eof;
+                stderr_bytes = stderr_bytes
+                    .checked_add(u64::try_from(chunk.bytes.len()).unwrap_or(u64::MAX))
+                    .ok_or_else(|| Error::other("native stderr accounting overflow"))?;
+            }
+            if stdout_bytes
+                .checked_add(stderr_bytes)
+                .is_none_or(|total| total > discard_limit)
+            {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "native physical cleanup exceeded its original discard ceiling",
+                ));
+            }
+            if root_exited && job_empty && stdout_eof && stderr_eof {
+                return Ok(NativePhysicalStopReceipt {
+                    root_pid: root.pid,
+                    discarded_stdout_bytes: stdout_bytes,
+                    discarded_stderr_bytes: stderr_bytes,
+                });
+            }
+            if Instant::now() >= cleanup_until {
+                return Err(Error::new(
+                    ErrorKind::TimedOut,
+                    "native shutdown did not prove root exit, Job empty and BOTH pipe EOFs",
+                ));
+            }
+            std::thread::sleep(JOB_EMPTY_POLL);
+        }
+    }
+
     /// Read the actual kernel Job's active-process count. Zero here is only
     /// a no-child precreation observation, not root-exit/EOF terminal evidence.
     pub fn active_processes(&self) -> Result<u32> {
@@ -496,6 +665,15 @@ mod precreated_native_read_tests {
         assert!(!owned.watchdog_deadline_expired());
         assert_eq!(owned.watchdog_termination_result(), Some(Ok(())));
         assert_eq!(owned.active_processes().expect("separate Job query"), 0);
+        // Success on a physically EMPTY Job never certifies an original root
+        // or both EOFs. The owner must retain a verified real root HANDLE.
+        assert!(matches!(
+            owned.confirm_post_watchdog_physical_stop(
+                Instant::now() + Duration::from_secs(1),
+                1024
+            ),
+            Err(ref e) if e.kind() == ErrorKind::PermissionDenied
+        ));
     }
 
     #[test]
