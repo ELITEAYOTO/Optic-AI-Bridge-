@@ -822,7 +822,16 @@ fn original_native_watchdog_stops_live_root_and_reaches_both_physical_eofs() -> 
         WAIT_TIMEOUT,
         "the synthetic root must still be alive before original stop"
     );
-    assert_eq!(custody.active_processes()?, 1);
+    // The real system fixture may create a second associated Job process.
+    // Do not assume one active PID: prove the pinned root remains alive above,
+    // preserve the configured Job limits, and require kernel count ZERO after
+    // original watchdog termination below.
+    let active_before_stop = custody.active_processes()?;
+    eprintln!("OPTIC_NATIVE_ORIGINAL_JOB_ACTIVE_BEFORE_STOP={active_before_stop}");
+    assert!(
+        active_before_stop >= 1,
+        "the running original root must still occupy its kernel Job"
+    );
 
     original_stops[0].store(true, Ordering::Release);
     let until = Instant::now() + Duration::from_secs(5);
