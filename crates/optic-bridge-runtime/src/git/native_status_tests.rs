@@ -1662,11 +1662,18 @@ fn original_native_job_watchdog_observes_poisoned_ledger_without_external_revoke
     owner.arm_original_watchdog(&fixture.trusted()).unwrap();
     let calls = owner.native_call_tracking_for_test().unwrap();
     assert!(!owner.is_stop_required_at(crate::Clock::now(&clock)));
+    let ticket = calls
+        .track(crate::native_inflight_calls::NativeCallPhase::CreateSuspended)
+        .expect("original native Create call was tracked");
+    let internal_stop = calls.internal_stop_signal();
     calls.poison_ledger_for_test();
-    assert_eq!(calls.in_flight(), None, "poison means unknown, never zero");
+    assert!(!internal_stop.load(std::sync::atomic::Ordering::Acquire));
+    // Ticket Drop is the FIRST observer. It must wake the independent
+    // watchdog before a status query can publish the poison signal.
+    drop(ticket);
     assert!(
-        owner.is_stop_required_at(crate::Clock::now(&clock)),
-        "poison must fail closed for the original native owner"
+        internal_stop.load(std::sync::atomic::Ordering::Acquire),
+        "failed ticket retirement must publish the original watchdog stop"
     );
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     while !owner.watchdog_stop_observed() && std::time::Instant::now() < deadline {
