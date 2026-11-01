@@ -340,6 +340,27 @@ mod tests {
     }
 
     #[test]
+    fn dropping_native_call_ticket_on_poisoned_ledger_publishes_original_stop() {
+        let tracker = NativeCallStopTracker::new();
+        let original_watchdog_stop = tracker.internal_stop_signal();
+        let ticket = tracker
+            .track(NativeCallPhase::CreateSuspended)
+            .expect("original native call was admitted before poison");
+        tracker.poison_ledger_for_test();
+        assert!(!original_watchdog_stop.load(Ordering::Acquire));
+        // Drop is the FIRST observer of the poisoned ledger. The original
+        // watchdog must not require a later status() or in_flight() request
+        // to learn that retiring this OS call has unknown accounting.
+        drop(ticket);
+        assert!(
+            original_watchdog_stop.load(Ordering::Acquire),
+            "a failed native-call ticket retirement must wake the original Job watchdog"
+        );
+        assert_eq!(tracker.in_flight(), None, "poison never becomes empty");
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+    }
+
+    #[test]
     fn poisoned_ledger_inflight_observation_seals_original_watchdog_stop() {
         let tracker = NativeCallStopTracker::new();
         let watchdog_stop = tracker.internal_stop_signal();
