@@ -70,7 +70,7 @@ impl ProcessExecutableIdentity {
         let pin_done = started.elapsed();
         identity_capture_phase(timing_enabled, "pin-opened", &started);
         let version = if timing_enabled {
-            ContentVersion::from_reader_bounded(
+            ContentVersion::from_reader_bounded_large_chunks(
                 IdentityReadEvidence {
                     reader: pin.file_mut(),
                     started: &started,
@@ -82,7 +82,7 @@ impl ProcessExecutableIdentity {
                 max_bytes,
             )?
         } else {
-            ContentVersion::from_reader_bounded(pin.file_mut(), max_bytes)?
+            ContentVersion::from_reader_bounded_large_chunks(pin.file_mut(), max_bytes)?
         };
         let total = started.elapsed();
         identity_capture_phase(timing_enabled, "hash-complete", &started);
@@ -116,7 +116,7 @@ impl ProcessExecutableIdentity {
         }
 
         let mut pin = open_identity_pin(Path::new(&canonical))?;
-        let observed = ContentVersion::from_reader_bounded(
+        let observed = ContentVersion::from_reader_bounded_large_chunks(
             pin.file_mut(),
             MAX_PROCESS_EXECUTABLE_IDENTITY_BYTES,
         )?;
