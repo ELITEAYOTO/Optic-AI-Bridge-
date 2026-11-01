@@ -208,15 +208,22 @@ impl NativeCallStopTracker {
 impl Drop for TrackedNativeCall<'_> {
     fn drop(&mut self) {
         // Never substitute a successful quiescence receipt if the mutex was
-        // poisoned. The observer then sees None rather than false zero.
-        if let Ok(mut counts) = self.shared.counts.lock() {
-            let counter = match self.phase {
-                NativeCallPhase::CreateSuspended => &mut counts.creates,
-                NativeCallPhase::Resume => &mut counts.resumes,
-            };
-            *counter = counter
-                .checked_sub(1)
-                .expect("one retained ticket per accounted native call");
+        // poisoned. Retiring this borrowed ticket may be the FIRST observer
+        // of unknown accounting: notify the original Job watchdog even if
+        // the owner never calls stop_requested() or in_flight() afterwards.
+        match self.shared.counts.lock() {
+            Ok(mut counts) => {
+                let counter = match self.phase {
+                    NativeCallPhase::CreateSuspended => &mut counts.creates,
+                    NativeCallPhase::Resume => &mut counts.resumes,
+                };
+                *counter = counter
+                    .checked_sub(1)
+                    .expect("one retained ticket per accounted native call");
+            }
+            Err(_) => {
+                self.shared.stop_requested.store(true, Ordering::Release);
+            }
         }
     }
 }
