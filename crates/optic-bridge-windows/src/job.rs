@@ -890,8 +890,23 @@ mod precreated_native_read_tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(owner.watchdog_termination_result(), Some(Ok(())));
-        assert_eq!(owner.active_processes().expect("Job physically empty"), 0);
-        assert!(root.try_wait().expect("original root exit").is_some());
+        // TerminateJobObject returning success is NOT synchronous root exit.
+        // Keep the original watchdog's single bounded five-second horizon:
+        // the runner may observe the kernel exit and Job-empty later.
+        while root
+            .try_wait()
+            .expect("observe original root exit")
+            .is_none()
+            || owner.active_processes().expect("observe original Job") != 0
+        {
+            assert!(
+                Instant::now() < stopped_until,
+                "watchdog stop never reached root-exit AND Job-empty"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Now the two timeout outcomes below specifically prove missing pipe
+        // EOF, not a still-terminating root or nonempty Job.
         assert!(
             matches!(
                 owner.confirm_post_watchdog_physical_stop(

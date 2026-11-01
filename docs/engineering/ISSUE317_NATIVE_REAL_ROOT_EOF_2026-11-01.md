@@ -26,6 +26,14 @@ The test checks:
 
 The **first** local test attempt returned RED after 5 seconds because the test's own `std::process::Command` retained inheritable writer duplicates in the **parent**. The actual Job termination was insufficient to cause pipe EOF with a live extra writer. Fixing this **fixture-only ownership leak** by dropping the command object after spawn made the positive four-fact proof pass. The later negative writer-retention test makes that finding explicit, without changing watchdog deadlines or production code.
 
+## Independent push/main RED after #476: asynchronous root exit
+
+[PR #476](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/476) merged at `969cd5487bb7c3e5681b2cdad1ac12d0d7914bc0` only after four exact-head first-attempt workflows were all SUCCESS, including Windows, native lifecycle and pipe tests. However **the first independent push/main CI [#41346391693](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41346391693) failed on Windows at the exact new test**, while Ubuntu, dependency and release-evidence jobs passed. The log records **68 passed / 1 failed / 4 ignored** in the Windows crate, failing the unconditional `root.try_wait().is_some()` assertion immediately after the watchdog reported successful `TerminateJobObject`.
+
+**Root cause:** successful kernel termination request is **not synchronous root exit**. The test made a scheduling assumption contradicted by the independent hosted runner. This is a genuine test contract bug, not a basis for changing the production watchdog or claiming #317 fixed. The source-visible corrective slice replaces the instantaneous assertion with a bounded polling observation of **both original root exit and original Job empty** under the **existing same five-second deadline**; only then does the test intentionally hold stdout/stderr open to verify that each individual EOF remains required.
+
+**Evidence retention:** never re-run the failing `main` run to manufacture green. A correction requires a **new commit**, exact-head hosted Windows/Ubuntu CI, and separately verified push/main. Windows V1 remains **NO-GO** regardless of green test results.
+
 ## Limits and next P0 implementation
 
 This test does **not** prove a native Git launch, policy identity, cancellation, no-future-create/resume fence, handling an in-flight Win32 syscall across revoke, watchdog on host crash, real Git stdout/stderr output limits, or independent terminal proof for a Git subprocess tree. It is evidence that the existing OS custody *can* complete correctly and *refuses* success if either pipe stays open.
