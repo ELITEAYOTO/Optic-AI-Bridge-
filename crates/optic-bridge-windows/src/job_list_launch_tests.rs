@@ -119,16 +119,33 @@ enum SuspendedJobScenario {
     TerminatedBeforeCreate,
     DeniedStop,
     DeniedExpiry,
+    StoppedRealGit,
 }
 
 fn observe_suspended_job_list_creation(scenario: SuspendedJobScenario) -> Result<()> {
-    // A disposable Windows system program is used only as a suspended root.
-    // No arbitrary project executable, network, or Git command is launched.
+    // A fixed Windows system program or pinned installed Git.exe is created
+    // suspended in a Job. Neither fixture ever resumes the root or touches
+    // a project repository; no executable code or network operation runs.
     let system_root = std::env::var_os("SystemRoot")
         .ok_or_else(|| Error::other("SystemRoot unavailable to hosted Windows test"))?;
-    let executable = PathBuf::from(system_root).join("System32").join("cmd.exe");
+    let executable = if matches!(scenario, SuspendedJobScenario::StoppedRealGit) {
+        // GitHub-hosted Windows and the isolated local Windows test host both
+        // install Git here. Do not resolve an arbitrary repo-controlled PATH
+        // executable; fail rather than silently fall back to a fake fixture.
+        PathBuf::from(
+            std::env::var_os("ProgramFiles")
+                .ok_or_else(|| Error::other("Windows ProgramFiles is unavailable"))?,
+        )
+        .join("Git")
+        .join("cmd")
+        .join("git.exe")
+    } else {
+        PathBuf::from(system_root).join("System32").join("cmd.exe")
+    };
     if !executable.is_file() {
-        return Err(Error::other("synthetic system executable unavailable"));
+        return Err(Error::other(
+            "pinned Windows fixture executable unavailable",
+        ));
     }
     let application: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
     let mut command_line = application.clone();
@@ -256,12 +273,51 @@ fn observe_suspended_job_list_creation(scenario: SuspendedJobScenario) -> Result
 
     // The test never resumes the root. A failed or delayed kernel termination
     // remains a test failure, not a fabricated Job-empty success.
-    job.terminate(1)?;
+    if matches!(scenario, SuspendedJobScenario::StoppedRealGit) {
+        // Model a prompt original-owner stop publication while real Git.exe
+        // remains suspended and its original Job/root handles are retained.
+        // This proves only stop -> watchdog -> kernel termination, NOT that
+        // real external session/TaskLease revocation is synchronized to Create.
+        let original_stop = Arc::new(AtomicBool::new(false));
+        let watchdog = NativeJobDeadline::new(&job, 30_000, vec![Arc::clone(&original_stop)])?;
+        assert_eq!(job.active_processes()?, 1);
+        original_stop.store(true, Ordering::Release);
+        let bound = Instant::now() + Duration::from_secs(5);
+        while !watchdog.worker.as_ref().unwrap().is_finished() {
+            if Instant::now() >= bound {
+                return Err(Error::other(
+                    "real Git Job watchdog did not finish after original stop",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            watchdog.termination_result.get(),
+            Some(&Ok(())),
+            "the ORIGINAL Job must report actual successful kernel termination"
+        );
+        assert!(
+            !watchdog.expired.load(Ordering::Acquire),
+            "this termination must come from original stop, not the 30s timeout"
+        );
+        drop(watchdog);
+    } else {
+        job.terminate(1)?;
+    }
     assert_eq!(
         unsafe { WaitForSingleObject(process.0.hProcess, 5000) },
         WAIT_OBJECT_0,
-        "synthetic suspended root must terminate"
+        "original suspended root must terminate"
     );
+    if matches!(scenario, SuspendedJobScenario::StoppedRealGit) {
+        let mut exit = u32::MAX;
+        // SAFETY: original root process HANDLE is retained and signaled.
+        unsafe { GetExitCodeProcess(process.0.hProcess, &mut exit) }.map_err(Error::other)?;
+        assert_eq!(
+            exit, 1,
+            "real Git process must have been terminated by its original Job without running"
+        );
+    }
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if job.active_processes()? == 0 {
@@ -275,6 +331,15 @@ fn observe_suspended_job_list_creation(scenario: SuspendedJobScenario) -> Result
         std::thread::sleep(Duration::from_millis(10));
     }
     Ok(())
+}
+
+#[test]
+fn real_git_original_job_stops_suspended_root_before_any_resume() -> Result<()> {
+    // A REAL Git.exe, not cmd.exe or a mock, is used here. It must remain
+    // completely suspended; no user repository, argument, or network action
+    // is permitted. This is a kernel custody/stop witness, NOT an issuer or
+    // a test that the live MCP GitRead has stopped launching after revoke.
+    observe_suspended_job_list_creation(SuspendedJobScenario::StoppedRealGit)
 }
 
 #[test]
