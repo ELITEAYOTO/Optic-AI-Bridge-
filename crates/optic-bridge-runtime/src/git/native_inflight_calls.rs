@@ -9,7 +9,7 @@
 //! Zero in-flight calls is NOT proof of process termination or pipe EOF.
 
 use std::sync::{
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -31,6 +31,28 @@ struct CallCounts {
     resumes: usize,
 }
 
+/// Only the original accounting ledger is sealed and empty. NOT authorization
+/// and NOT a native process / Job / stdout / stderr terminal receipt.
+#[must_use = "hold the original ledger until native OS and pipe teardown"]
+#[allow(dead_code)] // Prepared for the future native owner; intentionally not wired to GitRead.
+pub(crate) struct NativeCallDrainReceipt<'a> {
+    original: &'a NativeCallStopTracker,
+}
+
+impl NativeCallDrainReceipt<'_> {
+    #[cfg(test)]
+    fn is_sealed(&self) -> bool {
+        self.original.shared.stop_requested.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[allow(dead_code)] // Not a public MCP API, consumed by private native guardian later.
+pub(crate) enum NativeCallDrainError {
+    TimedOut,
+    Unknown,
+}
+
 /// Four retained, original and irreversible stop sources: session generation,
 /// TaskLease generation, counted Job and process-owned host.
 struct OriginalNativeStops {
@@ -41,6 +63,7 @@ struct OriginalNativeStops {
 struct Shared {
     stop_requested: Arc<AtomicBool>,
     counts: Mutex<CallCounts>,
+    drained: Condvar,
     original: Option<OriginalNativeStops>,
 }
 
@@ -49,6 +72,7 @@ impl Shared {
         Self {
             stop_requested: Arc::new(AtomicBool::new(false)),
             counts: Mutex::new(CallCounts::default()),
+            drained: Condvar::new(),
             original,
         }
     }
@@ -158,6 +182,52 @@ impl NativeCallStopTracker {
     /// NOT synchronously stop an already admitted OS call or complete revoke.
     pub(crate) fn request_stop(&self) {
         self.shared.stop_requested.store(true, Ordering::Release);
+        self.shared.drained.notify_all();
+    }
+
+    /// Seal this ORIGINAL ledger before acquiring its count lock, then wait
+    /// for BOTH already-admitted native Create and Resume tickets to retire.
+    /// Admission cannot reopen, even if the wait exceeds the absolute bound.
+    ///
+    /// This is not a synchronized session/lease/policy/host revoke fence, a
+    /// native Win32 launch permit, or proof of root/Job/pipe termination.
+    #[allow(dead_code)] // Not wired into the live GitRead path.
+    pub(crate) fn seal_and_drain_until(
+        &self,
+        until: std::time::Instant,
+    ) -> Result<NativeCallDrainReceipt<'_>, NativeCallDrainError> {
+        self.request_stop();
+        // A caller-supplied cleanup bound can shorten but MUST NEVER renew
+        // the original service-clock deadline captured at admission.
+        let until = self
+            .shared
+            .original
+            .as_ref()
+            .map_or(until, |original| until.min(original.deadline));
+        let mut counts = self.shared.counts.lock().map_err(|_| {
+            self.request_stop();
+            NativeCallDrainError::Unknown
+        })?;
+        loop {
+            let now = std::time::Instant::now();
+            // A positive receipt cannot be published after the bound.
+            if now >= until {
+                return Err(NativeCallDrainError::TimedOut);
+            }
+            if counts.creates == 0 && counts.resumes == 0 {
+                return Ok(NativeCallDrainReceipt { original: self });
+            }
+            let remaining = until.saturating_duration_since(now);
+            let (next, _) = self
+                .shared
+                .drained
+                .wait_timeout(counts, remaining)
+                .map_err(|_| {
+                    self.request_stop();
+                    NativeCallDrainError::Unknown
+                })?;
+            counts = next;
+        }
     }
 
     /// Private stop source for the original Job watchdog, not a launch grant.
@@ -220,9 +290,11 @@ impl Drop for TrackedNativeCall<'_> {
                 *counter = counter
                     .checked_sub(1)
                     .expect("one retained ticket per accounted native call");
+                self.shared.drained.notify_all();
             }
             Err(_) => {
                 self.shared.stop_requested.store(true, Ordering::Release);
+                self.shared.drained.notify_all();
             }
         }
     }
@@ -233,6 +305,99 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn sealed_drain_cannot_certify_in_flight_create_or_resume_and_closes_admission() {
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let tracker = NativeCallStopTracker::new();
+            let ticket = tracker.track(phase).expect("real original ledger ticket");
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let returned = AtomicBool::new(false);
+            std::thread::scope(|scope| {
+                let worker = scope.spawn(move || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    drop(ticket);
+                });
+                entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                let returned_ref = &returned;
+                let original = &tracker;
+                let drain = scope.spawn(move || {
+                    let receipt = original
+                        .seal_and_drain_until(std::time::Instant::now() + Duration::from_secs(2))
+                        .expect("in-flight call returned within original bound");
+                    assert!(receipt.is_sealed());
+                    returned_ref.store(true, Ordering::Release);
+                });
+                let bound = std::time::Instant::now() + Duration::from_secs(1);
+                while !tracker.stop_requested() {
+                    assert!(std::time::Instant::now() < bound, "seal did not begin");
+                    std::thread::yield_now();
+                }
+                assert!(!returned.load(Ordering::Acquire));
+                assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+                assert!(tracker.track(NativeCallPhase::Resume).is_none());
+                let counted = tracker.in_flight().expect("unpoisoned ledger");
+                assert_eq!(counted.creates + counted.resumes, 1);
+                release_tx.send(()).unwrap();
+                worker.join().unwrap();
+                drain.join().unwrap();
+            });
+            assert!(returned.load(Ordering::Acquire));
+            let drained = tracker.in_flight().expect("complete counts");
+            assert_eq!(drained.creates + drained.resumes, 0);
+            assert!(tracker.stop_requested());
+            assert!(tracker.track(phase).is_none());
+        }
+    }
+
+    #[test]
+    fn sealed_drain_times_out_without_releasing_original_ticket_and_poison_is_unknown() {
+        let tracker = NativeCallStopTracker::new();
+        let ticket = tracker.track(NativeCallPhase::CreateSuspended).unwrap();
+        assert!(matches!(
+            tracker.seal_and_drain_until(std::time::Instant::now() + Duration::from_millis(50)),
+            Err(NativeCallDrainError::TimedOut)
+        ));
+        assert!(tracker.stop_requested());
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        assert_eq!(tracker.in_flight().unwrap().creates, 1);
+        drop(ticket);
+        assert!(
+            tracker
+                .seal_and_drain_until(std::time::Instant::now() + Duration::from_secs(1))
+                .is_ok()
+        );
+        assert!(matches!(
+            tracker.seal_and_drain_until(std::time::Instant::now()),
+            Err(NativeCallDrainError::TimedOut)
+        ));
+
+        let poisoned = NativeCallStopTracker::new();
+        poisoned.poison_ledger_for_test();
+        assert!(matches!(
+            poisoned.seal_and_drain_until(std::time::Instant::now() + Duration::from_secs(1)),
+            Err(NativeCallDrainError::Unknown)
+        ));
+        assert!(poisoned.internal_stop_signal().load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sealed_drain_never_extends_the_original_admitted_horizon() {
+        let original_stops: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        // A previously expired ORIGINAL bound must not be replaced by a fresh
+        // cleanup request, even if there are no in-flight calls left.
+        let original_deadline = std::time::Instant::now() - Duration::from_millis(1);
+        let tracker = NativeCallStopTracker::with_original_stops(original_stops, original_deadline);
+        assert!(matches!(
+            tracker.seal_and_drain_until(std::time::Instant::now() + Duration::from_secs(10)),
+            Err(NativeCallDrainError::TimedOut)
+        ));
+        assert!(tracker.stop_requested());
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+    }
 
     #[test]
     fn stop_during_blocked_create_remains_publishable_and_denies_resume() {
