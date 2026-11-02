@@ -1,5 +1,13 @@
 # Optic AI Bridge
 
+## État vérifié du 2 novembre 2026 — après #478
+
+**Source `main` contrôlée :** `c1a40c93d4a2072faa231aec932bee6f6b08ccc1`, arbre Git `9bf3b9211d94c8702556bf3d5815ace18270c653`, [CI `push/main` #41407214849](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41407214849) **SUCCESS 4/4, première tentative** (Windows, Ubuntu, dépendances, preuves de release). Les [PR #476](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/476), [#477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/477) et [#478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/478) sont intégrées : elles prouvent et renforcent les arrêts physiques d'une custody Windows *encore inerte*, avec Job réel, deux EOF, sortie racine et borne absolue de nettoyage.
+
+**Priorité de développement non résolue :** le suivi natif `NativeCallStopTracker` compte les appels Create/Resume, mais son `request_stop` est non bloquant et **n'atteste pas leur drainage**. Il manque surtout la synchronisation avec **tous** les chemins de révocation session / TaskLease / policy / host et les véritables appels Win32. L'audit et les critères de concurrence sont dans [ISSUE317_NATIVE_REAL_ROOT_EOF_2026-11-01.md](docs/engineering/ISSUE317_NATIVE_REAL_ROOT_EOF_2026-11-01.md). Le `git status` MCP de production continue d'utiliser `HardenedCommandRunner` ; la recherche [#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) ne passe pas. **Windows V1 toujours NO-GO**, [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) ouverte. Aucun lancement Git natif ni installation quotidienne modifiée.
+
+Ce jalon est daté et doit être **recontrôlé après toute fusion documentaire**. Les jalons historiques ci-dessous restent des archives, pas une photographie du `main` actuel.
+
 ## Reprise Windows V1 — vérification du 1er novembre 2026, après #475
 
 La [PR #473](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/473) et la [PR #475](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/475) sont intégrées à `main`. L’[issue #474](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/474) est résolue : la vérification des worktrees profonds ne nécessite plus de démarrer Git depuis un `cwd` Windows dépassant `MAX_PATH`. La CI de fusion #475 [41344202374](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41344202374) est **SUCCESS dès la première tentative**.
