@@ -34,6 +34,18 @@ The **first** local test attempt returned RED after 5 seconds because the test's
 
 **Evidence retention:** never re-run the failing `main` run to manufacture green. A correction requires a **new commit**, exact-head hosted Windows/Ubuntu CI, and separately verified push/main. Windows V1 remains **NO-GO** regardless of green test results.
 
+## Follow-up, 2 November 2026: deadline after physical observations
+
+Independent verification of the exact [#477 push/main CI](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41347680694): **SUCCESS 4/4, first attempt**, on integrated `main=dfff32f4affb522ab2728151b72c054559af36a9` and tree `75c4527340ad1507803118aa151139df88b42f36`.
+
+Further Windows-only research discovered a separate **physical cleanup deadline** issue in the inert `PrecreatedNativeReadCustody::confirm_post_watchdog_physical_stop`: after querying the pinned original root, actual kernel Job accounting and both physical EOFs, the loop returned an `Ok(NativePhysicalStopReceipt)` **before** checking whether the nonrenewable absolute `cleanup_until` had already elapsed during those observations. This can publish a success with an out-of-budget completion; it does **not** add a new process creation or change the GitRead production path.
+
+**Deterministic behavioral RED:** extend the existing real suspended-root/Job/both-pipes test. After attaining an authentic successful four-fact receipt, call a private clock-parameterized variant using the exact **same real handles and EOFs**. The first test clock observation is strictly before the cleanup horizon; the next one, after the OS reads, is strictly after. The original method returned **Ok** instead of `TimedOut`: test **FAIL exit 101**, and the genuine root Job/pipe proof remained intact. No output fakes, sleeps added to hit a race, credential data or external tests.
+
+**Minimal production-native fix:** keep the existing `Instant::now` clock for the normal public method and place the deadline check **before** even the positive four-fact receipt, after the real OS/pipe observations. The clock parameterization is private to the same Rust module and exists only to make the test deterministic. No budget increase, no discarded checks, no new spawning API, no policy or legacy GitRead change. `Err(TimedOut)` retains native ownership for fail-closed teardown, as before. New targeted proof: **1/1 real Windows test PASS** using the identical test filter and kernel scenario.
+
+**Still NO-GO:** even an in-time root-exit/Job-empty/stdout-EOF/stderr-EOF receipt **does not prove no future `CreateProcessW/ResumeThread`**. The separate synchronized authority issuer is absent; the draft revoke-before-spawn regression remains RED. See #323 and draft #355. Do not declare V1 ready from this increment.
+
 ## Limits and next P0 implementation
 
 This test does **not** prove a native Git launch, policy identity, cancellation, no-future-create/resume fence, handling an in-flight Win32 syscall across revoke, watchdog on host crash, real Git stdout/stderr output limits, or independent terminal proof for a Git subprocess tree. It is evidence that the existing OS custody *can* complete correctly and *refuses* success if either pipe stays open.

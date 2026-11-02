@@ -590,7 +590,23 @@ impl PrecreatedNativeReadCustody {
         cleanup_until: Instant,
         discard_limit: u64,
     ) -> Result<NativePhysicalStopReceipt> {
-        if discard_limit == 0 || cleanup_until <= Instant::now() {
+        self.confirm_post_watchdog_physical_stop_with_clock(
+            cleanup_until,
+            discard_limit,
+            Instant::now,
+        )
+    }
+
+    // The clock can be controlled only from this module's Windows test build.
+    // Production always passes Instant::now. This lets a real physical-EOF
+    // fixture prove expiry precisely between the last OS read and publication.
+    fn confirm_post_watchdog_physical_stop_with_clock(
+        &mut self,
+        cleanup_until: Instant,
+        discard_limit: u64,
+        mut now: impl FnMut() -> Instant,
+    ) -> Result<NativePhysicalStopReceipt> {
+        if discard_limit == 0 || cleanup_until <= now() {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "invalid native cleanup budget",
@@ -649,18 +665,21 @@ impl PrecreatedNativeReadCustody {
                     "native physical cleanup exceeded its original discard ceiling",
                 ));
             }
+            // An already-complete physical snapshot is not sufficient if the
+            // original absolute cleanup horizon expired while obtaining it.
+            // This must precede even the successful four-fact receipt.
+            if now() >= cleanup_until {
+                return Err(Error::new(
+                    ErrorKind::TimedOut,
+                    "native shutdown did not prove root exit, Job empty and BOTH pipe EOFs within its absolute cleanup horizon",
+                ));
+            }
             if root_exited && job_empty && stdout_eof && stderr_eof {
                 return Ok(NativePhysicalStopReceipt {
                     root_pid: root.pid,
                     discarded_stdout_bytes: stdout_bytes,
                     discarded_stderr_bytes: stderr_bytes,
                 });
-            }
-            if Instant::now() >= cleanup_until {
-                return Err(Error::new(
-                    ErrorKind::TimedOut,
-                    "native shutdown did not prove root exit, Job empty and BOTH pipe EOFs",
-                ));
             }
             std::thread::sleep(JOB_EMPTY_POLL);
         }
@@ -934,6 +953,31 @@ mod precreated_native_read_tests {
             .expect("pinned root exit, original Job empty and both physical EOFs");
         assert_eq!(receipt.root_pid(), root.id());
         assert_eq!(owner.active_processes().expect("post-stop Job"), 0);
+        // Real root / kernel Job / both original EOFs are already complete.
+        // A controlled *late decision clock* must still reject a terminal
+        // receipt: expiry must be checked AFTER its physical observations.
+        let decision_deadline = Instant::now() + Duration::from_secs(3);
+        let mut decision_reads = 0usize;
+        let late = owner.confirm_post_watchdog_physical_stop_with_clock(
+            decision_deadline,
+            64 * 1024,
+            || {
+                decision_reads += 1;
+                if decision_reads == 1 {
+                    decision_deadline - Duration::from_millis(1)
+                } else {
+                    decision_deadline + Duration::from_millis(1)
+                }
+            },
+        );
+        assert!(
+            matches!(late, Err(ref error) if error.kind() == ErrorKind::TimedOut),
+            "even completed real OS/EOF proof cannot publish beyond cleanup deadline: {late:?}"
+        );
+        assert!(
+            decision_reads >= 2,
+            "must observe expiry after terminal reads"
+        );
         let ended = root.wait().expect("reap original root");
         assert!(
             !ended.success(),
