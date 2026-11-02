@@ -144,6 +144,17 @@ impl NativeCallStopTracker {
     /// A concurrent stop after that check makes this an already-admitted call
     /// which the eventual guardian must reconcile or forcibly terminate.
     pub(crate) fn track(&self, phase: NativeCallPhase) -> Option<TrackedNativeCall<'_>> {
+        self.track_with_before_commit(phase, || {})
+    }
+
+    // The callback is internal and empty in production. A Windows concurrency
+    // test uses it as a deterministic barrier immediately before the final
+    // ticket commitment, while the private counter mutex is still held.
+    fn track_with_before_commit(
+        &self,
+        phase: NativeCallPhase,
+        before_commit: impl FnOnce(),
+    ) -> Option<TrackedNativeCall<'_>> {
         if self.shared.is_stop_required() {
             return None;
         }
@@ -172,6 +183,22 @@ impl NativeCallStopTracker {
             return None;
         };
         *counter = next;
+        before_commit();
+        // Compare-and-exchange of the SAME stop bit used by request_stop is
+        // the native ledger's internal ticket-commit linearization point.
+        // A successful false -> false RMW is ordered against an irreversible
+        // stop store, unlike a separate load followed by ticket publication.
+        // Stop after this RMW means this is an ALREADY admitted, counted call
+        // requiring eventual native reconciliation, not a new admission.
+        if self
+            .shared
+            .stop_requested
+            .compare_exchange(false, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            *counter -= 1;
+            return None;
+        }
         Some(TrackedNativeCall {
             shared: &self.shared,
             phase,
@@ -356,6 +383,53 @@ mod tests {
             assert_eq!(drained.creates + drained.resumes, 0);
             assert!(tracker.stop_requested());
             assert!(tracker.track(phase).is_none());
+        }
+    }
+
+    #[test]
+    fn internal_stop_between_count_and_ticket_commit_must_deny_and_rollback() {
+        // This barrier is AFTER the existing stop checks and counter
+        // increment, but BEFORE the ticket is returned to the caller.
+        // A stop published here must win over a later ticket commitment.
+        // The test never creates an OS process or grants launch authority.
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let tracker = NativeCallStopTracker::new();
+            let (counted_tx, counted_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let original = &tracker;
+                let registrar = scope.spawn(move || {
+                    original
+                        .track_with_before_commit(phase, || {
+                            counted_tx.send(()).expect("counter incremented");
+                            release_rx
+                                .recv_timeout(Duration::from_secs(3))
+                                .expect("bounded release of ticket commitment");
+                        })
+                        .is_some()
+                });
+                counted_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("ticket reaches pre-commit barrier");
+                // Must not need the held counter mutex to publish stop.
+                tracker.request_stop();
+                assert!(tracker.stop_requested());
+                release_tx.send(()).expect("release fixture after stop");
+                let accepted = registrar.join().expect("registrar completes");
+                assert!(
+                    !accepted,
+                    "a stopped original owner must not issue a new native ticket after stop"
+                );
+                assert_eq!(
+                    tracker.in_flight(),
+                    Some(InFlightNativeCalls {
+                        creates: 0,
+                        resumes: 0
+                    }),
+                    "failed post-stop commitment must roll back its counted increment"
+                );
+                assert!(tracker.track(phase).is_none(), "stop is irreversible");
+            });
         }
     }
 
