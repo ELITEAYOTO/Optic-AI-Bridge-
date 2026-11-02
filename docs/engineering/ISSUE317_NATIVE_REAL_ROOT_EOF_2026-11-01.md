@@ -46,6 +46,27 @@ Further Windows-only research discovered a separate **physical cleanup deadline*
 
 **Still NO-GO:** even an in-time root-exit/Job-empty/stdout-EOF/stderr-EOF receipt **does not prove no future `CreateProcessW/ResumeThread`**. The separate synchronized authority issuer is absent; the draft revoke-before-spawn regression remains RED. See #323 and draft #355. Do not declare V1 ready from this increment.
 
+## 2 November 2026 — issuer/revocation audit after #478
+
+Baseline verified **independently**: `main=c1a40c93d4a2072faa231aec932bee6f6b08ccc1`, tree `9bf3b9211d94c8702556bf3d5815ace18270c653`, [post-squash CI #41407214849](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41407214849) **SUCCESS 4/4, first attempt**. [PR #478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/478) only hardened the physical-stop receipt deadline; this did not make GitRead native.
+
+### Direct source findings: four different authority boundaries
+
+1. `session/registry.rs::publish_revocation_before_drain` and `SessionRegistry::revoke` serialize the original session stop-bit publication under **the session registry mutex**. The latter waits for existing counted admission permits to retire. A new owner cannot retain a permit indefinitely without a separate out-of-band stop/liveness plan.
+2. `task_lease_registry.rs::{revoke,revoke_session}` publish the TaskLease generation stop-bit under a **different mutex**. `commit_original_native_read_lease` supplies only a lease-local observation, not a combined session-and-lease launch grant. An opaque ID can be removed/reissued, but an old owner must not borrow its replacement's authority.
+3. `git/native_status.rs::LeaseObservedNativeGitStatusCustody` retains the original session and TaskLease receipts and configures an original Job watchdog; the `NativeCallStopTracker` counts admitted `CreateSuspended` and `Resume` operations. Its `request_stop` closes **future ticket admission** but explicitly does **not wait** for an already-counted native call to return.
+4. `git/read.rs::GitReadService::status_with_max_bytes` still executes `HardenedCommandRunner`. Neither session/lease snapshots nor a real empty Job make the current production Git operation revoke-linearizable. [Research #355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355) remains intentionally RED, not a passing acceptance test.
+
+### Missing protocol before another code PR
+
+- Establish a **service-owned original-generation issuer** whose *all* direct and lifecycle revokers use the **same** close/commit serialization. Prove policy epoch, transport and host-stop are ordered as well; do not hold a registry/JobStore lock across potentially unbounded Win32 calls.
+- Distinguish **stop publication** from **bounded in-flight native-call drain** and **physical termination**. A future sealed native-call ledger should close admission before acquiring its counter lock, then wait for *both* already admitted `CreateSuspended` and `Resume` calls to return before publishing a nonforgeable, original-owner-specific drain receipt. A poisoned counter must be **unknown**, not zero; timeout preserves the original resource owner.
+- Even such a ledger receipt is **not** a real session/lease/policy/host revoke fence and **not** proof of root exit, Job empty, stdin completion, dual EOF or no future native call from a *different* issuer. Its integration with all original revocation publishers must be designed and tested before it is called a guarantee.
+- Acceptance requires deterministic **revoke-before-create**, **create blocked inside syscall**, **revoke-before-resume**, **resume blocked inside syscall**, **simultaneous direct/lifecycle/lease/host revoke**, **expiry**, **ID reuse**, **poison**, and **externally supervised real Git**. Failures retain original Job/permits/quota. The eventual correct implementation must make the existing #355 real-Git acceptance GREEN without suppressing its first red.
+- No experimental half-implementation has been published from this audit; the isolated 2 November LAB was restored to the exact baseline after a development-tool edit interruption. Avoid interpreting a compile-red missing-method probe as a demonstrated production defect. It established only that there is currently no synchronous ledger drain API.
+
+**Release state remains NO-GO** under [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323). The historical [#317 issue](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) is closed in GitHub, but the larger Windows native GitRead owner acceptance is **not** completed; track that release blocker explicitly in #323 and research #355. No daily Bridge, Desktop, REL, installer or policy changes were made.
+
 ## Limits and next P0 implementation
 
 This test does **not** prove a native Git launch, policy identity, cancellation, no-future-create/resume fence, handling an in-flight Win32 syscall across revoke, watchdog on host crash, real Git stdout/stderr output limits, or independent terminal proof for a Git subprocess tree. It is evidence that the existing OS custody *can* complete correctly and *refuses* success if either pipe stays open.
