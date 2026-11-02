@@ -147,10 +147,12 @@ impl NativeCallStopTracker {
         if self.shared.is_stop_required() {
             return None;
         }
-        let mut counts = match self.shared.counts.lock() {
+        // Admission cannot block behind a wedged counter owner. No caller
+        // may interpret contention as an untracked Create/Resume permit:
+        // permanently stop this original owner and deny the new ticket.
+        let mut counts = match self.shared.counts.try_lock() {
             Ok(counts) => counts,
-            Err(_) => {
-                // Poison can win after the first pre-lock stop check.
+            Err(TryLockError::Poisoned(_)) | Err(TryLockError::WouldBlock) => {
                 self.request_stop();
                 return None;
             }
@@ -354,6 +356,65 @@ mod tests {
             assert_eq!(drained.creates + drained.resumes, 0);
             assert!(tracker.stop_requested());
             assert!(tracker.track(phase).is_none());
+        }
+    }
+
+    #[test]
+    fn ticket_registration_fails_closed_without_waiting_for_contended_counter_mutex() {
+        // The original counter mutex can be held by another native accounting
+        // thread. New Create/Resume admission cannot wait indefinitely behind
+        // that holder, even though this is NOT an OS-launch authorization gate.
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let tracker = NativeCallStopTracker::new();
+            let (held_tx, held_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let (result_tx, result_rx) = mpsc::channel();
+
+            std::thread::scope(|scope| {
+                let original = &tracker;
+                let holder = scope.spawn(move || {
+                    let _held = original.shared.counts.lock().expect("fresh counter mutex");
+                    held_tx.send(()).expect("signal held counter lock");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(3))
+                        .expect("bounded test supervisor releases held lock");
+                });
+                held_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("fixture holds lock before ticket admission");
+                let original = &tracker;
+                let registrar = scope.spawn(move || {
+                    result_tx
+                        .send(original.track(phase).is_some())
+                        .expect("bounded admission outcome");
+                });
+
+                // Independent test supervisor observes admission *before*
+                // permitting the counter mutex holder to resume. Even if
+                // the old blocking lock regresses, release and join safely.
+                let observed = result_rx.recv_timeout(Duration::from_secs(1));
+                release_tx.send(()).expect("always release fixture mutex");
+                holder.join().expect("fixture holder joined");
+                registrar.join().expect("ticket caller joined");
+
+                assert_eq!(
+                    observed,
+                    Ok(false),
+                    "native ticket must fail closed before the held mutex is released"
+                );
+                assert!(
+                    tracker.stop_requested(),
+                    "contention must seal original owner"
+                );
+                assert_eq!(
+                    tracker.in_flight().expect("unpoisoned original counters"),
+                    InFlightNativeCalls {
+                        creates: 0,
+                        resumes: 0
+                    }
+                );
+                assert!(tracker.track(phase).is_none(), "stop cannot be reversed");
+            });
         }
     }
 
