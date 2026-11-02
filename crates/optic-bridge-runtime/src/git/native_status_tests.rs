@@ -1789,7 +1789,9 @@ fn armed_native_owner_observes_internal_ledger_stop_without_original_revoke() {
 #[cfg(windows)]
 #[test]
 fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watchdog_arm() {
-    use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
+    use crate::native_inflight_calls::{
+        InFlightNativeCalls, NativeCallDrainError, NativeCallPhase,
+    };
 
     for source in ["session", "lease-reused-id", "job", "host"] {
         let clock = crate::StdClock::new();
@@ -1832,6 +1834,15 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
         assert!(
             owner.native_call_tracking_for_test().is_none(),
             "unarmed owner is not tracked"
+        );
+        assert!(
+            matches!(
+                owner.seal_original_native_calls_until(
+                    std::time::Instant::now() + Duration::from_secs(1),
+                ),
+                Err(NativeCallDrainError::Unknown)
+            ),
+            "the original owner must not certify an absent, unarmed ledger"
         );
         owner.arm_original_watchdog(&fixture.trusted()).unwrap();
         // Borrow the tracker from the uniquely owned native custody: this
@@ -1891,6 +1902,20 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
                 .unwrap(),
             1
         );
+        assert!(
+            matches!(
+                owner.seal_original_native_calls_until(
+                    std::time::Instant::now() + Duration::from_millis(30)
+                ),
+                Err(NativeCallDrainError::TimedOut)
+            ),
+            "original {source} stop must not certify a still-active native call"
+        );
+        assert_eq!(
+            transport.active_requests(),
+            1,
+            "timeout retains original owner"
+        );
         drop(in_flight);
         assert_eq!(
             calls.in_flight(),
@@ -1900,6 +1925,15 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             })
         );
         assert_eq!(transport.active_requests(), 1, "owner still holds quota");
+        let receipt = owner
+            .seal_original_native_calls_until(std::time::Instant::now() + Duration::from_secs(1))
+            .expect("original native call ticket has retired");
+        assert_eq!(
+            transport.active_requests(),
+            1,
+            "receipt is not OS completion"
+        );
+        drop(receipt);
         drop(owner);
         assert_eq!(transport.active_requests(), 0);
         assert_eq!(

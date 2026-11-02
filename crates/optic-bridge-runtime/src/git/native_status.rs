@@ -7,7 +7,8 @@ use thiserror::Error;
 
 #[cfg(windows)]
 use crate::{
-    Clock, NativeGitReadLeaseError, native_inflight_calls::NativeCallStopTracker,
+    Clock, NativeGitReadLeaseError,
+    native_inflight_calls::{NativeCallDrainError, NativeCallDrainReceipt, NativeCallStopTracker},
     verify_registered_native_git_read_preflight,
 };
 
@@ -516,6 +517,25 @@ impl LeaseObservedNativeGitStatusCustody {
     #[cfg(test)]
     pub(crate) fn native_call_tracking_for_test(&self) -> Option<&NativeCallStopTracker> {
         self.call_tracking.as_ref()
+    }
+
+    /// Seal and drain only THIS owner's original, watchdog-backed native call
+    /// ledger. The returned receipt borrows this retained custody and cannot
+    /// be detached, cloned or issued before watchdog/ledger registration.
+    ///
+    /// Even a successful receipt does NOT prove original session/lease/policy
+    /// revocation synchronization, no future Win32 launch from another issuer,
+    /// native root/Job quiescence or either original pipe EOF.
+    #[allow(dead_code)] // Research-only; not connected to production GitRead.
+    pub(crate) fn seal_original_native_calls_until(
+        &self,
+        until: std::time::Instant,
+    ) -> Result<NativeCallDrainReceipt<'_>, NativeCallDrainError> {
+        let calls = self
+            .call_tracking
+            .as_ref()
+            .ok_or(NativeCallDrainError::Unknown)?;
+        calls.seal_and_drain_until(until)
     }
 
     /// Arm once using ONLY retained original authorities and the original
