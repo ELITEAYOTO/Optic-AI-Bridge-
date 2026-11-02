@@ -1,5 +1,13 @@
 # Optic AI Bridge
 
+## Reprise Windows V1 — 2 novembre 2026, après #481
+
+**Dernier `main` indépendant vérifié avant cette mise à jour :** `36b2f8de744995e4b0e264fefa89a6fe7b4306b1`, arbre `7a25472d540ffa695b4d94a0c616d433468dfaf8` ; [CI de fusion #41415132006](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41415132006) **SUCCESS 4/4 à la première tentative**. Les [PR #479](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/479), [#480](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/480) et [#481](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/481) ont ajouté l'audit et les reçus de drainage borné, rattachés à la custody native Windows toujours **non exécutante**.
+
+**Nouvelle tranche incluse dans cette mise à jour, à valider par PR :** l'observation conjointe de la session et de la TaskLease d'origine est désormais faite dans une section critique courte, ordonnée **session → TaskLease**. Une TaskLease dont le mutex est occupé refuse l'engagement sans bloquer la publication de l'arrêt de session. La lecture d'une politique ou d'un fichier, la création et la reprise Windows ne sont jamais effectuées sous ces mutex. Ce reçu **n'est pas une autorisation de lancement** : la révocation peut gagner immédiatement après le déverrouillage, et le verrou de politique/hôte/Win32 reste à construire.
+
+**Windows V1 : NO-GO**, [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) ouverte. Le GitRead réel passe encore par `HardenedCommandRunner` et la preuve de révocation avant création du vrai Git ([recherche #355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355)) reste absente. Aucune activation, release, installation ou modification du Bridge quotidien. Cette photographie datée doit être revalidée sur la CI après fusion ; les sections anciennes ci-dessous sont des archives.
+
 ## État vérifié du 2 novembre 2026 — après #478
 
 **Source `main` contrôlée :** `c1a40c93d4a2072faa231aec932bee6f6b08ccc1`, arbre Git `9bf3b9211d94c8702556bf3d5815ace18270c653`, [CI `push/main` #41407214849](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41407214849) **SUCCESS 4/4, première tentative** (Windows, Ubuntu, dépendances, preuves de release). Les [PR #476](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/476), [#477](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/477) et [#478](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/478) sont intégrées : elles prouvent et renforcent les arrêts physiques d'une custody Windows *encore inerte*, avec Job réel, deux EOF, sortie racine et borne absolue de nettoyage.

@@ -453,11 +453,56 @@ impl TaskLeaseRegistry {
             .leases
             .lock()
             .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        Self::check_original_native_read_lease_record(
+            &leases,
+            id,
+            original,
+            original_expires_at,
+            session,
+            now,
+        )
+    }
+
+    /// Called ONLY after the original session close lock is held.
+    /// Do not block on a contended lease lock while holding the session
+    /// lock: direct/lifecycle revokers must be able to publish stop promptly.
+    /// Contention and poison both fail closed, not as a lease approval.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Research owner; no live native launcher.
+    pub(crate) fn try_commit_original_native_read_lease(
+        &self,
+        id: &TaskLeaseId,
+        original: &TaskLeaseRevocationWatch,
+        original_expires_at: MonotonicTime,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
+        let leases = self
+            .leases
+            .try_lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        Self::check_original_native_read_lease_record(
+            &leases,
+            id,
+            original,
+            original_expires_at,
+            session,
+            now,
+        )
+    }
+
+    #[cfg(windows)]
+    fn check_original_native_read_lease_record(
+        leases: &HashMap<TaskLeaseId, LeaseRecord>,
+        id: &TaskLeaseId,
+        original: &TaskLeaseRevocationWatch,
+        original_expires_at: MonotonicTime,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError> {
         let record = leases.get(id).ok_or(TaskLeaseRegistryError::UnknownLease)?;
         if !Arc::ptr_eq(&record.revocation_signal, &original.signal) {
-            // Fail closed as Revoked: changing this public error enum would
-            // broaden the MCP contract for a private, non-executing stage.
-            // A foreign or reused generation is never an active authority.
+            // Reused/foreign public ID never revives an original generation.
             return Err(TaskLeaseRegistryError::Revoked);
         }
         if record.revoked {
@@ -466,7 +511,6 @@ impl TaskLeaseRegistry {
         if &record.lease.session != session {
             return Err(TaskLeaseRegistryError::WrongSession);
         }
-        // Renewal can extend a registry entry, never the retained owner.
         if record.lease.is_expired_at(now) || now >= original_expires_at {
             return Err(TaskLeaseRegistryError::Expired);
         }
@@ -1508,6 +1552,80 @@ mod tests {
                 .expect_err("revoked lease must fail"),
             TaskLeaseRegistryError::Revoked
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn joint_native_lease_try_commit_never_waits_on_contended_registry_mutex() {
+        let registry = TaskLeaseRegistry::new();
+        let original = lease(SessionHandle::generate().expect("session"), 100);
+        registry.register(original.clone()).unwrap();
+        let now = MonotonicTime::from_millis(1);
+        let (_, witness) = registry
+            .get_active_with_revocation_watch(&original.id, &original.session, now)
+            .unwrap();
+        // Real mutex contention, but NEVER let a regression hang CI. A
+        // separate worker must reply before the original mutex is released.
+        let held = registry.leases.lock().unwrap();
+        std::thread::scope(|scope| {
+            let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+            let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+            let registry_ref = &registry;
+            let original_ref = &original;
+            let witness_ref = &witness;
+            let worker = scope.spawn(move || {
+                entered_tx.send(()).unwrap();
+                let result = registry_ref.try_commit_original_native_read_lease(
+                    &original_ref.id,
+                    witness_ref,
+                    original_ref.expires_at,
+                    &original_ref.session,
+                    now,
+                );
+                result_tx.send(result).unwrap();
+            });
+            entered_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("worker reached original lease gate");
+            let before_unlock = result_rx.recv_timeout(std::time::Duration::from_secs(1));
+            // Always release the mutex BEFORE asserting, so an accidental
+            // blocking lock change cannot strand a CI worker forever.
+            drop(held);
+            worker.join().unwrap();
+            let denied = before_unlock
+                .expect("joint lease gate must fail closed without waiting for lease mutex");
+            assert!(matches!(
+                denied,
+                Err(TaskLeaseRegistryError::StateUnavailable)
+            ));
+        });
+        assert!(
+            !witness.is_revoked(),
+            "contention cannot mint a revoke signal"
+        );
+        assert!(
+            registry
+                .try_commit_original_native_read_lease(
+                    &original.id,
+                    &witness,
+                    original.expires_at,
+                    &original.session,
+                    now,
+                )
+                .is_ok()
+        );
+        // The same short nonblocking path still observes actual revocation.
+        assert!(registry.revoke(&original.id).unwrap());
+        assert!(matches!(
+            registry.try_commit_original_native_read_lease(
+                &original.id,
+                &witness,
+                original.expires_at,
+                &original.session,
+                now,
+            ),
+            Err(TaskLeaseRegistryError::Revoked)
+        ));
     }
 
     #[cfg(windows)]

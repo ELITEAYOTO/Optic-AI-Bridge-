@@ -481,3 +481,59 @@ unobserved-EOF assertion (366 pass / 1 fail / 11 ignored); Ubuntu passed because
 this producer is Windows-only. Final-head/integrated receipts are tracked in
 [PR #383](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/383).
 Original #352/#355 remain RED; #317/#323 OPEN, Windows V1 NO-GO.
+
+## 2 November 2026 — one joint session + original TaskLease observation (post-#481)
+
+Baseline: `main=36b2f8de744995e4b0e264fefa89a6fe7b4306b1`, tree
+`7a25472d540ffa695b4d94a0c616d433468dfaf8`, independent first-attempt
+[push/main #41415132006](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41415132006)
+**SUCCESS 4/4**. Earlier separate native session and lease receipts and the
+bounded original-owner ledger-drain receipt (#480/#481) were **not** a joint
+revocation boundary, nor an actual native launch grant.
+
+The final, non-executing `SessionCommittedNativeGitStatusCustody::commit_original_lease`
+now performs its typed policy/executable/repository preflight **outside locks**,
+then one shared original-generation check:
+`SessionRegistry::observe_joint_original_native_owner_under_revoke_locks`
+takes the **original session mutex**, verifies the exact counted admission
+generation/revocation/captured expiry, then uses
+`TaskLeaseRegistry::try_commit_original_native_read_lease` against the same
+original witness. The sole permitted order is **session → TaskLease**. The
+lease lookup uses `try_lock`, **never waits** under the session mutex, and
+rejects contention or poison as `StateUnavailable`. A second fresh lookup,
+replacement registry or reused public lease ID cannot revive a revoked owner.
+Both direct `SessionRegistry::revoke` and lifecycle
+`publish_revocation_before_drain`, plus direct `TaskLeaseRegistry::revoke`,
+`revoke_session` and physical removal, serialize their original stop bit
+against this short joint observation. No OS call, file IO, policy evaluator,
+process-manager lock, worker wait or callback occurs within the joint guard.
+
+**Precise limit:** the two-registry *observation* is simultaneous, but it
+is NOT an irreversible effect commitment, launch authorization, a policy epoch
+fence, host-stop serialization, bounded OS-call engagement or physical
+quiescence. A revoker can still publish a stop the moment the two mutexes are
+released. Existing `NativeCallStopTracker` only accounts for future and
+already admitted calls; it is not yet wired to a real kernel
+`CreateProcessW`/`ResumeThread` service-owned issuer. The original action
+clock and watchdog still require independent expiry revalidation. No actual
+Git process is started by this tranche; the real GitRead call remains on the
+legacy `HardenedCommandRunner`. The substantive release regression in draft
+[#355](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/355)
+is still RED. Windows release gate [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323)
+is **OPEN / V1 NO-GO**. Historical issue #317 was closed for its narrower
+pipe-join scope, not for this larger native GitRead launch authority.
+
+**Tests:** actual Windows TaskLease mutex contention is held by a separate
+test thread; the `try_commit` worker must return before the guard is released
+and never invent a valid receipt from `StateUnavailable`. Release the held
+mutex BEFORE assertions so a regression does not wedge CI. After release the
+same original record can be observed; after revoke it must be denied.
+The existing genuine precreated Job/custody tests also cover direct/lifecycle
+session close, TaskLease ID reuse and unchanged owner quota. Required final
+evidence remains first-attempt exact-head hosted Windows/Ubuntu, dependency,
+release and native specialized CI, then independent first-attempt push/main.
+
+**Next P0, not addressed here:** a full service-owned, original-authority
+issuer must serialize the actual native Create/Resume engagement with
+session+TaskLease+policy/epoch+host revocation and original Job/pipe lifecycle;
+a successful ledger-drain alone is not no-future-spawn nor terminal proof.

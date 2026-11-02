@@ -72,6 +72,27 @@ impl NativeGitReadLeaseWitness {
         )
     }
 
+    /// Non-blocking original-generation observation for the *joint* session
+    /// close critical section. A busy lease registry conservatively denies
+    /// engagement rather than delaying session/host cancellation.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Only the inert joint-native owner consumes this.
+    pub(crate) fn try_commit_original_lease_under_revoke_lock(
+        &self,
+        registry: &TaskLeaseRegistry,
+        session: &SessionHandle,
+        now: MonotonicTime,
+    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError>
+    {
+        registry.try_commit_original_native_read_lease(
+            &self.lease_id,
+            &self.revocation,
+            self.lease_expires_at,
+            session,
+            now,
+        )
+    }
+
     /// The original lease workload category is authoritative for reservation limits.
     #[must_use]
     pub fn workload_class(&self) -> WorkloadClass {
@@ -240,20 +261,26 @@ impl NativeGitReadAdmittedPreflight {
         self.lease_witness.same_registration(observed)
     }
 
-    /// Use the original non-cloneable preflight's lease witness to issue a
-    /// TaskLease-only owner receipt; no additional admission or fresh lookup
-    /// can substitute a reused opaque ID.
+    /// Issue one joint, original-generation session+TaskLease observation.
+    /// The session registry remains locked while its original TaskLease
+    /// registry checks the original record. This is NOT a launch grant.
     #[cfg(windows)]
-    #[allow(dead_code)] // Inert native owner until actual OS guardian exists.
-    pub(crate) fn commit_original_lease_for_registered_owner(
+    #[allow(dead_code)] // Inert owner until a full native OS-call issuer exists.
+    pub(crate) fn observe_joint_original_session_lease_for_registered_owner(
         &self,
-        registry: &TaskLeaseRegistry,
-        session: &SessionHandle,
+        sessions: &Arc<SessionRegistry>,
+        leases: &TaskLeaseRegistry,
         now: MonotonicTime,
-    ) -> Result<crate::task_lease_registry::TaskLeaseNativeOwnerCommit, TaskLeaseRegistryError>
-    {
-        self.lease_witness
-            .commit_original_lease_under_revoke_lock(registry, session, now)
+    ) -> Result<
+        crate::task_lease_registry::TaskLeaseNativeOwnerCommit,
+        crate::session_registry::NativeJointOwnerCommitError,
+    > {
+        sessions.observe_joint_original_native_owner_under_revoke_locks(
+            &self.session_admission,
+            &self.lease_witness,
+            leases,
+            now,
+        )
     }
 
     #[must_use]
