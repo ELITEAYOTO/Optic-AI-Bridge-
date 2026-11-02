@@ -153,9 +153,10 @@ Rules:
 
 ```text
 --git-executable <absolute-path>
+--allow-git-diff-content      # OPTIONAL: high-trust Git patch bytes
 ```
 
-The option may be supplied once.
+Each option may be supplied once. GitRead alone allows `git_status` and `git_log`, **not patch bytes**. `--allow-git-diff-content` requires the explicit `--git-executable` and is denied by default; it is a trusted operator-startup decision (not a client tool parameter). Git index objects may retain originally sensitive contents under harmless-looking paths after unlink/rename. This option treats all Git diff data as potentially sensitive without broadening `fs_read` or automatically granting FileRead/ReadSensitive leases. Recognizably sensitive pathnames continue to require their independent FileRead/ReadSensitive scopes.
 
 Rules:
 

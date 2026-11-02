@@ -104,7 +104,7 @@ Rules:
 - Git read exists only when the operator provides one absolute `--git-executable` and the configured workspace validates as the exact canonical Git worktree top-level;
 - MCP callers cannot supply a repository path, Git executable, raw Git argv, capability or authority identifier;
 - `git_status` returns bounded porcelain-v2 bytes as base64 plus the observed HEAD when present;
-- `git_diff` supports an optional project-relative literal path and optional staged diff; external diff/textconv, rename detection and submodule traversal are constrained/disabled by the runtime;
+- `git_diff` is **fail-closed by default** even when `GitRead` is enabled: its patch bytes can originate from Git's index/object store after a sensitive worktree file, hardlink, or alias has disappeared. A trusted operator must add **`--allow-git-diff-content`** at process startup, along with the fixed `--git-executable`, to treat Git patch bytes as high-trust content. MCP clients cannot enable this per request. This opt-in does not grant sensitive `fs_read` access; patches with explicitly sensitive filenames still require separately authorized FileRead/ReadSensitive scopes. An optional project-relative literal path and staged diff remain supported; external diff/textconv, rename detection and submodule traversal remain constrained/disabled;
 - `git_log` is entry-bounded and cursor-based; a cursor contains the snapshot `head` plus an `offset` and must remain the current HEAD or a reachable ancestor;
 - Git subprocess output and runtime duration are hard-bounded.
 

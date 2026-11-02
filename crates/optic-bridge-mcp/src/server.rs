@@ -48,6 +48,8 @@ pub struct ReadonlyMcpServer {
     pub(crate) mutation_service: Option<Arc<AuthorizedFileMutationService>>,
     pub(crate) mutation_authorities: Arc<MutationAuthoritySet>,
     pub(crate) git_service: Option<Arc<GitReadService>>,
+    // Issued only by the trusted local host startup, never by an MCP request.
+    git_diff_content_approved: bool,
     pub(crate) git_integration_service: Option<Arc<AuthorizedGitIntegrationService>>,
     pub(crate) git_integration_authorities: Arc<GitIntegrationAuthoritySet>,
 }
@@ -307,6 +309,7 @@ impl ReadonlyMcpServer {
             mutation_service,
             mutation_authorities: Arc::new(mutation_authorities),
             git_service,
+            git_diff_content_approved: false,
             git_integration_service,
             git_integration_authorities: Arc::new(git_integration_authorities),
         })
@@ -322,6 +325,16 @@ impl ReadonlyMcpServer {
     #[must_use]
     pub fn with_read_authorities(mut self, read_authorities: ReadAuthoritySet) -> Self {
         self.read_authorities = Arc::new(read_authorities);
+        self
+    }
+
+    /// Explicit operator opt-in to unclassified Git patch bytes. A Git index
+    /// object may originate from sensitive data without a sensitive filename.
+    /// This is set only while constructing the trusted local stdio host, never
+    /// by a client tool argument; it does not grant FileRead/ReadSensitive.
+    #[must_use]
+    pub fn with_operator_git_diff_content_approval(mut self, approved: bool) -> Self {
+        self.git_diff_content_approved = approved && self.git_service.is_some();
         self
     }
 
@@ -624,6 +637,21 @@ impl ReadonlyMcpServer {
             || lease.policy_epoch != grant.policy_epoch
         {
             return Err(denied());
+        }
+        Ok(())
+    }
+
+    /// Patch bytes may outlive their original sensitive worktree source after
+    /// a rename, hardlink or Git staging. The filename-based sensitive policy
+    /// cannot prove index-object content provenance. Only the trusted local
+    /// application's explicit opt-in makes GitRead a high-trust patch reader;
+    /// it grants no FileRead or ReadSensitive authority to other tools.
+    pub(crate) fn require_operator_git_diff_content_approval(
+        &self,
+        grant: &SessionGrant,
+    ) -> Result<(), ErrorData> {
+        if !self.git_diff_content_approved || !grant.allows(Capability::GitRead) {
+            return Err(ErrorData::invalid_request("optic.policy_denied", None));
         }
         Ok(())
     }

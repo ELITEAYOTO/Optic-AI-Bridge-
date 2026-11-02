@@ -14,7 +14,7 @@ Building from source is a developer workflow and is intentionally not part of th
 
 - Windows with ChatGPT Desktop installed and opened at least once.
 - A folder you want Optic to expose as the workspace.
-- Git is optional. If Git is installed and the selected workspace is exactly a Git repository root, `git_status`, `git_diff`, and `git_log` are enabled automatically.
+- Git is optional. If installed and the workspace is exactly a Git repository root, `git_status` and `git_log` can read metadata. `git_diff` is registered but **denies patch content by default**: Git objects can contain private data under ordinary filenames. Explicit trusted operator startup flag `--allow-git-diff-content` is required to expose patch bytes and is not automatically added by the installer.
 
 ## Install from a release bundle
 
