@@ -144,6 +144,7 @@ impl Fixture {
             max_read_bytes: 1024,
             max_log_entries: 32,
             runner: HardenedCommandRunner::new(Duration::from_millis(100)).expect("runner"),
+            original_pre_spawn_stop: None,
         }
     }
 

@@ -629,7 +629,9 @@ fn verify_registered_owned_head(
 
 fn map_runner_error(error: HardenedCommandError) -> GitIntegrationError {
     match error {
-        HardenedCommandError::TimedOut => GitIntegrationError::CommandTimedOut,
+        HardenedCommandError::TimedOut | HardenedCommandError::StopRequested => {
+            GitIntegrationError::CommandTimedOut
+        }
         HardenedCommandError::OutputLimitExceeded { .. } => {
             GitIntegrationError::CommandOutputTooLarge
         }
