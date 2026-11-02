@@ -1,5 +1,14 @@
 # Optic AI Bridge
 
+## Reprise Windows V1 : 2 novembre 2026, apres PR #490
+
+Lire la **[passation actuelle](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR490_2026-11-02.md)** et son **[prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR490_2026-11-02.md)** ; tous les points de reprise ci-dessous sont historiques. Avant la PR de cette documentation : `main=c69ef87155a1dc1a58520f8cfe11384db2c1ff5f`, [CI independante #41519267054](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41519267054) **4/4 SUCCESS tentative 1**. Apres fusion, re-verifier nouveau SHA et CI.
+
+[#489](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/489) et [#490](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/490) recontrolent la session originale de GitRead apres politique et immediatement avant chaque `Command::spawn` du runner legacy. **Course revocation / `CreateProcessW` / `ResumeThread` pas encore fermee**, native launcher non active. [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN / **Windows V1 NO-GO** : aucune release/installateur pret.
+
+---
+
+
 ## Reprise Windows V1 — 2 novembre 2026, après #481
 
 **Dernier `main` indépendant vérifié avant cette mise à jour :** `36b2f8de744995e4b0e264fefa89a6fe7b4306b1`, arbre `7a25472d540ffa695b4d94a0c616d433468dfaf8` ; [CI de fusion #41415132006](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41415132006) **SUCCESS 4/4 à la première tentative**. Les [PR #479](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/479), [#480](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/480) et [#481](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/481) ont ajouté l'audit et les reçus de drainage borné, rattachés à la custody native Windows toujours **non exécutante**.
