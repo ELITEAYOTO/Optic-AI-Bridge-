@@ -63,6 +63,17 @@ impl HardenedCommandRunner {
         self.run_inner(spec, None, Instant::now())
     }
 
+    /// A pre-spawn stop hook for one already-owned read operation. The caller
+    /// must still coordinate revocation with a native OS issuer; checking a
+    /// flag before Command::spawn is NOT an atomic revoke/create fence.
+    pub fn run_with_stop(
+        &self,
+        spec: &HardenedCommandSpec,
+        should_stop: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        self.run_inner_with_stop(spec, None, Instant::now(), Some(should_stop))
+    }
+
     pub fn run_with_input(
         &self,
         spec: &HardenedCommandSpec,
@@ -82,6 +93,16 @@ impl HardenedCommandRunner {
         spec: &HardenedCommandSpec,
         input: Option<Vec<u8>>,
         started: Instant,
+    ) -> Result<HardenedCommandOutput, HardenedCommandError> {
+        self.run_inner_with_stop(spec, input, started, None)
+    }
+
+    fn run_inner_with_stop(
+        &self,
+        spec: &HardenedCommandSpec,
+        input: Option<Vec<u8>>,
+        started: Instant,
+        original_stop: Option<&(dyn Fn() -> bool + Send + Sync)>,
     ) -> Result<HardenedCommandOutput, HardenedCommandError> {
         // This start point is owned by the caller before any potentially
         // blocking Command::spawn or setup. It is never refreshed after spawn.
@@ -107,6 +128,11 @@ impl HardenedCommandRunner {
         // create/revoke fence and cannot interrupt spawn once entered.
         if started.elapsed() >= self.timeout {
             return Err(HardenedCommandError::TimedOut);
+        }
+        // Original-generation stop immediately before the legacy OS spawn.
+        // This narrows a real window; it is NOT an atomic Win32 revoke fence.
+        if original_stop.is_some_and(|source| source()) {
+            return Err(HardenedCommandError::StopRequested);
         }
         let mut child = command.spawn()?;
         let input_writer = if let Some(input) = input {
@@ -222,6 +248,8 @@ pub enum HardenedCommandError {
     ZeroTimeout,
     #[error("command exceeded its hard deadline")]
     TimedOut,
+    #[error("original read stop requested before command creation")]
+    StopRequested,
     #[error("command output exceeded byte ceiling {limit}")]
     OutputLimitExceeded { limit: u64 },
     #[error("command input exceeded byte ceiling {limit}")]
@@ -275,6 +303,41 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn original_stop_at_runner_pre_spawn_must_deny_real_git_command() {
+        // This runs on Windows GitHub-hosted CI and local Windows 10. Use the
+        // fixed installed Git executable, never PATH or the user's workspace.
+        let executable =
+            PathBuf::from(std::env::var_os("ProgramFiles").expect("Windows ProgramFiles"))
+                .join("Git")
+                .join("cmd")
+                .join("git.exe");
+        assert!(executable.is_file(), "pinned installed Git fixture");
+        let spec = HardenedCommandSpec {
+            executable,
+            cwd: std::env::temp_dir(),
+            args: vec!["--version".into()],
+            env: BTreeMap::new(),
+            output_limit: 16 * 1024,
+        };
+        let runner = HardenedCommandRunner::new(Duration::from_secs(2)).unwrap();
+        let checked = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = runner.run_with_stop(&spec, &|| {
+            checked.fetch_add(1, Ordering::SeqCst);
+            true
+        });
+        assert_eq!(
+            checked.load(Ordering::SeqCst),
+            1,
+            "original-stop observation must be made exactly at runner pre-spawn"
+        );
+        assert!(
+            matches!(outcome, Err(HardenedCommandError::StopRequested)),
+            "a stopped original read must not start the actual installed Git executable: {outcome:?}"
+        );
+    }
 
     #[test]
     fn deadline_consumed_before_spawn_rejects_expired_original_clock() {

@@ -4,6 +4,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::ExitStatus,
+    sync::Arc,
     time::Duration,
 };
 
@@ -22,6 +23,15 @@ const NULL_CONFIG_PATH: &str = "NUL";
 #[cfg(not(windows))]
 const NULL_CONFIG_PATH: &str = "/dev/null";
 
+#[derive(Clone)]
+struct OriginalPreSpawnStop(Arc<dyn Fn() -> bool + Send + Sync>);
+
+impl std::fmt::Debug for OriginalPreSpawnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OriginalPreSpawnStop(<original scoped predicate>)")
+    }
+}
+
 #[derive(Debug)]
 pub struct GitReadService {
     repository_root: PathBuf,
@@ -29,6 +39,7 @@ pub struct GitReadService {
     max_read_bytes: u64,
     max_log_entries: u32,
     runner: HardenedCommandRunner,
+    original_pre_spawn_stop: Option<OriginalPreSpawnStop>,
 }
 
 impl GitReadService {
@@ -63,9 +74,24 @@ impl GitReadService {
                 limits.max_request_duration_ms,
             ))
             .map_err(|_| GitReadError::InvalidLimits)?,
+            original_pre_spawn_stop: None,
         };
         service.validate_repository_root()?;
         Ok(service)
+    }
+
+    /// One immutable worker-bound stop check, never a global service mutation.
+    /// This is a legacy runner observation, not an OS launch permission.
+    #[must_use]
+    pub fn with_original_pre_spawn_stop(&self, stop: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        Self {
+            repository_root: self.repository_root.clone(),
+            git_executable: self.git_executable.clone(),
+            max_read_bytes: self.max_read_bytes,
+            max_log_entries: self.max_log_entries,
+            runner: self.runner,
+            original_pre_spawn_stop: Some(OriginalPreSpawnStop(stop)),
+        }
     }
 
     #[must_use]
@@ -87,7 +113,7 @@ impl GitReadService {
         // exact same status-only command identity, options and byte limit.
         // The legacy runner and nonzero-status behavior remain unchanged.
         let spec = self.status_command_spec(max_bytes)?;
-        let output = self.runner.run(&spec).map_err(map_runner_error)?;
+        let output = self.run_spec(&spec)?;
         if !output.status.success() {
             return Err(command_failed(output.status, &output.stderr));
         }
@@ -285,7 +311,17 @@ impl GitReadService {
         output_limit: u64,
     ) -> Result<HardenedCommandOutput, GitReadError> {
         let spec = self.command_spec(args, output_limit)?;
-        self.runner.run(&spec).map_err(map_runner_error)
+        self.run_spec(&spec)
+    }
+
+    fn run_spec(&self, spec: &HardenedCommandSpec) -> Result<HardenedCommandOutput, GitReadError> {
+        match &self.original_pre_spawn_stop {
+            Some(stop) => self
+                .runner
+                .run_with_stop(spec, stop.0.as_ref())
+                .map_err(map_runner_error),
+            None => self.runner.run(spec).map_err(map_runner_error),
+        }
     }
 
     /// The single application-owned source of GitRead command identity,
@@ -400,6 +436,8 @@ pub enum GitReadError {
     OutputLimitExceeded { limit: u64 },
     #[error("Git command exceeded its hard deadline")]
     CommandTimedOut,
+    #[error("original GitRead session stopped before command creation")]
+    OriginalStopRequired,
     #[error("Git log cursor does not point to the current HEAD or a reachable ancestor")]
     LogCursorNotReachable,
     #[error("Git command failed with exit code {code:?}: {stderr}")]
@@ -688,6 +726,7 @@ fn git_read_environment() -> BTreeMap<OsString, OsString> {
 fn map_runner_error(error: HardenedCommandError) -> GitReadError {
     match error {
         HardenedCommandError::TimedOut => GitReadError::CommandTimedOut,
+        HardenedCommandError::StopRequested => GitReadError::OriginalStopRequired,
         HardenedCommandError::OutputLimitExceeded { limit } => {
             GitReadError::OutputLimitExceeded { limit }
         }
@@ -812,6 +851,45 @@ mod tests {
 
     fn path(value: &str) -> WorkspacePath {
         WorkspacePath::parse(value).expect("workspace path")
+    }
+
+    #[test]
+    fn original_pre_spawn_stop_denies_each_scoped_git_read_family() {
+        let fixture = RepoFixture::new("scoped-stop-operations");
+        let scoped = fixture
+            .service()
+            .with_original_pre_spawn_stop(Arc::new(|| true));
+        assert!(matches!(
+            scoped.status(),
+            Err(GitReadError::OriginalStopRequired)
+        ));
+        assert!(matches!(
+            scoped.diff(None, false, Some(4096)),
+            Err(GitReadError::OriginalStopRequired)
+        ));
+        assert!(matches!(
+            scoped.log(None, 2),
+            Err(GitReadError::OriginalStopRequired)
+        ));
+    }
+
+    #[test]
+    fn original_pre_spawn_stop_is_rechecked_before_second_real_git_log_process() {
+        let fixture = RepoFixture::new("scoped-stop-log-subprocesses");
+        let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = Arc::clone(&checks);
+        let scoped = fixture
+            .service()
+            .with_original_pre_spawn_stop(Arc::new(move || {
+                observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0
+            }));
+        // The first REAL Git subprocess resolves HEAD while healthy; after
+        // that, the original stop wins. The second Git log spawn is denied.
+        assert!(matches!(
+            scoped.log(None, 2),
+            Err(GitReadError::OriginalStopRequired)
+        ));
+        assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[cfg(windows)]

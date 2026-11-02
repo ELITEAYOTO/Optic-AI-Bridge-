@@ -205,7 +205,15 @@ impl ReadonlyMcpServer {
             let service = server.git_service.as_ref().cloned().ok_or_else(|| {
                 ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
             })?;
-            let output = operation(service).map_err(map_git_read_error)?;
+            // Scope the original admitted generation, never the opaque ID.
+            // The legacy runner rechecks before every underlying Git spawn.
+            // This remains an observation, not an atomic Win32 issuer.
+            let original = admission.stop_watch();
+            let clock = Arc::clone(&server.clock);
+            let scoped = service.with_original_pre_spawn_stop(Arc::new(move || {
+                original.is_stop_required_at(clock.now())
+            }));
+            let output = operation(Arc::new(scoped)).map_err(map_git_read_error)?;
             server.ensure_read_deadline(&permit)?;
             verify(server, grant, &output)?;
             // A slow sensitive-path policy check must not publish bytes after
@@ -373,6 +381,9 @@ fn cursor_response(value: GitLogCursor) -> GitLogCursorResponse {
 
 fn map_git_read_error(error: GitReadError) -> ErrorData {
     match error {
+        GitReadError::OriginalStopRequired => {
+            ErrorData::invalid_request("optic.session_inactive", None)
+        }
         GitReadError::ZeroRequestLimit
         | GitReadError::ReadByteLimitExceeded { .. }
         | GitReadError::LogEntryLimitExceeded { .. } => {

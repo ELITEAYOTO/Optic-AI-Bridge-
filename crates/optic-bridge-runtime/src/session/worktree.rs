@@ -952,7 +952,9 @@ fn validate_direct_owned_directory(
 
 fn map_runner_error(error: HardenedCommandError) -> SessionWorktreeError {
     match error {
-        HardenedCommandError::TimedOut => SessionWorktreeError::CommandTimedOut,
+        HardenedCommandError::TimedOut | HardenedCommandError::StopRequested => {
+            SessionWorktreeError::CommandTimedOut
+        }
         HardenedCommandError::OutputLimitExceeded { .. } => {
             SessionWorktreeError::CommandOutputTooLarge
         }
