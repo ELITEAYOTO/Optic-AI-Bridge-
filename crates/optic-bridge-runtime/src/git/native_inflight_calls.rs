@@ -9,7 +9,7 @@
 //! Zero in-flight calls is NOT proof of process termination or pipe EOF.
 
 use std::sync::{
-    Arc, Condvar, Mutex,
+    Arc, Mutex, TryLockError,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -63,7 +63,6 @@ struct OriginalNativeStops {
 struct Shared {
     stop_requested: Arc<AtomicBool>,
     counts: Mutex<CallCounts>,
-    drained: Condvar,
     original: Option<OriginalNativeStops>,
 }
 
@@ -72,7 +71,6 @@ impl Shared {
         Self {
             stop_requested: Arc::new(AtomicBool::new(false)),
             counts: Mutex::new(CallCounts::default()),
-            drained: Condvar::new(),
             original,
         }
     }
@@ -182,7 +180,6 @@ impl NativeCallStopTracker {
     /// NOT synchronously stop an already admitted OS call or complete revoke.
     pub(crate) fn request_stop(&self) {
         self.shared.stop_requested.store(true, Ordering::Release);
-        self.shared.drained.notify_all();
     }
 
     /// Seal this ORIGINAL ledger before acquiring its count lock, then wait
@@ -204,29 +201,39 @@ impl NativeCallStopTracker {
             .original
             .as_ref()
             .map_or(until, |original| until.min(original.deadline));
-        let mut counts = self.shared.counts.lock().map_err(|_| {
-            self.request_stop();
-            NativeCallDrainError::Unknown
-        })?;
+        // Mutex::lock and Condvar::wait_timeout can both wait *past* the
+        // requested bound while reacquiring a contended counter mutex.
+        // Try-lock with an absolute-deadline-bound probe instead: a stalled
+        // counter owner must never turn a bounded drain into an unbounded one.
         loop {
-            let now = std::time::Instant::now();
-            // A positive receipt cannot be published after the bound.
-            if now >= until {
+            if self.shared.counts.is_poisoned() {
+                self.request_stop();
+                return Err(NativeCallDrainError::Unknown);
+            }
+            if std::time::Instant::now() >= until {
                 return Err(NativeCallDrainError::TimedOut);
             }
-            if counts.creates == 0 && counts.resumes == 0 {
-                return Ok(NativeCallDrainReceipt { original: self });
-            }
-            let remaining = until.saturating_duration_since(now);
-            let (next, _) = self
-                .shared
-                .drained
-                .wait_timeout(counts, remaining)
-                .map_err(|_| {
+            match self.shared.counts.try_lock() {
+                Ok(counts) => {
+                    if counts.creates == 0 && counts.resumes == 0 {
+                        // Do not publish a positive receipt if the absolute
+                        // deadline expired during the counter observation.
+                        if std::time::Instant::now() >= until {
+                            return Err(NativeCallDrainError::TimedOut);
+                        }
+                        return Ok(NativeCallDrainReceipt { original: self });
+                    }
+                }
+                Err(TryLockError::Poisoned(_)) => {
                     self.request_stop();
-                    NativeCallDrainError::Unknown
-                })?;
-            counts = next;
+                    return Err(NativeCallDrainError::Unknown);
+                }
+                Err(TryLockError::WouldBlock) => {
+                    // Still owned by another thread: this is not an empty ledger.
+                }
+            }
+            let remaining = until.saturating_duration_since(std::time::Instant::now());
+            std::thread::sleep(remaining.min(std::time::Duration::from_millis(1)));
         }
     }
 
@@ -290,11 +297,9 @@ impl Drop for TrackedNativeCall<'_> {
                 *counter = counter
                     .checked_sub(1)
                     .expect("one retained ticket per accounted native call");
-                self.shared.drained.notify_all();
             }
             Err(_) => {
                 self.shared.stop_requested.store(true, Ordering::Release);
-                self.shared.drained.notify_all();
             }
         }
     }
@@ -350,6 +355,59 @@ mod tests {
             assert!(tracker.stop_requested());
             assert!(tracker.track(phase).is_none());
         }
+    }
+
+    #[test]
+    fn sealed_drain_does_not_wait_for_contended_mutex_past_absolute_bound() {
+        let tracker = NativeCallStopTracker::new();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (unlock_tx, unlock_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let holder_tracker = &tracker;
+            let holder = scope.spawn(move || {
+                let _counter_guard = holder_tracker.shared.counts.lock().expect("fresh ledger");
+                locked_tx.send(()).expect("announce held counter lock");
+                unlock_rx
+                    .recv_timeout(Duration::from_secs(3))
+                    .expect("fixture must release held lock");
+            });
+            locked_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("count mutex held before drain");
+            let drainer = scope.spawn(|| {
+                let result = tracker
+                    .seal_and_drain_until(std::time::Instant::now() + Duration::from_millis(60))
+                    .map(|_| ());
+                result_tx.send(result).expect("send drain outcome");
+            });
+            // Stop must be publishable before the blocked lock acquisition.
+            let started = std::time::Instant::now();
+            let stop_published = loop {
+                if tracker.shared.stop_requested.load(Ordering::Acquire) {
+                    break true;
+                }
+                if started.elapsed() >= Duration::from_secs(2) {
+                    break false;
+                }
+                std::thread::yield_now();
+            };
+            // Bounded external supervisor: release the test's synthetic lock
+            // even when the original implementation would wait forever.
+            let observed = result_rx.recv_timeout(Duration::from_secs(1));
+            unlock_tx
+                .send(())
+                .expect("release fixture even on regression");
+            holder.join().expect("fixture holder completion");
+            drainer.join().expect("drainer termination after release");
+            assert!(stop_published, "original drain never sealed admission");
+            assert!(
+                matches!(observed, Ok(Err(NativeCallDrainError::TimedOut))),
+                "drain must time out before releasing a contended counter mutex; observed: {observed:?}"
+            );
+            assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        });
     }
 
     #[test]
