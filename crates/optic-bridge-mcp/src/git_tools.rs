@@ -161,10 +161,47 @@ impl ReadonlyMcpServer {
         F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
         V: FnOnce(&Self, &SessionGrant, &T) -> Result<(), ErrorData> + Send + 'static,
     {
+        self.run_git_read_checked_with_before_operation(operation, verify, |_, _| {})
+            .await
+    }
+
+    // The empty callback is the production path. A module-only concurrency
+    // fixture pauses here AFTER policy authorization and BEFORE operation().
+    // This test seam does not mint or change any security authority.
+    async fn run_git_read_checked_with_before_operation<T, F, V, B>(
+        &self,
+        operation: F,
+        verify: V,
+        before_operation: B,
+    ) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<GitReadService>) -> Result<T, GitReadError> + Send + 'static,
+        V: FnOnce(&Self, &SessionGrant, &T) -> Result<(), ErrorData> + Send + 'static,
+        B: FnOnce(&Self, &optic_bridge_runtime::OwnedSessionAdmissionPermit) + Send + 'static,
+    {
         self.run_owned_admitted_read(move |server, admission, permit| {
             let grant = admission.grant();
             server.ensure_read_deadline(&permit)?;
             server.authorize_git_read(grant, server.clock.now())?;
+            before_operation(server, &admission);
+            // The policy decision is a snapshot, not a durable permission to
+            // enter Git later. Recheck the EXACT admitted session generation's
+            // irrevocable stop/expiry after authorization, before the operation
+            // can call the legacy runner. Do not relookup the opaque handle:
+            // another generation could have reused it in the meantime.
+            //
+            // This reduces a real MCP post-policy window, but a separate native
+            // issuer must still fence revoke vs CreateProcessW/ResumeThread.
+            if admission
+                .stop_watch()
+                .is_stop_required_at(server.clock.now())
+            {
+                return Err(crate::server::map_session_error(
+                    optic_bridge_runtime::SessionRegistryError::Revoked,
+                ));
+            }
+            server.ensure_read_deadline(&permit)?;
             let service = server.git_service.as_ref().cloned().ok_or_else(|| {
                 ErrorData::invalid_request("optic.git_read_authority_unavailable", None)
             })?;
@@ -634,6 +671,64 @@ mod tests {
             .fit_git_log_response(0, &mut complete)
             .expect("complete last page remains cursor-free");
         assert!(complete.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn original_session_revoked_after_git_policy_before_real_operation_denies_execution() {
+        // The existing GitReadService genuinely launches Git for status.
+        // A separate revoker publishes stop while this worker holds the
+        // ORIGINAL counted session admission, just after policy authorizes.
+        // The revoker cannot finish draining until that worker returns.
+        let fixture = RepoFixture::new("revoked-after-git-policy");
+        let server = fixture.server(&[Capability::GitRead]);
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = Arc::clone(&called);
+        let (revoked_tx, revoked_rx) = std::sync::mpsc::channel();
+        let result = server
+            .run_git_read_checked_with_before_operation(
+                move |service| {
+                    observed.store(true, std::sync::atomic::Ordering::Release);
+                    service.status()
+                },
+                |_, _, _| Ok(()),
+                move |server, admission| {
+                    let sessions = Arc::clone(&server.sessions);
+                    let session = server.session.clone();
+                    std::thread::spawn(move || {
+                        let outcome = sessions.revoke(&session);
+                        let _ = revoked_tx.send(outcome);
+                    });
+                    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                    while !admission
+                        .stop_watch()
+                        .is_stop_required_at(server.clock.now())
+                    {
+                        assert!(
+                            std::time::Instant::now() < until,
+                            "original session revoke must become visible"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                },
+            )
+            .await;
+        assert_eq!(
+            result
+                .expect_err("Git must not be entered after original revoke")
+                .message,
+            "optic.session_inactive"
+        );
+        assert!(
+            !called.load(std::sync::atomic::Ordering::Acquire),
+            "the real GitReadService operation must not run after original revoke"
+        );
+        assert!(
+            revoked_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("revoker must finish only after the worker admission drains")
+                .expect("valid original session"),
+            "original session revoke must publish and drain"
+        );
     }
 
     #[tokio::test]
