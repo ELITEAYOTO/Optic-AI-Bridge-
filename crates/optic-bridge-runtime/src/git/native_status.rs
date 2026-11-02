@@ -456,9 +456,11 @@ impl SessionCommittedNativeGitStatusCustody {
         self.unstarted.native_active_processes()
     }
 
-    /// Consume this already session-committed owner into a second,
-    /// **lease-only** ordered observation. The session and TaskLease mutexes
-    /// are entered separately and are NEVER represented as an atomic fence.
+    /// Consume this already session-committed owner into a JOINT original
+    /// session+TaskLease observation. The final short critical section holds
+    /// the session close mutex and then TRY-locks the original TaskLease
+    /// registry; contention fails closed instead of delaying session revoke.
+    /// This remains NOT an atomic native launch/policy/host-stop fence.
     ///
     /// No child is created. On rejection the already owned empty Job/pipes
     /// and counted original admission/transport are dropped as no-child work.
@@ -468,18 +470,27 @@ impl SessionCommittedNativeGitStatusCustody {
         trusted: &NativeGitReadTrustedContext<'_>,
         now: MonotonicTime,
     ) -> Result<LeaseObservedNativeGitStatusCustody, NativeGitStatusSnapshotError> {
-        // Repeat typed policy and original session/lease identity checks after
-        // session receipt issuance; these are snapshots, not launch grants.
+        // First verify typed policy/target identity outside the registry locks.
+        // Then make one short JOINT original session+lease observation, with
+        // lock order session -> TaskLease. Neither step permits OS launch.
         self.unstarted
             .observe_original_prelaunch_snapshot(trusted, now)?;
         let original = &self.unstarted.registered.prepared;
         let lease_commit = original
             .admission
-            .commit_original_lease_for_registered_owner(
+            .observe_joint_original_session_lease_for_registered_owner(
+                trusted.sessions,
                 trusted.task_leases,
-                &original.envelope.session,
                 now,
-            )?;
+            )
+            .map_err(|error| match error {
+                crate::session_registry::NativeJointOwnerCommitError::Session(source) => {
+                    NativeGitStatusSnapshotError::Session(source)
+                }
+                crate::session_registry::NativeJointOwnerCommitError::Lease(source) => {
+                    NativeGitStatusSnapshotError::LeaseRecord(source)
+                }
+            })?;
         if self.is_stop_required_at(now) || lease_commit.is_stop_required_at(now) {
             return Err(NativeGitStatusSnapshotError::StopRequired);
         }
@@ -491,9 +502,9 @@ impl SessionCommittedNativeGitStatusCustody {
     }
 }
 
-/// Non-executing owner that retains independent session and TaskLease ordering
-/// receipts. These were issued under DIFFERENT mutexes; a revocation may win
-/// between them or immediately afterwards. This is NOT a native launch grant.
+/// Non-executing owner that retains original session and TaskLease receipts,
+/// with their last joint observation ordered against both revoke registries.
+/// Revocation may still win immediately after unlock. No native launch grant.
 #[cfg(windows)]
 #[must_use = "retain both original stop witnesses and native custody"]
 #[allow(dead_code)] // No CreateProcessW path can consume this research stage.

@@ -7,6 +7,11 @@ use std::{
 };
 
 #[cfg(windows)]
+use crate::{
+    NativeGitReadLeaseWitness, TaskLeaseRegistry, TaskLeaseRegistryError,
+    task_lease_registry::TaskLeaseNativeOwnerCommit,
+};
+#[cfg(windows)]
 use optic_bridge_core::JobId;
 use optic_bridge_core::{HardLimits, LimitError, MonotonicTime, SessionGrant, SessionHandle};
 use thiserror::Error;
@@ -67,6 +72,18 @@ pub(crate) enum SessionClockError {
     InvalidDeadline,
     #[error(transparent)]
     Registry(#[from] SessionRegistryError),
+}
+
+/// A joint original-generation observation only: unlike either separate
+/// receipt, both revocation mutexes are held at once for the short check.
+/// No native effect or executable policy is authorized by this result.
+#[cfg(windows)]
+#[derive(Debug, Error)]
+pub(crate) enum NativeJointOwnerCommitError {
+    #[error(transparent)]
+    Session(#[from] SessionRegistryError),
+    #[error(transparent)]
+    Lease(#[from] TaskLeaseRegistryError),
 }
 
 impl SessionRegistry {
@@ -308,6 +325,42 @@ impl SessionRegistry {
             registered_job,
             original_stop: admitted.stop_watch(),
         })
+    }
+
+    /// Revalidate the ORIGINAL admitted session AND registered TaskLease under
+    /// their two original revoke mutexes, in that fixed order: session, lease.
+    /// Both direct/lifecycle session close and direct/session lease revoke
+    /// serialize against this single short critical section.
+    ///
+    /// The lease-only check performs no IO/callback/native operation under
+    /// either lock. The positive result is an observation, NOT a grant to
+    /// CreateProcessW/ResumeThread: policy/host and OS-call effect fencing
+    /// remain independent, and revoke can win immediately after unlock.
+    #[cfg(windows)]
+    #[allow(dead_code)] // Inert native owner; no live GitRead launch.
+    pub(crate) fn observe_joint_original_native_owner_under_revoke_locks(
+        &self,
+        admitted: &OwnedSessionAdmissionPermit,
+        lease: &NativeGitReadLeaseWitness,
+        leases: &TaskLeaseRegistry,
+        now: MonotonicTime,
+    ) -> Result<TaskLeaseNativeOwnerCommit, NativeJointOwnerCommitError> {
+        if !std::ptr::eq(self, admitted.registry.as_ref()) {
+            return Err(SessionRegistryError::ForeignAdmissionRegistry.into());
+        }
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get(&admitted.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        Self::check_original_native_owner_record(record, admitted, now)?;
+        // Lock order: original session registry -> original lease registry.
+        // Never call back into SessionRegistry while holding the lease lock.
+        let lease_commit =
+            lease.try_commit_original_lease_under_revoke_lock(leases, &admitted.handle, now)?;
+        Ok(lease_commit)
     }
 
     #[cfg(windows)]
