@@ -1,5 +1,7 @@
 # Native GitRead registered-lease witness — proposed contract (#317)
 
+> **2 November 2026, current design gate:** [Original-owner native launch/revoke protocol proposal](ISSUE317_NATIVE_LAUNCH_REVOKE_PROTOCOL_2026-11-02.md) records the independently reproduced real-Git post-revoke RED on `main=f4a2bf5f`, explicitly separates stop publication, in-flight native-call drainage and physical revoke completion, and lists the required concurrency/OS acceptance cases. **Proposed, not implemented or approved.** The joint observation described below (#482) is not launch authorization; Windows V1 remains **NO-GO**.
+
 ## 28 October 2026 — original lease stop before admission drainage
 
 Baseline `main=eea5438873293243cd747b0f646ed903fb9f1282` integrates [#420](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/420); independent [push/main #40752232971](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/40752232971) verified SUCCESS 4/4, identical tested/integrated trees.
