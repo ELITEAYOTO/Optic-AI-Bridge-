@@ -521,11 +521,21 @@ impl PrecreatedNativeReadCustody {
     /// launcher must separately synchronize original generation revocation
     /// before it can resume even a successfully pinned child.
     pub fn pin_original_job_root(&mut self, root: BorrowedHandle<'_>) -> Result<()> {
-        if self.original_root.is_some() || self.deadline.is_none() || self.watchdog_stop_observed()
-        {
+        self.pin_original_job_root_with_before_retention(root, || {})
+    }
+
+    // The callback is always empty in production. Test-only race fixtures
+    // place an original stop exactly after a REAL DuplicateHandle but before
+    // the root handle is published into its permanent native custody.
+    fn pin_original_job_root_with_before_retention(
+        &mut self,
+        root: BorrowedHandle<'_>,
+        before_retention: impl FnOnce(),
+    ) -> Result<()> {
+        if self.original_root.is_some() || self.root_retention_stopped() {
             return Err(Error::new(
                 ErrorKind::PermissionDenied,
-                "native root requires an unbound owner with its original armed watchdog",
+                "native root requires an unbound, live owner with its original armed watchdog",
             ));
         }
         let process = HANDLE(root.as_raw_handle());
@@ -567,11 +577,30 @@ impl PrecreatedNativeReadCustody {
         }
         .map_err(Error::other)?;
         // SAFETY: a successful DuplicateHandle provides one unique owned value.
-        self.original_root = Some(PinnedOriginalRoot {
+        let pinned = PinnedOriginalRoot {
             handle: unsafe { OwnedHandle::from_raw_handle(duplicate.0) },
             pid,
-        });
+        };
+        before_retention();
+        // Reobserve the very same ORIGINAL stop sources and absolute horizon
+        // after native handle duplication, just before retaining this root.
+        // This still is NOT an atomic CreateProcessW/ResumeThread/revoke gate:
+        // a later revoke must be handled by the independent original watchdog.
+        if self.root_retention_stopped() {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "original native root stop or deadline won before handle retention",
+            ));
+        }
+        self.original_root = Some(pinned);
         Ok(())
+    }
+
+    fn root_retention_stopped(&self) -> bool {
+        self.deadline
+            .as_ref()
+            .is_none_or(NativeJobDeadline::stop_or_expired)
+            || self.watchdog_stop_observed()
     }
 
     /// After the ORIGINAL Job watchdog reports a successful termination call,
@@ -757,6 +786,100 @@ mod precreated_native_read_tests {
         }
         assert_eq!(owned.watchdog_termination_result(), Some(Ok(())));
         assert_eq!(owned.active_processes().expect("real Job accounting"), 0);
+    }
+
+    #[test]
+    fn real_suspended_job_root_cannot_be_pinned_after_original_stop_wins() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child, Command as NativeCommand, Stdio},
+        };
+        // A real Windows kernel child is created SUSPENDED under a fixed
+        // System32 executable, assigned to the ORIGINAL Job and NEVER resumed.
+        // This is not a simulation of CreateProcessW or process ownership.
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+            }
+        }
+
+        let root_dir =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows system root"));
+        let executable = root_dir.join("System32").join("cmd.exe");
+        assert!(
+            executable.is_file(),
+            "fixed signed Windows fixture executable"
+        );
+        let limits =
+            LimitedJobObject::new(1, 256 * 1024 * 1024, 50).expect("bounded native Job caps");
+        let mut owner =
+            PrecreatedNativeReadCustody::new(limits).expect("real owned Job and original pipes");
+        let original_stop = Arc::new(AtomicBool::new(false));
+        owner
+            .arm_watchdog(20_000, vec![Arc::clone(&original_stop)])
+            .expect("original Job watchdog armed before kernel root creation");
+
+        let mut command = NativeCommand::new(executable);
+        command
+            .arg("/d")
+            .arg("/c")
+            .arg("exit /b 0")
+            .current_dir(std::env::temp_dir())
+            .env_clear()
+            .env("SystemRoot", root_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0);
+        let mut root = KillOnDrop(command.spawn().expect("real suspended Win32 root"));
+        drop(command);
+        let process = HANDLE(root.0.as_raw_handle());
+        // SAFETY: original suspended process and private kernel Job remain owned.
+        unsafe { AssignProcessToJobObject(owner.job.raw(), process) }
+            .expect("real Job membership before any root execution");
+        assert_eq!(owner.active_processes().expect("real kernel Job count"), 1);
+        assert!(
+            root.0.try_wait().expect("real suspended status").is_none(),
+            "root must be suspended and live before original revoke"
+        );
+
+        let reached_native_boundary = AtomicBool::new(false);
+        // The callback is injected only after the REAL process HANDLE has
+        // been duplicated. Revocation therefore wins before custody can
+        // publish its retained root; this is a deterministic OS-handle race.
+        // SAFETY: original Child retains the real kernel HANDLE for this call.
+        let result = owner.pin_original_job_root_with_before_retention(
+            unsafe { BorrowedHandle::borrow_raw(root.0.as_raw_handle()) },
+            || {
+                reached_native_boundary.store(true, Ordering::Release);
+                original_stop.store(true, Ordering::Release);
+            },
+        );
+        assert!(
+            reached_native_boundary.load(Ordering::Acquire),
+            "test must execute the actual post-DuplicateHandle commitment"
+        );
+        assert!(
+            matches!(result, Err(ref error) if error.kind() == ErrorKind::PermissionDenied),
+            "original stop won before root retention: must fail closed, result={result:?}"
+        );
+        assert!(
+            owner.original_root.is_none(),
+            "a revoked owner must never publish the pinned root"
+        );
+
+        let until = Instant::now() + Duration::from_secs(5);
+        while owner.active_processes().expect("owned Job accounting") != 0 && Instant::now() < until
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            owner.active_processes().expect("real post-stop Job query"),
+            0,
+            "the original watchdog must terminate the suspended kernel root"
+        );
     }
 
     #[test]
@@ -1180,10 +1303,23 @@ impl ContainedAppContainerProcess {
 struct NativeJobDeadline {
     cancel: Option<mpsc::SyncSender<()>>,
     worker: Option<std::thread::JoinHandle<()>>,
+    // Retain the exact Arc generations and original monotonic deadline in
+    // the owner as well as the independent watcher. A delayed watcher is not
+    // a substitute for a synchronous stop observation at root retention.
+    original_stops: Vec<Arc<AtomicBool>>,
+    original_until: Instant,
     expired: Arc<AtomicBool>,
     termination_result: Arc<OnceLock<std::result::Result<(), i32>>>,
 }
 impl NativeJobDeadline {
+    fn stop_or_expired(&self) -> bool {
+        Instant::now() >= self.original_until
+            || self
+                .original_stops
+                .iter()
+                .any(|signal| signal.load(Ordering::Acquire))
+    }
+
     fn new(job: &OwnedJob, timeout_ms: u32, stop_flags: Vec<Arc<AtomicBool>>) -> Result<Self> {
         let until = std::time::Instant::now()
             .checked_add(Duration::from_millis(u64::from(timeout_ms)))
@@ -1214,6 +1350,9 @@ impl NativeJobDeadline {
         // SAFETY: successful duplication transfers exactly one unique handle.
         let handle = unsafe { OwnedHandle::from_raw_handle(duplicate.0) };
         let (cancel, receive) = mpsc::sync_channel(1);
+        // Both views observe the same immutable source generations; only the
+        // independent worker issues TerminateJobObject on the retained Job.
+        let original_stops = stop_flags.clone();
         let expired = Arc::new(AtomicBool::new(false));
         let observed = Arc::clone(&expired);
         let termination_result = Arc::new(OnceLock::new());
@@ -1247,6 +1386,8 @@ impl NativeJobDeadline {
         Ok(Self {
             cancel: Some(cancel),
             worker: Some(worker),
+            original_stops,
+            original_until: until,
             expired,
             termination_result,
         })
