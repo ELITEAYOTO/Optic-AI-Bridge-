@@ -99,6 +99,30 @@ impl Shared {
             false
         }
     }
+
+    /// A short transient counter lock should not falsely poison native
+    /// custody. But final observations and ticket retirement MUST NOT block
+    /// indefinitely: after a fixed, non-renewable 25 ms budget, keep the
+    /// accounting uncertain and publish the original watchdog stop.
+    fn lock_counts_bounded(&self) -> Option<std::sync::MutexGuard<'_, CallCounts>> {
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(25);
+        loop {
+            match self.counts.try_lock() {
+                Ok(guard) => return Some(guard),
+                Err(TryLockError::Poisoned(_)) => {
+                    self.stop_requested.store(true, Ordering::Release);
+                    return None;
+                }
+                Err(TryLockError::WouldBlock) if std::time::Instant::now() < until => {
+                    std::thread::yield_now();
+                }
+                Err(TryLockError::WouldBlock) => {
+                    self.stop_requested.store(true, Ordering::Release);
+                    return None;
+                }
+            }
+        }
+    }
 }
 
 /// This accounting gate is deliberately not attached to the live MCP or native
@@ -298,17 +322,12 @@ impl NativeCallStopTracker {
         self.shared.is_stop_required()
     }
 
-    /// None on poisoned accounting state is unknown, NOT an empty ledger.
+    /// None on poisoned or persistently contended accounting is unknown,
+    /// NOT an empty ledger. A short bounded observation tolerates transient
+    /// contention; beyond its fixed bound the ORIGINAL watchdog is stopped.
     /// Even Some(0, 0) says nothing about live children, Job or pipe EOF.
     pub(crate) fn in_flight(&self) -> Option<InFlightNativeCalls> {
-        let counts = match self.shared.counts.lock() {
-            Ok(counts) => counts,
-            Err(_) => {
-                // Unknown custody must also notify the original Job watchdog.
-                self.request_stop();
-                return None;
-            }
-        };
+        let counts = self.shared.lock_counts_bounded()?;
         Some(InFlightNativeCalls {
             creates: counts.creates,
             resumes: counts.resumes,
@@ -318,23 +337,19 @@ impl NativeCallStopTracker {
 
 impl Drop for TrackedNativeCall<'_> {
     fn drop(&mut self) {
-        // Never substitute a successful quiescence receipt if the mutex was
-        // poisoned. Retiring this borrowed ticket may be the FIRST observer
-        // of unknown accounting: notify the original Job watchdog even if
-        // the owner never calls stop_requested() or in_flight() afterwards.
-        match self.shared.counts.lock() {
-            Ok(mut counts) => {
-                let counter = match self.phase {
-                    NativeCallPhase::CreateSuspended => &mut counts.creates,
-                    NativeCallPhase::Resume => &mut counts.resumes,
-                };
-                *counter = counter
-                    .checked_sub(1)
-                    .expect("one retained ticket per accounted native call");
-            }
-            Err(_) => {
-                self.shared.stop_requested.store(true, Ordering::Release);
-            }
+        // Retiring a completed native call cannot wait indefinitely behind
+        // another counter owner. Brief contention is retried within a hard
+        // fixed bound; poison or prolonged contention preserves the original
+        // count and irreversibly signals the ORIGINAL Job watchdog.
+        // Never invent a zero count or native drain receipt after uncertainty.
+        if let Some(mut counts) = self.shared.lock_counts_bounded() {
+            let counter = match self.phase {
+                NativeCallPhase::CreateSuspended => &mut counts.creates,
+                NativeCallPhase::Resume => &mut counts.resumes,
+            };
+            *counter = counter
+                .checked_sub(1)
+                .expect("one retained ticket per accounted native call");
         }
     }
 }
@@ -494,6 +509,145 @@ mod tests {
                 );
                 assert!(tracker.track(phase).is_none(), "stop cannot be reversed");
             });
+        }
+    }
+
+    #[test]
+    fn native_inflight_observation_must_not_wait_for_contended_original_mutex() {
+        // This is an original native-call accounting ledger, not a process.
+        // The owner must not block on a stalled observer when needing to
+        // decide whether already-admitted OS calls remain uncertain.
+        let tracker = NativeCallStopTracker::new();
+        let watchdog_stop = tracker.internal_stop_signal();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (unlock_tx, unlock_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let original = &tracker;
+            let holder = scope.spawn(move || {
+                let _guard = original.shared.counts.lock().expect("original mutex");
+                locked_tx.send(()).expect("announce held accounting lock");
+                unlock_rx
+                    .recv_timeout(Duration::from_secs(3))
+                    .expect("test supervisor releases held counter");
+            });
+            locked_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("original counter must be held before status probe");
+            let observer = scope.spawn(|| {
+                result_tx
+                    .send(tracker.in_flight())
+                    .expect("return original accounting observation");
+            });
+
+            // The old .lock() waits until release and can deadlock a real
+            // owner. Release even when RED to avoid leaving a stuck fixture.
+            let observed = result_rx.recv_timeout(Duration::from_secs(1));
+            let stop_before_unlock = watchdog_stop.load(Ordering::Acquire);
+            unlock_tx.send(()).expect("always unlock held ledger");
+            holder.join().expect("bounded fixture holder cleanup");
+            observer.join().expect("bounded fixture observer cleanup");
+
+            assert_eq!(
+                observed,
+                Ok(None),
+                "contended accounting must report Unknown promptly, never wait for the mutex"
+            );
+            assert!(
+                stop_before_unlock,
+                "unknown accounting must notify the ORIGINAL Job watchdog before unlock"
+            );
+        });
+        assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        assert_eq!(
+            tracker.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0,
+            }),
+            "a later successful count read does not reopen irrevocable stop"
+        );
+        assert!(tracker.stop_requested());
+    }
+
+    #[test]
+    fn retiring_native_ticket_must_not_block_or_claim_quiescence_on_contended_mutex() {
+        // An already-counted native call can finish while another thread
+        // indefinitely holds the accounting lock. Its destructor must
+        // promptly publish original stop instead of blocking the OS-call
+        // owner on that lock. The missing decrement remains conservatively
+        // counted, never forged as an empty drain receipt.
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let tracker = NativeCallStopTracker::new();
+            let watchdog_stop = tracker.internal_stop_signal();
+            let ticket = tracker.track(phase).expect("counted original call");
+            let (locked_tx, locked_rx) = mpsc::channel();
+            let (unlock_tx, unlock_rx) = mpsc::channel();
+            let (completed_tx, completed_rx) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let original = &tracker;
+                let holder = scope.spawn(move || {
+                    let _guard = original.shared.counts.lock().expect("original counts");
+                    locked_tx
+                        .send(())
+                        .expect("announce locked original accounting");
+                    unlock_rx
+                        .recv_timeout(Duration::from_secs(3))
+                        .expect("test supervisor releases held counter");
+                });
+                locked_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("counter held before native call returns");
+                let closer = scope.spawn(move || {
+                    drop(ticket);
+                    completed_tx
+                        .send(())
+                        .expect("report ticket retirement completed");
+                });
+
+                let observed = completed_rx.recv_timeout(Duration::from_secs(1));
+                let stop_before_unlock = watchdog_stop.load(Ordering::Acquire);
+                unlock_tx
+                    .send(())
+                    .expect("always release held mutex on RED");
+                holder.join().expect("bounded fixture holder cleanup");
+                closer.join().expect("bounded native ticket closer cleanup");
+
+                assert_eq!(
+                    observed,
+                    Ok(()),
+                    "original native ticket destructor must not wait for contended counter lock"
+                );
+                assert!(
+                    stop_before_unlock,
+                    "failed ticket retirement must publish ORIGINAL watchdog stop"
+                );
+            });
+            let remaining = tracker.in_flight().expect("original ledger not poisoned");
+            assert_eq!(
+                remaining,
+                match phase {
+                    NativeCallPhase::CreateSuspended => InFlightNativeCalls {
+                        creates: 1,
+                        resumes: 0,
+                    },
+                    NativeCallPhase::Resume => InFlightNativeCalls {
+                        creates: 0,
+                        resumes: 1,
+                    },
+                },
+                "uncertain ticket retirement must retain its original count"
+            );
+            assert!(tracker.track(phase).is_none(), "stop must stay terminal");
+            assert!(
+                matches!(
+                    tracker.seal_and_drain_until(
+                        std::time::Instant::now() + Duration::from_millis(40)
+                    ),
+                    Err(NativeCallDrainError::TimedOut)
+                ),
+                "a failed retirement must never publish empty native-call drain"
+            );
         }
     }
 
