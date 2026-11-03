@@ -1,0 +1,30 @@
+# Prompt integral pour un nouveau chat — Optic AI Bridge apres #496
+
+Tu reprends le **developpement reel** de l'Optic AI Bridge Rust/MCP, https://github.com/ELITEAYOTO/Optic-AI-Bridge-, avec autonomie de dev dans des LABs isoles Windows 10, **une seule PR complete a la fois** (test RED executé -> fix GREEN -> validations -> commit/push/PR -> CI -> COMMENT review -> squash protege -> CI independante post-main -> recu).
+
+**Lis d'abord** [le handoff technique post-#496](HANDOFF_WINDOWS_V1_AFTER_PR496_2026-11-03.md), puis `docs/engineering/ISSUE317_NATIVE_LAUNCH_REVOKE_PROTOCOL_2026-11-02.md`, `docs/engineering/ISSUE317_NATIVE_REAL_ROOT_EOF_2026-11-01.md`, `docs/engineering/NATIVE_GIT_READ_WITNESS_CONTRACT.md` et les code/test originaux.
+
+## Point de depart precis, a re-verifier en live
+
+- `main=77922d5dcb83eb54b7677dc4be1856c70f40620c` ; Git tree `68545693c4ae534b3c9280c7eb3a38658b7376e7`.
+- PR #496 MERGED. CI independante `push/main` [#41681091122](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41681091122) : `event=push`, `attempt=1`, exact main sha, 4/4 SUCCESS. CI PR-head [#41680030589](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41680030589) 4/4 success first attempt et trois workflows specialises #41680030498/#41680030708/#41680030875 verts.
+- PRs #492/#493/#494/#495/#496 fusionnees successivement et verifiees apres integration. #496 ajoute un controle Win32 reel sur le HANDLE duplique : refuse de retenir un root **deja physiquement termine apres DuplicateHandle**, test RED (exit=101) puis GREEN, 12/12 repetitions, full Win serial standard et all-features pass. #495 borne le mutex comptable a 25ms ; inclut un vrai echec intermediaire de full suite, preserve, avant correction. **Ne pretend pas que ces tests inertes autorisent a lancer du Git natif.**
+- [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) reste **OPEN / Windows V1 NO-GO**. [#317](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/317) est **CLOSED**, mais le blocage issuer P0 est sous #323. [#185](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/185), [#319](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/319), [#176](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/176), [#182](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/182) OPEN.
+- [PR doc #491](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/491) OPEN, head `05224c...`, originale CI Windows first attempt [#41521859700](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41521859700) FAILED AppContainer/Node. Ne pas la fusionner silencieusement ou rerun-to-green.
+
+## P0 prioritaire a implementer : issuer natif
+
+Creer une vraie frontiere **service-owned et non clonable** qui empeche une admission `CreateProcessW`/`ResumeThread` apres la revocation de la generation **originale** SessionRegistry, TaskLeaseRegistry, policy epoch, host stop ou original Job/deadline. Elle doit etre **synchronisee** avec les revokers directs ET lifecycle, et compter les vrais appels OS deja admis sans garder le mutex registry pendant un syscall qui peut bloquer. Si un Create deja admis retourne apres stop, l'enfant doit rester suspendu, dans son Job original, conserve jusqu'a reconciliation/kill; le stop lui-meme doit rester publiable. Ne pas confondre une decision de preflight, un ticket de comptage, un handle duplique ou une observation d'original stop avec une permission kernel linearisable.
+
+Preuve terminale exigible avant lib eration d'un owner/permit : ledger scelle+draine, root HANDLE signale, Job zero actif, stdout EOF **physique**, stderr EOF **physique**, aucun futur Create/Resume, horizon absolu initial non renouvelable, crash/poison/timeout => Unknown/quarantaine et non succes. Le chemin GitRead MCP productif utilise encore `HardenedCommandRunner`; ne le migrer qu'apres vrais tests Win32 et le test negatif recherche #355 sans retirer ses assertions.
+
+## Workflow de travail
+
+1. Verifier les devices RDC (l'utilisateur a un Windows 10 principal, mais **ne presume pas l'ID ni la disponibilite**), l'etat exact du repo GitHub, la derniere CI event=push/main, les tests et issues. Si main a evolue, ce prompt devient un jalon historique, actualiser les sources.
+2. Nouveau clone LAB **isole** : ne pas travailler sur daily Bridge, Desktop, REL, plugin ChatGPT, ancien LAB sale ou credentials. Controle storage sur E:, nettoyer seulement caches regenerables de LAB explicitement verifies en conservant logs et hashes.
+3. Vrai RED comportemental avec assertion executee, si possible kernel réel et barrier d'interruption; erreur de compilation, 0 test, mock non autorise ne comptent pas. Correction minimale GREEN, repetitions. Proteger les barriers/proces sur RED par try/finally/RAII.
+4. `cargo +1.99.0 fmt --all -- --check`, `cargo +1.99.0 clippy --locked --offline --workspace --all-targets --all-features -- -D warnings`, full Windows serial workspace standard puis **all-features**, `git diff --check`. Conserver premier full rouge si regression et corriger sans manipuler la preuve.
+5. Commit+push+PR complete, diff revue COMMENT seulement, premiere CI hosted exact head Win/Ubuntu/policy/release+workflows natifs/physical when triggered, lire lignes `... ok`. Squash `expected_head_sha`, compare tree d'origine/squash, puis **independent first-attempt `push/main` CI 4/4 exact sha**. Recus dans PR et #323.
+6. Pas de V1 tag/release, pas de bypass policy/ACL/network, pas de runners auto-heberges, pas de transition prematuree de GitRead native. Ne pas solliciter l'utilisateur pour chaque detail sans arbitrage de securite requis.
+
+**Premier pas concret :** controler live `main` et issues, inspecter `native_status.rs`, `native_inflight_calls.rs`, `job.rs`, `job_list_launch_tests.rs`, `session_registry.rs`, `task_lease_registry.rs`, puis selectionner une vraie course Win32 issuer/revoke a attaquer par test-first. Maintenir #323 Windows V1 NO-GO.
