@@ -184,17 +184,22 @@ impl NativeCallStopTracker {
         };
         *counter = next;
         before_commit();
-        // Compare-and-exchange of the SAME stop bit used by request_stop is
-        // the native ledger's internal ticket-commit linearization point.
-        // A successful false -> false RMW is ordered against an irreversible
-        // stop store, unlike a separate load followed by ticket publication.
-        // Stop after this RMW means this is an ALREADY admitted, counted call
-        // requiring eventual native reconciliation, not a new admission.
+        // Compare-and-exchange of the SAME stop bit used by request_stop
+        // orders internal stop against ticket commitment, unlike a separate
+        // load followed by publication. This RMW is NOT a cross-registry
+        // issuer. The original session, TaskLease, Job and host generations
+        // and original deadline are independent and may stop AFTER the last
+        // pre-counter check. Observe them again AFTER the RMW, while holding
+        // the counter mutex: any observed stop rolls back the pending ticket.
+        // A later stop still leaves an already-admitted call requiring native
+        // watchdog/guardian reconciliation. This does NOT synchronize real
+        // CreateProcessW/ResumeThread against external revocation.
         if self
             .shared
             .stop_requested
             .compare_exchange(false, false, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
+            || self.shared.is_stop_required()
         {
             *counter -= 1;
             return None;
@@ -738,6 +743,103 @@ mod tests {
         );
         assert!(tracker.track(NativeCallPhase::Resume).is_none());
         assert!(tracker.stop_requested());
+    }
+
+    #[test]
+    fn original_authority_revoke_before_native_ticket_commit_denies_all_generations() {
+        // Actual concurrent revoke: the registrar holds the ORIGINAL counter
+        // mutex after incrementing it and before the final ticket decision.
+        // No kernel process is created, and a ticket is not spawn authority.
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            for source in 0..4 {
+                let original_stops: [Arc<AtomicBool>; 4] =
+                    std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+                let tracker = NativeCallStopTracker::with_original_stops(
+                    original_stops.clone(),
+                    std::time::Instant::now() + Duration::from_secs(5),
+                );
+                let (counted_tx, counted_rx) = mpsc::channel();
+                let (release_tx, release_rx) = mpsc::channel();
+                std::thread::scope(|scope| {
+                    let original = &tracker;
+                    let registrar = scope.spawn(move || {
+                        original.track_with_before_commit(phase, || {
+                            counted_tx
+                                .send(())
+                                .expect("counter held before original revoke");
+                            release_rx
+                                .recv_timeout(Duration::from_secs(3))
+                                .expect("supervisor releases native ticket decision");
+                        })
+                    });
+                    counted_rx
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("ticket reached final decision barrier");
+                    // Original session, TaskLease, Job and host signal occupy
+                    // the four distinct indexes, and NONE is the internal
+                    // stop_requested bit used by the final CAS.
+                    original_stops[source].store(true, Ordering::Release);
+                    assert!(
+                        tracker.stop_requested(),
+                        "original authority source {source} must stop admission"
+                    );
+                    release_tx.send(()).expect("release final ticket boundary");
+                    let accepted = registrar.join().expect("registrar returns");
+                    assert!(
+                        accepted.is_none(),
+                        "original authority {source} revoked before ticket commitment"
+                    );
+                });
+                assert_eq!(
+                    tracker.in_flight(),
+                    Some(InFlightNativeCalls {
+                        creates: 0,
+                        resumes: 0,
+                    }),
+                    "rejected ticket must roll back its exact original counter"
+                );
+                assert!(
+                    tracker.track(phase).is_none(),
+                    "revoked original generation must stay denied"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn original_deadline_expiring_before_native_ticket_commit_denies_and_rolls_back() {
+        for phase in [NativeCallPhase::CreateSuspended, NativeCallPhase::Resume] {
+            let original_stops: [Arc<AtomicBool>; 4] =
+                std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+            let tracker = NativeCallStopTracker::with_original_stops(
+                original_stops,
+                std::time::Instant::now() + Duration::from_millis(80),
+            );
+            let reached_commit_boundary = AtomicBool::new(false);
+            let accepted = tracker.track_with_before_commit(phase, || {
+                // This test-only delay lies AFTER both existing stop checks,
+                // while the original counter mutex is held.
+                reached_commit_boundary.store(true, Ordering::Release);
+                std::thread::sleep(Duration::from_millis(130));
+            });
+            assert!(
+                reached_commit_boundary.load(Ordering::Acquire),
+                "the expiry fixture must reach the actual counted ticket boundary"
+            );
+            assert!(
+                accepted.is_none(),
+                "original absolute deadline expired before native ticket commitment"
+            );
+            assert_eq!(
+                tracker.in_flight(),
+                Some(InFlightNativeCalls {
+                    creates: 0,
+                    resumes: 0
+                }),
+                "expiry before commitment must not leave an in-flight ticket"
+            );
+            assert!(tracker.stop_requested(), "original expiry remains terminal");
+        }
     }
 
     #[test]
