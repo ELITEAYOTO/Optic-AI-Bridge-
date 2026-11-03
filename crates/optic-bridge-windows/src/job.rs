@@ -40,8 +40,9 @@ use windows::{
                 SetInformationJobObject, TerminateJobObject,
             },
             Threading::{
-                CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId, OpenThread,
-                ResumeThread, THREAD_SUSPEND_RESUME, WaitForSingleObject,
+                CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId,
+                GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
+                THREAD_SUSPEND_RESUME, WaitForSingleObject,
             },
         },
     },
@@ -1622,16 +1623,19 @@ fn resume_process_threads(process: HANDLE) -> Result<()> {
 
     loop {
         if entry.th32OwnerProcessID == pid {
-            // SAFETY: opening a thread by enumerated thread id with the minimal resume right.
-            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) }
-                .map_err(Error::other)?;
-            let thread = ScopedHandle(thread);
-            // SAFETY: `thread.0` is a valid thread handle with THREAD_SUSPEND_RESUME access.
-            let previous = unsafe { ResumeThread(thread.0) };
-            if previous == u32::MAX {
-                return Err(Error::last_os_error());
+            // The ToolHelp snapshot's owner PID is not sufficient: a TID can
+            // become stale before OpenThread. Request the minimal right needed
+            // to query the owner of the actual HANDLE before resuming it.
+            let thread = unsafe {
+                OpenThread(
+                    THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                    false,
+                    entry.th32ThreadID,
+                )
             }
-            resumed |= previous > 0;
+            .map_err(Error::other)?;
+            let thread = ScopedHandle(thread);
+            resumed |= resume_owned_root_thread(thread.0, pid)?;
         }
 
         // SAFETY: same valid snapshot and output buffer as above.
@@ -1651,6 +1655,29 @@ fn resume_process_threads(process: HANDLE) -> Result<()> {
     }
 }
 
+// Verify the owner of the ACTUAL kernel thread HANDLE, not merely the stale
+// ToolHelp snapshot's TID/PID association. This remains an identity check,
+// not the future atomic original-generation revoke/ResumeThread issuer.
+fn resume_owned_root_thread(thread: HANDLE, original_pid: u32) -> Result<bool> {
+    // SAFETY: the caller holds a live kernel thread HANDLE with query rights.
+    let actual_pid = unsafe { GetProcessIdOfThread(thread) };
+    if actual_pid == 0 {
+        return Err(Error::last_os_error());
+    }
+    if actual_pid != original_pid {
+        return Err(Error::new(
+            ErrorKind::PermissionDenied,
+            "opened thread belongs to a different process than the original root",
+        ));
+    }
+    // SAFETY: this exact queried thread HANDLE also has suspend/resume rights.
+    let previous = unsafe { ResumeThread(thread) };
+    if previous == u32::MAX {
+        return Err(Error::last_os_error());
+    }
+    Ok(previous > 0)
+}
+
 #[derive(Debug)]
 struct ScopedHandle(HANDLE);
 
@@ -1664,6 +1691,99 @@ impl Drop for ScopedHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_foreign_suspended_thread_must_not_be_resumed_by_original_root() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::System::Threading::GetCurrentProcessId;
+
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        // The process from which this test runs is not the suspended child.
+        // The borrowed thread HANDLE is a real kernel object, not a fake TID.
+        let system_root =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows system root"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file(), "fixed system executable must exist");
+        let mut command = StdCommand::new(executable);
+        command
+            .arg("/d")
+            .arg("/c")
+            .arg("exit /b 0")
+            .env_clear()
+            .env("SystemRoot", system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0);
+        let foreign = KillOnDrop(command.spawn().expect("real suspended process"));
+        let foreign_pid = foreign.0.id();
+        // SAFETY: this is a real kernel pid belonging to the suspended child.
+        let original_pid = unsafe { GetCurrentProcessId() };
+        assert_ne!(foreign_pid, original_pid);
+
+        // Enumerate the actual foreign suspended thread and retain its HANDLE.
+        // This models the foreign-owner outcome of a stale ToolHelp TID;
+        // it does not claim to force an actual TID-reuse race.
+        let snapshot = ScopedHandle(
+            unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+                .expect("real kernel thread enumeration"),
+        );
+        let mut entry = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        unsafe { Thread32First(snapshot.0, &mut entry) }.expect("first thread");
+        let foreign_thread = loop {
+            if entry.th32OwnerProcessID == foreign_pid {
+                let thread = unsafe {
+                    OpenThread(
+                        THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                        false,
+                        entry.th32ThreadID,
+                    )
+                }
+                .expect("open the real suspended foreign thread");
+                break ScopedHandle(thread);
+            }
+            unsafe { Thread32Next(snapshot.0, &mut entry) }
+                .expect("find foreign suspended fixture thread");
+        };
+
+        let outcome = resume_owned_root_thread(foreign_thread.0, original_pid);
+        assert!(
+            matches!(outcome, Err(ref error) if error.kind() == ErrorKind::PermissionDenied && error.to_string().contains("different process")),
+            "a foreign kernel thread must be refused before ResumeThread; got {outcome:?}"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(HANDLE(foreign.0.as_raw_handle()), 0) },
+            WAIT_TIMEOUT,
+            "foreign suspended process must stay unexecuted"
+        );
+
+        // The SAME real thread HANDLE must still be resumable when its true
+        // owner PID is supplied, proving rejection was identity-based rather
+        // than a missing query right or a dead fixture.
+        assert!(
+            resume_owned_root_thread(foreign_thread.0, foreign_pid)
+                .expect("real original thread owner must permit one resume")
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(HANDLE(foreign.0.as_raw_handle()), 5_000) },
+            WAIT_OBJECT_0,
+            "matching owner resumes real suspended cmd.exe to normal exit"
+        );
+    }
 
     #[test]
     fn rejects_invalid_limits() {
