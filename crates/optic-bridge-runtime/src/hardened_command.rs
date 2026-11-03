@@ -63,9 +63,10 @@ impl HardenedCommandRunner {
         self.run_inner(spec, None, Instant::now())
     }
 
-    /// A pre-spawn stop hook for one already-owned read operation. The caller
-    /// must still coordinate revocation with a native OS issuer; checking a
-    /// flag before Command::spawn is NOT an atomic revoke/create fence.
+    /// Original-generation stop observation for one already-owned read.
+    /// Also kills the direct child when stop becomes visible after spawn,
+    /// but never claims descendants, native Job/EOF custody or an atomic
+    /// Win32 CreateProcess/revoke fence.
     pub fn run_with_stop(
         &self,
         spec: &HardenedCommandSpec,
@@ -168,8 +169,17 @@ impl HardenedCommandRunner {
             spawn_bounded_reader(stderr, total, Arc::clone(&exceeded), spec.output_limit);
 
         let mut timed_out = false;
+        let mut original_stop_observed = false;
         let status = loop {
             if exceeded.load(Ordering::Acquire) {
+                let _ = child.kill();
+                break child.wait()?;
+            }
+            // Once the real child exists, keep observing the SAME original
+            // admission generation. Stopping the direct child promptly is
+            // not a Windows native Job/process-tree or CreateProcess fence.
+            if original_stop.is_some_and(|source| source()) {
+                original_stop_observed = true;
                 let _ = child.kill();
                 break child.wait()?;
             }
@@ -217,6 +227,11 @@ impl HardenedCommandRunner {
         if started.elapsed() >= self.timeout {
             return Err(HardenedCommandError::TimedOut);
         }
+        // Recheck after direct-child exit and output drainage as well:
+        // a successful child exit alone cannot override a later revoke.
+        if original_stop_observed || original_stop.is_some_and(|source| source()) {
+            return Err(HardenedCommandError::StopRequested);
+        }
         if let Some(result) = input_result {
             result?;
         }
@@ -248,7 +263,7 @@ pub enum HardenedCommandError {
     ZeroTimeout,
     #[error("command exceeded its hard deadline")]
     TimedOut,
-    #[error("original read stop requested before command creation")]
+    #[error("original read stop requested")]
     StopRequested,
     #[error("command output exceeded byte ceiling {limit}")]
     OutputLimitExceeded { limit: u64 },
@@ -303,6 +318,86 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn original_stop_after_real_spawn_must_interrupt_owned_direct_child() {
+        use std::sync::atomic::AtomicBool;
+
+        // The child is this isolated Rust test binary, never a user Git
+        // workspace. Its marker proves CreateProcess returned and the child
+        // actually executed before the ORIGINAL stop source changed.
+        let workspace = std::env::temp_dir().join(format!(
+            "optic-live-stop-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        std::fs::create_dir(&workspace).expect("create isolated stop fixture");
+        let _cleanup = Cleanup(workspace.clone());
+        let marker = workspace.join("child-started");
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            OsString::from("OPTIC_LIVE_STOP_FIXTURE_MARKER"),
+            marker.as_os_str().to_owned(),
+        );
+        let spec = HardenedCommandSpec {
+            executable: std::env::current_exe().expect("current Windows test binary"),
+            cwd: workspace.clone(),
+            args: vec![
+                "--exact".into(),
+                "hardened_command::tests::original_stop_direct_child_fixture".into(),
+                "--nocapture".into(),
+                "--test-threads=1".into(),
+            ],
+            env: environment,
+            output_limit: 16 * 1024,
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let observed_stop = Arc::clone(&stop);
+        let worker = std::thread::spawn(move || {
+            let runner = HardenedCommandRunner::new(Duration::from_secs(15)).unwrap();
+            runner.run_with_stop(&spec, &|| observed_stop.load(Ordering::Acquire))
+        });
+
+        let bound = Instant::now() + Duration::from_secs(8);
+        while !marker.is_file() && Instant::now() < bound {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let child_started = marker.is_file();
+        let revoked_at = Instant::now();
+        stop.store(true, Ordering::Release);
+        let outcome = worker.join().expect("real child runner worker");
+        let stop_latency = revoked_at.elapsed();
+
+        assert!(
+            child_started,
+            "actual child must enter its fixture before revoke"
+        );
+        assert!(
+            matches!(outcome, Err(HardenedCommandError::StopRequested)),
+            "original stop while real direct child is executing must interrupt that child: {outcome:?}"
+        );
+        assert!(
+            stop_latency < Duration::from_secs(2),
+            "direct-child stop must return promptly, observed {stop_latency:?}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn original_stop_direct_child_fixture() {
+        let Some(marker) = std::env::var_os("OPTIC_LIVE_STOP_FIXTURE_MARKER") else {
+            return;
+        };
+        std::fs::write(marker, b"executing").expect("signal real child execution");
+        std::thread::sleep(Duration::from_secs(5));
+    }
 
     #[cfg(windows)]
     #[test]
