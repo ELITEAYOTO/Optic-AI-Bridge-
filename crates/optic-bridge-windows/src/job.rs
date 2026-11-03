@@ -582,10 +582,27 @@ impl PrecreatedNativeReadCustody {
             pid,
         };
         before_retention();
+        // The root may have PHYSICALLY exited between our first liveness
+        // observation and DuplicateHandle. Recheck the exact duplicated
+        // kernel HANDLE, not a PID, immediately before permanent retention.
+        // A signaled/invalid root cannot be installed as the live root of
+        // this original native Job even if no stop flag has been published.
+        // This observation is NOT an atomic native Create/Resume issuer:
+        // a later exit still requires the original OS/EOF guardian.
+        match unsafe { WaitForSingleObject(HANDLE(pinned.handle.as_raw_handle()), 0) } {
+            WAIT_TIMEOUT => {}
+            WAIT_OBJECT_0 => {
+                return Err(Error::new(
+                    ErrorKind::PermissionDenied,
+                    "native root exited after HANDLE duplication but before retention",
+                ));
+            }
+            _ => return Err(Error::last_os_error()),
+        }
         // Reobserve the very same ORIGINAL stop sources and absolute horizon
-        // after native handle duplication, just before retaining this root.
-        // This still is NOT an atomic CreateProcessW/ResumeThread/revoke gate:
-        // a later revoke must be handled by the independent original watchdog.
+        // after the actual native HANDLE and liveness checks, just before
+        // retaining this root. Later stop still belongs to the original Job
+        // watchdog; this is NOT an atomic CreateProcessW/ResumeThread gate.
         if self.root_retention_stopped() {
             return Err(Error::new(
                 ErrorKind::PermissionDenied,
@@ -879,6 +896,114 @@ mod precreated_native_read_tests {
             owner.active_processes().expect("real post-stop Job query"),
             0,
             "the original watchdog must terminate the suspended kernel root"
+        );
+    }
+
+    #[test]
+    fn real_exited_root_after_handle_duplication_must_not_be_retained() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child, Command as NativeCommand, Stdio},
+        };
+        use windows::Win32::System::Threading::TerminateProcess;
+
+        // Actual suspended Win32 process, real original kernel Job and a real
+        // duplicated process HANDLE. It is NEVER resumed and never runs Git.
+        // The test kills the real root precisely after DuplicateHandle but
+        // BEFORE owner custody can publish its pinned root.
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+            }
+        }
+
+        let root_dir =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows system root"));
+        let executable = root_dir.join("System32").join("cmd.exe");
+        assert!(executable.is_file(), "fixed Windows kernel fixture target");
+        let limits = LimitedJobObject::new(1, 256 * 1024 * 1024, 50).expect("bounded original Job");
+        let mut owner =
+            PrecreatedNativeReadCustody::new(limits).expect("real Job and original stdio custody");
+        let original_stop = Arc::new(AtomicBool::new(false));
+        owner
+            .arm_watchdog(20_000, vec![Arc::clone(&original_stop)])
+            .expect("independent original watchdog");
+
+        let mut command = NativeCommand::new(executable);
+        command
+            .arg("/d")
+            .arg("/c")
+            .arg("exit /b 0")
+            .current_dir(std::env::temp_dir())
+            .env_clear()
+            .env("SystemRoot", root_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0);
+        let root = KillOnDrop(command.spawn().expect("real CREATE_SUSPENDED root"));
+        drop(command);
+        let process = HANDLE(root.0.as_raw_handle());
+        // SAFETY: private Job and real suspended root are alive and owned.
+        unsafe { AssignProcessToJobObject(owner.job.raw(), process) }
+            .expect("assign actual suspended root to original Job");
+        assert_eq!(owner.active_processes().expect("real Job count"), 1);
+        assert_eq!(
+            unsafe { WaitForSingleObject(process, 0) },
+            WAIT_TIMEOUT,
+            "the original kernel root must be alive at the initial observation"
+        );
+        let reached_native_boundary = AtomicBool::new(false);
+        // SAFETY: the original Child retains this exact process HANDLE
+        // throughout pin_original_job_root_with_before_retention.
+        let result = owner.pin_original_job_root_with_before_retention(
+            unsafe { BorrowedHandle::borrow_raw(root.0.as_raw_handle()) },
+            || {
+                reached_native_boundary.store(true, Ordering::Release);
+                // SAFETY: TerminateProcess acts on the still-owned exact
+                // original root HANDLE, not a PID or detached process lookup.
+                unsafe { TerminateProcess(process, 93) }
+                    .expect("terminate real suspended root after duplicate");
+                assert_eq!(
+                    unsafe { WaitForSingleObject(process, 3000) },
+                    WAIT_OBJECT_0,
+                    "kernel MUST show root physically exited before root retention"
+                );
+            },
+        );
+        assert!(
+            reached_native_boundary.load(Ordering::Acquire),
+            "test must reach the real post-DuplicateHandle retention boundary"
+        );
+        assert!(
+            !original_stop.load(Ordering::Acquire),
+            "no original revoke: refusal must be caused by real root exit"
+        );
+        assert!(
+            matches!(result, Err(ref error) if error.kind() == ErrorKind::PermissionDenied),
+            "exited kernel root cannot become a new pinned live root: {result:?}"
+        );
+        assert!(
+            owner.original_root.is_none(),
+            "a physically exited root must not be installed in native custody"
+        );
+
+        let until = Instant::now() + Duration::from_secs(3);
+        while owner.active_processes().expect("original kernel Job") != 0 {
+            assert!(
+                Instant::now() < until,
+                "kernel Job did not drain exited root"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(owner.watchdog_termination_result(), None);
+        assert!(!owner.watchdog_stop_observed());
+        assert_eq!(
+            unsafe { WaitForSingleObject(process, 0) },
+            WAIT_OBJECT_0,
+            "original root remains physically exited, never resumed"
         );
     }
 
