@@ -116,12 +116,24 @@ impl CommandWrapper for LimitedJobObject {
         mut inner: Box<dyn ChildWrapper>,
         _core: &CommandWrap,
     ) -> Result<Box<dyn ChildWrapper>> {
-        let process = child_process_handle(inner.as_ref()).ok_or_else(|| {
-            Error::new(
-                ErrorKind::Unsupported,
-                "child wrapper does not expose a Windows process handle",
-            )
-        })?;
+        let process = match child_process_handle(inner.as_ref()) {
+            Some(handle) => handle,
+            None => {
+                // pre_spawn already requested CREATE_SUSPENDED; dropping a
+                // wrapper without an exposed process HANDLE does not kill
+                // its child. Ask the ORIGINAL wrapper to stop that suspended
+                // process before we lose its unique owner.
+                if let Err(error) = inner.start_kill() {
+                    return Err(Error::other(format!(
+                        "child wrapper has no Windows process handle; suspended child termination uncertain: {error}"
+                    )));
+                }
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "child wrapper does not expose a Windows process handle",
+                ));
+            }
+        };
         let process = HANDLE(process.as_raw_handle());
 
         let job = match OwnedJob::create(
@@ -1696,6 +1708,95 @@ impl Drop for ScopedHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_suspended_opaque_child_is_killed_when_wrapper_cannot_obtain_process_handle() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::System::Threading::TerminateProcess;
+
+        // A valid terminal ChildWrapper may deliberately hide a raw process
+        // HANDLE. No Tokio native child is discoverable in this wrapper chain.
+        #[derive(Debug)]
+        struct OpaqueSuspendedChild(StdChild);
+        impl ChildWrapper for OpaqueSuspendedChild {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                self.0.kill()
+            }
+        }
+        // Preserve independent kernel ownership through wrapper failure. The
+        // guard is only a test emergency cleanup, never the production fix.
+        struct TestRootCleanup(OwnedHandle);
+        impl Drop for TestRootCleanup {
+            fn drop(&mut self) {
+                let process = HANDLE(self.0.as_raw_handle());
+                let _ = unsafe { TerminateProcess(process, 1) };
+                let _ = unsafe { WaitForSingleObject(process, 5_000) };
+            }
+        }
+
+        let system_root =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("Windows system root"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file());
+        let child = StdCommand::new(&executable)
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real suspended fixed System32 child");
+        let mut duplicate = HANDLE::default();
+        // SAFETY: original std Child and current process handles are live;
+        // the test retains a distinct non-inheritable PROCESS handle.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("duplicate exact original child HANDLE for physical observation");
+        let root = TestRootCleanup(unsafe { OwnedHandle::from_raw_handle(duplicate.0) });
+        let process = HANDLE(root.0.as_raw_handle());
+        assert_eq!(
+            unsafe { WaitForSingleObject(process, 0) },
+            WAIT_TIMEOUT,
+            "the suspended test process has not run"
+        );
+
+        let mut limits = LimitedJobObject::new(1, 128 * 1024 * 1024, 25).unwrap();
+        let core = CommandWrap::with_new(&executable, |_| {});
+        let result = limits.wrap_child(Box::new(OpaqueSuspendedChild(child)), &core);
+        assert!(
+            matches!(result, Err(ref error) if error.kind() == ErrorKind::Unsupported),
+            "opaque process must be rejected rather than wrapped"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(process, 3_000) },
+            WAIT_OBJECT_0,
+            "a failed containment wrapper MUST physically terminate the owned suspended child"
+        );
+    }
 
     #[test]
     fn real_foreign_suspended_thread_must_not_be_resumed_by_original_root() {
