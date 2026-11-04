@@ -653,6 +653,11 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::invalid_params("optic.process_cursor_out_of_range", None)
         }
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
+        #[cfg(windows)]
+        ProcessError::UnconfirmedWindowsSpawn { job_id, .. } => ErrorData::internal_error(
+            "optic.process_spawn_termination_uncertain",
+            Some(serde_json::json!({ "job_id": job_id.to_token() })),
+        ),
         ProcessError::StartStoppedBeforeSpawn => {
             ErrorData::invalid_request("optic.process_start_stopped_before_spawn", None)
         }
@@ -888,6 +893,21 @@ mod tests {
         assert_eq!(
             map_task_lease_error(TaskLeaseRegistryError::Revoked).message,
             "optic.task_lease_inactive"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn uncertain_native_spawn_error_retains_owner_scoped_job_id_for_reconciliation() {
+        let job_id = optic_bridge_core::JobId::generate().expect("private job identity");
+        let mapped = map_process_error(ProcessError::UnconfirmedWindowsSpawn {
+            job_id: job_id.clone(),
+            source: std::io::Error::other("original kernel root exit unconfirmed"),
+        });
+        assert_eq!(mapped.message, "optic.process_spawn_termination_uncertain");
+        assert_eq!(
+            mapped.data,
+            Some(serde_json::json!({"job_id": job_id.to_token()}))
         );
     }
 

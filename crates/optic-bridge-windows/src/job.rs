@@ -51,6 +51,27 @@ use windows::{
 
 const JOB_EMPTY_POLL: Duration = Duration::from_millis(10);
 
+/// Typed evidence that a post-CreateProcessW wrapper setup error has NO
+/// confirmed native root exit. Neither a successful wrapper stop request nor
+/// an unconfirmed kernel stop allows consumers to release process quotas.
+/// This is evidence classification, NOT proof of a still-running process.
+#[derive(Debug)]
+pub struct UnconfirmedWindowsChildTermination {
+    detail: String,
+}
+
+impl std::fmt::Display for UnconfirmedWindowsChildTermination {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for UnconfirmedWindowsChildTermination {}
+
+fn uncertain_child_termination(message: String) -> Error {
+    Error::other(UnconfirmedWindowsChildTermination { detail: message })
+}
+
 /// Windows Job Object containment configured from an already-authorized process budget.
 ///
 /// The wrapper forces temporary suspended creation, creates/configures the Job Object,
@@ -129,7 +150,7 @@ impl CommandWrapper for LimitedJobObject {
                 // trustworthy physical observation, even when start_kill()
                 // returns Ok. Do not classify this as ordinary Unsupported.
                 let stop = inner.start_kill();
-                return Err(Error::other(format!(
+                return Err(uncertain_child_termination(format!(
                     "child wrapper has no Windows process handle; suspended child termination uncertain: wrapper stop={stop:?}; original kernel process exit unobservable"
                 )));
             }
@@ -200,7 +221,7 @@ fn terminate_original_suspended_root_after_job_error(
                 return setup_error;
             }
             let fallback = child.start_kill();
-            Error::other(format!(
+            uncertain_child_termination(format!(
                 "Windows Job setup failed ({setup_error}); suspended root termination uncertain: process wait={state:?}, wrapper fallback={fallback:?}"
             ))
         }
@@ -211,7 +232,7 @@ fn terminate_original_suspended_root_after_job_error(
                 return setup_error;
             }
             let fallback = child.start_kill();
-            Error::other(format!(
+            uncertain_child_termination(format!(
                 "Windows Job setup failed ({setup_error}); suspended root termination uncertain: native stop={stop_error}, wrapper fallback={fallback:?}"
             ))
         }

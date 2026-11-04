@@ -25,7 +25,8 @@ use optic_bridge_core::{
 #[cfg(windows)]
 use optic_bridge_windows::{
     HostMemorySnapshot, LimitedJobObject, PinnedDirectoryChain, PinnedDirectoryError,
-    PinnedExecutableFile, open_pinned_executable, pin_directory_chain, query_host_memory_snapshot,
+    PinnedExecutableFile, UnconfirmedWindowsChildTermination, open_pinned_executable,
+    pin_directory_chain, query_host_memory_snapshot,
 };
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(unix)]
@@ -378,7 +379,7 @@ impl ProcessManager {
     }
 
     pub fn start(&self, spec: ProcessStartSpec) -> Result<JobId, ProcessError> {
-        self.start_with_before_spawn_probe(spec, |_| {})
+        self.start_with_before_spawn_probe(spec, |_, _| {})
     }
 
     // Production passes an empty probe. Test-only callers place a concurrent
@@ -387,7 +388,7 @@ impl ProcessManager {
     fn start_with_before_spawn_probe(
         &self,
         spec: ProcessStartSpec,
-        before_spawn: impl FnOnce(&JobId),
+        before_spawn: impl FnOnce(&JobId, &mut CommandWrap),
     ) -> Result<JobId, ProcessError> {
         let resources = spec.resources.validate_nonzero()?;
         if !resources.fits_within(self.limits.max_process_budget) {
@@ -571,6 +572,9 @@ impl ProcessManager {
         }
 
         let mut command = CommandWrap::from(command);
+        // The record already exists. This test-only fixture hook may add an
+        // opaque wrapper before the real Windows Job containment wrapper.
+        before_spawn(&job_id, &mut command);
         #[cfg(windows)]
         command.wrap(if requires_isolation {
             // The private launcher communicates over pipes. A console signal
@@ -587,7 +591,6 @@ impl ProcessManager {
 
         // No process exists yet; a test can publish a real concurrent stop
         // precisely after reservation and before CommandWrap::spawn().
-        before_spawn(&job_id);
         // A stop can complete after reservation but before OS creation.
         // Refuse that already-stopped start and release its unused capacity.
         // A stop racing AFTER this check still needs a synchronized native
@@ -599,6 +602,26 @@ impl ProcessManager {
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
+                #[cfg(windows)]
+                if error
+                    .get_ref()
+                    .is_some_and(|source| source.is::<UnconfirmedWindowsChildTermination>())
+                {
+                    // The real Windows root may have been created, but its
+                    // physical termination was never observed. Hold the
+                    // original reservation and do not invent output EOF.
+                    record.stop_requested.store(true, Ordering::Release);
+                    record.output_overflow.store(true, Ordering::Release);
+                    if let Ok(mut state) = record.state.lock() {
+                        state.status = ProcessStatus::TerminationUncertain;
+                        state.exit_code = None;
+                    }
+                    return Err(ProcessError::UnconfirmedWindowsSpawn {
+                        job_id,
+                        source: error,
+                    });
+                }
+                // Ordinary pre-create failures may release unused capacity.
                 self.remove_job(&job_id);
                 return Err(ProcessError::Io(error));
             }
@@ -1672,6 +1695,13 @@ pub enum ProcessError {
     JobIdUnavailable,
     #[error("process runtime state is unavailable")]
     StateUnavailable,
+    #[cfg(windows)]
+    #[error("Windows process spawn termination uncertain; original reservation retained")]
+    UnconfirmedWindowsSpawn {
+        job_id: JobId,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("process operating-system operation failed: {0}")]
     Io(std::io::Error),
 }

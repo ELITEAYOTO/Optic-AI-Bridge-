@@ -54,7 +54,10 @@ pub use file::{
     open_file_for_delete_no_reparse, open_file_no_reparse, replace_file_atomically,
 };
 #[cfg(windows)]
-pub use job::{ContainedAppContainerProcess, LimitedJobObject, PrecreatedNativeReadCustody};
+pub use job::{
+    ContainedAppContainerProcess, LimitedJobObject, PrecreatedNativeReadCustody,
+    UnconfirmedWindowsChildTermination,
+};
 #[cfg(windows)]
 pub use memory::{HostMemorySnapshot, query_host_memory_snapshot};
 #[cfg(windows)]
