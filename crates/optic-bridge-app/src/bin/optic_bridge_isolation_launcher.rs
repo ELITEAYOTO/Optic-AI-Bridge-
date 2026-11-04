@@ -166,9 +166,16 @@ mod windows_launcher {
         let timeout_ms = u32::try_from(request.timeout_ms).map_err(|_| {
             IoError::new(ErrorKind::InvalidInput, "launcher timeout does not fit u32")
         })?;
-        let exit = child
-            .wait_exit(timeout_ms)
-            .map_err(|error| IoError::other(format!("wait AppContainer target: {error}")))?;
+        // Only the existing exact opt-in diagnostic path samples original
+        // kernel CPU at bounded 1s/5s checkpoints. The normal path keeps its
+        // original wait behavior; both paths retain the same 10s ceiling,
+        // unchanged token/network/stdio isolation and fail-closed timeout.
+        let exit = if timing.enabled {
+            child.wait_exit_with_fixed_cpu_progress(timeout_ms)
+        } else {
+            child.wait_exit(timeout_ms)
+        }
+        .map_err(|error| IoError::other(format!("wait AppContainer target: {error}")))?;
         timing.mark("target_exited");
         Ok(exit as i32)
     }
