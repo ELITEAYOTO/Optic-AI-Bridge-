@@ -28,6 +28,7 @@ use windows::{
             },
             PSID, SECURITY_CAPABILITIES, TOKEN_QUERY, TokenIsAppContainer,
         },
+        System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
             DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
@@ -493,11 +494,30 @@ impl SuspendedAppContainerProcess {
         // SAFETY: read-only query on the original PROCESS handle, with exact
         // writable DWORD storage. No process enumeration or PID lookup.
         let handles_ok = unsafe { GetProcessHandleCount(self.process, &mut handle_count) }.is_ok();
+        // A page-fault counter/working-set snapshot can distinguish a
+        // progressing loader from an otherwise silent target. Neither
+        // memory growth nor zero faults proves that Node executed the probe.
+        // The observation reads ONLY the same original PROCESS HANDLE,
+        // without opening process IDs, granting ACLs, or extending deadlines.
+        let mut memory = PROCESS_MEMORY_COUNTERS {
+            cb: size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: original owned PROCESS handle and an initialized exact
+        // PROCESS_MEMORY_COUNTERS buffer. Query failure stays "unavailable".
+        let memory_ok = unsafe {
+            GetProcessMemoryInfo(
+                self.process,
+                &mut memory,
+                size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            )
+        }
+        .is_ok();
         let display = |value: Option<u64>| {
             value.map_or_else(|| String::from("unavailable"), |value| value.to_string())
         };
         format!(
-            "process_kernel_cpu_ms={} process_user_cpu_ms={} primary_thread_kernel_cpu_ms={} primary_thread_user_cpu_ms={} process_read_ops={} process_read_bytes={} process_handle_count={}",
+            "process_kernel_cpu_ms={} process_user_cpu_ms={} primary_thread_kernel_cpu_ms={} primary_thread_user_cpu_ms={} process_read_ops={} process_read_bytes={} process_handle_count={} process_working_set_bytes={} process_peak_working_set_bytes={} process_page_faults={}",
             display(process_cpu.map(|cpu| cpu.0)),
             display(process_cpu.map(|cpu| cpu.1)),
             display(primary_cpu.map(|cpu| cpu.0)),
@@ -505,6 +525,9 @@ impl SuspendedAppContainerProcess {
             display(io_ok.then_some(io.ReadOperationCount)),
             display(io_ok.then_some(io.ReadTransferCount)),
             display(handles_ok.then_some(u64::from(handle_count))),
+            display(memory_ok.then_some(memory.WorkingSetSize as u64)),
+            display(memory_ok.then_some(memory.PeakWorkingSetSize as u64)),
+            display(memory_ok.then_some(u64::from(memory.PageFaultCount))),
         )
     }
 }
@@ -1114,6 +1137,24 @@ mod tests {
         .expect("create original suspended test root");
         assert!(!child.has_resumed());
         assert!(child.is_appcontainer().unwrap());
+        // Query the genuine still-suspended owned PROCESS handle before
+        // termination: a mere label containing "unavailable" is not enough
+        // to claim that the new memory counters work on real Windows.
+        let snapshot = child.kernel_cpu_on_timeout();
+        for field in [
+            "process_working_set_bytes=",
+            "process_peak_working_set_bytes=",
+            "process_page_faults=",
+        ] {
+            let value = snapshot
+                .split_ascii_whitespace()
+                .find_map(|part| part.strip_prefix(field))
+                .expect("original memory observation must contain each fixed field");
+            assert!(
+                value.parse::<u64>().is_ok(),
+                "original PROCESS memory query must return a numeric value, not a fabricated zero or unavailable: {snapshot}"
+            );
+        }
         let failure = child
             .wait_exit(25)
             .expect_err("unresumed child cannot exit");
@@ -1125,7 +1166,10 @@ mod tests {
                 && detail.contains("primary_thread_user_cpu_ms=")
                 && detail.contains("process_read_ops=")
                 && detail.contains("process_read_bytes=")
-                && detail.contains("process_handle_count="),
+                && detail.contains("process_handle_count=")
+                && detail.contains("process_working_set_bytes=")
+                && detail.contains("process_peak_working_set_bytes=")
+                && detail.contains("process_page_faults="),
             "OS timeout must report fixed CPU categories, never paths or tokens: {detail}"
         );
         assert!(
