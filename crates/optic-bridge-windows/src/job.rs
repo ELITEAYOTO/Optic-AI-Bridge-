@@ -42,7 +42,7 @@ use windows::{
             Threading::{
                 CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess, GetProcessId,
                 GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
-                THREAD_SUSPEND_RESUME, WaitForSingleObject,
+                THREAD_SUSPEND_RESUME, TerminateProcess, WaitForSingleObject,
             },
         },
     },
@@ -143,8 +143,11 @@ impl CommandWrapper for LimitedJobObject {
         ) {
             Ok(job) => job,
             Err(error) => {
-                let _ = inner.start_kill();
-                return Err(error);
+                return Err(terminate_root_after_failed_job_creation(
+                    process,
+                    inner.as_mut(),
+                    error,
+                ));
             }
         };
 
@@ -166,6 +169,44 @@ impl CommandWrapper for LimitedJobObject {
             job,
             root_status: None,
         }))
+    }
+}
+
+// An OS Job configuration failure occurs AFTER CommandWrap has created the
+// suspended root but BEFORE it belongs to any Job. Do not depend solely on a
+// ChildWrapper's fallible termination request: the original live PROCESS HANDLE
+// is still borrowed from that wrapper and can be used to stop the exact root.
+// Never turn an unsuccessful OS stop/wait into ordinary setup failure.
+fn terminate_root_after_failed_job_creation(
+    process: HANDLE,
+    child: &mut dyn ChildWrapper,
+    setup_error: Error,
+) -> Error {
+    // SAFETY: process is the original suspended child's live PROCESS HANDLE,
+    // borrowed from child for this entire synchronous call.
+    match unsafe { TerminateProcess(process, 1) } {
+        Ok(()) => {
+            // SAFETY: wait only on the same still-owned original PROCESS HANDLE.
+            let state = unsafe { WaitForSingleObject(process, 3_000) };
+            if state == WAIT_OBJECT_0 {
+                return setup_error;
+            }
+            let fallback = child.start_kill();
+            Error::other(format!(
+                "Windows Job creation failed ({setup_error}); suspended root termination uncertain: process wait={state:?}, wrapper fallback={fallback:?}"
+            ))
+        }
+        Err(stop_error) => {
+            // A process can have exited independently before our stop request.
+            // SAFETY: zero-time observation of the exact original PROCESS HANDLE.
+            if unsafe { WaitForSingleObject(process, 0) } == WAIT_OBJECT_0 {
+                return setup_error;
+            }
+            let fallback = child.start_kill();
+            Error::other(format!(
+                "Windows Job creation failed ({setup_error}); suspended root termination uncertain: native stop={stop_error}, wrapper fallback={fallback:?}"
+            ))
+        }
     }
 }
 
@@ -1708,6 +1749,99 @@ impl Drop for ScopedHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn job_creation_failure_kills_original_suspended_root_even_if_wrapper_stop_fails() {
+        use std::{
+            os::windows::{
+                io::{AsHandle, AsRawHandle},
+                process::CommandExt,
+            },
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::System::Threading::TerminateProcess;
+
+        #[derive(Debug)]
+        struct RefusingStopChild(StdChild);
+        impl ChildWrapper for RefusingStopChild {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn process_handle(&self) -> Option<BorrowedHandle<'_>> {
+                Some(self.0.as_handle())
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                Err(Error::other("injected wrapper termination refusal"))
+            }
+        }
+
+        // The test's independently retained kernel handle guarantees cleanup
+        // even when the assertion fails on the unpatched implementation.
+        struct EmergencyRootCleanup(OwnedHandle);
+        impl Drop for EmergencyRootCleanup {
+            fn drop(&mut self) {
+                let root = HANDLE(self.0.as_raw_handle());
+                let _ = unsafe { TerminateProcess(root, 1) };
+                let _ = unsafe { WaitForSingleObject(root, 5_000) };
+            }
+        }
+
+        let system_root = PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file());
+        let child = StdCommand::new(&executable)
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real fixed suspended Win32 root");
+
+        let mut duplicate = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("independent original PROCESS handle");
+        let guard = EmergencyRootCleanup(unsafe { OwnedHandle::from_raw_handle(duplicate.0) });
+        let kernel_root = HANDLE(guard.0.as_raw_handle());
+        assert_eq!(unsafe { WaitForSingleObject(kernel_root, 0) }, WAIT_TIMEOUT);
+
+        // The public constructor rightly rejects zero CPU budget. A direct
+        // invalid test-only field forces an actual Win32 Job configuration
+        // error AFTER the suspended child exists, not a synthetic mock.
+        let mut limits = LimitedJobObject {
+            active_process_limit: 1,
+            job_memory_limit: 128 * 1024 * 1024,
+            cpu_percent: 0,
+            without_console: true,
+        };
+        let core = CommandWrap::with_new(&executable, |_| {});
+        let failed = limits.wrap_child(Box::new(RefusingStopChild(child)), &core);
+        assert!(failed.is_err(), "invalid real kernel Job budget must fail");
+        assert_eq!(
+            unsafe { WaitForSingleObject(kernel_root, 3_000) },
+            WAIT_OBJECT_0,
+            "a failed Job creation must not abandon a live suspended root when wrapper stop fails"
+        );
+    }
 
     #[test]
     fn real_suspended_opaque_child_is_killed_when_wrapper_cannot_obtain_process_handle() {
