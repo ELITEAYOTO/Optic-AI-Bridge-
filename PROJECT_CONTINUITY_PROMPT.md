@@ -1,5 +1,10 @@
 # Prompt de reprise — Optic AI Bridge (GitHub uniquement)
 
+## CANONIQUE 4 novembre 2026 — reprendre apres #509
+
+**Utiliser maintenant** [le prompt integral apres #509](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR509_2026-11-04.md), [la passation](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR509_2026-11-04.md) et [le journal de preuves](docs/engineering/PR505_509_VALIDATION_RECEIPTS_2026-11-04.md). Checkpoint avant documentation : `main=767dda7cfbf56ce3cf94098a996eee5bbac68461`, CI independante [#41852887021](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41852887021) 4/4 SUCCESS tentative1, tree `f85c0f6297c14e220ee0be17897e4c3004499d38`. Re-verifier la fusion documentaire et sa CI avant nouvelle PR. **#323 OPEN, Windows V1 NO-GO, GitRead MCP legacy, issuer/revocation atomiques absents.** Ne pas suivre comme « actuelles » les anciennes passations ci-dessous : historique. Aucun release, bypass, rerun-to-green ou modification d'un projet hors Bridge.
+
+
 ## Reprise canonique au 1 novembre 2026 après PR #464
 
 **Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**

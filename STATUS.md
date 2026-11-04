@@ -1,5 +1,12 @@
 # Current project status
 
+## Etat confirme — 4 novembre 2026, apres PR #509 (pre-passation documentaire)
+
+**Integration :** `main=767dda7cfbf56ce3cf94098a996eee5bbac68461`, tree `f85c0f6297c14e220ee0be17897e4c3004499d38` identique au code teste, PR #509 MERGED. [CI PR #41851820058](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41851820058) 4/4 + trois workflows specialises premiere tentative SUCCESS ; [CI independante push/main #41852887021](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41852887021) **4/4 SUCCESS premiere tentative**. #509 garde les quotas et `JobRecord` en `TerminationUncertain` sur erreur Win32 post-create *typee* ; 24 repetitions Windows, crate Windows 82/4 ignored, runtime 475/11 ignored, workspace standard et all-features 810/15 ignored, strict Clippy/fmt/diff PASS. [Preuves detaillees](docs/engineering/PR505_509_VALIDATION_RECEIPTS_2026-11-04.md).
+
+**Blocage :** [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) OPEN, Windows 10/11 V1 **NO-GO**. Issuer/guardian natif generation-bound et revocation-linearizable **absent** pour session/TaskLease/policy/host face aux vrais Create/Resume. GitRead toujours `HardenedCommandRunner` ; contre-exemple #355 non resolu. #185/#319 OPEN et PR #499 BLOQUEE. Pas de release. [Passation canonique](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR509_2026-11-04.md), [prompt de reprise](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR509_2026-11-04.md). Ce SHA est un point date **avant** la PR documentaire : controler le nouveau main et sa CI apres fusion.
+
+
 ## Reprise vérifiée — 1 novembre 2026 (après PR #470)
 
 Instantané pré-documentation : `main=bd121996ce38757362e35c85d3113dda089aefd1`, [CI indépendante push/main #41332810883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41332810883) **4/4 SUCCESS** après fusion des corrections #469 (classification API key) et #470 (Git worktree longpaths Windows, configuration Git locale au processus). [PR #471](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/471) **DRAFT / NON MERGED**, [CI #41335658243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41335658243) **4/4 SUCCESS**, décision de compatibilité GitDiff encore requise. Aucun GO de publication V1.

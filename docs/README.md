@@ -1,5 +1,15 @@
 # Documentation map
 
+## Point de reprise ACTIF — 4 novembre 2026, apres #509
+
+- **[Passation Windows V1 actuelle apres #509](engineering/HANDOFF_WINDOWS_V1_AFTER_PR509_2026-11-04.md)** : etat GitHub, PR #505–#509, tests vrais OS et risque P0 toujours NO-GO.
+- **[Prompt integral nouveau chat](engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR509_2026-11-04.md)** : perimetre autorise, methode complete RED/GREEN/CI et premiere action.
+- **[Recu cumule et preuves #505–#509](engineering/PR505_509_VALIDATION_RECEIPTS_2026-11-04.md)** : Git SHAs, run IDs, logs hash et limites.
+- Source connue pre-PR documentaire : `main=767dda7cfbf56ce3cf94098a996eee5bbac68461`, [CI push/main #41852887021](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41852887021) **4/4 SUCCESS tentative1**. Apres la nouvelle fusion documentaire, re-verifier le SHA et la CI. **Windows V1 NO-GO / #323 OPEN**.
+
+Les checkpoints plus anciens ci-dessous sont historiques, **pas** le point de reprise actuel.
+
+
 ## Latest GitHub-only Windows V1 checkpoint
 
 - **[Post-#470 / 1 November 2026 current handoff, evidence and safe replay](engineering/HANDOFF_WINDOWS_V1_POST_470_2026-11-01.md)** — verified merged #469/#470, draft #471, #317 RED 3/3, 38 inert native/kernel tests PASS, isolated Cargo build and zero-test false-positive warning. **Windows V1 NO-GO**. Re-query live main and CI after any documentation merge.
