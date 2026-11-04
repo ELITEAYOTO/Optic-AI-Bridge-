@@ -722,6 +722,29 @@ impl PrecreatedNativeReadCustody {
                 ));
             }
             if root_exited && job_empty && stdout_eof && stderr_eof {
+                // The kernel's first Job-empty count was observed BEFORE
+                // both pipe polls. A native Create already in flight can
+                // return a NEW suspended in-Job child during that window,
+                // even after successful TerminateJobObject. A stale zero
+                // must not be promoted to a positive terminal receipt.
+                //
+                // This second real query is necessary, NOT sufficient:
+                // only a future, shared native issuer/revoke fence can rule
+                // out a NEW process after this final observation.
+                if self.job.active_processes()? != 0 {
+                    return Err(Error::new(
+                        ErrorKind::WouldBlock,
+                        "original native Job became nonempty before physical stop receipt; native issuer closure is not proven",
+                    ));
+                }
+                // A second kernel query is not allowed to silently extend
+                // the original absolute cleanup horizon.
+                if now() >= cleanup_until {
+                    return Err(Error::new(
+                        ErrorKind::TimedOut,
+                        "native Job final recount exceeded original cleanup horizon",
+                    ));
+                }
                 return Ok(NativePhysicalStopReceipt {
                     root_pid: root.pid,
                     discarded_stdout_bytes: stdout_bytes,
