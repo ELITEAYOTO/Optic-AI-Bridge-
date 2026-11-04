@@ -1,5 +1,14 @@
 # Repository entry point for coding agents
 
+## Reprise prioritaire : 2 novembre 2026, apres PR #490
+
+**Source de verite pour les prochains agents** : [passation apres #490](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR490_2026-11-02.md) et [prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR490_2026-11-02.md). Avant la PR documentaire actuelle : `main=c69ef87155a1dc1a58520f8cfe11384db2c1ff5f`, [push/main #41519267054](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41519267054) **4/4 SUCCESS tentative 1**. Apres fusion documentaire : re-interroger main et sa nouvelle CI.
+
+Le GitRead MCP observe le stop de session originale apres politique (#489), puis juste avant chaque lancement Git legacy (#490). **Snapshot, PAS issuer Win32 atomique** : revoke peut gagner apres le controle. [#323](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/issues/323) **OPEN / V1 NO-GO**. P0 : issuer natif service-owned, original session/TaskLease/policy/host, appels Create/Resume reels, Job/EOF/Unknown. Une PR complete, CI HEAD puis independent push/main ; aucun changement au Bridge quotidien, Desktop/REL, aux runners ou releases. Les jalons ci-dessous sont historiques.
+
+---
+
+
 ## REPRISE ACTUELLE — 1 novembre 2026 (après PR #464)
 
 **Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**

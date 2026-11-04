@@ -1,5 +1,14 @@
 # Current project status
 
+## Point verifie du 2 novembre 2026 (apres PR #490 ; avant la PR documentaire)
+
+`main=c69ef87155a1dc1a58520f8cfe11384db2c1ff5f` a [CI independante push/main #41519267054](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41519267054) **4/4 SUCCESS tentative 1**, arbre Git HEAD PR et squash identique. Trois nouveaux tests du stop original avant `Command::spawn` sont `ok` sur Windows. Ledger/Job natif non connecte au MCP ; revoke apres snapshot ou durant Win32 non resolue. #323 **OPEN / Windows V1 NO-GO**.
+
+Lire [nouvelle passation](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR490_2026-11-02.md) et [prompt](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR490_2026-11-02.md). Tous les jalons plus bas sont historiques. Le SHA changera si cette PR documentaire est fusionnee ; revalider main et CI.
+
+---
+
+
 ## Reprise vérifiée — 1 novembre 2026 (après PR #470)
 
 Instantané pré-documentation : `main=bd121996ce38757362e35c85d3113dda089aefd1`, [CI indépendante push/main #41332810883](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41332810883) **4/4 SUCCESS** après fusion des corrections #469 (classification API key) et #470 (Git worktree longpaths Windows, configuration Git locale au processus). [PR #471](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/471) **DRAFT / NON MERGED**, [CI #41335658243](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41335658243) **4/4 SUCCESS**, décision de compatibilité GitDiff encore requise. Aucun GO de publication V1.
