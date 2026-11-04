@@ -1672,10 +1672,15 @@ fn resume_owned_root_thread(thread: HANDLE, original_pid: u32) -> Result<bool> {
     }
     // SAFETY: this exact queried thread HANDLE also has suspend/resume rights.
     let previous = unsafe { ResumeThread(thread) };
-    if previous == u32::MAX {
-        return Err(Error::last_os_error());
+    match previous {
+        u32::MAX => Err(Error::last_os_error()),
+        0 => Ok(false), // Already running: this call did not release a suspension.
+        1 => Ok(true),  // Exactly one suspension was released: now runnable.
+        _ => Err(Error::new(
+            ErrorKind::PermissionDenied,
+            "original native primary thread is still suspended after ResumeThread",
+        )),
     }
-    Ok(previous > 0)
 }
 
 #[derive(Debug)]
@@ -1782,6 +1787,100 @@ mod tests {
             unsafe { WaitForSingleObject(HANDLE(foreign.0.as_raw_handle()), 5_000) },
             WAIT_OBJECT_0,
             "matching owner resumes real suspended cmd.exe to normal exit"
+        );
+    }
+
+    #[test]
+    fn real_original_thread_still_suspended_after_one_resume_must_not_certify_success() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::System::Threading::SuspendThread;
+
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        // Create a real Windows primary thread suspended exactly once.
+        // Use only fixed System32 cmd.exe; no project code or network input.
+        let system_root =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows root"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file(), "fixed system executable is required");
+        let mut command = StdCommand::new(executable);
+        command
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0);
+        let root = KillOnDrop(command.spawn().expect("real suspended root"));
+        let pid = root.0.id();
+
+        // Obtain the real original primary thread HANDLE. The process stays
+        // alive and suspended until this fixture explicitly allows exit.
+        let snapshot = ScopedHandle(
+            unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+                .expect("real kernel thread snapshot"),
+        );
+        let mut entry = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        unsafe { Thread32First(snapshot.0, &mut entry) }.expect("first thread");
+        let thread = loop {
+            if entry.th32OwnerProcessID == pid {
+                let owned = unsafe {
+                    OpenThread(
+                        THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                        false,
+                        entry.th32ThreadID,
+                    )
+                }
+                .expect("open real original primary thread");
+                break ScopedHandle(owned);
+            }
+            unsafe { Thread32Next(snapshot.0, &mut entry) }
+                .expect("locate suspended original thread");
+        };
+
+        // SAFETY: this test owns the exact live original HANDLE. Increase
+        // suspend count 1 -> 2; the next native ResumeThread does NOT execute
+        // the child, and must never be reported as a successful launch.
+        assert_eq!(
+            unsafe { SuspendThread(thread.0) },
+            1,
+            "real primary thread must initially have one suspend count"
+        );
+        let denied = resume_owned_root_thread(thread.0, pid);
+        assert!(
+            matches!(denied, Err(ref e) if e.kind() == ErrorKind::PermissionDenied && e.to_string().contains("still suspended")),
+            "native resume must reject a genuine old suspend count of 2; got {denied:?}"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(HANDLE(root.0.as_raw_handle()), 0) },
+            WAIT_TIMEOUT,
+            "the original process is physically still suspended"
+        );
+
+        // The first failed authorization consumed exactly one suspend count;
+        // the next explicit owner recovery may actually release the root.
+        assert!(
+            resume_owned_root_thread(thread.0, pid)
+                .expect("matching original thread with exactly one count")
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(HANDLE(root.0.as_raw_handle()), 5_000) },
+            WAIT_OBJECT_0,
+            "real original root must exit after actual final resume"
         );
     }
 
