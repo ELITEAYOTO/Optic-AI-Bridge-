@@ -143,7 +143,7 @@ impl CommandWrapper for LimitedJobObject {
         ) {
             Ok(job) => job,
             Err(error) => {
-                return Err(terminate_root_after_failed_job_creation(
+                return Err(terminate_original_suspended_root_after_job_error(
                     process,
                     inner.as_mut(),
                     error,
@@ -154,8 +154,15 @@ impl CommandWrapper for LimitedJobObject {
         // SAFETY: `job.raw()` is an owned Job Object handle and `process` is the live
         // child process handle borrowed from `inner`. Both remain valid for this call.
         if let Err(error) = unsafe { AssignProcessToJobObject(job.raw(), process) } {
-            let _ = inner.start_kill();
-            return Err(Error::other(error));
+            // A failed kernel assignment leaves this CREATE_SUSPENDED root
+            // outside the new Job. Its fallible wrapper stop is not enough:
+            // retain the ORIGINAL process HANDLE until physical exit is
+            // observed, or return explicit termination uncertainty.
+            return Err(terminate_original_suspended_root_after_job_error(
+                process,
+                inner.as_mut(),
+                Error::other(error),
+            ));
         }
 
         if let Err(error) = resume_process_threads(process) {
@@ -172,12 +179,13 @@ impl CommandWrapper for LimitedJobObject {
     }
 }
 
-// An OS Job configuration failure occurs AFTER CommandWrap has created the
-// suspended root but BEFORE it belongs to any Job. Do not depend solely on a
-// ChildWrapper's fallible termination request: the original live PROCESS HANDLE
+// A Job creation OR process-to-Job assignment failure occurs AFTER CommandWrap
+// created the suspended root but BEFORE that root belongs to this new Job.
+// Do not depend solely on a ChildWrapper's fallible termination request: the
+// original live PROCESS HANDLE
 // is still borrowed from that wrapper and can be used to stop the exact root.
 // Never turn an unsuccessful OS stop/wait into ordinary setup failure.
-fn terminate_root_after_failed_job_creation(
+fn terminate_original_suspended_root_after_job_error(
     process: HANDLE,
     child: &mut dyn ChildWrapper,
     setup_error: Error,
@@ -193,7 +201,7 @@ fn terminate_root_after_failed_job_creation(
             }
             let fallback = child.start_kill();
             Error::other(format!(
-                "Windows Job creation failed ({setup_error}); suspended root termination uncertain: process wait={state:?}, wrapper fallback={fallback:?}"
+                "Windows Job setup failed ({setup_error}); suspended root termination uncertain: process wait={state:?}, wrapper fallback={fallback:?}"
             ))
         }
         Err(stop_error) => {
@@ -204,7 +212,7 @@ fn terminate_root_after_failed_job_creation(
             }
             let fallback = child.start_kill();
             Error::other(format!(
-                "Windows Job creation failed ({setup_error}); suspended root termination uncertain: native stop={stop_error}, wrapper fallback={fallback:?}"
+                "Windows Job setup failed ({setup_error}); suspended root termination uncertain: native stop={stop_error}, wrapper fallback={fallback:?}"
             ))
         }
     }
@@ -1840,6 +1848,140 @@ mod tests {
             unsafe { WaitForSingleObject(kernel_root, 3_000) },
             WAIT_OBJECT_0,
             "a failed Job creation must not abandon a live suspended root when wrapper stop fails"
+        );
+    }
+
+    #[test]
+    fn failed_job_assignment_stops_original_root_even_if_wrapper_refuses_to_stop() {
+        use std::{
+            os::windows::{
+                io::{AsHandle, AsRawHandle},
+                process::CommandExt,
+            },
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::{
+            Foundation::DUPLICATE_HANDLE_OPTIONS,
+            System::Threading::{PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE},
+        };
+
+        // Expose the SAME original kernel process, with enough native rights
+        // to query, kill and wait, but not PROCESS_SET_QUOTA (required for Job
+        // assignment). This forces an actual Windows API failure without a
+        // fake return value, invalid Job, PID reopen or foreign process.
+        #[derive(Debug)]
+        struct RestrictedProcessChild {
+            _original: StdChild, // owns the exact root for the entire wrapper lifetime
+            restricted: OwnedHandle,
+        }
+        impl ChildWrapper for RestrictedProcessChild {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn process_handle(&self) -> Option<BorrowedHandle<'_>> {
+                Some(self.restricted.as_handle())
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                Err(Error::other("injected wrapper stop refusal"))
+            }
+        }
+        // Original independently duplicated full-rights handle proves exit
+        // and guarantees emergency cleanup if the RED assertion fails.
+        struct EmergencyRootCleanup(OwnedHandle);
+        impl Drop for EmergencyRootCleanup {
+            fn drop(&mut self) {
+                let root = HANDLE(self.0.as_raw_handle());
+                let _ = unsafe { TerminateProcess(root, 1) };
+                let _ = unsafe { WaitForSingleObject(root, 5_000) };
+            }
+        }
+
+        let system_root = PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file(), "fixed local Windows fixture");
+        let original = StdCommand::new(&executable)
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("actual suspended native root");
+
+        let mut full = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(original.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut full,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("retain original independent process handle");
+        let guard = EmergencyRootCleanup(unsafe { OwnedHandle::from_raw_handle(full.0) });
+        let root = HANDLE(guard.0.as_raw_handle());
+        assert_eq!(unsafe { WaitForSingleObject(root, 0) }, WAIT_TIMEOUT);
+
+        let mut restricted = HANDLE::default();
+        // SYNCHRONIZE is the standard Win32 access bit 0x0010_0000.
+        let rights = PROCESS_TERMINATE.0 | PROCESS_QUERY_LIMITED_INFORMATION.0 | 0x0010_0000;
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(original.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut restricted,
+                rights,
+                false,
+                DUPLICATE_HANDLE_OPTIONS(0),
+            )
+        }
+        .expect("make actual reduced-rights handle of SAME suspended root");
+        let restricted = unsafe { OwnedHandle::from_raw_handle(restricted.0) };
+        let restricted_raw = HANDLE(restricted.as_raw_handle());
+        assert_eq!(unsafe { GetProcessId(restricted_raw) }, original.id());
+        assert_eq!(
+            unsafe { WaitForSingleObject(restricted_raw, 0) },
+            WAIT_TIMEOUT
+        );
+
+        // Independent native preflight proves that a correctly configured
+        // real Job is created but the reduced PROCESS HANDLE cannot be added.
+        let job =
+            OwnedJob::create(1, 128 * 1024 * 1024, 25).expect("valid actual kernel Job setup");
+        let actual_denial = unsafe { AssignProcessToJobObject(job.raw(), restricted_raw) };
+        assert!(
+            actual_denial.is_err(),
+            "fixture MUST prove actual Windows Job assignment denial before testing wrapper"
+        );
+        assert_eq!(unsafe { WaitForSingleObject(root, 0) }, WAIT_TIMEOUT);
+        drop(job);
+
+        let mut limits =
+            LimitedJobObject::new(1, 128 * 1024 * 1024, 25).expect("legitimate Job limits");
+        let core = CommandWrap::with_new(&executable, |_| {});
+        let refused = RestrictedProcessChild {
+            _original: original,
+            restricted,
+        };
+        let result = limits.wrap_child(Box::new(refused), &core);
+        assert!(result.is_err(), "native Job assignment must be denied");
+        assert_eq!(
+            unsafe { WaitForSingleObject(root, 3_000) },
+            WAIT_OBJECT_0,
+            "real denied assignment plus refusing wrapper must not abandon the original suspended root"
         );
     }
 
