@@ -1151,3 +1151,140 @@ fn descendant_keeps_both_pipes_open_after_root_exit_until_job_termination() -> R
     }
     Ok(())
 }
+
+#[test]
+fn physical_stop_cannot_publish_stale_job_empty_after_new_real_suspended_root() -> Result<()> {
+    // This is a kernel-backed negative fixture, not a native launch permit.
+    // It deliberately recreates an in-Job child between the first Job-empty
+    // query and the candidate four-fact terminal receipt.
+    fn suspended_in_job(
+        job: &OwnedJob,
+        executable: &std::path::Path,
+    ) -> Result<SuspendedFixtureProcess> {
+        let image: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
+        let mut cmd = image.clone();
+        let jobs = [job.raw()];
+        let mut attributes = AttributeList::new(1)?;
+        unsafe {
+            UpdateProcThreadAttribute(
+                attributes.raw(),
+                0,
+                PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+                Some(jobs.as_ptr().cast::<c_void>()),
+                size_of::<HANDLE>(),
+                None,
+                None,
+            )
+        }
+        .map_err(Error::other)?;
+        let mut startup = STARTUPINFOEXW::default();
+        startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+        startup.lpAttributeList = attributes.raw();
+        let mut info = PROCESS_INFORMATION::default();
+        // SAFETY: all Job/attribute/image/command buffers stay alive for the
+        // real Win32 call; CREATE_SUSPENDED prevents any child code execution.
+        unsafe {
+            CreateProcessW(
+                PCWSTR(image.as_ptr()),
+                Some(PWSTR(cmd.as_mut_ptr())),
+                None,
+                None,
+                false,
+                EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                None,
+                PCWSTR::null(),
+                &startup.StartupInfo,
+                &mut info,
+            )
+        }
+        .map_err(Error::other)?;
+        Ok(SuspendedFixtureProcess(info))
+    }
+
+    let exe =
+        PathBuf::from(std::env::var_os("SystemRoot").ok_or_else(|| Error::other("no SystemRoot"))?)
+            .join("System32")
+            .join("cmd.exe");
+    if !exe.is_file() {
+        return Err(Error::other("fixed Windows fixture executable missing"));
+    }
+    let mut custody =
+        PrecreatedNativeReadCustody::new(LimitedJobObject::new(1, 256 * 1024 * 1024, 20)?)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    custody.arm_watchdog_until(
+        Instant::now() + Duration::from_secs(12),
+        vec![Arc::clone(&stop)],
+    )?;
+    let original = suspended_in_job(&custody.job, &exe)?;
+    assert_eq!(custody.active_processes()?, 1);
+    custody.pin_original_job_root(unsafe {
+        std::os::windows::io::BorrowedHandle::borrow_raw(original.0.hProcess.0)
+    })?;
+    stop.store(true, Ordering::Release);
+    let bound = Instant::now() + Duration::from_secs(5);
+    while !custody.watchdog_stop_observed() {
+        if Instant::now() >= bound {
+            return Err(Error::other("original kernel Job watchdog did not finish"));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(custody.watchdog_termination_result(), Some(Ok(())));
+    assert_eq!(
+        unsafe { WaitForSingleObject(original.0.hProcess, 3000) },
+        WAIT_OBJECT_0
+    );
+    assert_eq!(custody.active_processes()?, 0);
+
+    // Duplicate ONLY the exact original Job. This survives the mutable
+    // custody borrow in the injected test-only clock callback.
+    let mut duplicate = HANDLE::default();
+    unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            custody.job.raw(),
+            GetCurrentProcess(),
+            &mut duplicate,
+            0,
+            false,
+            DUPLICATE_SAME_ACCESS,
+        )
+    }
+    .map_err(Error::other)?;
+    let original_job_duplicate = OwnedJob(duplicate);
+    let mut calls = 0usize;
+    let mut newly_created = None;
+    let result = custody.confirm_post_watchdog_physical_stop_with_clock(
+        Instant::now() + Duration::from_secs(3),
+        64 * 1024,
+        || {
+            calls += 1;
+            if calls == 2 {
+                // The first query observed Job-empty. The second clock
+                // observation is immediately before the old receipt return.
+                newly_created = Some(
+                    suspended_in_job(&original_job_duplicate, &exe)
+                        .expect("kernel must allow this stopped-Job post-stop race"),
+                );
+            }
+            Instant::now()
+        },
+    );
+    assert!(
+        newly_created.is_some(),
+        "real creation phase was not reached"
+    );
+    assert_eq!(original_job_duplicate.active_processes()?, 1);
+    // Before the patch this is a false successful receipt even though the
+    // exact original Job has a real, live, suspended process.
+    assert!(
+        matches!(
+            &result,
+            Err(error)
+                if error.kind() == ErrorKind::WouldBlock
+                    && error.to_string().contains("Job became nonempty")
+        ),
+        "stale Job-empty must fail closed with a specific original-Job mismatch; got {result:?}"
+    );
+    drop(newly_created); // Physical child termination before releasing Job.
+    Ok(())
+}
