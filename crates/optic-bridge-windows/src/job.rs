@@ -123,15 +123,15 @@ impl CommandWrapper for LimitedJobObject {
                 // wrapper without an exposed process HANDLE does not kill
                 // its child. Ask the ORIGINAL wrapper to stop that suspended
                 // process before we lose its unique owner.
-                if let Err(error) = inner.start_kill() {
-                    return Err(Error::other(format!(
-                        "child wrapper has no Windows process handle; suspended child termination uncertain: {error}"
-                    )));
-                }
-                return Err(Error::new(
-                    ErrorKind::Unsupported,
-                    "child wrapper does not expose a Windows process handle",
-                ));
+                // An accepted stop request is not evidence of kernel exit:
+                // the wrapper may acknowledge it while the suspended process
+                // remains live. With no original PROCESS HANDLE there is no
+                // trustworthy physical observation, even when start_kill()
+                // returns Ok. Do not classify this as ordinary Unsupported.
+                let stop = inner.start_kill();
+                return Err(Error::other(format!(
+                    "child wrapper has no Windows process handle; suspended child termination uncertain: wrapper stop={stop:?}; original kernel process exit unobservable"
+                )));
             }
         };
         let process = HANDLE(process.as_raw_handle());
@@ -1986,6 +1986,92 @@ mod tests {
     }
 
     #[test]
+    fn real_opaque_wrapper_acknowledged_stop_does_not_prove_suspended_root_exit() {
+        use std::{
+            os::windows::{io::AsRawHandle, process::CommandExt},
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+        };
+
+        // A real ChildWrapper can hide the PROCESS handle and acknowledge a
+        // stop request without actually terminating its original child.
+        // This is intentionally a broken wrapper, NOT a mocked OS process.
+        #[derive(Debug)]
+        struct AcknowledgedButLiveChild(StdChild);
+        impl ChildWrapper for AcknowledgedButLiveChild {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                Ok(())
+            }
+            fn try_wait(&mut self) -> Result<Option<ExitStatus>> {
+                self.0.try_wait()
+            }
+        }
+        // Hold a separate original kernel PROCESS handle to safely terminate
+        // the real suspended fixture even if the old code misclassifies it.
+        struct EmergencyOriginalRoot(OwnedHandle);
+        impl Drop for EmergencyOriginalRoot {
+            fn drop(&mut self) {
+                let root = HANDLE(self.0.as_raw_handle());
+                let _ = unsafe { TerminateProcess(root, 1) };
+                let _ = unsafe { WaitForSingleObject(root, 5_000) };
+            }
+        }
+
+        let system_root = PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"));
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file(), "fixed Windows executable");
+        let child = StdCommand::new(&executable)
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real suspended Windows root");
+        let mut duplicate = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("independently retain exact kernel PROCESS handle");
+        let original = EmergencyOriginalRoot(unsafe { OwnedHandle::from_raw_handle(duplicate.0) });
+        let root = HANDLE(original.0.as_raw_handle());
+        assert_eq!(unsafe { WaitForSingleObject(root, 0) }, WAIT_TIMEOUT);
+
+        let mut limits = LimitedJobObject::new(1, 128 * 1024 * 1024, 25).unwrap();
+        let core = CommandWrap::with_new(&executable, |_| {});
+        let failure = limits.wrap_child(Box::new(AcknowledgedButLiveChild(child)), &core);
+        assert!(
+            matches!(failure, Err(ref error) if
+                error.to_string().contains("termination uncertain")),
+            "an acknowledged but ineffectual stop of a real live suspended root must be UNKNOWN, not an ordinary unsupported-wrapper error: {failure:?}"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(root, 0) },
+            WAIT_TIMEOUT,
+            "the original Windows root is still genuinely suspended and alive"
+        );
+    }
+
+    #[test]
     fn real_suspended_opaque_child_is_killed_when_wrapper_cannot_obtain_process_handle() {
         use std::{
             os::windows::{io::AsRawHandle, process::CommandExt},
@@ -2064,8 +2150,8 @@ mod tests {
         let core = CommandWrap::with_new(&executable, |_| {});
         let result = limits.wrap_child(Box::new(OpaqueSuspendedChild(child)), &core);
         assert!(
-            matches!(result, Err(ref error) if error.kind() == ErrorKind::Unsupported),
-            "opaque process must be rejected rather than wrapped"
+            matches!(result, Err(ref error) if error.to_string().contains("termination uncertain")),
+            "opaque process must retain explicit termination uncertainty even if its wrapper really killed the child: {result:?}"
         );
         assert_eq!(
             unsafe { WaitForSingleObject(process, 3_000) },
