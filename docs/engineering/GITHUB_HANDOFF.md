@@ -1,5 +1,12 @@
 # GitHub-only project handoff
 
+## Reprise canonique — 4 novembre 2026, apres #509
+
+**Lire en priorite :** [passation actuelle #509](HANDOFF_WINDOWS_V1_AFTER_PR509_2026-11-04.md), [prompt complet](NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR509_2026-11-04.md), [recus #505–#509](PR505_509_VALIDATION_RECEIPTS_2026-11-04.md). Source pre-PR-docs : `main=767dda7cfbf56ce3cf94098a996eee5bbac68461` ; [push/main #41852887021](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41852887021) **4/4 SUCCESS attempt1**. Ne pas considerer cet etat encore courant apres une fusion de docs sans nouvelle verification.
+
+**Regle de completion :** une seule PR, RED OS reel si possible, GREEN + repeats + tests locaux stricts, CI Github-hosted Windows/Ubuntu/policy/release et native first attempt, self-review COMMENT, squash protege identite de tree, CI independante push/main 4/4 first attempt, recu #323. Ancien GitRead legacy, aucun issuer complet, #323 OPEN, **Windows V1 NO-GO**. Pas de runner self-hosted ni de release. Le laboratoire PC Windows est autorise uniquement pour les tests isoles de ce projet ; ne jamais toucher au Bridge quotidien, Desktop, REL ou plugin.
+
+
 ## Verification courante du 4 novembre 2026 — apres PR #503
 
 **Canonique aujourd'hui (puis relire GitHub live) :** [HANDOFF_WINDOWS_V1_AFTER_PR503_2026-11-04.md](HANDOFF_WINDOWS_V1_AFTER_PR503_2026-11-04.md) et [prompt nouveau chat](NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR503_2026-11-04.md). Avant cette PR documentaire : main 150cd5e4f7f4220bcef7406b1dc4466bde2acee5, tree 9a294586129ec1b2ac0ffa605e3e252c1430b8fe, [CI push/main #41820929161](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41820929161) 4/4 SUCCESS attempt1. PR #503, #502, #501 MERGED ; P0 issuer Win32 encore absent ; #323 OPEN et Windows V1 NO-GO. Les anciennes sections et leurs SHA ci-dessous sont historiques.

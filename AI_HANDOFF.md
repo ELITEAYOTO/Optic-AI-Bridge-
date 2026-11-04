@@ -1,5 +1,12 @@
 # AI Coding Handoff — Mandatory Guardrails
 
+## PASSATION ACTIVE 4 novembre 2026 — PR #509 integree (checkpoint pre-docs)
+
+**Canonique :** [handoff apres #509](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR509_2026-11-04.md) + [prompt nouveau chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR509_2026-11-04.md) + [preuves #505–#509](docs/engineering/PR505_509_VALIDATION_RECEIPTS_2026-11-04.md). `main=767dda7cfbf56ce3cf94098a996eee5bbac68461`, arbre `f85c0f6297c14e220ee0be17897e4c3004499d38`, CI independante [#41852887021](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41852887021) **4/4 SUCCESS attempt1**. La PR documentaire fera avancer ce SHA : re-verifier.
+
+**Gardes :** Windows V1 **NO-GO**, #323 OPEN, GitRead toujours legacy ; #185/#319 OPEN, #499 OPEN/BLOQUEE. Correctifs #505–#509 = protection partielle de racines suspendues, annulation pre-spawn et reservation `TerminationUncertain`, jamais l'issuer atomique session/TaskLease/policy/host. Une PR technique a la fois : LAB Windows isole si autorise, RED physique reel, GREEN/repetitions, crate + workspace standard/all-features, fmt/Clippy/diff ; HEAD exact, CI hosted premiere tentative, auto-revue COMMENT, squash protege, Git trees identiques, CI independante push/main 4/4 premiere tentative, recu #323. Pas de rerun-to-green, self-hosted runner, release, affaiblissement securite, ni modification du Bridge quotidien/Desktop/REL/plugin.
+
+
 ## Passation active — 1 novembre 2026
 
 **Jalon vérifié avant cette PR documentaire :** `main=a22d32e94b742eaece9321d7991208ce89edd9cf`, arbre `7dd56c6a08f49866a250178af43e9a5b472628b9`, [push/main #41287712377](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41287712377) **SUCCESS 4/4 tentative 1**, Windows **433/0/11**, Ubuntu **318/0**, preuves schema8 `complete=true` **10 Windows / 4 Unix**, source=checkout exact et trois artefacts conservés. **La fusion de cette PR documentaire changera `main`; re-vérifier les SHA et la nouvelle CI push/main.**
