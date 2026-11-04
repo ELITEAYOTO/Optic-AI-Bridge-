@@ -378,6 +378,17 @@ impl ProcessManager {
     }
 
     pub fn start(&self, spec: ProcessStartSpec) -> Result<JobId, ProcessError> {
+        self.start_with_before_spawn_probe(spec, |_| {})
+    }
+
+    // Production passes an empty probe. Test-only callers place a concurrent
+    // stop AFTER the record is reserved but BEFORE the native spawn boundary.
+    // This alone is not a cross-registry CreateProcessW authorization fence.
+    fn start_with_before_spawn_probe(
+        &self,
+        spec: ProcessStartSpec,
+        before_spawn: impl FnOnce(&JobId),
+    ) -> Result<JobId, ProcessError> {
         let resources = spec.resources.validate_nonzero()?;
         if !resources.fits_within(self.limits.max_process_budget) {
             return Err(ProcessError::ResourceBudgetExceeded);
@@ -574,6 +585,17 @@ impl ProcessManager {
             command.wrap(ProcessGroup::leader());
         }
 
+        // No process exists yet; a test can publish a real concurrent stop
+        // precisely after reservation and before CommandWrap::spawn().
+        before_spawn(&job_id);
+        // A stop can complete after reservation but before OS creation.
+        // Refuse that already-stopped start and release its unused capacity.
+        // A stop racing AFTER this check still needs a synchronized native
+        // issuer/guardian: this snapshot is not a revocation linearization.
+        if record.stop_requested.load(Ordering::Acquire) {
+            self.remove_job(&job_id);
+            return Err(ProcessError::StartStoppedBeforeSpawn);
+        }
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
@@ -1551,6 +1573,8 @@ where
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
+    #[error("stop requested before native spawn; process was not started")]
+    StartStoppedBeforeSpawn,
     #[error("private start action already has a retained process record; reconcile it")]
     PrivateActionAlreadyRecorded,
     #[error("invalid process hard limits: {0}")]

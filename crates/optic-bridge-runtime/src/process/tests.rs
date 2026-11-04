@@ -340,6 +340,80 @@ fn conflicting_environment_grants_fail_closed_after_normalization() {
     fs::remove_dir_all(root).expect("remove workspace");
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn completed_stop_before_native_spawn_must_not_launch_the_reserved_process() {
+    // A genuine Windows CommandWrap process would be started on the original
+    // implementation even though cancellation is ALREADY COMPLETE here.
+    // Two independent paths: explicit job stop and owning-session cancel.
+    // The test-only hook is AFTER actual JobRecord publication, BEFORE the
+    // real native CreateProcessW boundary. No foreign process or PID lookup.
+    for mode in ["stop", "cancel_session"] {
+        let root = workspace("cancel-before-native-spawn");
+        let manager = manager_with_host_memory(
+            &root,
+            HardLimits::default(),
+            FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+                total_physical_bytes: 64 * 1024 * 1024 * 1024,
+                available_physical_bytes: 32 * 1024 * 1024 * 1024,
+            }),
+        );
+        let session = SessionHandle::generate().expect("owner session");
+        let request = spec(&root, session.clone(), budget(1_500, 1024));
+        let outcome = manager.start_with_before_spawn_probe(request, |job| {
+            // Stop is issued by a real separate thread and COMPLETES before
+            // releasing this exact pre-spawn boundary. No timing guesses.
+            std::thread::scope(|scope| {
+                let worker = scope.spawn(|| match mode {
+                    "stop" => manager.stop(&session, job).expect("real owner stop"),
+                    "cancel_session" => {
+                        manager.cancel_session(&session).expect("real session stop") == 1
+                    }
+                    _ => unreachable!(),
+                });
+                assert!(
+                    worker.join().expect("bounded independent stop thread"),
+                    "{mode}: stop must reach this reserved running job"
+                );
+            });
+            assert!(
+                manager
+                    .test_stop_requested(&session, job)
+                    .expect("original stop flag"),
+                "the original reserved JobRecord must be irrevocably stopped"
+            );
+        });
+
+        match outcome {
+            Err(error) => {
+                assert!(
+                    error
+                        .to_string()
+                        .contains("stop requested before native spawn"),
+                    "{mode}: expected explicit no-launch error, got {error:?}"
+                );
+                assert_eq!(
+                    manager.active_session_job_count(&session).unwrap(),
+                    0,
+                    "{mode}: a rejected, unstarted job must release its reservation"
+                );
+            }
+            Ok(job) => {
+                // RED must still clean up the *actual* Windows child before
+                // failing; monitor's 1.5s timeout and Job KILL_ON_CLOSE
+                // protect the synthetic test executable.
+                let observed = await_terminal(&manager, &session, &job).await;
+                panic!(
+                    "{mode}: cancelled original JobRecord nonetheless LAUNCHED a real Windows process: status={:?}",
+                    observed.status
+                );
+            }
+        }
+        drop(manager);
+        fs::remove_dir_all(root).expect("remove disposable test workspace");
+    }
+}
+
 #[test]
 fn process_fixture_child() {
     let cwd = env::current_dir().expect("fixture cwd");

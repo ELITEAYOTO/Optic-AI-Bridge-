@@ -653,6 +653,9 @@ fn map_process_error(error: ProcessError) -> ErrorData {
             ErrorData::invalid_params("optic.process_cursor_out_of_range", None)
         }
         ProcessError::UnknownJob => ErrorData::invalid_params("optic.process_job_not_found", None),
+        ProcessError::StartStoppedBeforeSpawn => {
+            ErrorData::invalid_request("optic.process_start_stopped_before_spawn", None)
+        }
         ProcessError::PrivateActionAlreadyRecorded => {
             ErrorData::invalid_request("optic.process_action_already_recorded", None)
         }
@@ -886,6 +889,12 @@ mod tests {
             map_task_lease_error(TaskLeaseRegistryError::Revoked).message,
             "optic.task_lease_inactive"
         );
+    }
+
+    #[test]
+    fn stopped_before_spawn_has_distinct_mcp_no_launch_error() {
+        let error = map_process_error(ProcessError::StartStoppedBeforeSpawn);
+        assert_eq!(error.message, "optic.process_start_stopped_before_spawn");
     }
 
     #[test]
