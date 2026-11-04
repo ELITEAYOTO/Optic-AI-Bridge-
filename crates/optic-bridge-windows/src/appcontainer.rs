@@ -10,14 +10,15 @@ use std::{
         io::{AsRawHandle, BorrowedHandle},
     },
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::{
     Win32::{
         Foundation::{
-            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, HLOCAL, LocalFree,
-            WAIT_OBJECT_0,
+            CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, FILETIME, HANDLE, HLOCAL,
+            LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Security::{
             Authorization::ConvertSidToStringSidW,
@@ -30,8 +31,8 @@ use windows::{
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
             DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
-            GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            GetExitCodeProcess, GetProcessTimes, GetThreadTimes, InitializeProcThreadAttributeList,
+            LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, ResumeThread,
             STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
             WaitForSingleObject,
@@ -329,24 +330,149 @@ impl SuspendedAppContainerProcess {
         Ok(())
     }
 
+    /// Ordinary ownership path: preserve the original single kernel wait.
     pub fn wait_exit(&mut self, timeout_ms: u32) -> Result<u32> {
-        // SAFETY: process remains valid for the full bounded wait.
-        let wait = unsafe { WaitForSingleObject(self.process, timeout_ms) };
+        self.wait_exit_inner(timeout_ms, false)
+    }
+
+    /// Fixed-label, opt-in CI diagnostic only. Two read-only CPU snapshots
+    /// occur before the parent's unchanged timeout can kill the launcher.
+    /// The child stays inside the SAME absolute wait budget, never gets a
+    /// timeout extension, new capability, environment entry or network right.
+    /// Never use checkpoint output as a successful isolation proof.
+    pub fn wait_exit_with_fixed_cpu_progress(&mut self, timeout_ms: u32) -> Result<u32> {
+        self.wait_exit_inner(timeout_ms, true)
+    }
+
+    fn wait_exit_inner(&mut self, timeout_ms: u32, diagnostic: bool) -> Result<u32> {
+        let started = Instant::now();
+        let mut wait = WAIT_TIMEOUT;
+        if diagnostic {
+            for checkpoint in [1_000_u32, 5_000] {
+                if checkpoint >= timeout_ms {
+                    break;
+                }
+                // Independent CPU observations cannot extend this original
+                // wait deadline: subtract elapsed time from the next bound.
+                let elapsed = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+                let remaining = checkpoint.saturating_sub(elapsed);
+                // SAFETY: the uniquely owned process HANDLE stays valid for
+                // every bounded wait; no new process/thread handle is opened.
+                wait = unsafe { WaitForSingleObject(self.process, remaining) };
+                if wait != WAIT_TIMEOUT {
+                    break;
+                }
+                // A checkpoint is an observation only. The process may exit
+                // after the wait returned; no liveness claim is published.
+                eprintln!(
+                    "OPTIC_LAUNCHER_CPU_CHECKPOINT target_elapsed_ms={} {}",
+                    started.elapsed().as_millis(),
+                    self.kernel_cpu_on_timeout()
+                );
+            }
+        }
+        if wait == WAIT_TIMEOUT {
+            let elapsed = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+            // SAFETY: use only the remaining part of the original horizon;
+            // never start another full timeout after checkpoint sampling.
+            wait = unsafe { WaitForSingleObject(self.process, timeout_ms.saturating_sub(elapsed)) };
+        }
         if wait != WAIT_OBJECT_0 {
-            // SAFETY: fail-closed cleanup of the uniquely owned child process.
+            // SAFETY: preserve the original fail-closed order: request
+            // termination BEFORE performing any optional diagnostic query.
+            // Failure to query Windows CPU totals must never hold up stop.
             let _ = unsafe { TerminateProcess(self.process, 1) };
+            // Read fixed kernel CPU totals from the SAME still-owned handles
+            // after requesting termination. These are accumulated totals:
+            // no process enumeration, paths, credentials or extra rights.
+            // Zero CPU cannot prove the executable did not run; failures
+            // remain 'unavailable', never silently converted into zero.
+            let cpu = (wait == WAIT_TIMEOUT).then(|| self.kernel_cpu_on_timeout());
             return Err(Error::other(format!(
-                "AppContainer process did not exit within {timeout_ms} ms (wait={})",
-                wait.0
+                "AppContainer process did not exit within {timeout_ms} ms (wait={}){}",
+                wait.0,
+                cpu.map_or_else(String::new, |cpu| format!(" {cpu}"))
             )));
         }
 
+        // An observational checkpoint must never turn a process first seen
+        // after expiry into a successful execution receipt. The normal,
+        // non-diagnostic wait retains its original semantics unchanged.
+        if diagnostic && started.elapsed().as_millis() >= u128::from(timeout_ms) {
+            // SAFETY: fail closed on this exact retained process handle.
+            let _ = unsafe { TerminateProcess(self.process, 1) };
+            return Err(Error::other(
+                "AppContainer diagnostic wait exceeded original absolute timeout",
+            ));
+        }
         let mut exit_code = 0u32;
         // SAFETY: process is signaled and output storage is valid.
         unsafe { GetExitCodeProcess(self.process, &mut exit_code) }.map_err(Error::other)?;
         self.completed = true;
         Ok(exit_code)
     }
+
+    /// Original owned PROCESS and primary THREAD handles only. Windows
+    /// GetProcessTimes/GetThreadTimes return accumulated CPU time, not loader
+    /// state, memory pressure, scheduling priority or network evidence.
+    /// An unavailable query stays explicitly unavailable rather than zero.
+    fn kernel_cpu_on_timeout(&self) -> String {
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        // SAFETY: the owned process handle is valid and each FILETIME buffer
+        // is initialized and writable for one synchronous kernel query.
+        let process = unsafe {
+            GetProcessTimes(
+                self.process,
+                &mut creation,
+                &mut exit,
+                &mut kernel,
+                &mut user,
+            )
+        };
+        let process_cpu = process
+            .is_ok()
+            .then(|| (filetime_cpu_ms(kernel), filetime_cpu_ms(user)));
+
+        // The primary thread is the exact one returned by CreateProcessW.
+        // Do not enumerate or re-open a potentially reused thread ID.
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        // SAFETY: the original thread HANDLE is still uniquely retained;
+        // the four local output buffers are initialized and writable.
+        let primary = unsafe {
+            GetThreadTimes(
+                self.thread,
+                &mut creation,
+                &mut exit,
+                &mut kernel,
+                &mut user,
+            )
+        };
+        let primary_cpu = primary
+            .is_ok()
+            .then(|| (filetime_cpu_ms(kernel), filetime_cpu_ms(user)));
+        let display = |value: Option<u64>| {
+            value.map_or_else(|| String::from("unavailable"), |value| value.to_string())
+        };
+        format!(
+            "process_kernel_cpu_ms={} process_user_cpu_ms={} primary_thread_kernel_cpu_ms={} primary_thread_user_cpu_ms={}",
+            display(process_cpu.map(|cpu| cpu.0)),
+            display(process_cpu.map(|cpu| cpu.1)),
+            display(primary_cpu.map(|cpu| cpu.0)),
+            display(primary_cpu.map(|cpu| cpu.1)),
+        )
+    }
+}
+
+/// Convert Windows FILETIME's 100 ns units to nonsecret, coarse CPU ms.
+fn filetime_cpu_ms(value: FILETIME) -> u64 {
+    let ticks = (u64::from(value.dwHighDateTime) << 32) | u64::from(value.dwLowDateTime);
+    ticks / 10_000
 }
 
 impl Drop for SuspendedAppContainerProcess {
@@ -812,6 +938,107 @@ mod tests {
                 .any(|line| line.starts_with("userprofile=") || line.starts_with("node_options="))
         );
         owned.terminate_and_confirm_empty(1000).unwrap();
+    }
+
+    #[test]
+    fn suspended_timeout_reports_kernel_cpu_on_bounded_termination() {
+        // Deterministic hosted-Windows evidence fixture. The exact fixed
+        // System32 executable is NEVER resumed: a positive kernel wait timeout
+        // must report process and primary-thread CPU totals without delaying
+        // the existing fail-closed termination. No user input or network.
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let cmd = system32_executable("cmd.exe");
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let output = OpenOptions::new().write(true).open("NUL").unwrap();
+        let mut child = spawn_appcontainer_suspended(
+            &profile,
+            &cmd,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("exit /b 0"),
+            ],
+            cmd.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .expect("create original suspended test root");
+        assert!(!child.has_resumed());
+        assert!(child.is_appcontainer().unwrap());
+        let failure = child
+            .wait_exit(25)
+            .expect_err("unresumed child cannot exit");
+        let detail = failure.to_string();
+        assert!(
+            detail.contains("process_kernel_cpu_ms=")
+                && detail.contains("process_user_cpu_ms=")
+                && detail.contains("primary_thread_kernel_cpu_ms=")
+                && detail.contains("primary_thread_user_cpu_ms="),
+            "OS timeout must report fixed CPU categories, never paths or tokens: {detail}"
+        );
+        assert!(
+            detail.contains("within 25 ms"),
+            "original timeout unchanged"
+        );
+        // SAFETY: uniquely owned original root handle is still open. Wait
+        // only for already-requested termination, never execute the process.
+        assert_eq!(
+            unsafe { WaitForSingleObject(child.process, 3000) },
+            WAIT_OBJECT_0,
+            "timed-out suspended fixture must be physically terminated"
+        );
+    }
+
+    #[test]
+    fn cpu_checkpoints_do_not_renew_timeout_of_unresumed_real_root() {
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let cmd = system32_executable("cmd.exe");
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let output = OpenOptions::new().write(true).open("NUL").unwrap();
+        let mut child = spawn_appcontainer_suspended(
+            &profile,
+            &cmd,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("exit /b 0"),
+            ],
+            cmd.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .expect("create original suspended test root");
+        assert!(!child.has_resumed());
+        let started = Instant::now();
+        let error = child
+            .wait_exit_with_fixed_cpu_progress(1_250)
+            .expect_err("unresumed AppContainer must not exit");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(1_000),
+            "first native observation is not a new timeout"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "checkpoint observation unexpectedly unbounded: {elapsed:?}"
+        );
+        assert!(
+            error.to_string().contains("within 1250 ms")
+                && error.to_string().contains("process_kernel_cpu_ms="),
+            "diagnostics must retain original timeout and fixed OS fields"
+        );
+        // SAFETY: exactly this suspended child was already terminated when
+        // the original nonrenewable timeout expired.
+        assert_eq!(
+            unsafe { WaitForSingleObject(child.process, 3000) },
+            WAIT_OBJECT_0
+        );
     }
 
     #[test]
