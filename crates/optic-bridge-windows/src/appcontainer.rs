@@ -31,7 +31,8 @@ use windows::{
         System::Threading::{
             CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
             DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
-            GetExitCodeProcess, GetProcessTimes, GetThreadTimes, InitializeProcThreadAttributeList,
+            GetExitCodeProcess, GetProcessHandleCount, GetProcessIoCounters, GetProcessTimes,
+            GetThreadTimes, IO_COUNTERS, InitializeProcThreadAttributeList,
             LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, ResumeThread,
             STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
@@ -480,15 +481,30 @@ impl SuspendedAppContainerProcess {
         let primary_cpu = primary
             .is_ok()
             .then(|| (filetime_cpu_ms(kernel), filetime_cpu_ms(user)));
+        // These original PROCESS-handle queries are observational only.
+        // Neither failure nor zero is evidence of target startup, loader
+        // progress, terminal state or network-denial acceptance. Preserve
+        // "unavailable" distinctly from a successfully observed zero.
+        let mut io = IO_COUNTERS::default();
+        // SAFETY: the same uniquely owned original PROCESS handle remains
+        // live; only an initialized local IO_COUNTERS output is written.
+        let io_ok = unsafe { GetProcessIoCounters(self.process, &mut io) }.is_ok();
+        let mut handle_count = 0_u32;
+        // SAFETY: read-only query on the original PROCESS handle, with exact
+        // writable DWORD storage. No process enumeration or PID lookup.
+        let handles_ok = unsafe { GetProcessHandleCount(self.process, &mut handle_count) }.is_ok();
         let display = |value: Option<u64>| {
             value.map_or_else(|| String::from("unavailable"), |value| value.to_string())
         };
         format!(
-            "process_kernel_cpu_ms={} process_user_cpu_ms={} primary_thread_kernel_cpu_ms={} primary_thread_user_cpu_ms={}",
+            "process_kernel_cpu_ms={} process_user_cpu_ms={} primary_thread_kernel_cpu_ms={} primary_thread_user_cpu_ms={} process_read_ops={} process_read_bytes={} process_handle_count={}",
             display(process_cpu.map(|cpu| cpu.0)),
             display(process_cpu.map(|cpu| cpu.1)),
             display(primary_cpu.map(|cpu| cpu.0)),
             display(primary_cpu.map(|cpu| cpu.1)),
+            display(io_ok.then_some(io.ReadOperationCount)),
+            display(io_ok.then_some(io.ReadTransferCount)),
+            display(handles_ok.then_some(u64::from(handle_count))),
         )
     }
 }
@@ -1106,7 +1122,10 @@ mod tests {
             detail.contains("process_kernel_cpu_ms=")
                 && detail.contains("process_user_cpu_ms=")
                 && detail.contains("primary_thread_kernel_cpu_ms=")
-                && detail.contains("primary_thread_user_cpu_ms="),
+                && detail.contains("primary_thread_user_cpu_ms=")
+                && detail.contains("process_read_ops=")
+                && detail.contains("process_read_bytes=")
+                && detail.contains("process_handle_count="),
             "OS timeout must report fixed CPU categories, never paths or tokens: {detail}"
         );
         assert!(
