@@ -1,5 +1,10 @@
 # Optic AI Bridge
 
+## Point de reprise Windows V1 — 4 novembre 2026, apres PR #503
+
+**Document canonique le plus recent :** [passation apres #503](docs/engineering/HANDOFF_WINDOWS_V1_AFTER_PR503_2026-11-04.md) et [prompt complet nouveau chat](docs/engineering/NEXT_CHAT_PROMPT_WINDOWS_V1_AFTER_PR503_2026-11-04.md). Source verifiee avant cette actualisation documentaire : main 150cd5e4f7f4220bcef7406b1dc4466bde2acee5 ; CI independante [push/main #41820929161](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41820929161) SUCCESS 4/4 first attempt. La PR #503 corrige l'abandon du processus Windows CREATE_SUSPENDED lorsqu'un wrapper ne peut fournir son HANDLE. Les PR #501 et #502 corrigent des faux succes ResumeThread natifs distincts. **La barriere atomique native original Session/TaskLease/policy/host CreateProcessW/ResumeThread/revoke manque encore. GitRead MCP reste legacy ; Windows V1 NO-GO et issue #323 ouverte.** Re-verifier le SHA et la CI apres toute fusion documentaire.
+
+
 ## Reprise Windows V1 — 2 novembre 2026, après #481
 
 **Dernier `main` indépendant vérifié avant cette mise à jour :** `36b2f8de744995e4b0e264fefa89a6fe7b4306b1`, arbre `7a25472d540ffa695b4d94a0c616d433468dfaf8` ; [CI de fusion #41415132006](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/41415132006) **SUCCESS 4/4 à la première tentative**. Les [PR #479](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/479), [#480](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/480) et [#481](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/pull/481) ont ajouté l'audit et les reçus de drainage borné, rattachés à la custody native Windows toujours **non exécutante**.
