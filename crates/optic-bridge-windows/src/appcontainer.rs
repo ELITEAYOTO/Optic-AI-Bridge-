@@ -263,6 +263,8 @@ pub struct SuspendedAppContainerProcess {
     process: HANDLE,
     thread: HANDLE,
     completed: bool,
+    // A failed OS resume must not be retried to consume another suspension.
+    resume_attempted: Cell<bool>,
     resumed: Cell<bool>,
 }
 
@@ -316,18 +318,40 @@ impl SuspendedAppContainerProcess {
     }
 
     pub fn resume(&self) -> Result<()> {
-        if self.resumed.get() {
+        // Each owner may attempt exactly one native release, including error
+        // paths. A second ResumeThread could consume an unexpected remaining
+        // suspension and run a root that failed the original authorization.
+        if self.resume_attempted.replace(true) {
             return Err(Error::other(
-                "owned AppContainer process was already resumed",
+                "owned AppContainer process resume was already attempted",
             ));
         }
-        // SAFETY: thread is the primary thread created suspended by CreateProcessW.
+        // SAFETY: this is the exact primary thread HANDLE owned since suspended
+        // CreateProcessW, not a TID/PID re-open. Win32 returns the PREVIOUS
+        // suspend count, so only previous == 1 made this root runnable.
         let previous = unsafe { ResumeThread(self.thread) };
-        if previous == u32::MAX {
-            return Err(Error::last_os_error());
+        if previous == 1 {
+            self.resumed.set(true);
+            return Ok(());
         }
-        self.resumed.set(true);
-        Ok(())
+        let error = if previous == u32::MAX {
+            Error::last_os_error()
+        } else {
+            Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                if previous == 0 {
+                    "original AppContainer primary thread was already running before owned resume"
+                } else {
+                    "original AppContainer primary thread is still suspended after ResumeThread"
+                },
+            )
+        };
+        // An unexpected original kernel state is not execution evidence.
+        // Request immediate termination of the SAME retained PROCESS handle;
+        // Drop remains the fail-closed backstop if termination is uncertain.
+        // SAFETY: this value owns this exact process handle until Drop.
+        let _ = unsafe { TerminateProcess(self.process, 1) };
+        Err(error)
     }
 
     /// Ordinary ownership path: preserve the original single kernel wait.
@@ -730,6 +754,7 @@ fn spawn_appcontainer_inner(
         process: info.hProcess,
         thread: info.hThread,
         completed: false,
+        resume_attempted: Cell::new(false),
         resumed: Cell::new(false),
     })
 }
@@ -938,6 +963,111 @@ mod tests {
                 .any(|line| line.starts_with("userprofile=") || line.starts_with("node_options="))
         );
         owned.terminate_and_confirm_empty(1000).unwrap();
+    }
+
+    #[test]
+    fn real_appcontainer_primary_thread_with_two_suspensions_must_not_claim_resume() {
+        use windows::Win32::System::Threading::SuspendThread;
+
+        // Use only a real, fixed System32 child with an actual AppContainer
+        // token and original CreateProcessW primary THREAD handle.
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let cmd = system32_executable("cmd.exe");
+        let input = OpenOptions::new().read(true).open("NUL").unwrap();
+        let output = OpenOptions::new().write(true).open("NUL").unwrap();
+        let child = spawn_appcontainer_suspended(
+            &profile,
+            &cmd,
+            &[
+                OsString::from("/d"),
+                OsString::from("/c"),
+                OsString::from("exit /b 0"),
+            ],
+            cmd.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .expect("real suspended AppContainer primary thread");
+        assert!(child.is_appcontainer().unwrap());
+        assert!(!child.has_resumed());
+        // SAFETY: this test has uniquely owned access to the original primary
+        // kernel THREAD handle; no TID enumeration or PID re-open occurs.
+        assert_eq!(
+            unsafe { SuspendThread(child.thread) },
+            1,
+            "newly created primary thread starts suspended exactly once"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(child.process, 0) },
+            WAIT_TIMEOUT,
+            "the twice-suspended AppContainer has not executed"
+        );
+        let denied = child.resume();
+        assert!(
+            matches!(denied, Err(ref error) if error.kind() == std::io::ErrorKind::PermissionDenied
+                && error.to_string().contains("still suspended")),
+            "resuming old suspend count 2 must not claim execution: {denied:?}"
+        );
+        assert!(
+            !child.has_resumed(),
+            "failed resume is not execution evidence"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(child.process, 3_000) },
+            WAIT_OBJECT_0,
+            "unexpected suspend count must request termination of the exact original process"
+        );
+        assert!(
+            child.resume().is_err(),
+            "unexpected native state must never be retried with the same owner"
+        );
+    }
+
+    #[test]
+    fn externally_resumed_appcontainer_primary_thread_must_not_claim_owned_resume() {
+        // This is a genuine "previous suspension count == 0" witness.
+        // Use a fixed System32 tool blocked on one owned anonymous stdin pipe.
+        // No path from the project, no network and no extra AppContainer grant.
+        let profile = AppContainerProfile::create_ephemeral().unwrap();
+        let findstr = system32_executable("findstr.exe");
+        let (input, _keep_writer_open) = std::io::pipe().unwrap();
+        let output = OpenOptions::new().write(true).open("NUL").unwrap();
+        let child = spawn_appcontainer_suspended(
+            &profile,
+            &findstr,
+            &[OsString::from("/c:optic-test-absent")],
+            findstr.parent().unwrap(),
+            AppContainerStdio {
+                stdin: input.as_handle(),
+                stdout: output.as_handle(),
+                stderr: output.as_handle(),
+            },
+        )
+        .expect("real suspended AppContainer root");
+        assert!(child.is_appcontainer().unwrap());
+        // SAFETY: this fixture owns the original primary thread handle.
+        // Deliberately simulate an external release BEFORE the owner issues
+        // its one allowed resume. This does not bless the external release.
+        assert_eq!(unsafe { ResumeThread(child.thread) }, 1);
+        let denied = child.resume();
+        assert!(
+            matches!(denied, Err(ref error) if error.kind() == std::io::ErrorKind::PermissionDenied
+                && error.to_string().contains("already running")),
+            "old count zero is not proof of the owner's own release: {denied:?}"
+        );
+        assert!(
+            !child.has_resumed(),
+            "foreign release is not owned evidence"
+        );
+        assert_eq!(
+            unsafe { WaitForSingleObject(child.process, 3_000) },
+            WAIT_OBJECT_0,
+            "original externally resumed process must be terminated"
+        );
+        assert!(child.resume().is_err(), "original owner may not retry");
     }
 
     #[test]
