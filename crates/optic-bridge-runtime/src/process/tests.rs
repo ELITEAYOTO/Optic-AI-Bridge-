@@ -342,6 +342,178 @@ fn conflicting_environment_grants_fail_closed_after_normalization() {
 
 #[cfg(windows)]
 #[tokio::test]
+async fn genuine_windows_create_failure_still_releases_unused_job_reservation() {
+    // Deliberately invalid binary: the file can be pinned and reserved as a
+    // regular executable path, but the real Windows CreateProcessW rejects it
+    // BEFORE creating any process. This must remain a normal rollback rather
+    // than holding quota as though a native root may be alive.
+    let root = workspace("ordinary-create-failure");
+    let invalid_executable = root.join("bad-native-tool.exe");
+    fs::write(&invalid_executable, b"definitely not a Windows PE image")
+        .expect("create real invalid file fixture");
+    let manager = manager_with_host_memory(
+        &root,
+        HardLimits::default(),
+        FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+            total_physical_bytes: 64 * 1024 * 1024 * 1024,
+            available_physical_bytes: 32 * 1024 * 1024 * 1024,
+        }),
+    );
+    let session = SessionHandle::generate().expect("original session");
+    let mut request = spec(&root, session.clone(), budget(1_500, 1_024));
+    request.executable = invalid_executable
+        .canonicalize()
+        .expect("canonical invalid-file path")
+        .to_string_lossy()
+        .into_owned();
+    let mut reserved = None;
+    let result = manager.start_with_before_spawn_probe(request, |job, _| {
+        reserved = Some(job.clone());
+    });
+    assert!(
+        matches!(result, Err(ProcessError::Io(_))),
+        "a genuine Windows invalid-image error is pre-create, not unconfirmed termination: {result:?}"
+    );
+    assert!(reserved.is_some(), "the real JobRecord was reserved first");
+    assert_eq!(manager.active_session_job_count(&session).unwrap(), 0);
+    assert!(matches!(
+        manager.owned_job(&session, &reserved.unwrap()),
+        Err(ProcessError::UnknownJob)
+    ));
+    drop(manager);
+    fs::remove_dir_all(root).expect("remove invalid-file fixture workspace");
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn uncertain_windows_spawn_error_must_not_release_its_job_reservation() {
+    use process_wrap::tokio::CommandWrapper;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // A real Windows process is created using the production CommandWrap and
+    // LimitedJobObject. This test-only wrapper hides the original handle and
+    // reports a successful NO-OP stop request, causing a real post-Create
+    // wrap_child error. The inner process has kill_on_drop and an emergency
+    // Drop stop to prevent leaving a suspended fixture behind.
+    #[derive(Debug)]
+    struct OpaqueAckFixture {
+        created_pid: Arc<AtomicU32>,
+    }
+    #[derive(Debug)]
+    struct OpaqueAckChild {
+        original: Box<dyn ChildWrapper>,
+    }
+    impl Drop for OpaqueAckChild {
+        fn drop(&mut self) {
+            // Test emergency cleanup, not a production termination receipt.
+            let _ = self.original.start_kill();
+        }
+    }
+    impl ChildWrapper for OpaqueAckChild {
+        fn inner(&self) -> &dyn ChildWrapper {
+            self
+        }
+        fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+            self
+        }
+        fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+            self
+        }
+        fn start_kill(&mut self) -> std::io::Result<()> {
+            Ok(()) // Intentionally insufficient; original process still exists.
+        }
+    }
+    impl CommandWrapper for OpaqueAckFixture {
+        fn pre_spawn(
+            &mut self,
+            command: &mut tokio::process::Command,
+            _core: &CommandWrap,
+        ) -> std::io::Result<()> {
+            command.kill_on_drop(true);
+            Ok(())
+        }
+        fn wrap_child(
+            &mut self,
+            mut original: Box<dyn ChildWrapper>,
+            _core: &CommandWrap,
+        ) -> std::io::Result<Box<dyn ChildWrapper>> {
+            let pid = original.id().expect("real native process ID");
+            assert_ne!(pid, 0);
+            assert!(
+                original.try_wait()?.is_none(),
+                "the original native root is still suspended before Job admission"
+            );
+            self.created_pid.store(pid, Ordering::Release);
+            Ok(Box::new(OpaqueAckChild { original }))
+        }
+    }
+
+    let root = workspace("native-error-reservation");
+    let manager = manager_with_host_memory(
+        &root,
+        HardLimits::default(),
+        FakeHostMemoryObservation::Snapshot(HostMemorySnapshot {
+            total_physical_bytes: 64 * 1024 * 1024 * 1024,
+            available_physical_bytes: 32 * 1024 * 1024 * 1024,
+        }),
+    );
+    let session = SessionHandle::generate().expect("original session");
+    let observed_pid = Arc::new(AtomicU32::new(0));
+    let mut reserved_id = None;
+    let spawned = manager.start_with_before_spawn_probe(
+        spec(&root, session.clone(), budget(1500, 1024)),
+        |job, command| {
+            reserved_id = Some(job.clone());
+            command.wrap(OpaqueAckFixture {
+                created_pid: Arc::clone(&observed_pid),
+            });
+        },
+    );
+    assert!(
+        matches!(&spawned, Err(ProcessError::UnconfirmedWindowsSpawn { source, .. }) if
+            source.to_string().contains("termination uncertain")),
+        "actual Windows post-create opacity must produce a typed, retained uncertainty: {spawned:?}"
+    );
+    assert_ne!(
+        observed_pid.load(Ordering::Acquire),
+        0,
+        "fixture must have genuinely created a real suspended Windows root"
+    );
+    let job_id = reserved_id.expect("original published JobRecord ID");
+    assert_eq!(
+        manager
+            .active_session_job_count(&session)
+            .expect("live reservations"),
+        1,
+        "a native post-create uncertain error must retain the original Job reservation"
+    );
+    let record = manager
+        .owned_job(&session, &job_id)
+        .expect("retained record");
+    assert_eq!(
+        record.state.lock().unwrap().status,
+        ProcessStatus::TerminationUncertain
+    );
+    assert!(record.stop_requested.load(Ordering::Acquire));
+    let stdout = manager
+        .read(&session, &job_id, ProcessStream::Stdout, 0, 1024)
+        .expect("no invented EOF after unknown native exit");
+    let stderr = manager
+        .read(&session, &job_id, ProcessStream::Stderr, 0, 1024)
+        .expect("no invented stderr EOF");
+    assert!(!stdout.eof && !stderr.eof);
+    assert_eq!(
+        manager.remove_terminal_session_records(&session).unwrap(),
+        0,
+        "unknown termination cannot be reaped as a terminal job"
+    );
+    drop(record);
+    drop(manager);
+    fs::remove_dir_all(root).expect("remove isolated workspace");
+}
+
+#[cfg(windows)]
+#[tokio::test]
 async fn completed_stop_before_native_spawn_must_not_launch_the_reserved_process() {
     // A genuine Windows CommandWrap process would be started on the original
     // implementation even though cancellation is ALREADY COMPLETE here.
@@ -360,7 +532,7 @@ async fn completed_stop_before_native_spawn_must_not_launch_the_reserved_process
         );
         let session = SessionHandle::generate().expect("owner session");
         let request = spec(&root, session.clone(), budget(1_500, 1024));
-        let outcome = manager.start_with_before_spawn_probe(request, |job| {
+        let outcome = manager.start_with_before_spawn_probe(request, |job, _command| {
             // Stop is issued by a real separate thread and COMPLETES before
             // releasing this exact pre-spawn boundary. No timing guesses.
             std::thread::scope(|scope| {
