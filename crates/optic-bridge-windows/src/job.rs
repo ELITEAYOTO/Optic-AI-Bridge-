@@ -2582,6 +2582,335 @@ mod tests {
         }
     }
 
+    // Research acceptance: real SessionLifecycleManager::revoke publishes the
+    // original session and TaskLease stops before admission drain, while an
+    // independent original HostStopSource also closes before native Resume.
+    // Both real registry + host cancellation are absent from this legacy
+    // native Windows wrapper. Intentional behavioral RED, NOT GitRead MCP.
+    #[test]
+    #[ignore = "known RED: service-owned original-stop/ResumeThread issuer not yet implemented; run deliberately under external bounded Windows LAB supervision"]
+    fn research_lifecycle_and_host_stop_with_counted_owner_pre_resume_must_deny_code() {
+        use std::{
+            fs,
+            os::windows::{
+                io::{AsHandle, AsRawHandle},
+                process::CommandExt,
+            },
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+            sync::{Arc, mpsc},
+            time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        };
+
+        #[derive(Debug)]
+        struct FixedRoot(StdChild);
+        impl ChildWrapper for FixedRoot {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn process_handle(&self) -> Option<BorrowedHandle<'_>> {
+                Some(self.0.as_handle())
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                self.0.kill()
+            }
+        }
+
+        struct Emergency {
+            original: OwnedHandle,
+            marker: PathBuf,
+        }
+        impl Drop for Emergency {
+            fn drop(&mut self) {
+                let original = HANDLE(self.original.as_raw_handle());
+                // SAFETY: test-only independently pinned exact kernel root.
+                let _ = unsafe { TerminateProcess(original, 91) };
+                let _ = unsafe { WaitForSingleObject(original, 5_000) };
+                let _ = fs::remove_file(&self.marker);
+            }
+        }
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("monotonic test marker ID")
+            .as_nanos();
+        let marker = std::env::temp_dir().join(format!(
+            "optic-p0-lifecycle-host-revoke-before-resume-{}-{unique}.txt",
+            std::process::id()
+        ));
+        assert!(!marker.exists(), "fresh isolated temporary marker");
+        let system_root =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows SystemRoot"));
+        let cmd = system_root.join("System32").join("cmd.exe");
+        assert!(cmd.is_file());
+        // Create a *zero-length* file in the test parent before launching.
+        // Bind its exact stdout HANDLE to the real child rather than rely on
+        // cmd.exe command-line redirection/quoting as a marker side effect.
+        let child_stdout = fs::File::create(&marker).expect("empty stdout marker");
+        let child = StdCommand::new(&cmd)
+            .args(["/d", "/c", "echo REAL_CHILD_ENTERED"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(child_stdout))
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real CREATE_SUSPENDED root in disposable fixture");
+
+        let mut copy = HANDLE::default();
+        // SAFETY: duplicate ORIGINAL process handle, noninheritable and owned by
+        // the test emergency supervisor independent of the wrapper under test.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut copy,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("emergency duplicate of original Windows PROCESS handle");
+        let emergency = Emergency {
+            original: unsafe { OwnedHandle::from_raw_handle(copy.0) },
+            marker,
+        };
+        let original = HANDLE(emergency.original.as_raw_handle());
+        let original_pid = unsafe { GetProcessId(original) };
+        assert_ne!(original_pid, 0);
+        assert_eq!(unsafe { WaitForSingleObject(original, 0) }, WAIT_TIMEOUT);
+
+        // Real runtime registries, not synthetic stop-flag publication.
+        // No real GitRead MCP issuer is bound to this Windows wrapper yet.
+        let original_session =
+            optic_bridge_core::SessionHandle::generate().expect("registered original session");
+        let original_lease =
+            optic_bridge_core::TaskLeaseId::generate().expect("registered original lease");
+        let caps = std::collections::BTreeSet::from([optic_bridge_core::Capability::GitRead]);
+        let until = optic_bridge_core::MonotonicTime::from_millis(10_000_000);
+        let sessions = Arc::new(optic_bridge_runtime::SessionRegistry::new());
+        sessions
+            .register(optic_bridge_core::SessionGrant {
+                handle: original_session.clone(),
+                principal: optic_bridge_core::PrincipalId::new("research-session").unwrap(),
+                project: optic_bridge_core::ProjectId::new("research-project").unwrap(),
+                capabilities: caps.clone(),
+                expires_at: until,
+                policy_epoch: 7,
+            })
+            .expect("register real session");
+        let leases = Arc::new(optic_bridge_runtime::TaskLeaseRegistry::new());
+        leases
+            .register(optic_bridge_core::TaskLease {
+                id: original_lease.clone(),
+                session: original_session.clone(),
+                capabilities: caps,
+                scopes: std::collections::BTreeSet::new(),
+                resource_ceiling: optic_bridge_core::ResourceBudget {
+                    timeout_ms: 100,
+                    output_bytes: 1024,
+                    memory_bytes: 128 * 1024 * 1024,
+                    process_count: 1,
+                },
+                workload_class: optic_bridge_core::WorkloadClass::Standard,
+                expires_at: until,
+                policy_epoch: 7,
+            })
+            .expect("register real TaskLease");
+        // Real SessionLifecycleManager owns these same registry Arc instances.
+        // The process manager has no registered jobs here: the independent
+        // Windows kernel Job is owned by the wrapper under test only.
+        let processes = Arc::new(
+            optic_bridge_runtime::ProcessManager::new(
+                std::env::temp_dir(),
+                optic_bridge_core::HardLimits::default(),
+                Vec::new(),
+            )
+            .expect("disposable lifecycle process manager"),
+        );
+        let lifecycle = Arc::new(optic_bridge_runtime::SessionLifecycleManager::new(
+            Arc::clone(&sessions),
+            Arc::clone(&leases),
+            processes,
+        ));
+        // Exact original host-stop source, not a model AtomicBool.
+        // HostStopSource has its real implementation; the native wrapper
+        // currently has no connection to this source.
+        let original_host = optic_bridge_runtime::HostStopSource::new();
+        let host_watch = original_host.watch();
+        assert!(!host_watch.is_stop_requested());
+
+        // The real original, Arc-owned permit stays counted until AFTER
+        // the hook and the actual OS ResumeThread attempt have returned.
+        let mut admission = Some(
+            sessions
+                .begin_owned_admission(
+                    &original_session,
+                    optic_bridge_core::MonotonicTime::from_millis(1),
+                )
+                .expect("original counted session admission"),
+        );
+        let original_session_watch = admission.as_ref().unwrap().stop_watch();
+        assert!(
+            !original_session_watch
+                .is_stop_required_at(optic_bridge_core::MonotonicTime::from_millis(1))
+        );
+        assert!(
+            leases
+                .get_active(
+                    &original_lease,
+                    &original_session,
+                    optic_bridge_core::MonotonicTime::from_millis(1)
+                )
+                .is_ok()
+        );
+
+        let (revoke_enter_tx, revoke_enter_rx) = mpsc::sync_channel::<()>(1);
+        let (revoke_done_tx, revoke_done_rx) = mpsc::sync_channel::<bool>(1);
+        let mut revoker = None;
+        let stop = Arc::new(AtomicBool::new(false));
+        let at_boundary = Arc::clone(&stop);
+        let mut wrapper =
+            LimitedJobObject::new(1, 128 * 1024 * 1024, 25).expect("real limited Job");
+        let outcome =
+            wrapper.wrap_child_with_before_resume(Box::new(FixedRoot(child)), |job, process| {
+                assert_eq!(unsafe { GetProcessId(process) }, original_pid);
+                assert_eq!(job.active_processes().unwrap(), 1);
+                assert_eq!(unsafe { WaitForSingleObject(original, 0) }, WAIT_TIMEOUT);
+                assert_eq!(
+                    fs::metadata(&emergency.marker).unwrap().len(),
+                    0,
+                    "actual root has emitted no stdout before ResumeThread"
+                );
+                // Publish the model original-generation stop after ACTUAL Job
+                // assignment and before the wrapper's ACTUAL ResumeThread.
+                at_boundary.store(true, Ordering::Release);
+                // Real direct revoke executes concurrently on a separate thread:
+                // it publishes stop immediately, but cannot finish drain while
+                // the ORIGINAL owned admission is still counted.
+                let lifecycle_for_revoker = Arc::clone(&lifecycle);
+                let session_for_revoker = original_session.clone();
+                revoker = Some(std::thread::spawn(move || {
+                    revoke_enter_tx.send(()).expect("lifecycle revoke entry signal");
+                    let report = lifecycle_for_revoker
+                        .revoke(&session_for_revoker)
+                        .expect("real lifecycle session revoke");
+                    assert_eq!(report.revoked_leases, 1, "lifecycle revokes registered lease");
+                    revoke_done_tx.send(report.session_changed)
+                        .expect("drained lifecycle revoke result");
+                }));
+                revoke_enter_rx.recv_timeout(Duration::from_secs(3))
+                    .expect("revoker thread entered");
+                let stop_until = Instant::now() + Duration::from_secs(3);
+                while !original_session_watch.is_stop_required_at(
+                    optic_bridge_core::MonotonicTime::from_millis(1)
+                ) {
+                    assert!(
+                        Instant::now() < stop_until,
+                        "real original revoke must publish promptly while admission is retained"
+                    );
+                    std::thread::yield_now();
+                }
+                assert!(matches!(
+                    revoke_done_rx.try_recv(),
+                    Err(mpsc::TryRecvError::Empty)
+                ), "revoke must still wait for the original counted admission");
+                // Lifecycle publishes TaskLease revocation BEFORE the counted
+                // session admission drain; wait on the actual registered
+                // record under a bounded independent clock.
+                let lease_until = Instant::now() + Duration::from_secs(3);
+                while leases.get_active(
+                    &original_lease, &original_session,
+                    optic_bridge_core::MonotonicTime::from_millis(1)
+                ).is_ok() {
+                    assert!(Instant::now() < lease_until,
+                        "lifecycle must publish original TaskLease stop before drain");
+                    std::thread::yield_now();
+                }
+                // Publish the genuine original host-stop signal after Job
+                // assignment and before real ResumeThread.
+                assert!(original_host.request_stop());
+                assert!(!original_host.request_stop(), "host stop is irreversible");
+                assert!(host_watch.is_stop_requested());
+                assert!(original_session_watch.is_stop_required_at(
+                    optic_bridge_core::MonotonicTime::from_millis(1)
+                ), "original session generation must observe true revoke");
+                assert!(sessions.get_active(
+                    &original_session, optic_bridge_core::MonotonicTime::from_millis(1)
+                ).is_err());
+                assert!(leases.get_active(
+                    &original_lease, &original_session,
+                    optic_bridge_core::MonotonicTime::from_millis(1)
+                ).is_err());
+                eprintln!(
+                    "ISSUE323_LIFECYCLE_HOST_STOPS_PUBLISHED: original_pid={original_pid}, session=true, lease=true, host=true, job_active=1"
+                );
+            });
+        assert!(stop.load(Ordering::Acquire));
+        // The ORIGINAL admission was held all the way through the real OS
+        // ResumeThread attempt; the revoker could not finish meanwhile.
+        assert!(admission.is_some());
+        assert!(
+            matches!(revoke_done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "revoke must not report completed while the owner is counted"
+        );
+        drop(admission.take());
+        assert!(
+            revoke_done_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("bounded drain completion"),
+            "real lifecycle revoke must report original generation changed"
+        );
+        revoker
+            .take()
+            .unwrap()
+            .join()
+            .expect("lifecycle revoker completed");
+        eprintln!(
+            "ISSUE323_LIFECYCLE_DRAIN_AFTER_OWNER_DROP: original_pid={original_pid}, original_admission_retained_through_resume=true"
+        );
+        match outcome {
+            Err(error) => {
+                assert_eq!(
+                    fs::metadata(&emergency.marker).unwrap().len(),
+                    0,
+                    "no child stdout may be written after a denied resume"
+                );
+                eprintln!(
+                    "ISSUE323_LIFECYCLE_HOST_POSTSTOP_DENIED: original_pid={original_pid},                      original_stop_published=true, launch_rejected={error}"
+                );
+            }
+            Ok(owned_child) => {
+                // Held Job owner remains alive while the original real root
+                // writes the observable marker. This is NOT a simulated PID.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(original, 3_000) },
+                    WAIT_OBJECT_0,
+                    "original real root must exit within independent test bound"
+                );
+                let marker = fs::read_to_string(&emergency.marker)
+                    .expect("actual post-stop child code must write temp marker");
+                assert!(marker.contains("REAL_CHILD_ENTERED"));
+                eprintln!(
+                    "ISSUE323_LIFECYCLE_HOST_POSTSTOP_EXECUTED: original_pid={original_pid},                      original_stop_published=true, real_child_marker={:?}",
+                    marker.trim()
+                );
+                drop(owned_child);
+                panic!(
+                    "original stop won before native ResumeThread, but the                      already-Job-assigned Windows root still executed code"
+                );
+            }
+        }
+    }
+
     #[test]
     fn real_resume_failure_and_denied_job_stop_must_retain_uncertain_root() {
         use std::{
