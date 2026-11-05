@@ -1622,6 +1622,248 @@ fn original_watchdog_observes_session_lease_generation_and_job_stops_without_chi
     }
 }
 
+/// Real original registry revokers close the SAME internal native ledger
+/// stop bit synchronously, not via a later poll of four independent flags.
+/// The original counted session/transport permits and kernel Job remain
+/// retained; no native Git process is launched by this fixture.
+#[cfg(windows)]
+#[test]
+fn original_armed_native_ledger_closes_in_actual_registry_revocation_paths() {
+    use crate::native_inflight_calls::{InFlightNativeCalls, NativeCallPhase};
+    use std::sync::atomic::Ordering;
+
+    for source in [
+        "session-lifecycle-publish",
+        "lease-direct",
+        "lease-session",
+        "lease-remove-reuse-id",
+    ] {
+        let clock = crate::StdClock::new();
+        let mut fixture = Fixture::new_on_clock(&clock);
+        fixture.envelope.resources.timeout_ms = 5_000;
+        fixture.lease.resource_ceiling.timeout_ms = 5_000;
+        assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+        assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+        fixture
+            .leases
+            .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+            .unwrap();
+        let transport = guard(10_000);
+        let manager = crate::ProcessManager::new(
+            &fixture.repository,
+            optic_bridge_core::HardLimits::default(),
+            Vec::<String>::new(),
+        )
+        .unwrap();
+        let prepared = fixture
+            .service()
+            .prepare_native_status_on_clock(
+                &fixture.trusted(),
+                fixture.owned_on_clock(&transport, &clock),
+                &fixture.envelope,
+                &clock,
+            )
+            .unwrap();
+        let mut owner = manager
+            .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+            .unwrap()
+            .precreate_native_custody(MonotonicTime::from_millis(11))
+            .unwrap()
+            .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap()
+            .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+            .unwrap();
+        owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+        let calls = owner.native_call_tracking_for_test().unwrap();
+        let original_close = calls.internal_stop_signal();
+        assert!(!original_close.load(Ordering::Acquire));
+        let ticket = calls.track(NativeCallPhase::Resume).unwrap();
+
+        match source {
+            "session-lifecycle-publish" => {
+                assert!(
+                    fixture
+                        .sessions
+                        .publish_revocation_before_drain(&fixture.envelope.session)
+                        .unwrap()
+                );
+            }
+            "lease-direct" => {
+                assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+            }
+            "lease-session" => {
+                assert_eq!(
+                    fixture
+                        .leases
+                        .revoke_session(&fixture.envelope.session)
+                        .unwrap(),
+                    1
+                );
+            }
+            "lease-remove-reuse-id" => {
+                assert_eq!(
+                    fixture
+                        .leases
+                        .remove_session(&fixture.envelope.session)
+                        .unwrap(),
+                    1
+                );
+                fixture.leases.register(fixture.lease.clone()).unwrap();
+                assert!(
+                    fixture
+                        .leases
+                        .get_active(
+                            &fixture.lease.id,
+                            &fixture.envelope.session,
+                            MonotonicTime::from_millis(12),
+                        )
+                        .is_ok()
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            original_close.load(Ordering::Acquire),
+            "actual {source} must close ORIGINAL native ledger under the revoke lock"
+        );
+        assert!(
+            calls.track(NativeCallPhase::CreateSuspended).is_none()
+                && calls.track(NativeCallPhase::Resume).is_none(),
+            "{source}: no fresh ticket after source publication"
+        );
+        assert_eq!(
+            calls.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 1
+            }),
+            "{source}: already admitted callback retained until return"
+        );
+        drop(ticket);
+        assert_eq!(
+            calls.in_flight(),
+            Some(InFlightNativeCalls {
+                creates: 0,
+                resumes: 0
+            })
+        );
+        // This original closure is the very SAME signal armed into the
+        // independent real Windows kernel Job watchdog. It must observe
+        // native stop without a status poll or second issuer.
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while !owner.watchdog_stop_observed() && std::time::Instant::now() < until {
+            std::thread::yield_now();
+        }
+        assert!(
+            owner.watchdog_stop_observed(),
+            "{source}: Job watchdog sees original stop"
+        );
+        assert_eq!(
+            owner.watchdog_termination_result(),
+            Some(Ok(())),
+            "{source}: original Job termination attempt acknowledged"
+        );
+        eprintln!(
+            "ISSUE323_ORIGINAL_REGISTRY_CLOSE_BOUND: source={source}, original_close=true, new_native_tickets=denied, pre_admitted_resumes=drained, original_job_watchdog_stop=true"
+        );
+        assert_eq!(owner.native_active_processes().unwrap(), 0);
+        drop(owner);
+        assert_eq!(transport.active_requests(), 0);
+    }
+}
+
+/// Direct SessionRegistry::revoke cannot finish while its ORIGINAL counted
+/// native admission is retained. Its stop publication must nevertheless close
+/// native admission before the drain completes.
+#[cfg(windows)]
+#[test]
+fn direct_session_revoke_closes_original_native_ledger_before_counted_drain() {
+    use crate::native_inflight_calls::NativeCallPhase;
+    use std::sync::{atomic::Ordering, mpsc};
+    use std::thread;
+
+    let clock = crate::StdClock::new();
+    let mut fixture = Fixture::new_on_clock(&clock);
+    fixture.envelope.resources.timeout_ms = 5_000;
+    fixture.lease.resource_ceiling.timeout_ms = 5_000;
+    assert!(fixture.leases.revoke(&fixture.lease.id).unwrap());
+    assert!(fixture.leases.remove_revoked(&fixture.lease.id).unwrap());
+    fixture
+        .leases
+        .register_on_clock(fixture.lease.clone(), 10_000, &clock)
+        .unwrap();
+    let transport = guard(10_000);
+    let manager = crate::ProcessManager::new(
+        &fixture.repository,
+        optic_bridge_core::HardLimits::default(),
+        Vec::<String>::new(),
+    )
+    .unwrap();
+    let prepared = fixture
+        .service()
+        .prepare_native_status_on_clock(
+            &fixture.trusted(),
+            fixture.owned_on_clock(&transport, &clock),
+            &fixture.envelope,
+            &clock,
+        )
+        .unwrap();
+    let mut owner = manager
+        .reserve_prepared_native_status(prepared, MonotonicTime::from_millis(11))
+        .unwrap()
+        .precreate_native_custody(MonotonicTime::from_millis(11))
+        .unwrap()
+        .commit_original_session(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap()
+        .commit_original_lease(&fixture.trusted(), MonotonicTime::from_millis(12))
+        .unwrap();
+    owner.arm_original_watchdog(&fixture.trusted()).unwrap();
+    let calls = owner.native_call_tracking_for_test().unwrap();
+    let close = calls.internal_stop_signal();
+    let ticket = calls.track(NativeCallPhase::Resume).unwrap();
+
+    let sessions = Arc::clone(&fixture.sessions);
+    let session = fixture.envelope.session.clone();
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        done_tx.send(sessions.revoke(&session)).unwrap();
+    });
+    let bound = std::time::Instant::now() + Duration::from_secs(2);
+    while !close.load(Ordering::Acquire) && std::time::Instant::now() < bound {
+        thread::yield_now();
+    }
+    assert!(
+        close.load(Ordering::Acquire),
+        "direct revoke closes ledger before drain"
+    );
+    assert!(
+        done_rx.try_recv().is_err(),
+        "revoke must not declare original owner drained"
+    );
+    assert!(calls.track(NativeCallPhase::CreateSuspended).is_none());
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    while !owner.watchdog_stop_observed() && std::time::Instant::now() < until {
+        thread::yield_now();
+    }
+    assert!(
+        owner.watchdog_stop_observed(),
+        "original Job sees native close"
+    );
+    assert_eq!(owner.watchdog_termination_result(), Some(Ok(())));
+    assert_eq!(owner.native_active_processes().unwrap(), 0);
+    drop(ticket);
+    drop(owner);
+    assert_eq!(
+        done_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+        Ok(true)
+    );
+    worker.join().unwrap();
+    assert_eq!(transport.active_requests(), 0);
+    eprintln!(
+        "ISSUE323_DIRECT_SESSION_CLOSE_BEFORE_DRAIN: original_close=true, counted_owner_held_during_stop=true, native_resume_admission_denied=true"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn original_native_job_watchdog_observes_poisoned_ledger_without_external_revoke() {

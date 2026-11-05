@@ -626,7 +626,30 @@ impl LeaseObservedNativeGitStatusCustody {
             original_stops.to_vec(),
             calls.internal_stop_signal(),
         )?;
+        // Retain this exact original watchdog close bit before exposing its
+        // native ledger. We do not create a second, detached issuer.
+        let original_close = calls.internal_stop_signal();
         self.call_tracking = Some(calls);
+        if let Err(_error) = unstarted
+            .registered
+            .prepared
+            .admission
+            .bind_original_native_ledger_stop_under_revoke_locks(
+                trusted.sessions,
+                trusted.task_leases,
+                now,
+                &original_close,
+            )
+        {
+            // The original kernel watchdog is already armed. Any failure to
+            // bind the original registry generations is irrevocable UNKNOWN,
+            // not a second try or a valid native call admission.
+            self.call_tracking
+                .as_ref()
+                .expect("original ledger retained")
+                .request_stop();
+            return Err(NativeGitStatusSnapshotError::OriginalStopBinding);
+        }
         // The pre-arm time cannot certify expiry AFTER kernel handle
         // duplication and independent worker startup. Retain the armed
         // watchdog on rejection; this remains no-child custody only.
@@ -690,6 +713,8 @@ pub enum NativeGitStatusSnapshotError {
     Watchdog(#[from] std::io::Error),
     #[error("original native Git status admission is revoked or expired")]
     StopRequired,
+    #[error("original registry/native-ledger close binding failed")]
+    OriginalStopBinding,
     #[error("prelaunch snapshot requires original trusted session")]
     WrongTrustedSession,
     #[error("prelaunch snapshot must use original session registry")]

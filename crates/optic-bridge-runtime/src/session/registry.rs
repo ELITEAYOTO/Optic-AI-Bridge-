@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use std::sync::Weak;
 use std::{
     collections::HashMap,
     sync::{
@@ -47,6 +49,10 @@ struct SessionRecord {
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     active_admissions: u32,
+    // Weak links to the ORIGINAL native ledger's own watchdog close bit.
+    // No second issuer is created; old owners are never kept alive by a registry.
+    #[cfg(windows)]
+    native_call_stops: Vec<Weak<AtomicBool>>,
 }
 
 impl SessionRecord {
@@ -58,7 +64,22 @@ impl SessionRecord {
             revoked: false,
             revocation_signal: Arc::new(AtomicBool::new(false)),
             active_admissions: 0,
+            #[cfg(windows)]
+            native_call_stops: Vec::new(),
         }
+    }
+}
+
+#[cfg(windows)]
+impl SessionRecord {
+    fn close_original_native_calls(&mut self) {
+        self.native_call_stops.retain(|weak| {
+            let Some(close) = weak.upgrade() else {
+                return false;
+            };
+            close.store(true, Ordering::Release);
+            true
+        });
     }
 }
 
@@ -268,6 +289,56 @@ impl SessionRegistry {
         Ok((grant, revocation_watch))
     }
 
+    /// Attach the SAME internal close bit of the already-armed original
+    /// NativeCallStopTracker to BOTH original revocation records atomically
+    /// against their direct/lifecycle revoke locks (session -> try lease).
+    ///
+    /// Registration is an inert wiring step, NOT native call authorization.
+    /// It is only allowed after the original OS Job watchdog is armed and
+    /// before the ledger can be given to any native executor. On contention,
+    /// poison, foreign generation or stop, the caller must seal this ledger.
+    #[cfg(windows)]
+    pub(crate) fn bind_original_native_stop_under_joint_revoke_locks(
+        &self,
+        admitted: &OwnedSessionAdmissionPermit,
+        lease: &NativeGitReadLeaseWitness,
+        leases: &TaskLeaseRegistry,
+        now: MonotonicTime,
+        original_ledger_close: &Arc<AtomicBool>,
+    ) -> Result<(), NativeJointOwnerCommitError> {
+        if !std::ptr::eq(self, admitted.registry.as_ref()) {
+            return Err(SessionRegistryError::ForeignAdmissionRegistry.into());
+        }
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SessionRegistryError::StateUnavailable)?;
+        let record = sessions
+            .get_mut(&admitted.handle)
+            .ok_or(SessionRegistryError::UnknownSession)?;
+        Self::check_original_native_owner_record(record, admitted, now)?;
+        // This try_lock never waits while the session revoke mutex is held.
+        // The original lease's identity/expiry and the subscriber insertion
+        // are checked under the lease revoke lock, with NO IO or OS calls.
+        lease.try_bind_original_native_ledger_close_under_revoke_lock(
+            leases,
+            &admitted.handle,
+            now,
+            original_ledger_close,
+        )?;
+        // Both original locks are held at this instant. A revoker either
+        // closed the ledger before registration, or will close it when it
+        // publishes its stop; no watcher-poll interval remains for these
+        // TWO registry sources.
+        record
+            .native_call_stops
+            .retain(|stop| stop.strong_count() > 0);
+        record
+            .native_call_stops
+            .push(Arc::downgrade(original_ledger_close));
+        Ok(())
+    }
+
     /// Read the exact owner-held session generation under the same mutex as
     /// direct `revoke` and lifecycle `publish_revocation_before_drain`.
     ///
@@ -457,6 +528,12 @@ impl SessionRegistry {
     }
 
     fn publish_revocation(record: &mut SessionRecord) -> bool {
+        // The SAME original NativeCallStopTracker signal seen by the actual
+        // Job watchdog is sealed synchronously WHILE the original session
+        // revoke mutex remains locked, before the observable revoke flag.
+        // This is NOT physical Win32 cancellation or launch authority.
+        #[cfg(windows)]
+        record.close_original_native_calls();
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
@@ -537,6 +614,12 @@ impl SessionRegistry {
         }
         if record.active_admissions != 0 {
             return Err(SessionRegistryError::AdmissionsInFlight);
+        }
+        // Expiry-based physical removal must also close any still-retained
+        // original native ledger rather than silently dropping its notifier.
+        #[cfg(windows)]
+        if let Some(original) = sessions.get_mut(handle) {
+            original.close_original_native_calls();
         }
         sessions.remove(handle);
         Ok(true)

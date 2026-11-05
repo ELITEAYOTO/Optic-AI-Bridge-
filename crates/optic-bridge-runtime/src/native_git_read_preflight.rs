@@ -51,6 +51,26 @@ impl NativeGitReadLeaseWitness {
             && self.revocation.same_registration(&observed.revocation)
     }
 
+    /// Only the original verified lease generation can subscribe the native
+    /// ledger's own watchdog close bit to its revoke publication.
+    #[cfg(windows)]
+    pub(crate) fn try_bind_original_native_ledger_close_under_revoke_lock(
+        &self,
+        registry: &TaskLeaseRegistry,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        close: &Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<(), TaskLeaseRegistryError> {
+        registry.try_bind_original_native_ledger_close(
+            &self.lease_id,
+            &self.revocation,
+            self.lease_expires_at,
+            session,
+            now,
+            close,
+        )
+    }
+
     /// Lease-only commitment of this retained exact registration generation
     /// against the same mutex used by all TaskLease revoke/removal paths.
     /// This does NOT synchronize policy or session authority, nor permit spawn.
@@ -259,6 +279,26 @@ impl NativeGitReadAdmittedPreflight {
         observed: &NativeGitReadLeaseWitness,
     ) -> bool {
         self.lease_witness.same_registration(observed)
+    }
+
+    /// Bind the watchdog-armed original NativeCallStopTracker's own internal
+    /// irreversible close bit synchronously under both registry revoke
+    /// locks. This retains a single ledger identity; still NO spawn permit.
+    #[cfg(windows)]
+    pub(crate) fn bind_original_native_ledger_stop_under_revoke_locks(
+        &self,
+        sessions: &Arc<SessionRegistry>,
+        leases: &TaskLeaseRegistry,
+        now: MonotonicTime,
+        close: &Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<(), crate::session_registry::NativeJointOwnerCommitError> {
+        sessions.bind_original_native_stop_under_joint_revoke_locks(
+            &self.session_admission,
+            &self.lease_witness,
+            leases,
+            now,
+            close,
+        )
     }
 
     /// Issue one joint, original-generation session+TaskLease observation.
