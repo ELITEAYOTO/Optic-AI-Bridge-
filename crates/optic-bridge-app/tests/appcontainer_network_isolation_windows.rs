@@ -355,7 +355,9 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
          const net=require('net');\n\
          console.log('NETWORK_ATTEMPT');\n\
          const socket=net.createConnection({{host:'127.0.0.1',port:{}}});\n\
+         console.log('NETWORK_CREATE_RETURNED');\n\
          const timer=setTimeout(()=>{{console.error('NETWORK_TIMEOUT');socket.destroy();process.exit(43);}},1500);\n\
+         console.log('NODE_TIMER_ARMED');\n\
          socket.once('connect',()=>{{clearTimeout(timer);console.log('NETWORK_CONNECTED');socket.end();process.exit(0);}});\n\
          socket.once('error',(err)=>{{clearTimeout(timer);console.error('NETWORK_DENIED:'+(err.code||err.message));process.exit(42);}});",
         address.port()
@@ -419,6 +421,17 @@ async fn capability_free_appcontainer_denies_node_loopback_connection() {
     assert!(
         stdout.contains("NETWORK_ATTEMPT"),
         "Node script must reach the network attempt"
+    );
+    // A post-attempt timeout can otherwise hide two different phases:
+    // synchronous net.createConnection() not returning, or a callback/timer
+    // stall after it did. These markers add no authority or timeout.
+    assert!(
+        stdout.contains("NETWORK_CREATE_RETURNED"),
+        "Node net.createConnection must return on normal proof completion"
+    );
+    assert!(
+        stdout.contains("NODE_TIMER_ARMED"),
+        "Node network timeout timer must be armed on normal proof completion"
     );
     assert!(
         !stdout.contains("NETWORK_CONNECTED"),
