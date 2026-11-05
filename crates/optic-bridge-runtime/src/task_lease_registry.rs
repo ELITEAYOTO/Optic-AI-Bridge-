@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use std::sync::Weak;
 use std::{
     collections::HashMap,
     path::Path,
@@ -40,6 +42,8 @@ struct LeaseRecord {
     revoked: bool,
     revocation_signal: Arc<AtomicBool>,
     process_authorities: HashMap<String, Arc<ProcessAuthority>>,
+    #[cfg(windows)]
+    native_call_stops: Vec<Weak<AtomicBool>>,
 }
 
 impl LeaseRecord {
@@ -51,7 +55,22 @@ impl LeaseRecord {
             revoked: false,
             revocation_signal: Arc::new(AtomicBool::new(false)),
             process_authorities: HashMap::new(),
+            #[cfg(windows)]
+            native_call_stops: Vec::new(),
         }
+    }
+}
+
+#[cfg(windows)]
+impl LeaseRecord {
+    fn close_original_native_calls(&mut self) {
+        self.native_call_stops.retain(|weak| {
+            let Some(close) = weak.upgrade() else {
+                return false;
+            };
+            close.store(true, Ordering::Release);
+            true
+        });
     }
 }
 
@@ -406,6 +425,10 @@ impl TaskLeaseRegistry {
         let Some(record) = leases.get_mut(id) else {
             return Ok(false);
         };
+        // Close the ORIGINAL native ledger under this same mutex BEFORE
+        // publishing the lease stop event (direct revoke case).
+        #[cfg(windows)]
+        record.close_original_native_calls();
         let changed = !record.revoked;
         record.revoked = true;
         record.revocation_signal.store(true, Ordering::Release);
@@ -420,12 +443,50 @@ impl TaskLeaseRegistry {
         let mut changed = 0;
         for record in leases.values_mut() {
             if &record.lease.session == session && !record.revoked {
+                #[cfg(windows)]
+                record.close_original_native_calls();
                 record.revoked = true;
                 record.revocation_signal.store(true, Ordering::Release);
                 changed += 1;
             }
         }
         Ok(changed)
+    }
+
+    /// Attach the EXACT original native ledger's close bit to one retained,
+    /// verified lease generation. This is called ONLY with the session revoke
+    /// mutex already held, and uses try_lock to preserve prompt revocation.
+    /// Nothing here performs hash, process IO or native execution.
+    #[cfg(windows)]
+    pub(crate) fn try_bind_original_native_ledger_close(
+        &self,
+        id: &TaskLeaseId,
+        original: &TaskLeaseRevocationWatch,
+        original_expires_at: MonotonicTime,
+        session: &SessionHandle,
+        now: MonotonicTime,
+        close: &Arc<AtomicBool>,
+    ) -> Result<(), TaskLeaseRegistryError> {
+        let mut leases = self
+            .leases
+            .try_lock()
+            .map_err(|_| TaskLeaseRegistryError::StateUnavailable)?;
+        let _ = Self::check_original_native_read_lease_record(
+            &leases,
+            id,
+            original,
+            original_expires_at,
+            session,
+            now,
+        )?;
+        let record = leases
+            .get_mut(id)
+            .ok_or(TaskLeaseRegistryError::UnknownLease)?;
+        record
+            .native_call_stops
+            .retain(|stop| stop.strong_count() > 0);
+        record.native_call_stops.push(Arc::downgrade(close));
+        Ok(())
     }
 
     /// Mint a *lease-only* commit observation for a previously registered,
@@ -570,6 +631,8 @@ impl TaskLeaseRegistry {
             // Publish while holding this registry lock and before losing the
             // record; a later lease with the same ID gets its own signal.
             // This is only a stop observation, never termination evidence.
+            #[cfg(windows)]
+            record.close_original_native_calls();
             record.revoked = true;
             record.revocation_signal.store(true, Ordering::Release);
             false
