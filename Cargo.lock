@@ -595,6 +595,8 @@ name = "optic-bridge-windows"
 version = "0.1.4"
 dependencies = [
  "getrandom",
+ "optic-bridge-core",
+ "optic-bridge-runtime",
  "process-wrap",
  "thiserror",
  "tokio",

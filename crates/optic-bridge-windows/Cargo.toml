@@ -15,3 +15,9 @@ getrandom.workspace = true
 process-wrap.workspace = true
 tokio.workspace = true
 windows.workspace = true
+
+# Research-only unit fixture: exercise the REAL original registry revokers at
+# the Job-assigned / ResumeThread boundary, never wire this into production.
+[target.'cfg(windows)'.dev-dependencies]
+optic-bridge-runtime = { path = "../optic-bridge-runtime" }
+optic-bridge-core = { path = "../optic-bridge-core" }
