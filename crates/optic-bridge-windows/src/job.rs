@@ -134,8 +134,20 @@ impl CommandWrapper for LimitedJobObject {
 
     fn wrap_child(
         &mut self,
-        mut inner: Box<dyn ChildWrapper>,
+        inner: Box<dyn ChildWrapper>,
         _core: &CommandWrap,
+    ) -> Result<Box<dyn ChildWrapper>> {
+        self.wrap_child_with_before_resume(inner, |_job, _process| {})
+    }
+}
+
+impl LimitedJobObject {
+    // Production invokes a no-op. The interleaving hook is used by a
+    // controlled real-kernel Windows regression at this exact boundary.
+    fn wrap_child_with_before_resume(
+        &mut self,
+        mut inner: Box<dyn ChildWrapper>,
+        before_resume: impl FnOnce(&mut OwnedJob, HANDLE),
     ) -> Result<Box<dyn ChildWrapper>> {
         let process = match child_process_handle(inner.as_ref()) {
             Some(handle) => handle,
@@ -157,7 +169,7 @@ impl CommandWrapper for LimitedJobObject {
         };
         let process = HANDLE(process.as_raw_handle());
 
-        let job = match OwnedJob::create(
+        let mut job = match OwnedJob::create(
             self.active_process_limit,
             self.job_memory_limit,
             self.cpu_percent,
@@ -186,10 +198,14 @@ impl CommandWrapper for LimitedJobObject {
             ));
         }
 
+        before_resume(&mut job, process);
         if let Err(error) = resume_process_threads(process) {
-            let _ = job.terminate(1);
-            let _ = inner.start_kill();
-            return Err(error);
+            return Err(terminate_assigned_root_after_resume_error(
+                &job,
+                process,
+                inner.as_mut(),
+                error,
+            ));
         }
 
         Ok(Box::new(LimitedJobChild {
@@ -198,6 +214,39 @@ impl CommandWrapper for LimitedJobObject {
             root_status: None,
         }))
     }
+}
+
+// ResumeThread may have partially modified a real thread before failing.
+// A successful TerminateJobObject *request* or ChildWrapper::start_kill
+// acknowledgement is never an observation of the root's physical exit.
+// A failed cleanup must be distinctly typed so ProcessManager retains the
+// original quota/JobRecord rather than treating it as a no-child spawn error.
+fn terminate_assigned_root_after_resume_error(
+    job: &OwnedJob,
+    process: HANDLE,
+    child: &mut dyn ChildWrapper,
+    resume_error: Error,
+) -> Error {
+    let kernel_stop = job.terminate(1);
+    // Observe the ORIGINAL borrowed HANDLE before invoking a fallible
+    // ChildWrapper hook which could itself alter its stored process handle.
+    // SAFETY: the original ChildWrapper is still held by this call.
+    let wait_ms = if kernel_stop.is_ok() { 3_000 } else { 0 };
+    let root_wait = unsafe { WaitForSingleObject(process, wait_ms) };
+    // The original Job might contain descendants even after root exit.
+    let active = job.active_processes();
+    // These bounded checks only classify a pre-return setup failure, NOT a
+    // complete native guardian receipt including two independently read EOFs
+    // or the missing no-future-launch authority.
+    if kernel_stop.is_ok() && root_wait == WAIT_OBJECT_0 && matches!(active.as_ref(), Ok(&0)) {
+        return resume_error;
+    }
+    // An acknowledged wrapper stop remains only a fallback request, not
+    // evidence that the pinned original Job/root have physically stopped.
+    let wrapper_stop = child.start_kill();
+    uncertain_child_termination(format!(
+        "native resume failed ({resume_error}); assigned root termination uncertain: original Job stop={kernel_stop:?}, root wait={root_wait:?}, original Job active={active:?}, wrapper fallback={wrapper_stop:?}"
+    ))
 }
 
 // A Job creation OR process-to-Job assignment failure occurs AFTER CommandWrap
@@ -1778,6 +1827,204 @@ impl Drop for ScopedHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_resume_failure_and_denied_job_stop_must_retain_uncertain_root() {
+        use std::{
+            os::windows::{
+                io::{AsHandle, AsRawHandle},
+                process::CommandExt,
+            },
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+        };
+        use windows::Win32::{
+            Foundation::DUPLICATE_HANDLE_OPTIONS, System::Threading::SuspendThread,
+        };
+
+        #[derive(Debug)]
+        struct RefusingStopChild(StdChild);
+        impl ChildWrapper for RefusingStopChild {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn process_handle(&self) -> Option<BorrowedHandle<'_>> {
+                Some(self.0.as_handle())
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                Err(Error::other("test wrapper refuses to stop a real root"))
+            }
+        }
+
+        // Emergency test-only custody prevents a leaked child if an assertion
+        // fails. The production wrapper is deliberately deprived of the
+        // genuine kernel JOB_OBJECT_TERMINATE right after assignment.
+        struct EmergencyCleanup {
+            root: OwnedHandle,
+            full_job: Option<OwnedHandle>,
+        }
+        impl Drop for EmergencyCleanup {
+            fn drop(&mut self) {
+                if let Some(job) = &self.full_job {
+                    let _ = unsafe { TerminateJobObject(HANDLE(job.as_raw_handle()), 81) };
+                }
+                let root = HANDLE(self.root.as_raw_handle());
+                let _ = unsafe { TerminateProcess(root, 81) };
+                let _ = unsafe { WaitForSingleObject(root, 5_000) };
+            }
+        }
+
+        let system_root = PathBuf::from(std::env::var_os("SystemRoot").unwrap());
+        let executable = system_root.join("System32").join("cmd.exe");
+        assert!(executable.is_file());
+        let child = StdCommand::new(&executable)
+            .args(["/d", "/c", "exit /b 0"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real fixed Windows suspended child");
+        let mut duplicate = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("independent original PROCESS handle");
+        let mut emergency = EmergencyCleanup {
+            root: unsafe { OwnedHandle::from_raw_handle(duplicate.0) },
+            full_job: None,
+        };
+        let root = HANDLE(emergency.root.as_raw_handle());
+        assert_eq!(unsafe { WaitForSingleObject(root, 0) }, WAIT_TIMEOUT);
+
+        let mut limits = LimitedJobObject::new(1, 128 * 1024 * 1024, 25).unwrap();
+        let result = limits.wrap_child_with_before_resume(
+            Box::new(RefusingStopChild(child)),
+            |job, process| {
+                let pid = unsafe { GetProcessId(root) };
+                assert_ne!(pid, 0);
+                assert_eq!(unsafe { GetProcessId(process) }, pid);
+                assert_eq!(job.active_processes().unwrap(), 1);
+
+                // Actual kernel SuspendThread raises the genuine suspended
+                // count from one to two. The production ResumeThread then
+                // reports previous=2 and fails, without making root runnable.
+                let snapshot = ScopedHandle(
+                    unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.unwrap(),
+                );
+                let mut entry = THREADENTRY32 {
+                    dwSize: size_of::<THREADENTRY32>() as u32,
+                    ..Default::default()
+                };
+                unsafe { Thread32First(snapshot.0, &mut entry) }.unwrap();
+                let mut suspended = 0_u32;
+                loop {
+                    if entry.th32OwnerProcessID == pid {
+                        let thread = unsafe {
+                            OpenThread(
+                                THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                                false,
+                                entry.th32ThreadID,
+                            )
+                        }
+                        .expect("original primary THREAD handle");
+                        let thread = ScopedHandle(thread);
+                        assert_eq!(unsafe { GetProcessIdOfThread(thread.0) }, pid);
+                        assert_eq!(
+                            unsafe { SuspendThread(thread.0) },
+                            1,
+                            "suspend the original already-suspended root thread"
+                        );
+                        suspended += 1;
+                    }
+                    match unsafe { Thread32Next(snapshot.0, &mut entry) } {
+                        Ok(()) => {}
+                        Err(error)
+                            if error.code() == HRESULT::from_win32(ERROR_NO_MORE_FILES.0) =>
+                        {
+                            break;
+                        }
+                        Err(error) => panic!("original thread enumeration failed: {error}"),
+                    }
+                }
+                assert_eq!(
+                    suspended, 1,
+                    "fixed suspended cmd root has exactly one thread"
+                );
+
+                // Preserve a full-rights duplicate of the very same kernel
+                // Job for emergency cleanup, then give the wrapper a QUERY-
+                // only duplicate. Real TerminateJobObject now fails.
+                let mut full = HANDLE::default();
+                unsafe {
+                    DuplicateHandle(
+                        GetCurrentProcess(),
+                        job.raw(),
+                        GetCurrentProcess(),
+                        &mut full,
+                        0,
+                        false,
+                        DUPLICATE_SAME_ACCESS,
+                    )
+                }
+                .expect("retain full-rights original Job");
+                emergency.full_job = Some(unsafe { OwnedHandle::from_raw_handle(full.0) });
+
+                const JOB_OBJECT_QUERY: u32 = 0x0004;
+                let mut restricted = HANDLE::default();
+                unsafe {
+                    DuplicateHandle(
+                        GetCurrentProcess(),
+                        job.raw(),
+                        GetCurrentProcess(),
+                        &mut restricted,
+                        JOB_OBJECT_QUERY,
+                        false,
+                        DUPLICATE_HANDLE_OPTIONS(0),
+                    )
+                }
+                .expect("real QUERY-only Job handle");
+                let original = std::mem::replace(&mut job.0, restricted);
+                unsafe { CloseHandle(original) }.unwrap();
+                assert_eq!(job.active_processes().unwrap(), 1);
+                assert!(
+                    job.terminate(81).is_err(),
+                    "must first observe actual Windows Job termination denial"
+                );
+                assert_eq!(unsafe { WaitForSingleObject(root, 0) }, WAIT_TIMEOUT);
+            },
+        );
+        let error = result.expect_err("the real double-suspended thread must reject Resume");
+        assert!(emergency.full_job.is_some());
+        assert_eq!(
+            unsafe { WaitForSingleObject(root, 0) },
+            WAIT_TIMEOUT,
+            "the original Windows child is still genuinely alive"
+        );
+        assert!(
+            error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<UnconfirmedWindowsChildTermination>())
+                .is_some(),
+            "a live original Job/root and denied native termination require a TYPED uncertain error, not an ordinary resume failure: {error:?}"
+        );
+    }
 
     #[test]
     fn job_creation_failure_kills_original_suspended_root_even_if_wrapper_stop_fails() {
