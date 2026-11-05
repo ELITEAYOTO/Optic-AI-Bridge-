@@ -20,6 +20,8 @@ mod file;
 mod job;
 #[cfg(windows)]
 mod memory;
+#[cfg(all(windows, test))]
+mod native_issuer_prototype;
 #[cfg(windows)]
 mod output_pipe;
 #[cfg(windows)]
