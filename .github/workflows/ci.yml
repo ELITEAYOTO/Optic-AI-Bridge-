@@ -230,6 +230,7 @@ jobs:
             "ref=${{ github.ref }}"
           ) | Set-Content -LiteralPath (Join-Path $bundle 'SOURCE.txt') -Encoding ascii
       - name: Upload ChatGPT Desktop Node validation bundle
+        id: chatgpt_desktop_node_upload
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -238,11 +239,25 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 1
+      # Preserve the successful upload's immutable ID rather than resolving
+      # its name through an immediately-after-upload artifact listing.
+      # A missing/invalid receipt is a hard failure, not proof of an upload.
+      - name: Require immutable ChatGPT validation artifact receipt
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPTIC_UPLOADED_ARTIFACT_ID: ${{ steps.chatgpt_desktop_node_upload.outputs.artifact-id }}
+        run: |
+          if ($env:OPTIC_UPLOADED_ARTIFACT_ID -notmatch '^[1-9][0-9]*$') {
+            throw "Upload did not return a positive immutable artifact ID."
+          }
+
       - name: Download ChatGPT Desktop Node validation bundle for round-trip proof
         if: runner.os == 'Windows'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: optic-chatgpt-desktop-node-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          # The artifact ID comes directly from this run's upload action.
+          artifact-ids: ${{ steps.chatgpt_desktop_node_upload.outputs.artifact-id }}
           path: target/chatgpt-desktop-node-validation-roundtrip
       - name: Verify ChatGPT Desktop Node validation bundle round-trip
         if: runner.os == 'Windows'
