@@ -1828,6 +1828,169 @@ impl Drop for ScopedHandle {
 mod tests {
     use super::*;
 
+    // Intentionally RED research acceptance. This synthetic original stop is
+    // published AFTER kernel Job assignment but BEFORE the original ResumeThread
+    // call. Unlike GitRead's already-known revoke-before-spawn acceptance, this
+    // checks the distinct suspended-root -> resumed-code boundary.
+    //
+    // Current production LimitedJobObject does NOT bind a session or TaskLease
+    // stop generation. Do not turn an ordinary preflight snapshot into a launch
+    // authorization: the eventual service-owned issuer must implement the
+    // actual stop/OS-call critical section, not just make this fixture green.
+    #[test]
+    #[ignore = "known RED: service-owned original-stop/ResumeThread issuer not yet implemented; run deliberately under external bounded Windows LAB supervision"]
+    fn research_poststop_suspended_root_must_not_execute_after_resume_boundary() {
+        use std::{
+            fs,
+            os::windows::{
+                io::{AsHandle, AsRawHandle},
+                process::CommandExt,
+            },
+            path::PathBuf,
+            process::{Child as StdChild, Command as StdCommand, Stdio},
+            sync::Arc,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        #[derive(Debug)]
+        struct FixedRoot(StdChild);
+        impl ChildWrapper for FixedRoot {
+            fn inner(&self) -> &dyn ChildWrapper {
+                self
+            }
+            fn inner_mut(&mut self) -> &mut dyn ChildWrapper {
+                self
+            }
+            fn into_inner(self: Box<Self>) -> Box<dyn ChildWrapper> {
+                self
+            }
+            fn process_handle(&self) -> Option<BorrowedHandle<'_>> {
+                Some(self.0.as_handle())
+            }
+            fn start_kill(&mut self) -> Result<()> {
+                self.0.kill()
+            }
+        }
+
+        struct Emergency {
+            original: OwnedHandle,
+            marker: PathBuf,
+        }
+        impl Drop for Emergency {
+            fn drop(&mut self) {
+                let original = HANDLE(self.original.as_raw_handle());
+                // SAFETY: test-only independently pinned exact kernel root.
+                let _ = unsafe { TerminateProcess(original, 91) };
+                let _ = unsafe { WaitForSingleObject(original, 5_000) };
+                let _ = fs::remove_file(&self.marker);
+            }
+        }
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("monotonic test marker ID")
+            .as_nanos();
+        let marker = std::env::temp_dir().join(format!(
+            "optic-p0-revoke-before-resume-{}-{unique}.txt",
+            std::process::id()
+        ));
+        assert!(!marker.exists(), "fresh isolated temporary marker");
+        let system_root =
+            PathBuf::from(std::env::var_os("SystemRoot").expect("fixed Windows SystemRoot"));
+        let cmd = system_root.join("System32").join("cmd.exe");
+        assert!(cmd.is_file());
+        // Create a *zero-length* file in the test parent before launching.
+        // Bind its exact stdout HANDLE to the real child rather than rely on
+        // cmd.exe command-line redirection/quoting as a marker side effect.
+        let child_stdout = fs::File::create(&marker).expect("empty stdout marker");
+        let child = StdCommand::new(&cmd)
+            .args(["/d", "/c", "echo REAL_CHILD_ENTERED"])
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(child_stdout))
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_SUSPENDED.0 | CREATE_NO_WINDOW.0)
+            .spawn()
+            .expect("real CREATE_SUSPENDED root in disposable fixture");
+
+        let mut copy = HANDLE::default();
+        // SAFETY: duplicate ORIGINAL process handle, noninheritable and owned by
+        // the test emergency supervisor independent of the wrapper under test.
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                HANDLE(child.as_raw_handle()),
+                GetCurrentProcess(),
+                &mut copy,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .expect("emergency duplicate of original Windows PROCESS handle");
+        let emergency = Emergency {
+            original: unsafe { OwnedHandle::from_raw_handle(copy.0) },
+            marker,
+        };
+        let original = HANDLE(emergency.original.as_raw_handle());
+        let original_pid = unsafe { GetProcessId(original) };
+        assert_ne!(original_pid, 0);
+        assert_eq!(unsafe { WaitForSingleObject(original, 0) }, WAIT_TIMEOUT);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let at_boundary = Arc::clone(&stop);
+        let mut wrapper =
+            LimitedJobObject::new(1, 128 * 1024 * 1024, 25).expect("real limited Job");
+        let outcome =
+            wrapper.wrap_child_with_before_resume(Box::new(FixedRoot(child)), |job, process| {
+                assert_eq!(unsafe { GetProcessId(process) }, original_pid);
+                assert_eq!(job.active_processes().unwrap(), 1);
+                assert_eq!(unsafe { WaitForSingleObject(original, 0) }, WAIT_TIMEOUT);
+                assert_eq!(
+                    fs::metadata(&emergency.marker).unwrap().len(),
+                    0,
+                    "actual root has emitted no stdout before ResumeThread"
+                );
+                // Publish the model original-generation stop after ACTUAL Job
+                // assignment and before the wrapper's ACTUAL ResumeThread.
+                at_boundary.store(true, Ordering::Release);
+            });
+        assert!(stop.load(Ordering::Acquire));
+        match outcome {
+            Err(error) => {
+                assert_eq!(
+                    fs::metadata(&emergency.marker).unwrap().len(),
+                    0,
+                    "no child stdout may be written after a denied resume"
+                );
+                eprintln!(
+                    "ISSUE323_POSTSTOP_RESUME_DENIED: original_pid={original_pid},                      original_stop_published=true, launch_rejected={error}"
+                );
+            }
+            Ok(owned_child) => {
+                // Held Job owner remains alive while the original real root
+                // writes the observable marker. This is NOT a simulated PID.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(original, 3_000) },
+                    WAIT_OBJECT_0,
+                    "original real root must exit within independent test bound"
+                );
+                let marker = fs::read_to_string(&emergency.marker)
+                    .expect("actual post-stop child code must write temp marker");
+                assert!(marker.contains("REAL_CHILD_ENTERED"));
+                eprintln!(
+                    "ISSUE323_POSTSTOP_RESUME_EXECUTED: original_pid={original_pid},                      original_stop_published=true, real_child_marker={:?}",
+                    marker.trim()
+                );
+                drop(owned_child);
+                panic!(
+                    "original stop won before native ResumeThread, but the                      already-Job-assigned Windows root still executed code"
+                );
+            }
+        }
+    }
+
     #[test]
     fn real_resume_failure_and_denied_job_stop_must_retain_uncertain_root() {
         use std::{
