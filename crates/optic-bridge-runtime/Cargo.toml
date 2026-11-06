@@ -17,6 +17,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+arc-swap.workspace = true
 optic-bridge-windows = { path = "../optic-bridge-windows" }
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
