@@ -2136,12 +2136,12 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             calls.stop_requested(),
             "original {source} stop must deny a new tracked call"
         );
-        if source == "host" || source == "host-drop" {
+        if source == "host" || source == "host-drop" || source == "job" {
             assert!(
                 calls
                     .internal_stop_signal()
                     .load(std::sync::atomic::Ordering::Acquire),
-                "RED #323: real original HostStop publication must seal the same native ledger bit before the published host stop is observable"
+                "RED #323: original HostStop must seal before publication, and observed original JobStop must latch the exact native ledger bit"
             );
         }
         assert!(calls.track(NativeCallPhase::CreateSuspended).is_none());

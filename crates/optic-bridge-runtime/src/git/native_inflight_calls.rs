@@ -76,19 +76,31 @@ impl Shared {
     }
 
     fn is_stop_required(&self) -> bool {
-        self.stop_requested.load(Ordering::Acquire)
-            // A poisoned counter is unknown custody. Publish the same
-            // irreversible internal stop which the already-armed original
-            // Job watchdog observes; true as a return value alone is not
-            // enough to request native termination.
-            || self.stop_if_poisoned()
-            || self.original.as_ref().is_some_and(|original| {
-                std::time::Instant::now() >= original.deadline
-                    || original
-                        .signals
-                        .iter()
-                        .any(|signal| signal.load(Ordering::Acquire))
-            })
+        if self.stop_requested.load(Ordering::Acquire) {
+            return true;
+        }
+        // A poisoned counter is unknown custody; stop_if_poisoned() already
+        // seals the SAME original ledger bit watched by the kernel watchdog.
+        if self.stop_if_poisoned() {
+            return true;
+        }
+        // An observed original stop or expired absolute deadline must also
+        // irreversibly LATCH the internal watchdog bit. Returning true alone
+        // could leave the original Job watchdog's explicit internal signal
+        // open while the caller already knows native admission is forbidden.
+        // This is a read-side fail-closed latch, NOT synchronization with an
+        // external stop publisher or a Win32 Create/Resume authorization gate.
+        if self.original.as_ref().is_some_and(|original| {
+            std::time::Instant::now() >= original.deadline
+                || original
+                    .signals
+                    .iter()
+                    .any(|signal| signal.load(Ordering::Acquire))
+        }) {
+            self.stop_requested.store(true, Ordering::Release);
+            return true;
+        }
+        false
     }
 
     fn stop_if_poisoned(&self) -> bool {
@@ -993,6 +1005,10 @@ mod tests {
                 "expiry before commitment must not leave an in-flight ticket"
             );
             assert!(tracker.stop_requested(), "original expiry remains terminal");
+            assert!(
+                tracker.internal_stop_signal().load(Ordering::Acquire),
+                "a rejected precommit native ticket also latches the original watchdog signal"
+            );
         }
     }
 
@@ -1062,6 +1078,52 @@ mod tests {
         }
     }
 
+    // #323 research contract: an observed original expiry/source stop is
+    // also written to the SAME irreversible native watchdog ledger bit.
+    // A returned "stop required" bool alone cannot wake that watchdog.
+    #[test]
+    fn observed_original_sources_and_expiry_latch_exact_native_watchdog_stop() {
+        for source in 0..4 {
+            let original_stops: [Arc<AtomicBool>; 4] =
+                std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+            let tracker = NativeCallStopTracker::with_original_stops(
+                original_stops.clone(),
+                std::time::Instant::now() + Duration::from_secs(5),
+            );
+            let exact_close = tracker.internal_stop_signal();
+            assert!(!exact_close.load(Ordering::Acquire));
+            original_stops[source].store(true, Ordering::Release);
+            assert!(
+                tracker.stop_requested(),
+                "original source {source} is stopped"
+            );
+            assert!(
+                exact_close.load(Ordering::Acquire),
+                "RED #323: original source {source} observation must latch the exact native watchdog bit"
+            );
+            assert!(tracker.track(NativeCallPhase::CreateSuspended).is_none());
+            assert!(tracker.track(NativeCallPhase::Resume).is_none());
+        }
+        let no_stop: [Arc<AtomicBool>; 4] =
+            std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+        let expired = NativeCallStopTracker::with_original_stops(
+            no_stop,
+            std::time::Instant::now() - Duration::from_millis(1),
+        );
+        let exact_close = expired.internal_stop_signal();
+        assert!(!exact_close.load(Ordering::Acquire));
+        assert!(
+            expired.stop_requested(),
+            "the original absolute deadline expired"
+        );
+        assert!(
+            exact_close.load(Ordering::Acquire),
+            "RED #323: observing original deadline expiry must latch the same native watchdog bit"
+        );
+        assert!(expired.track(NativeCallPhase::CreateSuspended).is_none());
+        assert!(expired.track(NativeCallPhase::Resume).is_none());
+    }
+
     #[test]
     fn original_absolute_deadline_denies_new_calls_without_manual_stop() {
         let signals: [Arc<AtomicBool>; 4] =
@@ -1075,6 +1137,10 @@ mod tests {
         assert!(
             original.stop_requested(),
             "the original horizon cannot renew"
+        );
+        assert!(
+            original.internal_stop_signal().load(Ordering::Acquire),
+            "observed expiration seals the exact original watchdog bit"
         );
         assert!(original.track(NativeCallPhase::CreateSuspended).is_none());
         assert_eq!(
