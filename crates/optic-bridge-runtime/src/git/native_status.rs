@@ -650,6 +650,17 @@ impl LeaseObservedNativeGitStatusCustody {
                 .request_stop();
             return Err(NativeGitStatusSnapshotError::OriginalStopBinding);
         }
+        // The ORIGINAL host source closes this same ledger under its own
+        // publication lock, before any waiter may observe HostStop=true.
+        // This registration runs after registry locks have been released;
+        // it performs no filesystem, Job, pipe or other Win32 operation.
+        if !host.try_bind_original_native_ledger_close(&original_close) {
+            self.call_tracking
+                .as_ref()
+                .expect("original ledger retained")
+                .request_stop();
+            return Err(NativeGitStatusSnapshotError::OriginalStopBinding);
+        }
         // The pre-arm time cannot certify expiry AFTER kernel handle
         // duplication and independent worker startup. Retain the armed
         // watchdog on rejection; this remains no-child custody only.
