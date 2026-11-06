@@ -2036,7 +2036,7 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
         InFlightNativeCalls, NativeCallDrainError, NativeCallPhase,
     };
 
-    for source in ["session", "lease-reused-id", "job", "host"] {
+    for source in ["session", "lease-reused-id", "job", "host", "host-drop"] {
         let clock = crate::StdClock::new();
         let mut fixture = Fixture::new_on_clock(&clock);
         fixture.envelope.resources.timeout_ms = 5_000;
@@ -2121,13 +2121,22 @@ fn native_call_tracking_reuses_original_session_lease_job_host_stops_after_watch
             "host" => {
                 assert!(fixture.host.request_stop());
             }
+            "host-drop" => {
+                // Drop the REAL original source while the original watch,
+                // in-flight native ticket, counted permits, and kernel Job
+                // watchdog remain alive. A fresh host cannot retarget them.
+                let original = std::mem::replace(&mut fixture.host, crate::HostStopSource::new());
+                drop(original);
+                assert!(fixture.host_watch.is_stop_requested());
+                assert!(!fixture.host.watch().is_stop_requested());
+            }
             _ => unreachable!(),
         }
         assert!(
             calls.stop_requested(),
             "original {source} stop must deny a new tracked call"
         );
-        if source == "host" {
+        if source == "host" || source == "host-drop" {
             assert!(
                 calls
                     .internal_stop_signal()

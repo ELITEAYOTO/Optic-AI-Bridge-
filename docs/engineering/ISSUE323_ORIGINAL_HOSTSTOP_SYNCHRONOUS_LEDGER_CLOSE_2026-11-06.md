@@ -38,6 +38,21 @@ The original RED stdout/stderr SHA-256 values are `7C7DDF0330B684EFCCA4727704FE2
 
 **Existing baseline problem:** independent post-merge CI for the preceding PR #514 on `main=2033092...`, first attempt [#42118032514](https://github.com/ELITEAYOTO/Optic-AI-Bridge-/actions/runs/42118032514), failed on the known Node/AppContainer startup case #185. Do not rerun-to-green, conceal it or interpret this host-ledger patch as a Node startup fix.
 
+## Additional adversarial review of PR #515 (6 November, separate evidence)
+
+After the original PR head `58ea7f7a04848e7a165a7744526be1fa299b3379`, a further code review expanded **tests only**; the actual production host-close mechanism was not changed.
+
+1. The existing **real original kernel Job/watchdog + original counted owner** integration test now covers `host-drop` as well as direct `host` stop. The *original* `HostStopSource` is physically dropped while the earlier `HostStopWatch`, original ledger, already admitted native ticket, Job, session and TaskLease are still retained. A replacement foreign source cannot revive that original. The same original ledger bit is closed and no new tickets are accepted, while already admitted tickets remain counted through retirement.
+2. A new nonignored Windows unit test proves that a **contended** original host registration mutex denies registration and seals the would-be ledger; an intentionally **poisoned** mutex also denies a new ledger, and the real source still publishes stop after recovering the poisoned guard. The poison panic is test-only and deliberately caught, not an uncaught test failure.
+
+The initial ad-hoc short-name command with `--exact` selected **zero** tests; it was **not** counted as proof. A corrected fully qualified invocation executed **1 test / 1 PASS / 0 ignored**.
+
+A *new separate* private 15-second-per-invocation supervisor executed **48/48 nonignored Windows tests PASS**, 12 per each of four exact cases (original Job plus host Drop, explicit host stop, 64-collision host bind race, contended/poisoned bind). Every successful record requires actual `running 1 test`, `1 passed`, `0 failed`, `0 ignored` and exit 0. New manifest SHA-256: `D86AE0240AAE68384FF7A1B44BC4ADF147956579280E5E638E4CEAFCA62032F1`. The previous 36-run manifest remains unchanged.
+
+For the **new post-review source tree**, a separate second full Windows offline validation (fmt, Windows crate, runtime crate, workspace, workspace all-features, strict Clippy) finished **6/6 PASS**. Its independent `REVIEW_TREE_GATES_MANIFEST.json` SHA-256 is `77E631B3ED5CDEDA31C1C47EEC286A7703C16B9EAEF758F40626EE3697B19388`. Earlier first-attempt 5/6 and corrected 6/6 receipts were not overwritten.
+
+This is an *additional self-audit and test reinforcement*, **not an external/human code review**. The host stop critical-section liveness under a permanently stalled process/thread, all late already-admitted real Win32 effects and the complete terminal OS/stdio proof remain unproven; maintain draft status pending review. Keep #323 OPEN and Windows V1 NO-GO.
+
 ## Remaining P0 gates / explicit nonclaims
 
 - HostStop joining the non-executing ledger's close bit is **not** authority to enter `CreateProcessW` or `ResumeThread`. A **ticket admitted before revoke can still physically enter Win32 after stop**; it must be retained, reconciled, and physically terminated.

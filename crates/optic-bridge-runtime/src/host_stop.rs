@@ -193,4 +193,37 @@ mod tests {
             assert!(close.load(Ordering::Acquire));
         }
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn original_host_binding_contention_or_poison_fails_closed_without_retargeting() {
+        // A busy host register lock cannot force a waiting prelaunch owner
+        // into a newly admitted native call: that exact ledger is sealed.
+        let busy_source = HostStopSource::new();
+        let busy_watch = busy_source.watch();
+        let busy_close = Arc::new(AtomicBool::new(false));
+        let held = busy_source.native_close_subscribers.lock().unwrap();
+        assert!(!busy_watch.try_bind_original_native_ledger_close(&busy_close));
+        assert!(busy_close.load(Ordering::Acquire));
+        drop(held);
+        assert!(busy_source.request_stop());
+
+        // A poisoned subscriber lock does not silently authorize a
+        // replacement ledger, and a real original source still publishes
+        // stop through the recovered (poisoned) short lock.
+        let source = HostStopSource::new();
+        let watch = source.watch();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = source.native_close_subscribers.lock().unwrap();
+                panic!("intentional test-only subscriber-lock poison");
+            }))
+            .is_err()
+        );
+        let close = Arc::new(AtomicBool::new(false));
+        assert!(!watch.try_bind_original_native_ledger_close(&close));
+        assert!(close.load(Ordering::Acquire));
+        assert!(source.request_stop());
+        assert!(watch.is_stop_requested());
+    }
 }
